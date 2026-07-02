@@ -12,14 +12,14 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-19%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-22%20passing-2f855a">
 </p>
 
 ## What It Does
 
 Scriptorium PDF 是一个核心转换引擎，目标不是把 PDF 页面截图塞进 HTML，而是把 PDF 里的可识别结构转成可编辑节点：
 
-- 从 PDF 提取 native text、字体、颜色、粗细、坐标和 drawing/shape。
+- 从 PDF 提取 native text、字体、颜色、粗细、坐标、image block 和 drawing/shape。
 - 从 OCR / PaddleOCR-VL / PP-Structure 输出归一化到同一个 `DocumentIR`。
 - 生成 `structured` HTML：文本节点可编辑，图形节点保留结构，DOM 上带识别标记。
 - 支持 XML 级局部节点编辑，再回写到 IR 并重新导出 HTML/PDF。
@@ -65,7 +65,7 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 </div>
 ```
 
-每个节点都能追溯到来源、坐标、样式桶、版面分组和编辑目标。
+每个节点都能追溯到来源、坐标、样式桶、版面分组和编辑目标。复杂矢量图会在局部区域触发 raster fallback，仍然是带 bbox/source metadata 的局部 image 节点，不是整页背景图。
 
 ## Real-World Scores
 
@@ -73,15 +73,17 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
   <img src="docs/assets/readme-webpage-score.png" alt="Live webpage conversion score" width="100%">
 </p>
 
-| Sample | Pages | Elements | Editable | Shapes | Multi-Col | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0 | 0.9792518 | 0.0207482 | 0.01067874 | yes / yes |
-| arXiv paper: Attention Is All You Need | 15 | 3758 | 1048 | 2710 | 163 | 0.88813653 | 0.11186347 | 0.07348926 | yes / yes |
-| Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 19 | 20 | 0.98939052 | 0.01198732 | 0.01057725 | yes / yes |
+| Sample | Pages | Elements | Editable | Images | Shapes | Multi-Col | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Hacker News live page printed by Playwright | 2 | 162 | 95 | 30 | 37 | 0 | 0.9792518 | 0.0207482 | 0.01067874 | yes / yes |
+| arXiv paper: Attention Is All You Need | 15 | 876 | 761 | 6 | 109 | 163 | 0.92601817 | 0.07398183 | 0.04607194 | yes / yes |
+| Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 0 | 19 | 20 | 0.98939049 | 0.01198732 | 0.01057728 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
 内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序，真实论文和网页样本暂未附带人工顺序标注，因此只报告 multi-column 覆盖数。
+
+最新复杂页优化把 arXiv Attention 论文从 `0.88813653` 提升到 `0.92601817`。主要变化是 native image block 输出、Nimbus/Computer Modern 字体映射，以及对高密度矢量图的局部 raster fallback；第 15 页 attention 图的 diff 从最差页降到 `0.01067919`。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -233,6 +235,7 @@ Tracked metrics:
 - `worst_page`
 - page count match
 - page dimension match
+- image count
 - multi-column element count
 - column-flow element count
 - recursive XY-Cut element count
@@ -285,8 +288,9 @@ Core files:
 - element bbox in PDF points and pixels
 - `source_text`, `edited_text`, `translated_text`
 - `text_runs` for native PDF inline spans: text, bbox, font, weight, style, color, script, and run style id
+- native image/raster crops via `source_crop`
 - `semantic_order`, `visual_order`, `column_index`, `column_count`, `flow_segment_index`, and `reading_order_region_path`
-- source kind: `native-pdf`, `native-drawing`, OCR fallback, etc.
+- source kind: `native-pdf`, `native-image`, `native-raster-region`, `native-drawing`, OCR fallback, etc.
 - role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
 - layout group: for example `table-001`, `figure-001`, `separator-001`
@@ -314,9 +318,9 @@ pytest
 Current local test baseline:
 
 ```text
-19 passed
+22 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, recursive XY-Cut semantic order for sectioned multi-column pages, and strategy coverage metrics. The next useful work is deeper real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, and strategy coverage metrics. The next useful work is deeper real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.

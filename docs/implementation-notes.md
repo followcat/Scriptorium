@@ -21,7 +21,9 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
 1. Extraction writes raw evidence into `DocumentIR`:
    - native PDF lines become editable text elements with font size, font family, weight, color, bbox, and source metadata
    - native PDF spans are preserved under `element.metadata.text_runs` with run text, bbox, font, weight, style, color, script, and source coordinates
-   - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`
+   - native PDF image blocks become local `image` elements with `source_crop`, bbox, dimensions, and `native-image` source metadata
+   - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`; simple lines keep `line_points_pdf` and render as SVG lines
+   - dense vector regions can become local raster fallback image elements with `native-raster-region` source metadata
    - OCR fallback elements keep bbox, type, confidence, crop, and style hints
 2. `annotate_document()` assigns recognized marks:
    - `role`: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
@@ -42,6 +44,8 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-scriptorium-layout-group`
    - `data-scriptorium-layout-kind`
    - `data-scriptorium-layout-confidence`
+   - `data-scriptorium-shape-geometry`
+   - `data-scriptorium-shape-line`
    - `data-scriptorium-run-index`
    - `data-scriptorium-run-style-id`
    - `data-scriptorium-run-script`
@@ -58,9 +62,21 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-bbox-pdf`
    - `data-bbox-px`
 
-In `structured` mode the exporter intentionally does not include the page background image. The result is made of editable text nodes plus structural shape nodes, all tied back to recognized evidence in the IR.
+In `structured` mode the exporter intentionally does not include the page background image. The result is made of editable text nodes, structural shape nodes, native image nodes, and local raster fallback nodes, all tied back to recognized evidence in the IR.
 
 Text runs are a source-fidelity layer, not the edit storage model. When `edited_text` or `translated_text` is present, the exporter renders the replacement text as a plain editable node so stale source spans do not distort new content.
+
+## Native Visual Fidelity Layer
+
+Complex scientific PDFs often lose visual score for reasons unrelated to reading order: embedded figures are image blocks, LaTeX fonts are not named like browser fonts, and dense vector graphics may depend on transparency, clipping, and draw ordering that a simple rectangle exporter cannot reproduce.
+
+The native PDF path now handles three cases:
+
+- `native-image`: PyMuPDF `get_text("dict")` image blocks are written as local image assets and exported as positioned image elements. These are source PDF image blocks, not whole-page screenshots.
+- Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
+- `native-raster-region`: when a page has a dense vector cluster with many line drawings, Scriptorium clips just that local region from the source PDF and exports it as one image node. Text and shape nodes whose centers fall inside that region are hidden to avoid duplicate rendering. Captions and surrounding body text remain editable.
+
+This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, and simple drawings stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required transparency and clipping semantics.
 
 ## Reading Order Layer
 
@@ -136,6 +152,7 @@ Metrics:
 - `timings`: per-stage timing split.
 - `element_count`: total generated IR elements.
 - `editable_element_count`: elements that map to editable text.
+- `image_count`: native image and local raster fallback elements.
 - `shape_count`: structural drawing nodes.
 - `style_count`: inferred style buckets.
 - `annotation_count`: elements with annotation metadata.

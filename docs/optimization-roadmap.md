@@ -10,34 +10,43 @@ This project optimizes two different outcomes:
 - `recursive-xy-cut-v1` recursively segments pages with horizontal and vertical whitespace cuts, so section headings can stay between independent column regions.
 - `column-flow-v1` detects common two-column text regions and orders text left-column first, then right-column.
 - Table-like grids stay row-major so table cells are not read as document columns.
+- Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings as SVG, and uses local raster fallback for dense vector figures.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
-- Benchmark reports now include `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, and `reading_order_strategy_counts`.
+- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, and `reading_order_strategy_counts`.
 - Built-in fixtures write `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
 | Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|
-| Built-in fixtures | 20 | yes | 1.0 | 0.98939052 |
-| arXiv Attention paper | 163 | no | n/a | 0.88813653 |
+| Built-in fixtures | 20 | yes | 1.0 | 0.98939049 |
+| arXiv Attention paper | 163 | no | n/a | 0.92601817 |
 | Hacker News print PDF | 0 | no | n/a | 0.9792518 |
 
 ## Next Optimization Options
 
-1. Recursive XY-Cut refinement
+1. Real semantic ground truth for complex PDFs
+
+   The arXiv score improved visually, but semantic order still cannot be scored without sidecars. Add hand-labeled `.semantic-order.json` files for selected paper pages with references, figures, captions, equations, and appendices.
+
+2. Recursive XY-Cut refinement
 
    The first backend is implemented. Next refinements should add table-aware two-column table handling, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
 
-2. Box-flow scoring backend
+3. Vector renderer refinement
+
+   Local raster fallback improved dense figures, but it sacrifices editability inside diagrams. The next step is preserving PDF clipping, opacity, blend modes, and grouped SVG paths so more complex drawings can remain structured.
+
+4. Box-flow scoring backend
 
    Add a continuous score similar to pdfminer.six `boxes_flow`, where horizontal and vertical proximity jointly decide text box order. This is useful for pages that are not cleanly separable into columns.
 
-3. Layout-model adapter
+5. Layout-model adapter
 
    Keep `reading_order.py` as the internal contract and add optional adapters for Docling, LayoutParser, PaddleOCR-VL, or PP-Structure when those tools provide region/order predictions.
 
-4. Semantic-order benchmark expansion
+6. Semantic-order benchmark expansion
 
    The first sidecar-based benchmark is implemented. Expand it with real/hand-labeled documents and report:
 
@@ -50,6 +59,7 @@ Current benchmark coverage:
 ## Research References
 
 - PyMuPDF text extraction and reading-order notes: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
+- PyMuPDF image extraction notes: https://pymupdf.readthedocs.io/en/latest/recipes-images.html
 - pdfminer.six `LAParams.boxes_flow`: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
 - Kendall tau for information ordering evaluation: https://aclanthology.org/J06-4002.pdf
 - LayoutReader / ReadingBank reading-order benchmark: https://aclanthology.org/2021.emnlp-main.389/
