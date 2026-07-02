@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-9%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-11%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -37,7 +37,7 @@ Scriptorium 的实现围绕四个硬需求设计：
 | Structured output | 产出的 HTML 需要有文本、shape、role、bbox、style id、source marker，而不是单张整页截图。 |
 | Local editability | 每个可编辑文本节点都有稳定 element id，可通过 DOM 或 XML 精确修改局部内容。 |
 | Source preservation | OCR/native 原文保存在 `source_text`，编辑写入 `edited_text`，翻译写入 `translated_text`，不覆盖原始识别结果。 |
-| Measurable quality | 每次转换都能打印回 PDF 并计算 `visual_similarity`，后续优化用同一指标比较。 |
+| Measurable quality | 每次转换都能打印回 PDF 并计算 `visual_similarity`、diff 分布、页数匹配和尺寸匹配，后续优化用同一指标比较。 |
 
 ## Why It Is Different
 
@@ -67,13 +67,13 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
   <img src="docs/assets/readme-webpage-score.png" alt="Live webpage conversion score" width="100%">
 </p>
 
-| Sample | Pages | Elements | Editable Nodes | Shape Nodes | Visual Similarity | Max Diff Ratio |
-|---|---:|---:|---:|---:|---:|---:|
-| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9716478 | 0.0283522 |
-| arXiv paper: Attention Is All You Need | 15 | 3594 | 1048 | 2546 | 0.88800526 | 0.11199474 |
-| Built-in benchmark fixtures, mean | 5 pages total | 60 | 42 | 18 | 0.98908212 | 0.01198732 |
+| Sample | Pages | Elements | Editable Nodes | Shape Nodes | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9716478 | 0.0283522 | 0.0145089 | yes / yes |
+| arXiv paper: Attention Is All You Need | 15 | 3594 | 1048 | 2546 | 0.88800526 | 0.11199474 | 0.07339883 | yes / yes |
+| Built-in benchmark fixtures, mean | 5 pages total | 60 | 42 | 18 | 0.98908212 | 0.01198732 | 0.01087759 | yes / yes |
 
-`visual_similarity = 1 - max_diff_ratio`。后续优化可以直接用这些数值看进步幅度。
+`visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -220,6 +220,11 @@ Tracked metrics:
 
 - `visual_similarity`
 - `max_diff_ratio`
+- `mean_diff_ratio`
+- `p95_diff_ratio`
+- `worst_page`
+- page count match
+- page dimension match
 - `total_seconds`
 - stage timings: render, extraction/annotation, HTML export, PDF print, comparison
 - element count

@@ -58,8 +58,13 @@ scriptorium benchmark --out-dir outputs/benchmark-baseline --dpi 192
 
 Metrics:
 
-- `max_diff_ratio`: maximum normalized pixel difference between original PDF render and structured HTML-to-PDF render.
+- `max_diff_ratio`: maximum normalized page difference between original PDF render and structured HTML-to-PDF render. Missing/extra pages are scored as `1.0`; page dimension mismatches add a size penalty instead of silently resizing away the mismatch.
+- `mean_diff_ratio`: average page difference across all matched and unmatched pages.
+- `p95_diff_ratio`: 95th percentile diff ratio for the compared page set.
+- `worst_page`: 1-based page number with the largest effective diff ratio.
 - `visual_similarity`: `1 - max_diff_ratio`; higher is better.
+- `page_count_match`: whether expected and actual PDFs have the same page count.
+- `dimension_match`: whether every reported page has matching render dimensions.
 - `total_seconds`: wall-clock time for render, extraction, annotation, HTML export, PDF print, and comparison.
 - `timings`: per-stage timing split.
 - `element_count`: total generated IR elements.
