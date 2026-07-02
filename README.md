@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-17%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-18%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -78,6 +78,8 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 | Built-in benchmark fixtures, mean | 5 pages total | 61 | 42 | 19 | 9 | 0.98908544 | 0.01198732 | 0.01087427 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
+
+内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 42 个期望文本节点；真实论文和网页样本暂未附带人工顺序标注，因此只报告 multi-column 覆盖数。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -231,8 +233,12 @@ Tracked metrics:
 - page dimension match
 - multi-column element count
 - column-flow element count
+- semantic ground-truth case count
+- semantic order pair accuracy
+- semantic sequence similarity
+- semantic missing/extra text count
 - `total_seconds`
-- stage timings: render, extraction/annotation, HTML export, PDF print, comparison
+- stage timings: render, extraction/annotation, HTML export, PDF print, visual comparison, semantic comparison
 - element count
 - editable element count
 - shape count
@@ -303,7 +309,7 @@ pytest
 Current local test baseline:
 
 ```text
-17 passed
+18 passed
 ```
 
 ## Project Status

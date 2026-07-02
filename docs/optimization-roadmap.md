@@ -11,14 +11,15 @@ This project optimizes two different outcomes:
 - Table-like grids stay row-major so table cells are not read as document columns.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Benchmark reports now include `multi_column_element_count` and `column_flow_element_count`.
+- Built-in fixtures write `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
-| Sample | Multi-column elements | Visual similarity |
-|---|---:|---:|
-| Built-in fixtures | 9 | 0.98908544 |
-| arXiv Attention paper | 163 | 0.88813653 |
-| Hacker News print PDF | 0 | 0.9792518 |
+| Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
+|---|---:|---:|---:|---:|
+| Built-in fixtures | 9 | yes | 1.0 | 0.98908544 |
+| arXiv Attention paper | 163 | no | n/a | 0.88813653 |
+| Hacker News print PDF | 0 | no | n/a | 0.9792518 |
 
 ## Next Optimization Options
 
@@ -34,19 +35,22 @@ Current benchmark coverage:
 
    Keep `reading_order.py` as the internal contract and add optional adapters for Docling, LayoutParser, PaddleOCR-VL, or PP-Structure when those tools provide region/order predictions.
 
-4. Semantic-order benchmark
+4. Semantic-order benchmark expansion
 
-   Add fixtures with ground-truth text order and report:
+   The first sidecar-based benchmark is implemented. Expand it with real/hand-labeled documents and report:
 
    - normalized edit distance between expected and exported source text
    - column order accuracy
    - table row-major preservation
    - figure/table caption proximity
+   - footnote/header/footer order behavior
 
 ## Research References
 
 - PyMuPDF text extraction and reading-order notes: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
 - pdfminer.six `LAParams.boxes_flow`: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
+- Kendall tau for information ordering evaluation: https://aclanthology.org/J06-4002.pdf
+- LayoutReader / ReadingBank reading-order benchmark: https://aclanthology.org/2021.emnlp-main.389/
 - XY-Cut++ reading-order recovery: https://arxiv.org/html/2504.10258v1
 - Docling technical report: https://arxiv.org/html/2408.09869v5
 - LayoutParser paper: https://arxiv.org/abs/2103.15348

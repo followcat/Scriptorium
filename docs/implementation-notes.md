@@ -77,9 +77,31 @@ Research references used for this pass:
 
 - PyMuPDF documents that PDF text may not appear in natural reading order and exposes sorting helpers: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
 - pdfminer.six exposes `LAParams.boxes_flow` for horizontal-vs-vertical text box ordering: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
+- Reading-order evaluation can use pairwise ordering measures such as Kendall tau: https://aclanthology.org/J06-4002.pdf
+- ReadingBank is a reading-order benchmark built for document images: https://aclanthology.org/2021.emnlp-main.389/
 - XY-Cut / XY-Cut++ is a common document reading-order recovery family: https://arxiv.org/html/2504.10258v1
 - Docling targets detailed PDF layout and reading-order reconstruction: https://arxiv.org/html/2408.09869v5
 - LayoutParser provides model-oriented document layout structures and tooling: https://arxiv.org/abs/2103.15348
+
+## Semantic-Order Benchmark
+
+The built-in benchmark fixtures now write a sidecar file next to each generated PDF:
+
+```text
+example.semantic-order.json
+```
+
+The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
+
+Metrics:
+
+- `semantic_order_pair_accuracy`: pairwise order correctness across expected text nodes; this is Kendall-tau-like and catches left/right column swaps.
+- `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
+- `semantic_exact_page_match_rate`: page-level exact sequence match rate.
+- `semantic_missing_text_count`: expected text nodes not found in extraction.
+- `semantic_extra_text_count`: extracted text nodes not present in the ground truth.
+
+For external PDFs without a sidecar, semantic metrics are reported as unavailable while visual metrics still run normally.
 
 ## Useful References
 
@@ -114,5 +136,7 @@ Metrics:
 - `annotation_count`: elements with annotation metadata.
 - `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
+- `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
+- `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
