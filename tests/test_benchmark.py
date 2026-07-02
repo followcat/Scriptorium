@@ -1,0 +1,23 @@
+from pathlib import Path
+
+from scriptorium.benchmark import run_benchmark
+from scriptorium.benchmark_fixtures import create_benchmark_fixtures
+
+
+def test_benchmark_fixtures_create_multiple_pdfs(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
+    assert len(pdfs) == 4
+    assert all(path.exists() for path in pdfs)
+
+
+def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:2]
+    report = run_benchmark(pdfs, tmp_path / "benchmark", dpi=96)
+
+    assert report["case_count"] == 2
+    assert "mean_visual_similarity" in report["summary"]
+    assert report["summary"]["total_pages"] >= 2
+    assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
+    assert all(case["element_count"] > 0 for case in report["cases"])
+    assert (tmp_path / "benchmark" / "benchmark_report.json").exists()
+    assert (tmp_path / "benchmark" / "benchmark_summary.csv").exists()

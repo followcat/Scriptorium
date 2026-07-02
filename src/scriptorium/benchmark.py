@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import csv
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+from .annotations import annotate_document
+from .benchmark_fixtures import create_benchmark_fixtures
+from .html_export import export_html
+from .models import DocumentIR
+from .native_pdf import extract_native_pdf_to_ir
+from .pdf_export import print_html_to_pdf
+from .pdf_render import render_pdf
+from .quality import compare_pdf_renderings
+
+
+def run_benchmark(
+    pdfs: list[str | Path] | None,
+    out_dir: str | Path,
+    dpi: int = 192,
+) -> dict[str, Any]:
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
+
+    cases: list[dict[str, Any]] = []
+    for pdf_path in input_pdfs:
+        cases.append(_run_case(pdf_path, target / "cases" / pdf_path.stem, dpi=dpi))
+
+    summary = _summarize(cases)
+    report = {
+        "version": 1,
+        "dpi": dpi,
+        "case_count": len(cases),
+        "summary": summary,
+        "cases": cases,
+    }
+    (target / "benchmark_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _write_csv(target / "benchmark_summary.csv", cases)
+    return report
+
+
+def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    timings: dict[str, float] = {}
+
+    start = time.perf_counter()
+    rendered = render_pdf(pdf_path, out_dir / "pages", dpi=dpi)
+    timings["render_seconds"] = _elapsed(start)
+
+    start = time.perf_counter()
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    ir_path = out_dir / "document.ir.json"
+    document.save(ir_path)
+    timings["extract_annotate_seconds"] = _elapsed(start)
+
+    start = time.perf_counter()
+    html_path = export_html(document, out_dir / "html", display_mode="structured")
+    timings["export_html_seconds"] = _elapsed(start)
+
+    start = time.perf_counter()
+    exported_pdf = print_html_to_pdf(html_path, out_dir / "structured-export.pdf")
+    timings["print_pdf_seconds"] = _elapsed(start)
+
+    start = time.perf_counter()
+    quality = compare_pdf_renderings(pdf_path, exported_pdf, out_dir / "quality", dpi=dpi)
+    timings["compare_seconds"] = _elapsed(start)
+
+    stats = _document_stats(document)
+    max_diff_ratio = float(quality["max_diff_ratio"])
+    similarity = round(max(0.0, 1.0 - max_diff_ratio), 8)
+    total_seconds = round(sum(timings.values()), 6)
+    return {
+        "name": pdf_path.stem,
+        "source_pdf": str(pdf_path),
+        "ir": str(ir_path),
+        "html": str(html_path),
+        "exported_pdf": str(exported_pdf),
+        "quality_report": str(out_dir / "quality" / "pdf_quality_report.json"),
+        "page_count": stats["page_count"],
+        "element_count": stats["element_count"],
+        "editable_element_count": stats["editable_element_count"],
+        "shape_count": stats["shape_count"],
+        "style_count": stats["style_count"],
+        "annotation_count": stats["annotation_count"],
+        "max_diff_ratio": max_diff_ratio,
+        "visual_similarity": similarity,
+        "total_seconds": total_seconds,
+        "timings": timings,
+    }
+
+
+def _document_stats(document: DocumentIR) -> dict[str, int]:
+    elements = [element for page in document.pages for element in page.elements]
+    return {
+        "page_count": document.page_count,
+        "element_count": len(elements),
+        "editable_element_count": sum(1 for element in elements if element.source_text.strip()),
+        "shape_count": sum(1 for element in elements if element.type == "shape"),
+        "style_count": len(document.metadata.get("styles", {})),
+        "annotation_count": sum(1 for element in elements if "annotation" in element.metadata),
+    }
+
+
+def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    if not cases:
+        return {}
+    similarities = [float(case["visual_similarity"]) for case in cases]
+    diff_ratios = [float(case["max_diff_ratio"]) for case in cases]
+    durations = [float(case["total_seconds"]) for case in cases]
+    return {
+        "mean_visual_similarity": round(sum(similarities) / len(similarities), 8),
+        "min_visual_similarity": round(min(similarities), 8),
+        "max_diff_ratio": round(max(diff_ratios), 8),
+        "mean_total_seconds": round(sum(durations) / len(durations), 6),
+        "total_pages": sum(int(case["page_count"]) for case in cases),
+        "total_elements": sum(int(case["element_count"]) for case in cases),
+        "total_editable_elements": sum(int(case["editable_element_count"]) for case in cases),
+    }
+
+
+def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
+    fieldnames = [
+        "name",
+        "page_count",
+        "element_count",
+        "editable_element_count",
+        "shape_count",
+        "style_count",
+        "annotation_count",
+        "visual_similarity",
+        "max_diff_ratio",
+        "total_seconds",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for case in cases:
+            writer.writerow({field: case[field] for field in fieldnames})
+
+
+def _elapsed(start: float) -> float:
+    return round(time.perf_counter() - start, 6)
