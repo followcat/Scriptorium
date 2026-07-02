@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-11%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-13%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -51,6 +51,8 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
   data-scriptorium-source="native-pdf"
   data-scriptorium-style-id="style-004"
   data-scriptorium-layout-group="table-001"
+  data-scriptorium-layout-kind="table"
+  data-scriptorium-layout-confidence="0.86"
   data-scriptorium-edit-target="edited_text"
   data-bbox-pdf="76.99,212.49,117.83,224.22"
   contenteditable="true"
@@ -70,8 +72,8 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 | Sample | Pages | Elements | Editable Nodes | Shape Nodes | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
 | Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9716478 | 0.0283522 | 0.0145089 | yes / yes |
-| arXiv paper: Attention Is All You Need | 15 | 3594 | 1048 | 2546 | 0.88800526 | 0.11199474 | 0.07339883 | yes / yes |
-| Built-in benchmark fixtures, mean | 5 pages total | 60 | 42 | 18 | 0.98908212 | 0.01198732 | 0.01087759 | yes / yes |
+| arXiv paper: Attention Is All You Need | 15 | 3758 | 1048 | 2710 | 0.88815256 | 0.11184744 | 0.0732185 | yes / yes |
+| Built-in benchmark fixtures, mean | 5 pages total | 61 | 42 | 19 | 0.98908544 | 0.01198732 | 0.01087427 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
@@ -267,9 +269,10 @@ Core files:
 - element bbox in PDF points and pixels
 - `source_text`, `edited_text`, `translated_text`
 - source kind: `native-pdf`, `native-drawing`, OCR fallback, etc.
-- role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, etc.
+- role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
-- layout group: for example `table-001`
+- layout group: for example `table-001`, `figure-001`, `separator-001`
+- layout region metadata: region kind, bbox, confidence, and contributing shape ids
 - revision history for edits and translation
 
 The original `source_text` is never overwritten.
@@ -293,9 +296,9 @@ pytest
 Current local test baseline:
 
 ```text
-9 passed
+13 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, but it is not yet a polished visual editor. The next useful work is improving layout grouping, table semantics, OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, and v2 layout grouping for table/figure/separator regions. The next useful work is improving span-level text fidelity, mixed inline styles, OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.

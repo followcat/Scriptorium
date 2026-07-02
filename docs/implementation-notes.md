@@ -20,20 +20,24 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
 
 1. Extraction writes raw evidence into `DocumentIR`:
    - native PDF text spans become text elements with font size, font family, weight, color, bbox, and source metadata
-   - native PDF drawings become shape elements with fill/stroke/border metadata
+   - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`
    - OCR fallback elements keep bbox, type, confidence, crop, and style hints
 2. `annotate_document()` assigns recognized marks:
-   - `role`: `heading`, `paragraph`, `table-cell-text`, `table-shape`, etc.
+   - `role`: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
    - `source_kind`: `native-pdf`, `native-drawing`, `json-fallback`, etc.
    - `style_id`: stable style bucket recorded under `DocumentIR.metadata.styles`
-   - `layout_group_id`: shared region id such as `table-001`
+   - `layout_group_id`: shared region id such as `table-001`, `figure-001`, or `separator-001`
+   - `layout_group_kind`: inferred region kind for downstream editing and translation tools
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
-3. The HTML exporter exposes those marks as DOM attributes:
+3. `DocumentIR.metadata.layout_regions` records each inferred region with its page index, bbox, kind, confidence, and contributing shape ids.
+4. The HTML exporter exposes those marks as DOM attributes:
    - `data-scriptorium-role`
    - `data-scriptorium-source`
    - `data-scriptorium-style-id`
    - `data-scriptorium-layout-group`
+   - `data-scriptorium-layout-kind`
+   - `data-scriptorium-layout-confidence`
    - `data-scriptorium-editable`
    - `data-scriptorium-edit-target`
    - `data-bbox-pdf`
