@@ -15,6 +15,7 @@ from .native_pdf import extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
+from .semantic_quality import compare_semantic_reading_order
 
 
 def run_benchmark(
@@ -69,6 +70,10 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
     quality = compare_pdf_renderings(pdf_path, exported_pdf, out_dir / "quality", dpi=dpi)
     timings["compare_seconds"] = _elapsed(start)
 
+    start = time.perf_counter()
+    semantic_quality = compare_semantic_reading_order(document, pdf_path, out_dir / "semantic")
+    timings["semantic_compare_seconds"] = _elapsed(start)
+
     stats = _document_stats(document)
     max_diff_ratio = float(quality["max_diff_ratio"])
     mean_diff_ratio = float(quality["mean_diff_ratio"])
@@ -82,6 +87,7 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
         "quality_report": str(out_dir / "quality" / "pdf_quality_report.json"),
+        "semantic_report": str(out_dir / "semantic" / "semantic_quality_report.json"),
         "page_count": stats["page_count"],
         "element_count": stats["element_count"],
         "editable_element_count": stats["editable_element_count"],
@@ -99,6 +105,7 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "mismatched_page_count": int(quality["mismatched_page_count"]),
         "unmatched_page_count": int(quality["unmatched_page_count"]),
         "visual_similarity": similarity,
+        **_semantic_case_metrics(semantic_quality),
         "total_seconds": total_seconds,
         "timings": timings,
     }
@@ -134,6 +141,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     mean_diff_ratios = [float(case["mean_diff_ratio"]) for case in cases]
     durations = [float(case["total_seconds"]) for case in cases]
     worst_case = max(cases, key=lambda case: float(case["max_diff_ratio"]))
+    semantic_cases = [case for case in cases if bool(case["semantic_ground_truth_available"])]
     return {
         "mean_visual_similarity": round(sum(similarities) / len(similarities), 8),
         "min_visual_similarity": round(min(similarities), 8),
@@ -161,6 +169,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_editable_elements": sum(int(case["editable_element_count"]) for case in cases),
         "total_multi_column_elements": sum(int(case["multi_column_element_count"]) for case in cases),
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
+        **_summarize_semantic_cases(semantic_cases),
     }
 
 
@@ -176,6 +185,15 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "multi_column_element_count",
         "column_flow_element_count",
         "visual_similarity",
+        "semantic_ground_truth_available",
+        "semantic_order_pair_accuracy",
+        "semantic_sequence_similarity",
+        "semantic_exact_page_match_rate",
+        "semantic_sequence_edit_distance",
+        "semantic_pairwise_correct_count",
+        "semantic_pairwise_total_count",
+        "semantic_missing_text_count",
+        "semantic_extra_text_count",
         "max_diff_ratio",
         "mean_diff_ratio",
         "p95_diff_ratio",
@@ -195,6 +213,57 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
 
 def _elapsed(start: float) -> float:
     return round(time.perf_counter() - start, 6)
+
+
+def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    available = bool(report.get("ground_truth_available"))
+    return {
+        "semantic_ground_truth_available": available,
+        "semantic_order_pair_accuracy": report.get("semantic_order_pair_accuracy") if available else None,
+        "semantic_sequence_similarity": report.get("semantic_sequence_similarity") if available else None,
+        "semantic_exact_page_match_rate": report.get("semantic_exact_page_match_rate") if available else None,
+        "semantic_expected_text_count": report.get("semantic_expected_text_count") if available else 0,
+        "semantic_actual_text_count": report.get("semantic_actual_text_count") if available else 0,
+        "semantic_sequence_edit_distance": report.get("semantic_sequence_edit_distance") if available else 0,
+        "semantic_pairwise_correct_count": report.get("semantic_pairwise_correct_count") if available else 0,
+        "semantic_pairwise_total_count": report.get("semantic_pairwise_total_count") if available else 0,
+        "semantic_missing_text_count": report.get("semantic_missing_text_count") if available else 0,
+        "semantic_extra_text_count": report.get("semantic_extra_text_count") if available else 0,
+    }
+
+
+def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    if not cases:
+        return {
+            "semantic_case_count": 0,
+            "mean_semantic_order_pair_accuracy": None,
+            "mean_semantic_sequence_similarity": None,
+            "mean_semantic_exact_page_match_rate": None,
+            "total_semantic_expected_text_count": 0,
+            "total_semantic_missing_text_count": 0,
+            "total_semantic_extra_text_count": 0,
+        }
+
+    expected_count = sum(int(case["semantic_expected_text_count"]) for case in cases)
+    actual_count = sum(int(case["semantic_actual_text_count"]) for case in cases)
+    edit_distance = sum(int(case["semantic_sequence_edit_distance"]) for case in cases)
+    pairwise_correct = sum(int(case["semantic_pairwise_correct_count"]) for case in cases)
+    pairwise_total = sum(int(case["semantic_pairwise_total_count"]) for case in cases)
+    return {
+        "semantic_case_count": len(cases),
+        "mean_semantic_order_pair_accuracy": round(pairwise_correct / pairwise_total if pairwise_total else 1.0, 8),
+        "mean_semantic_sequence_similarity": round(
+            1.0 - edit_distance / max(expected_count, actual_count, 1),
+            8,
+        ),
+        "mean_semantic_exact_page_match_rate": round(
+            sum(float(case["semantic_exact_page_match_rate"]) for case in cases) / len(cases),
+            8,
+        ),
+        "total_semantic_expected_text_count": expected_count,
+        "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
+        "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
+    }
 
 
 def _percentile(values: list[float], percentile: float) -> float:

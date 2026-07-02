@@ -5,6 +5,7 @@ from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.html_export import export_html
 from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
+from scriptorium.semantic_quality import compare_semantic_reading_order
 
 
 def test_two_column_fixture_uses_column_semantic_order(tmp_path: Path) -> None:
@@ -56,3 +57,21 @@ def test_table_fixture_keeps_row_major_order(tmp_path: Path) -> None:
     assert orders == sorted(orders)
     assert all(text_by_value[text].metadata["column_count"] == 1 for text in row_major)
     assert all(text_by_value[text].metadata["reading_order_strategy"] == "visual-yx" for text in row_major)
+
+
+def test_semantic_quality_penalizes_column_order_regression(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
+    columns_pdf = next(path for path in pdfs if path.name == "two_column_notes.pdf")
+    rendered = render_pdf(columns_pdf, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+
+    baseline = compare_semantic_reading_order(document, columns_pdf, tmp_path / "semantic-baseline")
+    assert baseline["semantic_order_pair_accuracy"] == 1
+
+    text_by_value = {element.source_text: element for element in document.pages[0].elements if element.source_text}
+    text_by_value["Right column paragraph one."].reading_order = 2
+    text_by_value["Left column paragraph one."].reading_order = 6
+
+    regressed = compare_semantic_reading_order(document, columns_pdf, tmp_path / "semantic-regressed")
+    assert regressed["semantic_order_pair_accuracy"] < 1
+    assert regressed["semantic_sequence_similarity"] < 1

@@ -49,6 +49,8 @@ def benchmark_command(
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
+    typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
+    typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
 
 
 @app.command("capture-pdf")
