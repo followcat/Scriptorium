@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,8 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
 
     stats = _document_stats(document)
     max_diff_ratio = float(quality["max_diff_ratio"])
+    mean_diff_ratio = float(quality["mean_diff_ratio"])
+    p95_diff_ratio = float(quality["p95_diff_ratio"])
     similarity = round(max(0.0, 1.0 - max_diff_ratio), 8)
     total_seconds = round(sum(timings.values()), 6)
     return {
@@ -86,6 +89,13 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "style_count": stats["style_count"],
         "annotation_count": stats["annotation_count"],
         "max_diff_ratio": max_diff_ratio,
+        "mean_diff_ratio": mean_diff_ratio,
+        "p95_diff_ratio": p95_diff_ratio,
+        "worst_page": quality["worst_page"],
+        "dimension_match": bool(quality["dimension_match"]),
+        "page_count_match": bool(quality["page_count_match"]),
+        "mismatched_page_count": int(quality["mismatched_page_count"]),
+        "unmatched_page_count": int(quality["unmatched_page_count"]),
         "visual_similarity": similarity,
         "total_seconds": total_seconds,
         "timings": timings,
@@ -109,11 +119,30 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         return {}
     similarities = [float(case["visual_similarity"]) for case in cases]
     diff_ratios = [float(case["max_diff_ratio"]) for case in cases]
+    mean_diff_ratios = [float(case["mean_diff_ratio"]) for case in cases]
     durations = [float(case["total_seconds"]) for case in cases]
+    worst_case = max(cases, key=lambda case: float(case["max_diff_ratio"]))
     return {
         "mean_visual_similarity": round(sum(similarities) / len(similarities), 8),
         "min_visual_similarity": round(min(similarities), 8),
         "max_diff_ratio": round(max(diff_ratios), 8),
+        "mean_diff_ratio": round(sum(mean_diff_ratios) / len(mean_diff_ratios), 8),
+        "p95_diff_ratio": round(_percentile(diff_ratios, 95.0), 8),
+        "worst_case": worst_case["name"],
+        "worst_page": worst_case["worst_page"],
+        "dimension_match_rate": round(
+            sum(1 for case in cases if bool(case["dimension_match"])) / len(cases),
+            8,
+        ),
+        "page_count_match_rate": round(
+            sum(1 for case in cases if bool(case["page_count_match"])) / len(cases),
+            8,
+        ),
+        "mismatched_case_count": sum(
+            1
+            for case in cases
+            if not bool(case["dimension_match"]) or not bool(case["page_count_match"])
+        ),
         "mean_total_seconds": round(sum(durations) / len(durations), 6),
         "total_pages": sum(int(case["page_count"]) for case in cases),
         "total_elements": sum(int(case["element_count"]) for case in cases),
@@ -132,6 +161,13 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "annotation_count",
         "visual_similarity",
         "max_diff_ratio",
+        "mean_diff_ratio",
+        "p95_diff_ratio",
+        "worst_page",
+        "dimension_match",
+        "page_count_match",
+        "mismatched_page_count",
+        "unmatched_page_count",
         "total_seconds",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -143,3 +179,18 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
 
 def _elapsed(start: float) -> float:
     return round(time.perf_counter() - start, 6)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * (percentile / 100)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[int(position)]
+    fraction = position - lower
+    return ordered[lower] * (1 - fraction) + ordered[upper] * fraction

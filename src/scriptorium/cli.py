@@ -47,6 +47,8 @@ def benchmark_command(
     typer.echo(f"Cases: {report['case_count']}")
     typer.echo(f"Mean visual similarity: {report['summary'].get('mean_visual_similarity')}")
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
+    typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
+    typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
 
 
 @app.command("capture-pdf")
@@ -141,6 +143,8 @@ def quality_check(
     report = compare_html_to_rendered_pdf(document, html, out_dir, chrome_executable=chrome)
     typer.echo(f"Quality report: {out_dir / 'quality_report.json'}")
     typer.echo(f"Max diff ratio: {report['max_diff_ratio']}")
+    typer.echo(f"Mean diff ratio: {report['mean_diff_ratio']}")
+    typer.echo(f"Dimension match: {report['dimension_match']}")
 
 
 @app.command("print-pdf")
@@ -163,6 +167,9 @@ def compare_pdf(
     report = compare_pdf_renderings(expected_pdf, actual_pdf, out_dir, dpi=dpi)
     typer.echo(f"PDF quality report: {out_dir / 'pdf_quality_report.json'}")
     typer.echo(f"Max diff ratio: {report['max_diff_ratio']}")
+    typer.echo(f"Mean diff ratio: {report['mean_diff_ratio']}")
+    typer.echo(f"Page count match: {report['page_count_match']}")
+    typer.echo(f"Dimension match: {report['dimension_match']}")
 
 
 @app.command("set-text")
