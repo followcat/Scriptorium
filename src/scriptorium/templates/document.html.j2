@@ -183,6 +183,8 @@
         data-scriptorium-source="{{ annotation_attr(element, 'source_kind') }}"
         data-scriptorium-style-id="{{ annotation_attr(element, 'style_id') }}"
         data-scriptorium-layout-group="{{ annotation_attr(element, 'layout_group_id') }}"
+        data-scriptorium-layout-kind="{{ annotation_attr(element, 'layout_group_kind') }}"
+        data-scriptorium-layout-confidence="{{ annotation_attr(element, 'layout_group_confidence') }}"
         data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
         data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
         data-bbox-pdf="{{ element.bbox_pdf.as_list()|join(',') }}"

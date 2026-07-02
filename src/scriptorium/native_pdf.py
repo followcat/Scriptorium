@@ -84,18 +84,28 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
 def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, start_order: int) -> list[ElementIR]:
     shapes: list[ElementIR] = []
     for offset, drawing in enumerate(page.get_drawings(), start=0):
-        rect = drawing.get("rect")
-        if rect is None:
+        width_pt = float(drawing.get("width") or 0)
+        shape_geometry = _drawing_geometry(drawing)
+        bbox_pdf = _drawing_bbox(drawing, rendered_page, width_pt)
+        if bbox_pdf is None:
             continue
-        bbox_pdf = clamp_bbox(BBox.from_any([rect.x0, rect.y0, rect.x1, rect.y1]), rendered_page.width_pt, rendered_page.height_pt)
         if bbox_pdf.width <= 0 or bbox_pdf.height <= 0:
             continue
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
-        width_pt = float(drawing.get("width") or 0)
         fill = _rgb_to_css(drawing.get("fill"))
         stroke = _rgb_to_css(drawing.get("color"))
         if not fill and not stroke:
             continue
+        if shape_geometry in {"horizontal-line", "vertical-line"}:
+            fill_color = stroke or fill or "transparent"
+            stroke_color = "transparent"
+            border_width_pt = 0
+            border_width_px = 0
+        else:
+            fill_color = fill or "transparent"
+            stroke_color = stroke or "transparent"
+            border_width_pt = round(width_pt, 3) if width_pt else 0
+            border_width_px = round(width_pt * rendered_page.scale_x, 3) if width_pt else 0
         shapes.append(
             ElementIR(
                 id=f"p{rendered_page.page_index + 1:04d}-s{offset + 1:04d}",
@@ -107,10 +117,10 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
                 confidence=1.0,
                 reading_order=start_order + offset,
                 style_hint={
-                    "fill_color": fill or "transparent",
-                    "stroke_color": stroke or "transparent",
-                    "border_width_pt": round(width_pt, 3) if width_pt else 0,
-                    "border_width_px": round(width_pt * rendered_page.scale_x, 3) if width_pt else 0,
+                    "fill_color": fill_color,
+                    "stroke_color": stroke_color,
+                    "border_width_pt": border_width_pt,
+                    "border_width_px": border_width_px,
                     "line_height": 1,
                     "font_size_px": 1,
                     "font_family": "Arial, sans-serif",
@@ -120,10 +130,76 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
                     "source": "native-drawing",
                     "drawing_type": drawing.get("type"),
                     "seqno": drawing.get("seqno"),
+                    "shape_geometry": shape_geometry,
+                    "drawing_item_count": len(drawing.get("items") or []),
                 },
             )
         )
     return shapes
+
+
+def _drawing_bbox(drawing: dict[str, Any], rendered_page: RenderedPage, width_pt: float) -> BBox | None:
+    rect = drawing.get("rect")
+    if rect is None:
+        rect = _rect_from_drawing_items(drawing.get("items") or [])
+    if rect is None:
+        return None
+
+    x0, y0, x1, y1 = float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1)
+    stroke_width = max(width_pt, 0.5)
+    if x1 == x0:
+        x0 -= stroke_width / 2
+        x1 += stroke_width / 2
+    if y1 == y0:
+        y0 -= stroke_width / 2
+        y1 += stroke_width / 2
+    return clamp_bbox(BBox.from_any([x0, y0, x1, y1]), rendered_page.width_pt, rendered_page.height_pt)
+
+
+def _rect_from_drawing_items(items: list[Any]) -> fitz.Rect | None:
+    points: list[fitz.Point] = []
+    for item in items:
+        operator = item[0] if item else None
+        if operator == "l" and len(item) >= 3:
+            points.extend([item[1], item[2]])
+        elif operator == "re" and len(item) >= 2:
+            rect = item[1]
+            points.extend([fitz.Point(rect.x0, rect.y0), fitz.Point(rect.x1, rect.y1)])
+        elif operator in {"c", "qu"}:
+            points.extend(point for point in item[1:] if isinstance(point, fitz.Point))
+    if not points:
+        return None
+    x0 = min(point.x for point in points)
+    y0 = min(point.y for point in points)
+    x1 = max(point.x for point in points)
+    y1 = max(point.y for point in points)
+    return fitz.Rect(x0, y0, x1, y1)
+
+
+def _drawing_geometry(drawing: dict[str, Any]) -> str:
+    items = drawing.get("items") or []
+    if len(items) == 1:
+        item = items[0]
+        operator = item[0] if item else None
+        if operator == "l" and len(item) >= 3:
+            start, end = item[1], item[2]
+            if abs(start.y - end.y) <= 0.01:
+                return "horizontal-line"
+            if abs(start.x - end.x) <= 0.01:
+                return "vertical-line"
+            return "line"
+        if operator == "re":
+            return "rectangle"
+
+    rect = drawing.get("rect")
+    if rect is not None:
+        width = abs(float(rect.x1) - float(rect.x0))
+        height = abs(float(rect.y1) - float(rect.y0))
+        if height <= 0.01 and width > 0:
+            return "horizontal-line"
+        if width <= 0.01 and height > 0:
+            return "vertical-line"
+    return "path"
 
 
 def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]:

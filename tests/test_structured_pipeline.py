@@ -19,7 +19,7 @@ def test_native_pdf_extraction_produces_structured_elements(tmp_path: Path) -> N
     assert any("OCR structure" in text for text in texts)
     assert all(element.metadata["source"] == "native-pdf" for element in text_elements)
     assert any(element.type == "shape" for element in document.pages[0].elements)
-    assert document.metadata["annotation_version"] == "v1"
+    assert document.metadata["annotation_version"] == "v2"
     assert any(element.metadata["annotation"]["role"] == "heading" for element in text_elements)
     assert any(element.metadata["annotation"]["style_id"].startswith("style-") for element in text_elements)
 
@@ -40,6 +40,8 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert 'data-scriptorium-style-id="style-' in html
     assert 'data-scriptorium-source="native-pdf"' in html
     assert 'data-scriptorium-source="native-drawing"' in html
+    assert 'data-scriptorium-layout-kind="table"' in html
+    assert 'data-scriptorium-layout-confidence="' in html
     assert 'data-scriptorium-edit-target="edited_text"' in html
     assert 'data-bbox-pdf="' in html
     assert "Scriptorium PDF" in html
