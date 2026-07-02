@@ -30,6 +30,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `text_run_count` and `mixed_inline_style`: whether the text element contains multiple native PDF style runs
    - `layout_group_id`: shared region id such as `table-001`, `figure-001`, or `separator-001`
    - `layout_group_kind`: inferred region kind for downstream editing and translation tools
+   - `semantic_order`, `visual_order`, `column_index`, `column_count`, `column_span`, and `flow_segment_index`
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
 3. `DocumentIR.metadata.layout_regions` records each inferred region with its page index, bbox, kind, confidence, and contributing shape ids.
@@ -43,6 +44,11 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-scriptorium-run-index`
    - `data-scriptorium-run-style-id`
    - `data-scriptorium-run-script`
+   - `data-scriptorium-semantic-order`
+   - `data-scriptorium-visual-order`
+   - `data-scriptorium-column-index`
+   - `data-scriptorium-column-count`
+   - `data-scriptorium-flow-segment`
    - `data-scriptorium-editable`
    - `data-scriptorium-edit-target`
    - `data-bbox-pdf`
@@ -51,6 +57,29 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
 In `structured` mode the exporter intentionally does not include the page background image. The result is made of editable text nodes plus structural shape nodes, all tied back to recognized evidence in the IR.
 
 Text runs are a source-fidelity layer, not the edit storage model. When `edited_text` or `translated_text` is present, the exporter renders the replacement text as a plain editable node so stale source spans do not distort new content.
+
+## Reading Order Layer
+
+PDF text is positioned drawing evidence, not guaranteed semantic text order. The current implementation keeps visual element IDs stable, then writes semantic ordering metadata:
+
+- `visual_order`: top-left visual order from bbox sorting.
+- `semantic_order`: reading order used by XML/DOM/export consumers.
+- `column-flow-v1`: a lightweight multi-column heuristic that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
+- `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
+
+The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
+
+- Recursive XY-Cut / XY-Cut++ for hierarchical page segmentation.
+- A pdfminer.six-style box-flow scorer for pages that need a continuous horizontal-vs-vertical ordering tradeoff.
+- Optional model/layout backends such as Docling, LayoutParser, PaddleOCR-VL, or PP-Structure outputs when available.
+
+Research references used for this pass:
+
+- PyMuPDF documents that PDF text may not appear in natural reading order and exposes sorting helpers: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
+- pdfminer.six exposes `LAParams.boxes_flow` for horizontal-vs-vertical text box ordering: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
+- XY-Cut / XY-Cut++ is a common document reading-order recovery family: https://arxiv.org/html/2504.10258v1
+- Docling targets detailed PDF layout and reading-order reconstruction: https://arxiv.org/html/2408.09869v5
+- LayoutParser provides model-oriented document layout structures and tooling: https://arxiv.org/abs/2103.15348
 
 ## Useful References
 
@@ -83,5 +112,7 @@ Metrics:
 - `shape_count`: structural drawing nodes.
 - `style_count`: inferred style buckets.
 - `annotation_count`: elements with annotation metadata.
+- `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
+- `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
