@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "source_pdf": "attention-is-all-you-need.pdf",
+  "notes": "Partial human-labeled ordered-subsequence checks for representative title, body, figure, reference, and appendix pages.",
+  "pages": [
+    {
+      "page_index": 0,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Attention Is All You Need",
+        "Ashish Vaswani∗",
+        "Noam Shazeer∗",
+        "Niki Parmar∗",
+        "Jakob Uszkoreit∗",
+        "Abstract",
+        "The dominant sequence transduction models are based on complex recurrent or",
+        "convolutional neural networks that include an encoder and a decoder. The best",
+        "performing models also connect the encoder and decoder through an attention",
+        "mechanism. We propose a new simple network architecture, the Transformer,"
+      ]
+    },
+    {
+      "page_index": 1,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "1",
+        "Introduction",
+        "Recurrent neural networks, long short-term memory [13] and gated recurrent [7] neural networks",
+        "Attention mechanisms have become an integral part of compelling sequence modeling and transduc-",
+        "In this work we propose the Transformer, a model architecture eschewing recurrence and instead",
+        "2",
+        "Background",
+        "The goal of reducing sequential computation also forms the foundation of the Extended Neural GPU",
+        "Self-attention, sometimes called intra-attention is an attention mechanism relating different positions",
+        "3",
+        "Model Architecture"
+      ]
+    },
+    {
+      "page_index": 2,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Figure 1: The Transformer - model architecture.",
+        "The Transformer follows this overall architecture using stacked self-attention and point-wise, fully",
+        "3.1",
+        "Encoder and Decoder Stacks",
+        "Encoder:",
+        "Decoder:",
+        "3.2",
+        "Attention"
+      ]
+    },
+    {
+      "page_index": 11,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "[25] Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. Building a large annotated",
+        "[30] Ofir Press and Lior Wolf. Using the output embedding to improve language models. arXiv",
+        "[35] Ilya Sutskever, Oriol Vinyals, and Quoc VV Le. Sequence to sequence learning with neural",
+        "[40] Muhua Zhu, Yue Zhang, Wenliang Chen, Min Zhang, and Jingbo Zhu. Fast and accurate"
+      ]
+    },
+    {
+      "page_index": 12,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Attention Visualizations",
+        "Figure 3: An example of the attention mechanism following long-distance dependencies in the",
+        "encoder self-attention in layer 5 of 6. Many of the attention heads attend to a distant dependency of",
+        "the verb ‘making’, completing the phrase ‘making...more difficult’. Attentions here shown only for",
+        "the word ‘making’. Different colors represent different heads. Best viewed in color."
+      ]
+    }
+  ]
+}

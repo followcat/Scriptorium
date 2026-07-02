@@ -12,6 +12,17 @@ def semantic_ground_truth_path(pdf_path: str | Path) -> Path:
     return Path(pdf_path).with_suffix(".semantic-order.json")
 
 
+def semantic_ground_truth_candidates(pdf_path: str | Path) -> list[Path]:
+    adjacent = semantic_ground_truth_path(pdf_path)
+    cwd_sidecar = Path.cwd() / "benchmarks" / "semantic-ground-truth" / adjacent.name
+    source_sidecar = Path(__file__).resolve().parents[2] / "benchmarks" / "semantic-ground-truth" / adjacent.name
+    candidates: list[Path] = []
+    for path in (adjacent, cwd_sidecar, source_sidecar):
+        if path not in candidates:
+            candidates.append(path)
+    return candidates
+
+
 def compare_semantic_reading_order(
     document: DocumentIR,
     source_pdf: str | Path,
@@ -19,12 +30,14 @@ def compare_semantic_reading_order(
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
-    ground_truth_path = semantic_ground_truth_path(source_pdf)
+    candidates = semantic_ground_truth_candidates(source_pdf)
+    ground_truth_path = next((path for path in candidates if path.exists()), candidates[0])
 
     if not ground_truth_path.exists():
         report = {
             "ground_truth_available": False,
             "ground_truth": str(ground_truth_path),
+            "ground_truth_candidates": [str(path) for path in candidates],
             "pages": [],
         }
         (target / "semantic_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -49,6 +62,7 @@ def compare_semantic_reading_order(
 
 def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str, Any]:
     page_index = int(page_truth.get("page_index", 0))
+    match_mode = str(page_truth.get("match_mode", "full-sequence"))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
     page = document.pages[page_index]
     actual = [
@@ -60,21 +74,29 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
     matched_positions = _matched_positions(expected, actual)
     matched_count = sum(1 for position in matched_positions if position is not None)
     missing_texts = [text for text, position in zip(expected, matched_positions) if position is None]
-    extra_texts = _extra_texts(expected, actual)
+    extra_texts = [] if match_mode == "ordered-subsequence" else _extra_texts(expected, actual)
 
-    edit_distance = _levenshtein_distance(expected, actual)
-    denominator = max(len(expected), len(actual), 1)
     correct_pairs, total_pairs = _pairwise_order_counts(matched_positions)
+    if match_mode == "ordered-subsequence":
+        edit_distance = len(expected) - matched_count
+        denominator = max(len(expected), 1)
+        exact_match = matched_count == len(expected) and correct_pairs == total_pairs
+    else:
+        edit_distance = _levenshtein_distance(expected, actual)
+        denominator = max(len(expected), len(actual), 1)
+        exact_match = expected == actual
     return {
         "page_index": page_index,
+        "match_mode": match_mode,
         "expected_text_count": len(expected),
         "actual_text_count": len(actual),
         "matched_text_count": matched_count,
+        "ignored_text_count": max(0, len(actual) - matched_count) if match_mode == "ordered-subsequence" else 0,
         "missing_text_count": len(missing_texts),
         "extra_text_count": len(extra_texts),
         "missing_texts": missing_texts,
         "extra_texts": extra_texts,
-        "exact_match": expected == actual,
+        "exact_match": exact_match,
         "sequence_edit_distance": edit_distance,
         "sequence_similarity": _round_ratio(1.0 - edit_distance / denominator),
         "pairwise_correct_count": correct_pairs,
@@ -157,6 +179,7 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_expected_text_count": expected_count,
         "semantic_actual_text_count": actual_count,
         "semantic_matched_text_count": matched_count,
+        "semantic_ignored_text_count": sum(int(page["ignored_text_count"]) for page in pages),
         "semantic_missing_text_count": sum(int(page["missing_text_count"]) for page in pages),
         "semantic_extra_text_count": sum(int(page["extra_text_count"]) for page in pages),
         "semantic_sequence_edit_distance": edit_distance,

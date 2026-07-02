@@ -212,6 +212,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_sequence_edit_distance",
         "semantic_pairwise_correct_count",
         "semantic_pairwise_total_count",
+        "semantic_ignored_text_count",
         "semantic_missing_text_count",
         "semantic_extra_text_count",
         "max_diff_ratio",
@@ -254,6 +255,7 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_sequence_edit_distance": report.get("semantic_sequence_edit_distance") if available else 0,
         "semantic_pairwise_correct_count": report.get("semantic_pairwise_correct_count") if available else 0,
         "semantic_pairwise_total_count": report.get("semantic_pairwise_total_count") if available else 0,
+        "semantic_ignored_text_count": report.get("semantic_ignored_text_count") if available else 0,
         "semantic_missing_text_count": report.get("semantic_missing_text_count") if available else 0,
         "semantic_extra_text_count": report.get("semantic_extra_text_count") if available else 0,
     }
@@ -267,6 +269,7 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_semantic_sequence_similarity": None,
             "mean_semantic_exact_page_match_rate": None,
             "total_semantic_expected_text_count": 0,
+            "total_semantic_ignored_text_count": 0,
             "total_semantic_missing_text_count": 0,
             "total_semantic_extra_text_count": 0,
         }
@@ -288,6 +291,7 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             8,
         ),
         "total_semantic_expected_text_count": expected_count,
+        "total_semantic_ignored_text_count": sum(int(case["semantic_ignored_text_count"]) for case in cases),
         "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
         "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
     }
