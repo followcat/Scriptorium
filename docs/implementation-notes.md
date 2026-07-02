@@ -19,13 +19,15 @@ Current implementation status:
 The structured HTML export must not rely on a hand-authored stylesheet to make a demo look right. The pipeline now has an explicit annotation pass:
 
 1. Extraction writes raw evidence into `DocumentIR`:
-   - native PDF text spans become text elements with font size, font family, weight, color, bbox, and source metadata
+   - native PDF lines become editable text elements with font size, font family, weight, color, bbox, and source metadata
+   - native PDF spans are preserved under `element.metadata.text_runs` with run text, bbox, font, weight, style, color, script, and source coordinates
    - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`
    - OCR fallback elements keep bbox, type, confidence, crop, and style hints
 2. `annotate_document()` assigns recognized marks:
    - `role`: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
    - `source_kind`: `native-pdf`, `native-drawing`, `json-fallback`, etc.
    - `style_id`: stable style bucket recorded under `DocumentIR.metadata.styles`
+   - `text_run_count` and `mixed_inline_style`: whether the text element contains multiple native PDF style runs
    - `layout_group_id`: shared region id such as `table-001`, `figure-001`, or `separator-001`
    - `layout_group_kind`: inferred region kind for downstream editing and translation tools
    - `editable` and `edit_target`: whether the node maps to editable text
@@ -38,12 +40,17 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-scriptorium-layout-group`
    - `data-scriptorium-layout-kind`
    - `data-scriptorium-layout-confidence`
+   - `data-scriptorium-run-index`
+   - `data-scriptorium-run-style-id`
+   - `data-scriptorium-run-script`
    - `data-scriptorium-editable`
    - `data-scriptorium-edit-target`
    - `data-bbox-pdf`
    - `data-bbox-px`
 
 In `structured` mode the exporter intentionally does not include the page background image. The result is made of editable text nodes plus structural shape nodes, all tied back to recognized evidence in the IR.
+
+Text runs are a source-fidelity layer, not the edit storage model. When `edited_text` or `translated_text` is present, the exporter renders the replacement text as a plain editable node so stale source spans do not distort new content.
 
 ## Useful References
 

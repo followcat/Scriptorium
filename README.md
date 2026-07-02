@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-13%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-15%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -71,8 +71,8 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 
 | Sample | Pages | Elements | Editable Nodes | Shape Nodes | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9716478 | 0.0283522 | 0.0145089 | yes / yes |
-| arXiv paper: Attention Is All You Need | 15 | 3758 | 1048 | 2710 | 0.88815256 | 0.11184744 | 0.0732185 | yes / yes |
+| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9792518 | 0.0207482 | 0.01067874 | yes / yes |
+| arXiv paper: Attention Is All You Need | 15 | 3758 | 1048 | 2710 | 0.88813653 | 0.11186347 | 0.07348926 | yes / yes |
 | Built-in benchmark fixtures, mean | 5 pages total | 61 | 42 | 19 | 0.98908544 | 0.01198732 | 0.01087427 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
@@ -268,6 +268,7 @@ Core files:
 - page size in PDF points and rendered pixels
 - element bbox in PDF points and pixels
 - `source_text`, `edited_text`, `translated_text`
+- `text_runs` for native PDF inline spans: text, bbox, font, weight, style, color, script, and run style id
 - source kind: `native-pdf`, `native-drawing`, OCR fallback, etc.
 - role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
@@ -275,7 +276,7 @@ Core files:
 - layout region metadata: region kind, bbox, confidence, and contributing shape ids
 - revision history for edits and translation
 
-The original `source_text` is never overwritten.
+The original `source_text` is never overwritten. Inline runs are used when rendering source text; once an element has `edited_text` or `translated_text`, Scriptorium renders the replacement as plain editable text instead of forcing old source runs onto new content.
 
 ## OCR Strategy
 
@@ -296,9 +297,9 @@ pytest
 Current local test baseline:
 
 ```text
-13 passed
+15 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, and v2 layout grouping for table/figure/separator regions. The next useful work is improving span-level text fidelity, mixed inline styles, OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, and native PDF span-level inline style preservation. The next useful work is improving reading order for multi-column documents, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
