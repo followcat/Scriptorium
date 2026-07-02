@@ -6,6 +6,20 @@ from statistics import median
 from .models import BBox, DocumentIR, ElementIR, PageIR
 
 
+STYLE_KEYS = (
+    "font_family",
+    "font_size_px",
+    "font_size_pt",
+    "font_weight",
+    "font_style",
+    "text_color",
+    "fill_color",
+    "stroke_color",
+    "border_width_pt",
+    "vertical_align",
+)
+
+
 @dataclass(frozen=True)
 class LayoutRegion:
     id: str
@@ -58,6 +72,7 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
     for element in page.elements:
         source_kind = str(element.metadata.get("source", "unknown"))
         style_id = _style_id_for(element, style_registry)
+        _annotate_text_runs(element, style_registry)
         layout_region = _layout_region_for(element, layout_regions)
         layout_group_id = layout_region.id if layout_region else None
         layout_group_kind = layout_region.kind if layout_region else None
@@ -70,6 +85,8 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "layout_group_kind": layout_group_kind,
             "layout_group_bbox_pdf": layout_region.bbox.as_list() if layout_region else None,
             "layout_group_confidence": layout_region.confidence if layout_region else None,
+            "text_run_count": int(element.metadata.get("text_run_count") or 0),
+            "mixed_inline_style": bool(element.metadata.get("mixed_inline_style")),
             "editable": bool(element.source_text.strip()),
             "edit_target": "edited_text" if element.source_text.strip() else None,
             "bbox_pdf": element.bbox_pdf.as_list(),
@@ -94,17 +111,11 @@ def _median_font_size(elements: list[ElementIR]) -> float:
 
 
 def _style_id_for(element: ElementIR, style_registry: dict[str, dict[str, object]]) -> str:
-    keys = (
-        "font_family",
-        "font_size_px",
-        "font_weight",
-        "font_style",
-        "text_color",
-        "fill_color",
-        "stroke_color",
-        "border_width_pt",
-    )
-    style = {key: element.style_hint.get(key) for key in keys if key in element.style_hint}
+    return _style_id_for_hint(element.style_hint, style_registry)
+
+
+def _style_id_for_hint(style_hint: dict[str, object], style_registry: dict[str, dict[str, object]]) -> str:
+    style = {key: style_hint.get(key) for key in STYLE_KEYS if key in style_hint}
     signature = "|".join(f"{key}={style.get(key)}" for key in sorted(style))
     for style_id, existing in style_registry.items():
         if existing.get("signature") == signature:
@@ -112,6 +123,19 @@ def _style_id_for(element: ElementIR, style_registry: dict[str, dict[str, object
     style_id = f"style-{len(style_registry) + 1:03d}"
     style_registry[style_id] = {"signature": signature, **style}
     return style_id
+
+
+def _annotate_text_runs(element: ElementIR, style_registry: dict[str, dict[str, object]]) -> None:
+    runs = element.metadata.get("text_runs")
+    if not isinstance(runs, list):
+        return
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        style = run.get("style")
+        if not isinstance(style, dict):
+            continue
+        run["style_id"] = _style_id_for_hint(style, style_registry)
 
 
 def _infer_layout_regions(shape_elements: list[ElementIR]) -> list[LayoutRegion]:

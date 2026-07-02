@@ -75,6 +75,9 @@
       overflow: visible;
       white-space: pre;
     }
+    .text-run {
+      white-space: pre;
+    }
     body.mode-structured .element:focus {
       outline: 2px solid rgba(29, 97, 179, 0.82);
       outline-offset: 2px;
@@ -173,6 +176,7 @@
       {% set box = element.bbox_pdf if display_mode == 'structured' else element.bbox_px %}
       {% set border_width = element.style_hint.get('border_width_pt', 0) * layout_scale if display_mode == 'structured' else element.style_hint.get('border_width_px', 0) %}
       {% set is_text_node = element.source_text|length > 0 %}
+      {% set text_runs = element_text_runs(element, display_mode) %}
       <div
         id="{{ element.id }}"
         class="element editable-node"
@@ -209,7 +213,22 @@
           --stroke-color: {{ element.style_hint.get('stroke_color', 'transparent') }};
           --border-width: {{ border_width }}px;
         "
-      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{{ element_text(element, display_mode) }}</div>
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if text_runs %}{% for run in text_runs %}{% set run_style = run.style %}<span
+          class="text-run"
+          data-scriptorium-run-index="{{ run.index }}"
+          data-scriptorium-run-style-id="{{ run.style_id }}"
+          data-scriptorium-run-script="{{ run.script }}"
+          data-bbox-pdf="{{ run.bbox_pdf|join(',') }}"
+          data-bbox-px="{{ run.bbox_px|join(',') }}"
+          style="
+            font-family: {{ run_style.get('font_family', element.style_hint.get('font_family', 'serif')) }};
+            font-size: {{ run_style.get('font_size_px', element.style_hint.get('font_size_px', 12)) }}px;
+            font-weight: {{ run_style.get('font_weight', element.style_hint.get('font_weight', 400)) }};
+            font-style: {{ run_style.get('font_style', element.style_hint.get('font_style', 'normal')) }};
+            color: {{ run_style.get('text_color', element.style_hint.get('text_color', '#111')) }};
+            vertical-align: {{ run_style.get('vertical_align', 'baseline') }};
+          "
+        >{{ run.text }}</span>{% endfor %}{% else %}{{ element_text(element, display_mode) }}{% endif %}</div>
       {% endfor %}
     </section>
     {% endfor %}

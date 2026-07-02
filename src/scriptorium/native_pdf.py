@@ -48,7 +48,7 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            spans = [span for span in line.get("spans", []) if span.get("text", "").strip()]
+            spans = [span for span in line.get("spans", []) if span.get("text", "")]
             if not spans:
                 continue
             text = "".join(span.get("text", "") for span in spans).strip()
@@ -63,6 +63,7 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
         bbox_pdf = clamp_bbox(raw["bbox"], rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
         style = _style_from_spans(raw["spans"], bbox_pdf)
+        text_runs = _text_runs_from_spans(raw["spans"], rendered_page)
         elements.append(
             ElementIR(
                 id=f"p{rendered_page.page_index + 1:04d}-n{order:04d}",
@@ -74,7 +75,13 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
                 confidence=1.0,
                 reading_order=order,
                 style_hint=style,
-                metadata={"source": "native-pdf", "span_count": len(raw["spans"])},
+                metadata={
+                    "source": "native-pdf",
+                    "span_count": len(raw["spans"]),
+                    "text_run_count": len(text_runs),
+                    "mixed_inline_style": _has_mixed_run_styles(text_runs),
+                    "text_runs": text_runs,
+                },
             )
         )
     elements.extend(_extract_page_shape_elements(page, rendered_page, start_order=len(elements) + 1))
@@ -205,10 +212,15 @@ def _drawing_geometry(drawing: dict[str, Any]) -> str:
 def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]:
     if not spans:
         return {"font_size_px": round(max(7.0, bbox.height * 0.72), 2), "line_height": 1.15, "font_family": "serif"}
-    first = spans[0]
-    size = float(first.get("size", max(7.0, bbox.height * 0.72)))
-    font = str(first.get("font", "serif"))
-    flags = int(first.get("flags", 0))
+    first = next((span for span in spans if span.get("text", "").strip()), spans[0])
+    return _style_from_span(first, bbox)
+
+
+def _style_from_span(span: dict[str, Any], bbox: BBox) -> dict[str, Any]:
+    size = float(span.get("size", max(7.0, bbox.height * 0.72)))
+    font = str(span.get("font", "serif"))
+    flags = int(span.get("flags", 0))
+    script = "superscript" if flags & 1 else "baseline"
     return {
         "font_size_px": round(size * 96.0 / 72.0, 2),
         "font_size_pt": round(size, 2),
@@ -216,11 +228,75 @@ def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]
         "font_family": _css_font_family(font),
         "font_weight": 700 if flags & 16 else 400,
         "font_style": "italic" if flags & 2 else "normal",
-        "text_color": _int_color_to_css(first.get("color")) or "rgb(17, 32, 42)",
+        "text_color": _int_color_to_css(span.get("color")) or "rgb(17, 32, 42)",
         "font_name": font,
         "bold": bool(flags & 16),
         "italic": bool(flags & 2),
+        "script": script,
+        "vertical_align": "super" if script == "superscript" else "baseline",
     }
+
+
+def _text_runs_from_spans(spans: list[dict[str, Any]], rendered_page: RenderedPage) -> list[dict[str, Any]]:
+    runs: list[dict[str, Any]] = []
+    for index, span in enumerate(spans):
+        text = str(span.get("text", ""))
+        if not text:
+            continue
+        bbox_pdf = clamp_bbox(BBox.from_any(span.get("bbox")), rendered_page.width_pt, rendered_page.height_pt)
+        bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
+        style = _style_from_span(span, bbox_pdf)
+        origin = span.get("origin")
+        runs.append(
+            {
+                "index": index,
+                "text": text,
+                "bbox_pdf": bbox_pdf.as_list(),
+                "bbox_px": bbox_px.as_list(),
+                "origin_pdf": [float(origin[0]), float(origin[1])] if isinstance(origin, (list, tuple)) else None,
+                "style": style,
+                "script": style["script"],
+                "font_name": style["font_name"],
+                "flags": int(span.get("flags", 0)),
+            }
+        )
+    return _trim_and_reindex_runs(runs)
+
+
+def _trim_and_reindex_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    while runs and not str(runs[0].get("text", "")).strip():
+        runs.pop(0)
+    if runs:
+        runs[0]["text"] = str(runs[0]["text"]).lstrip()
+
+    while runs and not str(runs[-1].get("text", "")).strip():
+        runs.pop()
+    if runs:
+        runs[-1]["text"] = str(runs[-1]["text"]).rstrip()
+
+    cleaned: list[dict[str, Any]] = []
+    for index, run in enumerate(runs):
+        if not str(run.get("text", "")):
+            continue
+        run["index"] = index
+        cleaned.append(run)
+    return cleaned
+
+
+def _has_mixed_run_styles(runs: list[dict[str, Any]]) -> bool:
+    signatures = {
+        (
+            run.get("style", {}).get("font_family"),
+            run.get("style", {}).get("font_size_px"),
+            run.get("style", {}).get("font_weight"),
+            run.get("style", {}).get("font_style"),
+            run.get("style", {}).get("text_color"),
+            run.get("style", {}).get("vertical_align"),
+        )
+        for run in runs
+        if str(run.get("text", "")).strip()
+    }
+    return len(signatures) > 1
 
 
 def _css_font_family(pdf_font: str) -> str:

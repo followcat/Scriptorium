@@ -27,6 +27,7 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         pages=pages,
         display_mode=display_mode,
         element_text=element_text,
+        element_text_runs=element_text_runs,
         annotation_attr=annotation_attr,
     )
     index_path = target / "index.html"
@@ -36,6 +37,27 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
 
 def element_text(element: ElementIR, display_mode: DisplayMode) -> str:
     return element.text_for_mode(display_mode)
+
+
+def element_text_runs(element: ElementIR, display_mode: DisplayMode) -> list[dict[str, object]]:
+    if not _should_render_source_runs(element, display_mode):
+        return []
+    runs = element.metadata.get("text_runs")
+    if not isinstance(runs, list):
+        return []
+    return [run for run in runs if isinstance(run, dict) and str(run.get("text", ""))]
+
+
+def _should_render_source_runs(element: ElementIR, display_mode: DisplayMode) -> bool:
+    if not element.source_text:
+        return False
+    if display_mode == "source":
+        return True
+    if display_mode in {"structured", "edited"}:
+        return element.edited_text is None
+    if display_mode == "translated":
+        return element.translated_text is None and element.edited_text is None
+    return False
 
 
 def annotation_attr(element: ElementIR, key: str, default: str = "") -> str:
