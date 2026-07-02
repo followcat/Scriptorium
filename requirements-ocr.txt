@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Heavy optional runtime for local PaddleOCR/PaddleOCR-VL experiments.
+# Keep it separate so fixture-based conversion and quality tests stay runnable
+# before GPU/model dependencies are ready.
+paddleocr>=3.0.0

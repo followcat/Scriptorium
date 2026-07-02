@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scriptorium-pdf"
+version = "0.1.0"
+description = "OCR/structure-driven PDF to visually faithful HTML pipeline."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pymupdf>=1.24.0",
+  "Pillow>=10.0.0",
+  "pydantic>=2.7.0",
+  "jinja2>=3.1.0",
+  "typer>=0.12.0",
+  "playwright>=1.44.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+ocr = ["paddleocr>=3.0.0"]
+
+[project.scripts]
+scriptorium = "scriptorium.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+scriptorium = ["templates/*.html.j2"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
