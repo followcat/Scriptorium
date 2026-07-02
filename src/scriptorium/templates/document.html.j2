@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scriptorium Export</title>
+  <style>
+    @page {
+      size: {{ document.pages[0].width_pt }}pt {{ document.pages[0].height_pt }}pt;
+      margin: 0;
+    }
+    :root {
+      color-scheme: light;
+      --page-gap: 24px;
+      --overlay-border: rgba(29, 97, 179, 0.65);
+      --overlay-fill: rgba(255, 255, 255, 0.68);
+      --debug-fill: rgba(255, 214, 102, 0.16);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #777;
+      font-family: Arial, sans-serif;
+    }
+    .document {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--page-gap);
+      padding: var(--page-gap);
+    }
+    .page {
+      position: relative;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 18px rgba(0, 0, 0, 0.28);
+      flex: 0 0 auto;
+    }
+    .page-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+    .element {
+      position: absolute;
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text-color, #111);
+      line-height: var(--line-height, 1.15);
+      font-family: var(--font-family, serif);
+      font-size: var(--font-size, 12px);
+      font-weight: var(--font-weight, 400);
+      font-style: var(--font-style, normal);
+      z-index: 1;
+    }
+    body.mode-background .element {
+      display: none;
+    }
+    body.mode-structured {
+      background: #777;
+    }
+    body.mode-structured .element {
+      border: 0;
+      background: transparent;
+      color: var(--text-color, #111);
+      outline: 0;
+    }
+    body.mode-structured .element:not([data-type="shape"]) {
+      overflow: visible;
+      white-space: pre;
+    }
+    body.mode-structured .element:focus {
+      outline: 2px solid rgba(29, 97, 179, 0.82);
+      outline-offset: 2px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-debug .element {
+      border: 1px solid var(--overlay-border);
+      background: var(--debug-fill);
+      color: transparent;
+    }
+    body.mode-source .element,
+    body.mode-edited .element,
+    body.mode-translated .element,
+    body.mode-bilingual .element {
+      border: 1px solid transparent;
+      background: transparent;
+    }
+    body.mode-source.show-boxes .element,
+    body.mode-edited.show-boxes .element,
+    body.mode-translated.show-boxes .element,
+    body.mode-bilingual.show-boxes .element {
+      border-color: var(--overlay-border);
+      background: var(--overlay-fill);
+    }
+    .element[data-type="table"],
+    .element[data-type="figure"],
+    .element[data-type="formula"],
+    .element[data-type="image"],
+    .element[data-type="shape"] {
+      color: transparent;
+    }
+    .element[data-type="shape"] {
+      z-index: 0;
+      pointer-events: none;
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    body.mode-structured .element[data-type="shape"] {
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    .element-label {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translateY(-100%);
+      padding: 2px 5px;
+      border-radius: 3px 3px 0 0;
+      background: rgba(29, 97, 179, 0.88);
+      color: #fff;
+      font: 10px/1.2 Arial, sans-serif;
+    }
+    body.mode-debug .element-label {
+      display: block;
+    }
+    @media print {
+      html, body { background: #fff; }
+      .document { display: block; padding: 0; }
+      .page {
+        width: var(--page-width-pt) !important;
+        height: var(--page-height-pt) !important;
+        margin: 0;
+        box-shadow: none;
+        break-after: page;
+        page-break-after: always;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .page:last-child { break-after: auto; page-break-after: auto; }
+    }
+  </style>
+</head>
+<body class="mode-{{ display_mode }}" data-document-id="{{ document.id }}">
+  <main class="document">
+    {% for page in pages %}
+    {% set page_ir = page.ir %}
+    {% set layout_scale = 1.3333333333333333 if display_mode == 'structured' else 1 %}
+    {% set page_width = page_ir.width_pt * layout_scale if display_mode == 'structured' else page_ir.width_px %}
+    {% set page_height = page_ir.height_pt * layout_scale if display_mode == 'structured' else page_ir.height_px %}
+    <section
+      class="page"
+      data-page-index="{{ page_ir.page_index }}"
+      style="
+        width: {{ '%.3f'|format(page_width) }}px;
+        height: {{ '%.3f'|format(page_height) }}px;
+        --page-width-pt: {{ page_ir.width_pt }}pt;
+        --page-height-pt: {{ page_ir.height_pt }}pt;
+      "
+    >
+      {% if page.background %}
+      <img class="page-bg" src="{{ page.background }}" alt="">
+      {% endif %}
+      {% for wrapped in page.elements %}
+      {% set element = wrapped.ir %}
+      {% set box = element.bbox_pdf if display_mode == 'structured' else element.bbox_px %}
+      {% set border_width = element.style_hint.get('border_width_pt', 0) * layout_scale if display_mode == 'structured' else element.style_hint.get('border_width_px', 0) %}
+      {% set is_text_node = element.source_text|length > 0 %}
+      <div
+        id="{{ element.id }}"
+        class="element editable-node"
+        data-id="{{ element.id }}"
+        data-type="{{ element.type }}"
+        data-scriptorium-element-id="{{ element.id }}"
+        data-scriptorium-role="{{ annotation_attr(element, 'role') }}"
+        data-scriptorium-source="{{ annotation_attr(element, 'source_kind') }}"
+        data-scriptorium-style-id="{{ annotation_attr(element, 'style_id') }}"
+        data-scriptorium-layout-group="{{ annotation_attr(element, 'layout_group_id') }}"
+        data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
+        data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
+        data-bbox-pdf="{{ element.bbox_pdf.as_list()|join(',') }}"
+        data-bbox-px="{{ element.bbox_px.as_list()|join(',') }}"
+        data-xml-node="element"
+        data-ir-path="/pages/{{ page_ir.page_index }}/elements/{{ loop.index0 }}"
+        data-reading-order="{{ element.reading_order }}"
+        contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual'] else 'false' }}"
+        spellcheck="false"
+        style="
+          left: {{ '%.3f'|format(box.x0 * layout_scale) }}px;
+          top: {{ '%.3f'|format(box.y0 * layout_scale) }}px;
+          width: {{ '%.3f'|format(box.width * layout_scale) }}px;
+          height: {{ '%.3f'|format(box.height * layout_scale) }}px;
+          --font-size: {{ element.style_hint.get('font_size_px', 12) }}px;
+          --line-height: {{ element.style_hint.get('line_height', 1.15) }};
+          --font-family: {{ element.style_hint.get('font_family', 'serif') }};
+          --font-weight: {{ element.style_hint.get('font_weight', 400) }};
+          --font-style: {{ element.style_hint.get('font_style', 'normal') }};
+          --text-color: {{ element.style_hint.get('text_color', '#111') }};
+          --fill-color: {{ element.style_hint.get('fill_color', 'transparent') }};
+          --stroke-color: {{ element.style_hint.get('stroke_color', 'transparent') }};
+          --border-width: {{ border_width }}px;
+        "
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{{ element_text(element, display_mode) }}</div>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </main>
+</body>
+</html>
