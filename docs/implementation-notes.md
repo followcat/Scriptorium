@@ -112,17 +112,23 @@ The built-in benchmark fixtures now write a sidecar file next to each generated 
 example.semantic-order.json
 ```
 
-The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
+The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source PDF and then under `benchmarks/semantic-ground-truth/` for a matching `<pdf-stem>.semantic-order.json`. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
+
+Supported page match modes:
+
+- `full-sequence`: the default mode for generated fixtures; expected and actual page text should match exactly except for reported missing/extra nodes.
+- `ordered-subsequence`: intended for real PDFs with partial human labels; only the listed text nodes are scored, unlisted actual text is counted as ignored, and pairwise order is still evaluated across the labeled nodes.
 
 Metrics:
 
 - `semantic_order_pair_accuracy`: pairwise order correctness across expected text nodes; this is Kendall-tau-like and catches left/right column swaps.
 - `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
 - `semantic_exact_page_match_rate`: page-level exact sequence match rate.
+- `ignored_text_count`: unlabelled actual text ignored by `ordered-subsequence` pages.
 - `semantic_missing_text_count`: expected text nodes not found in extraction.
 - `semantic_extra_text_count`: extracted text nodes not present in the ground truth.
 
-For external PDFs without a sidecar, semantic metrics are reported as unavailable while visual metrics still run normally.
+For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes.
 
 ## Useful References
 
@@ -162,5 +168,6 @@ Metrics:
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
+- `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.

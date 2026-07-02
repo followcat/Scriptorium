@@ -14,21 +14,21 @@ This project optimizes two different outcomes:
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, and `reading_order_strategy_counts`.
-- Built-in fixtures write `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
+- Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
 | Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|
 | Built-in fixtures | 20 | yes | 1.0 | 0.98939049 |
-| arXiv Attention paper | 163 | no | n/a | 0.92601817 |
+| arXiv Attention paper | 163 | partial | 1.0 | 0.92601817 |
 | Hacker News print PDF | 0 | no | n/a | 0.9792518 |
 
 ## Next Optimization Options
 
-1. Real semantic ground truth for complex PDFs
+1. Expand real semantic ground truth for complex PDFs
 
-   The arXiv score improved visually, but semantic order still cannot be scored without sidecars. Add hand-labeled `.semantic-order.json` files for selected paper pages with references, figures, captions, equations, and appendices.
+   The arXiv Attention sidecar now covers 5 representative pages and 38 labeled text nodes. Expand this to more pages and more document families, especially two-column papers, equations, tables, footnotes, and appendices.
 
 2. Recursive XY-Cut refinement
 

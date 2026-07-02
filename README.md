@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-22%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-23%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -81,7 +81,7 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
-内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序，真实论文和网页样本暂未附带人工顺序标注，因此只报告 multi-column 覆盖数。
+内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文现在有 repo 内的部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`；网页样本暂未附带人工顺序标注。
 
 最新复杂页优化把 arXiv Attention 论文从 `0.88813653` 提升到 `0.92601817`。主要变化是 native image block 输出、Nimbus/Computer Modern 字体映射，以及对高密度矢量图的局部 raster fallback；第 15 页 attention 图的 diff 从最差页降到 `0.01067919`。
 
@@ -243,6 +243,7 @@ Tracked metrics:
 - semantic ground-truth case count
 - semantic order pair accuracy
 - semantic sequence similarity
+- semantic ignored text count for partial labels
 - semantic missing/extra text count
 - `total_seconds`
 - stage timings: render, extraction/annotation, HTML export, PDF print, visual comparison, semantic comparison
@@ -318,9 +319,9 @@ pytest
 Current local test baseline:
 
 ```text
-22 passed
+23 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, and strategy coverage metrics. The next useful work is deeper real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, partial real-paper semantic ground truth, and strategy coverage metrics. The next useful work is broader real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
