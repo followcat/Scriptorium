@@ -1,82 +1,283 @@
-# Scriptorium PDF
+<p align="center">
+  <img src="docs/assets/readme-hero.png" alt="Scriptorium PDF - structured PDF to editable annotated HTML" width="100%">
+</p>
 
-Scriptorium is a core-first prototype for turning scanned PDFs into visually faithful HTML, while preserving enough structure for later editing, translation, and PDF export.
+<h1 align="center">Scriptorium PDF</h1>
 
-The first implementation focuses on conversion quality rather than a full application UI:
+<p align="center">
+  <strong>把 PDF、网页打印 PDF 和 OCR 结构结果转换成可编辑、可标注、可回归评测的 HTML。</strong>
+</p>
 
-- render PDF pages into stable background images
-- normalize OCR/structure output into a single `DocumentIR`
-- export standalone HTML with recognized roles, styles, source markers, and page-accurate coordinates
-- keep `source_text`, `edited_text`, and `translated_text` separate
-- compare HTML screenshots against the original PDF render
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
+  <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
+  <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-9%20passing-2f855a">
+</p>
 
-## Setup
+## What It Does
+
+Scriptorium PDF 是一个核心转换引擎，目标不是把 PDF 页面截图塞进 HTML，而是把 PDF 里的可识别结构转成可编辑节点：
+
+- 从 PDF 提取 native text、字体、颜色、粗细、坐标和 drawing/shape。
+- 从 OCR / PaddleOCR-VL / PP-Structure 输出归一化到同一个 `DocumentIR`。
+- 生成 `structured` HTML：文本节点可编辑，图形节点保留结构，DOM 上带识别标记。
+- 支持 XML 级局部节点编辑，再回写到 IR 并重新导出 HTML/PDF。
+- 用 Playwright 打印网页或 HTML 为 PDF，再用渲染图对比生成相似度指标。
+- 用 benchmark 记录优化前后的可比较分数。
+
+它适合做 PDF 编辑、翻译、版面重建、OCR 结构验证、HTML-PDF 转换质量评测的底层实验平台。
+
+## Core Requirements
+
+Scriptorium 的实现围绕四个硬需求设计：
+
+| Requirement | Meaning |
+|---|---|
+| Structured output | 产出的 HTML 需要有文本、shape、role、bbox、style id、source marker，而不是单张整页截图。 |
+| Local editability | 每个可编辑文本节点都有稳定 element id，可通过 DOM 或 XML 精确修改局部内容。 |
+| Source preservation | OCR/native 原文保存在 `source_text`，编辑写入 `edited_text`，翻译写入 `translated_text`，不覆盖原始识别结果。 |
+| Measurable quality | 每次转换都能打印回 PDF 并计算 `visual_similarity`，后续优化用同一指标比较。 |
+
+## Why It Is Different
+
+很多 PDF-to-HTML 工具会先渲染整页图片，然后把透明文本覆盖上去。那种方式视觉上容易接近，但局部编辑能力很弱。
+
+Scriptorium 的 `structured` 模式明确避免整页图片：
+
+```html
+<div
+  data-scriptorium-role="table-cell-text"
+  data-scriptorium-source="native-pdf"
+  data-scriptorium-style-id="style-004"
+  data-scriptorium-layout-group="table-001"
+  data-scriptorium-edit-target="edited_text"
+  data-bbox-pdf="76.99,212.49,117.83,224.22"
+  contenteditable="true"
+>
+  PDF text
+</div>
+```
+
+每个节点都能追溯到来源、坐标、样式桶、版面分组和编辑目标。
+
+## Real-World Scores
+
+<p align="center">
+  <img src="docs/assets/readme-webpage-score.png" alt="Live webpage conversion score" width="100%">
+</p>
+
+| Sample | Pages | Elements | Editable Nodes | Shape Nodes | Visual Similarity | Max Diff Ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0.9716478 | 0.0283522 |
+| arXiv paper: Attention Is All You Need | 15 | 3594 | 1048 | 2546 | 0.88800526 | 0.11199474 |
+| Built-in benchmark fixtures, mean | 5 pages total | 60 | 42 | 18 | 0.98908212 | 0.01198732 |
+
+`visual_similarity = 1 - max_diff_ratio`。后续优化可以直接用这些数值看进步幅度。
+
+<p align="center">
+  <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
+</p>
+
+## Requirements
+
+Required:
+
+- Python `3.10+`
+- Google Chrome / Chromium
+- Playwright Python package
+- PyMuPDF
+- Pillow
+- Pydantic
+- Jinja2
+- Typer
+
+Optional:
+
+- PaddleOCR / PaddleOCR-VL for local OCR and document structure experiments
+
+Notes:
+
+- `.env.example` is committed as a template.
+- `.env`, `.venv/`, `data/`, and `outputs/` are intentionally ignored.
+- Playwright is launched with `--no-proxy-server` by default in this repo because some environments inject proxy credentials into Chrome.
+
+## Installation
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
-Optional local PaddleOCR experiments:
+Optional OCR stack:
 
 ```bash
 pip install -r requirements-ocr.txt
 ```
 
-Copy `.env.example` to `.env` for local overrides. Do not commit `.env` or `.venv/`.
+## Quick Start
 
-## CLI Quick Start
-
-Generate a deterministic sample PDF and fallback OCR JSON:
+Generate a deterministic PDF fixture:
 
 ```bash
 scriptorium make-fixture --out-dir data/fixture
 ```
 
-Convert the sample PDF into IR and HTML:
+Convert it to IR:
 
 ```bash
-scriptorium convert data/fixture/sample.pdf --ocr-json data/fixture/sample.ocr.json --out-dir outputs/sample
-scriptorium export-html outputs/sample/document.ir.json --out-dir outputs/sample/html --display-mode background
+scriptorium convert \
+  data/fixture/sample.pdf \
+  --ocr-json data/fixture/sample.ocr.json \
+  --out-dir outputs/sample
 ```
 
-Compare the exported HTML against the rendered PDF background:
+Export HTML:
 
 ```bash
-scriptorium quality-check outputs/sample/document.ir.json outputs/sample/html/index.html --out-dir outputs/sample/quality
+scriptorium export-html \
+  outputs/sample/document.ir.json \
+  --out-dir outputs/sample/html \
+  --display-mode structured
 ```
 
-Print the HTML back to PDF and compare it with the original PDF rendering:
+Print HTML back to PDF and compare:
 
 ```bash
-scriptorium print-pdf outputs/sample/html/index.html --pdf outputs/sample/export.pdf
-scriptorium compare-pdf data/fixture/sample.pdf outputs/sample/export.pdf --out-dir outputs/sample/pdf-quality
+scriptorium print-pdf \
+  outputs/sample/html/index.html \
+  --pdf outputs/sample/export.pdf
+
+scriptorium compare-pdf \
+  data/fixture/sample.pdf \
+  outputs/sample/export.pdf \
+  --out-dir outputs/sample/pdf-quality
 ```
 
-Capture a page with Playwright, extract native PDF structure, and export annotated editable HTML:
+## Real Web Page Workflow
+
+Capture a live page with Playwright:
 
 ```bash
-scriptorium make-web-fixture --out-dir data/playwright-fixture
-scriptorium capture-pdf data/playwright-fixture/structured-page.html --pdf outputs/playwright/input.pdf --mode print
-scriptorium convert outputs/playwright/input.pdf --out-dir outputs/playwright/annotated --extract-mode native
-scriptorium export-html outputs/playwright/annotated/document.ir.json --out-dir outputs/playwright/annotated/html --display-mode structured
+scriptorium capture-pdf \
+  https://news.ycombinator.com/ \
+  --pdf outputs/external/web-hn/input.pdf \
+  --mode print
 ```
 
-`structured` HTML does not include the page image. It emits editable text nodes and structural shape nodes with `data-scriptorium-role`, `data-scriptorium-source`, `data-scriptorium-style-id`, `data-scriptorium-layout-group`, and bbox attributes.
+Convert the captured PDF into annotated structured HTML:
 
-Run the multi-PDF benchmark baseline:
+```bash
+scriptorium convert \
+  outputs/external/web-hn/input.pdf \
+  --out-dir outputs/external/web-hn/structured \
+  --extract-mode native \
+  --dpi 144
+
+scriptorium export-html \
+  outputs/external/web-hn/structured/document.ir.json \
+  --out-dir outputs/external/web-hn/structured/html \
+  --display-mode structured
+```
+
+Score the result:
+
+```bash
+scriptorium print-pdf \
+  outputs/external/web-hn/structured/html/index.html \
+  --pdf outputs/external/web-hn/structured/structured-export.pdf
+
+scriptorium compare-pdf \
+  outputs/external/web-hn/input.pdf \
+  outputs/external/web-hn/structured/structured-export.pdf \
+  --out-dir outputs/external/web-hn/structured/pdf-quality \
+  --dpi 144
+```
+
+## Benchmark
+
+Run the built-in multi-PDF benchmark:
 
 ```bash
 scriptorium benchmark --out-dir outputs/benchmark-baseline --dpi 192
 ```
 
-The benchmark creates several PDF fixtures when no input PDFs are provided, runs the structured conversion pipeline, prints the output HTML back to PDF, and compares the rendered PDFs. It writes:
+Run benchmark on your own PDFs:
 
-- `benchmark_report.json`: full per-case metrics and timings
+```bash
+scriptorium benchmark path/to/file1.pdf path/to/file2.pdf --out-dir outputs/my-benchmark --dpi 144
+```
+
+Outputs:
+
+- `benchmark_report.json`: full metrics, per-stage timings, artifact paths
 - `benchmark_summary.csv`: compact table for tracking optimization progress
+- per-case `document.ir.json`, `html/index.html`, `structured-export.pdf`, and visual diff images
 
-Primary metric: `visual_similarity = 1 - max_diff_ratio`. Higher is better.
+Tracked metrics:
+
+- `visual_similarity`
+- `max_diff_ratio`
+- `total_seconds`
+- stage timings: render, extraction/annotation, HTML export, PDF print, comparison
+- element count
+- editable element count
+- shape count
+- style count
+- annotation count
+
+## Architecture
+
+```mermaid
+flowchart LR
+  A[PDF or Web Page] --> B[PyMuPDF Render]
+  A --> C[Native PDF Extractor]
+  A --> D[OCR JSON / Paddle Adapter]
+  C --> E[DocumentIR]
+  D --> E
+  E --> F[Annotation Pass]
+  F --> G[Structured HTML]
+  G --> H[XML Node Edit]
+  H --> E
+  G --> I[Playwright Print PDF]
+  I --> J[Visual Regression Score]
+```
+
+Core files:
+
+- `src/scriptorium/models.py`: `DocumentIR`, page and element models
+- `src/scriptorium/native_pdf.py`: native text and drawing extraction
+- `src/scriptorium/annotations.py`: role/style/source/bbox annotation pass
+- `src/scriptorium/html_export.py`: standalone HTML export
+- `src/scriptorium/xml_edit.py`: XML node edit round trip
+- `src/scriptorium/benchmark.py`: reproducible quality benchmark
+
+## Data Model
+
+`DocumentIR` is the source of truth. It keeps:
+
+- page size in PDF points and rendered pixels
+- element bbox in PDF points and pixels
+- `source_text`, `edited_text`, `translated_text`
+- source kind: `native-pdf`, `native-drawing`, OCR fallback, etc.
+- role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, etc.
+- style bucket: `style-001`, `style-002`, ...
+- layout group: for example `table-001`
+- revision history for edits and translation
+
+The original `source_text` is never overwritten.
+
+## OCR Strategy
+
+The default tested path uses native PDF extraction or JSON fallback. The Paddle adapter is intentionally isolated:
+
+- conversion, annotation, HTML export, XML edit, and benchmark do not depend on the model runtime
+- real PaddleOCR-VL / PP-Structure output can be mapped into the same IR later
+- `requirements-ocr.txt` keeps heavyweight OCR dependencies optional
+
+## Development
 
 Run tests:
 
@@ -84,22 +285,12 @@ Run tests:
 pytest
 ```
 
-## Data Model
+Current local test baseline:
 
-`DocumentIR` is the stable source of truth. It stores:
+```text
+9 passed
+```
 
-- PDF point geometry and rendered pixel geometry
-- page background images
-- OCR/structure elements with `bbox_pdf` and `bbox_px`
-- original OCR text in `source_text`
-- user edits in `edited_text`
-- translation output in `translated_text`
-- style hints, confidence, crop paths, and revision records
+## Project Status
 
-The original OCR text is never overwritten by editing or translation.
-
-## Current OCR Strategy
-
-The default implementation supports JSON fallback so the rendering, geometry, HTML export, and quality comparison can be developed before a local PaddleOCR-VL environment is ready.
-
-The Paddle adapter is intentionally isolated. Once the model environment is installed, it can populate the same `DocumentIR` without changing export or quality logic.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, but it is not yet a polished visual editor. The next useful work is improving layout grouping, table semantics, OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
