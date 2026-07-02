@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 from statistics import median
 
 from .geometry import reading_order_key
 from .models import BBox
+
+ReadingOrderStrategy = Literal["auto", "visual-yx", "column-flow-v1", "recursive-xy-cut-v1"]
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,7 @@ class ReadingOrderAssignment:
     column_span: str
     flow_segment_index: int
     strategy: str
+    region_path: str | None = None
 
     def as_metadata(self) -> dict[str, object]:
         return {
@@ -27,13 +31,23 @@ class ReadingOrderAssignment:
             "column_span": self.column_span,
             "flow_segment_index": self.flow_segment_index,
             "reading_order_strategy": self.strategy,
+            "reading_order_region_path": self.region_path,
         }
+
+
+@dataclass(frozen=True)
+class _XyCutResult:
+    ordered_indices: list[int]
+    region_path_by_item: dict[int, str]
+    has_horizontal_split: bool
+    has_vertical_split: bool
 
 
 def infer_semantic_reading_order(
     bboxes: list[BBox],
     page_width: float,
     page_height: float,
+    strategy: ReadingOrderStrategy = "auto",
 ) -> list[ReadingOrderAssignment]:
     """Infer human-oriented reading order from positioned line boxes.
 
@@ -48,23 +62,56 @@ def infer_semantic_reading_order(
 
     visual_indices = sorted(range(len(bboxes)), key=lambda index: reading_order_key(bboxes[index]))
     visual_rank = {item_index: rank for rank, item_index in enumerate(visual_indices, start=1)}
+    if strategy == "visual-yx":
+        return _visual_assignments(visual_indices, visual_rank)
+
+    xy_result = _recursive_xy_cut_order(bboxes, page_width, page_height)
+    if strategy == "recursive-xy-cut-v1" or (
+        strategy == "auto" and xy_result.has_horizontal_split and xy_result.has_vertical_split
+    ):
+        return _assign_order_metadata(
+            xy_result.ordered_indices,
+            bboxes,
+            page_width,
+            page_height,
+            visual_rank,
+            strategy="recursive-xy-cut-v1",
+            region_path_by_item=xy_result.region_path_by_item,
+        )
+
+    return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank)
+
+
+def _visual_assignments(
+    visual_indices: list[int],
+    visual_rank: dict[int, int],
+) -> list[ReadingOrderAssignment]:
+    return [
+        ReadingOrderAssignment(
+            item_index=item_index,
+            semantic_order=order,
+            visual_order=visual_rank[item_index],
+            column_index=0,
+            column_count=1,
+            column_span="single",
+            flow_segment_index=1,
+            strategy="visual-yx",
+        )
+        for order, item_index in enumerate(visual_indices, start=1)
+    ]
+
+
+def _column_flow_assignments(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    visual_indices: list[int],
+    visual_rank: dict[int, int],
+) -> list[ReadingOrderAssignment]:
     columns = _infer_column_clusters(bboxes, page_width, page_height)
     column_count = len(columns)
-
     if column_count < 2:
-        return [
-            ReadingOrderAssignment(
-                item_index=item_index,
-                semantic_order=order,
-                visual_order=visual_rank[item_index],
-                column_index=0,
-                column_count=1,
-                column_span="single",
-                flow_segment_index=1,
-                strategy="visual-yx",
-            )
-            for order, item_index in enumerate(visual_indices, start=1)
-        ]
+        return _visual_assignments(visual_indices, visual_rank)
 
     column_by_item = _assign_columns(bboxes, columns)
     full_width = {
@@ -101,6 +148,38 @@ def infer_semantic_reading_order(
             pending_column_items.append(item_index)
     flush_column_segment()
 
+    return _assign_order_metadata(
+        ordered_indices,
+        bboxes,
+        page_width,
+        page_height,
+        visual_rank,
+        strategy="column-flow-v1",
+        flow_segment_by_item=flow_segment_by_item,
+    )
+
+
+def _assign_order_metadata(
+    ordered_indices: list[int],
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    visual_rank: dict[int, int],
+    strategy: str,
+    flow_segment_by_item: dict[int, int] | None = None,
+    region_path_by_item: dict[int, str] | None = None,
+) -> list[ReadingOrderAssignment]:
+    columns = _infer_column_clusters(bboxes, page_width, page_height)
+    column_count = len(columns)
+    column_by_item = _assign_columns(bboxes, columns)
+    full_width = {
+        item_index
+        for item_index, bbox in enumerate(bboxes)
+        if _is_full_width_box(bbox, columns, bboxes, page_width)
+    }
+    if flow_segment_by_item is None:
+        flow_segment_by_item = _flow_segments_for_order(ordered_indices, bboxes)
+
     assignments: list[ReadingOrderAssignment] = []
     for semantic_order, item_index in enumerate(ordered_indices, start=1):
         is_full_width = item_index in full_width
@@ -113,10 +192,150 @@ def infer_semantic_reading_order(
                 column_count=column_count,
                 column_span="full" if is_full_width else "column",
                 flow_segment_index=flow_segment_by_item[item_index],
-                strategy="column-flow-v1",
+                strategy=strategy,
+                region_path=(region_path_by_item or {}).get(item_index),
             )
         )
     return assignments
+
+
+def _recursive_xy_cut_order(bboxes: list[BBox], page_width: float, page_height: float) -> _XyCutResult:
+    if len(bboxes) < 2 or _looks_like_table_grid(bboxes, page_width):
+        ordered = sorted(range(len(bboxes)), key=lambda index: reading_order_key(bboxes[index]))
+        return _XyCutResult(
+            ordered_indices=ordered,
+            region_path_by_item={index: "root" for index in ordered},
+            has_horizontal_split=False,
+            has_vertical_split=False,
+        )
+    return _xy_cut_region(
+        list(range(len(bboxes))),
+        bboxes,
+        page_width,
+        page_height,
+        depth=0,
+        path="root",
+    )
+
+
+def _xy_cut_region(
+    indices: list[int],
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    depth: int,
+    path: str,
+) -> _XyCutResult:
+    if depth >= 8 or len(indices) <= 2:
+        ordered = sorted(indices, key=lambda index: reading_order_key(bboxes[index]))
+        return _XyCutResult(
+            ordered_indices=ordered,
+            region_path_by_item={index: path for index in ordered},
+            has_horizontal_split=False,
+            has_vertical_split=False,
+        )
+
+    horizontal_split = _find_horizontal_cut(indices, bboxes, page_height)
+    if horizontal_split is not None:
+        top, bottom = horizontal_split
+        top_result = _xy_cut_region(top, bboxes, page_width, page_height, depth + 1, f"{path}/h0")
+        bottom_result = _xy_cut_region(bottom, bboxes, page_width, page_height, depth + 1, f"{path}/h1")
+        return _merge_xy_results(top_result, bottom_result, split_axis="h")
+
+    vertical_split = _find_vertical_cut(indices, bboxes, page_width)
+    if vertical_split is not None:
+        left, right = vertical_split
+        left_result = _xy_cut_region(left, bboxes, page_width, page_height, depth + 1, f"{path}/v0")
+        right_result = _xy_cut_region(right, bboxes, page_width, page_height, depth + 1, f"{path}/v1")
+        return _merge_xy_results(left_result, right_result, split_axis="v")
+
+    ordered = sorted(indices, key=lambda index: reading_order_key(bboxes[index]))
+    return _XyCutResult(
+        ordered_indices=ordered,
+        region_path_by_item={index: path for index in ordered},
+        has_horizontal_split=False,
+        has_vertical_split=False,
+    )
+
+
+def _merge_xy_results(first: _XyCutResult, second: _XyCutResult, split_axis: str) -> _XyCutResult:
+    return _XyCutResult(
+        ordered_indices=[*first.ordered_indices, *second.ordered_indices],
+        region_path_by_item={**first.region_path_by_item, **second.region_path_by_item},
+        has_horizontal_split=first.has_horizontal_split or second.has_horizontal_split or split_axis == "h",
+        has_vertical_split=first.has_vertical_split or second.has_vertical_split or split_axis == "v",
+    )
+
+
+def _find_horizontal_cut(indices: list[int], bboxes: list[BBox], page_height: float) -> tuple[list[int], list[int]] | None:
+    ordered = sorted(indices, key=lambda index: bboxes[index].y0)
+    heights = [bboxes[index].height for index in indices if bboxes[index].height > 0]
+    min_gap = max(page_height * 0.025, (median(heights) if heights else 10.0) * 1.2)
+
+    best_gap = 0.0
+    best_position: int | None = None
+    current_bottom = bboxes[ordered[0]].y1
+    for position in range(len(ordered) - 1):
+        current_bottom = max(current_bottom, bboxes[ordered[position]].y1)
+        next_top = bboxes[ordered[position + 1]].y0
+        gap = next_top - current_bottom
+        if gap > best_gap:
+            best_gap = gap
+            best_position = position
+
+    if best_position is None or best_gap < min_gap:
+        return None
+    top = ordered[: best_position + 1]
+    bottom = ordered[best_position + 1 :]
+    if not top or not bottom:
+        return None
+    return top, bottom
+
+
+def _find_vertical_cut(indices: list[int], bboxes: list[BBox], page_width: float) -> tuple[list[int], list[int]] | None:
+    if len(indices) < 4:
+        return None
+    ordered = sorted(indices, key=lambda index: bboxes[index].x0)
+    widths = [bboxes[index].width for index in indices if bboxes[index].width > 0]
+    min_gap = max(page_width * 0.055, (median(widths) if widths else 20.0) * 0.4)
+
+    best_gap = 0.0
+    best_position: int | None = None
+    current_right = bboxes[ordered[0]].x1
+    for position in range(len(ordered) - 1):
+        current_right = max(current_right, bboxes[ordered[position]].x1)
+        next_left = bboxes[ordered[position + 1]].x0
+        gap = next_left - current_right
+        if gap > best_gap:
+            best_gap = gap
+            best_position = position
+
+    if best_position is None or best_gap < min_gap:
+        return None
+    left = ordered[: best_position + 1]
+    right = ordered[best_position + 1 :]
+    if len(left) < 2 or len(right) < 2:
+        return None
+    if _vertical_overlap_ratio(left, right, bboxes) < 0.2:
+        return None
+    return left, right
+
+
+def _flow_segments_for_order(ordered_indices: list[int], bboxes: list[BBox]) -> dict[int, int]:
+    if not ordered_indices:
+        return {}
+    heights = [bboxes[index].height for index in ordered_indices if bboxes[index].height > 0]
+    min_gap = max(12.0, (median(heights) if heights else 10.0) * 1.4)
+    segments: dict[int, int] = {}
+    segment_index = 1
+    previous_bottom = bboxes[ordered_indices[0]].y1
+    for item_index in ordered_indices:
+        bbox = bboxes[item_index]
+        if bbox.y0 - previous_bottom > min_gap:
+            segment_index += 1
+        segments[item_index] = segment_index
+        previous_bottom = max(previous_bottom, bbox.y1)
+    return segments
 
 
 def _infer_column_clusters(bboxes: list[BBox], page_width: float, page_height: float) -> list[list[int]]:
@@ -176,17 +395,20 @@ def _split_column_cluster(
 
 
 def _looks_like_table_grid(bboxes: list[BBox], page_width: float) -> bool:
-    x_cluster_count = len(_cluster_positions([_center_x(bbox) for bbox in bboxes], tolerance=page_width * 0.04))
-    if x_cluster_count < 3:
-        return False
-
     heights = [bbox.height for bbox in bboxes if bbox.height > 0]
     y_tolerance = max(4.0, median(heights) * 0.8) if heights else 8.0
     rows = _cluster_rows(bboxes, tolerance=y_tolerance)
     if len(rows) < 3:
         return False
-    multi_cell_rows = [row for row in rows if len(row) >= 2]
-    return len(multi_cell_rows) >= 3 and len(multi_cell_rows) / len(rows) >= 0.5
+    multi_cell_rows = [row for row in rows if len(row) >= 3]
+    if len(multi_cell_rows) < 3 or len(multi_cell_rows) / len(rows) < 0.5:
+        return False
+
+    repeated_x_clusters = _cluster_positions(
+        [_center_x(bbox) for row in multi_cell_rows for bbox in row],
+        tolerance=page_width * 0.04,
+    )
+    return len(repeated_x_clusters) >= 3
 
 
 def _cluster_rows(bboxes: list[BBox], tolerance: float) -> list[list[BBox]]:

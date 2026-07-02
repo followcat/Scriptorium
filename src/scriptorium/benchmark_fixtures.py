@@ -14,6 +14,7 @@ def create_benchmark_fixtures(out_dir: str | Path) -> list[Path]:
         _create_table_pdf(target / "table_report.pdf"),
         _create_multipage_pdf(target / "multipage_mixed.pdf"),
         _create_columns_pdf(target / "two_column_notes.pdf"),
+        _create_sectioned_columns_pdf(target / "sectioned_columns.pdf"),
     ]
 
 
@@ -126,6 +127,38 @@ def _create_columns_pdf(path: Path) -> Path:
     page.draw_line(fitz.Point(306, 128), fitz.Point(306, 260), color=(0.65, 0.65, 0.65), width=0.8)
     _save(doc, path)
     _write_semantic_ground_truth(path, [[title, *left_lines, *right_lines]])
+    return path
+
+
+def _create_sectioned_columns_pdf(path: Path) -> Path:
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    expected_text = [
+        "Sectioned Research Layout",
+        "A full-width abstract should be read before the article columns.",
+        "Background left one.",
+        "Background left two.",
+        "Background right one.",
+        "Background right two.",
+        "Methods",
+        "Method left one.",
+        "Method left two.",
+        "Method right one.",
+        "Method right two.",
+    ]
+    page.insert_text((72, 82), expected_text[0], fontsize=24, fontname="helv", color=(0.08, 0.18, 0.32))
+    page.insert_text((72, 122), expected_text[1], fontsize=11, fontname="helv")
+    for index, line in enumerate(expected_text[2:4]):
+        page.insert_text((72, 174 + index * 26), line, fontsize=10.5, fontname="helv")
+    for index, line in enumerate(expected_text[4:6]):
+        page.insert_text((330, 174 + index * 26), line, fontsize=10.5, fontname="helv")
+    page.insert_text((72, 272), expected_text[6], fontsize=15, fontname="helv", color=(0.12, 0.22, 0.38))
+    for index, line in enumerate(expected_text[7:9]):
+        page.insert_text((72, 322 + index * 26), line, fontsize=10.5, fontname="helv")
+    for index, line in enumerate(expected_text[9:11]):
+        page.insert_text((330, 322 + index * 26), line, fontsize=10.5, fontname="helv")
+    _save(doc, path)
+    _write_semantic_ground_truth(path, [expected_text])
     return path
 
 

@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,8 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "annotation_count": stats["annotation_count"],
         "multi_column_element_count": stats["multi_column_element_count"],
         "column_flow_element_count": stats["column_flow_element_count"],
+        "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
+        "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
         "p95_diff_ratio": p95_diff_ratio,
@@ -111,25 +114,35 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
     }
 
 
-def _document_stats(document: DocumentIR) -> dict[str, int]:
+def _document_stats(document: DocumentIR) -> dict[str, Any]:
     elements = [element for page in document.pages for element in page.elements]
+    text_elements = [element for element in elements if element.source_text.strip()]
+    reading_order_strategy_counts = Counter(
+        str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
+    )
     return {
         "page_count": document.page_count,
         "element_count": len(elements),
-        "editable_element_count": sum(1 for element in elements if element.source_text.strip()),
+        "editable_element_count": len(text_elements),
         "shape_count": sum(1 for element in elements if element.type == "shape"),
         "style_count": len(document.metadata.get("styles", {})),
         "annotation_count": sum(1 for element in elements if "annotation" in element.metadata),
         "multi_column_element_count": sum(
             1
-            for element in elements
-            if element.source_text.strip() and int(element.metadata.get("column_count") or 1) > 1
+            for element in text_elements
+            if int(element.metadata.get("column_count") or 1) > 1
         ),
         "column_flow_element_count": sum(
             1
-            for element in elements
-            if element.source_text.strip() and element.metadata.get("reading_order_strategy") == "column-flow-v1"
+            for element in text_elements
+            if element.metadata.get("reading_order_strategy") == "column-flow-v1"
         ),
+        "recursive_xy_cut_element_count": sum(
+            1
+            for element in text_elements
+            if element.metadata.get("reading_order_strategy") == "recursive-xy-cut-v1"
+        ),
+        "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
     }
 
 
@@ -169,6 +182,8 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_editable_elements": sum(int(case["editable_element_count"]) for case in cases),
         "total_multi_column_elements": sum(int(case["multi_column_element_count"]) for case in cases),
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
+        "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
+        "reading_order_strategy_counts": _sum_strategy_counts(cases),
         **_summarize_semantic_cases(semantic_cases),
     }
 
@@ -184,6 +199,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "annotation_count",
         "multi_column_element_count",
         "column_flow_element_count",
+        "recursive_xy_cut_element_count",
         "visual_similarity",
         "semantic_ground_truth_available",
         "semantic_order_pair_accuracy",
@@ -209,6 +225,13 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         writer.writeheader()
         for case in cases:
             writer.writerow({field: case[field] for field in fieldnames})
+
+
+def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for case in cases:
+        counts.update(case.get("reading_order_strategy_counts") or {})
+    return dict(sorted(counts.items()))
 
 
 def _elapsed(start: float) -> float:

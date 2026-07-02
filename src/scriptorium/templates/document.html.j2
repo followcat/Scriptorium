@@ -203,6 +203,7 @@
         data-scriptorium-column-span="{{ annotation_attr(element, 'column_span') }}"
         data-scriptorium-flow-segment="{{ annotation_attr(element, 'flow_segment_index') }}"
         data-scriptorium-reading-order-strategy="{{ annotation_attr(element, 'reading_order_strategy') }}"
+        data-scriptorium-reading-order-region="{{ annotation_attr(element, 'reading_order_region_path') }}"
         contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual'] else 'false' }}"
         spellcheck="false"
         style="

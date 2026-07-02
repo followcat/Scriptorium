@@ -7,7 +7,7 @@ from scriptorium.semantic_quality import semantic_ground_truth_path
 
 def test_benchmark_fixtures_create_multiple_pdfs(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
-    assert len(pdfs) == 4
+    assert len(pdfs) == 5
     assert all(path.exists() for path in pdfs)
     assert all(semantic_ground_truth_path(path).exists() for path in pdfs)
 
@@ -25,7 +25,11 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
     assert all("multi_column_element_count" in case for case in report["cases"])
+    assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
+    assert all("reading_order_strategy_counts" in case for case in report["cases"])
     assert "total_multi_column_elements" in report["summary"]
+    assert "total_recursive_xy_cut_elements" in report["summary"]
+    assert "reading_order_strategy_counts" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
