@@ -8,6 +8,7 @@ import fitz
 from .geometry import clamp_bbox, pdf_to_px_bbox, reading_order_key
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
 from .pdf_render import RenderedDocument, RenderedPage
+from .reading_order import infer_semantic_reading_order
 
 
 def extract_native_pdf_to_ir(rendered: RenderedDocument) -> DocumentIR:
@@ -58,30 +59,41 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
             raw_lines.append({"bbox": bbox, "text": text, "spans": spans})
 
     raw_lines.sort(key=lambda item: reading_order_key(item["bbox"]))
+    reading_order_assignments = {
+        assignment.item_index: assignment
+        for assignment in infer_semantic_reading_order(
+            [raw["bbox"] for raw in raw_lines],
+            rendered_page.width_pt,
+            rendered_page.height_pt,
+        )
+    }
     elements: list[ElementIR] = []
-    for order, raw in enumerate(raw_lines, start=1):
+    for visual_index, raw in enumerate(raw_lines):
+        order_assignment = reading_order_assignments[visual_index]
         bbox_pdf = clamp_bbox(raw["bbox"], rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
         style = _style_from_spans(raw["spans"], bbox_pdf)
         text_runs = _text_runs_from_spans(raw["spans"], rendered_page)
+        metadata = {
+            "source": "native-pdf",
+            "span_count": len(raw["spans"]),
+            "text_run_count": len(text_runs),
+            "mixed_inline_style": _has_mixed_run_styles(text_runs),
+            "text_runs": text_runs,
+            **order_assignment.as_metadata(),
+        }
         elements.append(
             ElementIR(
-                id=f"p{rendered_page.page_index + 1:04d}-n{order:04d}",
+                id=f"p{rendered_page.page_index + 1:04d}-n{visual_index + 1:04d}",
                 page_index=rendered_page.page_index,
                 type="title" if style["font_size_px"] >= 22 else "text",
                 bbox_pdf=bbox_pdf,
                 bbox_px=bbox_px,
                 source_text=raw["text"],
                 confidence=1.0,
-                reading_order=order,
+                reading_order=order_assignment.semantic_order,
                 style_hint=style,
-                metadata={
-                    "source": "native-pdf",
-                    "span_count": len(raw["spans"]),
-                    "text_run_count": len(text_runs),
-                    "mixed_inline_style": _has_mixed_run_styles(text_runs),
-                    "text_runs": text_runs,
-                },
+                metadata=metadata,
             )
         )
     elements.extend(_extract_page_shape_elements(page, rendered_page, start_order=len(elements) + 1))

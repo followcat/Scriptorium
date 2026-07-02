@@ -10,6 +10,7 @@ from PIL import Image
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox, reading_order_key
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
 from .pdf_render import RenderedDocument, RenderedPage
+from .reading_order import infer_semantic_reading_order
 
 
 TYPE_ALIASES = {
@@ -108,14 +109,25 @@ def _normalize_page_elements(
         normalized.append((bbox_px, raw, bbox_px, bbox_pdf))
 
     normalized.sort(key=lambda item: reading_order_key(item[0]))
+    reading_order_assignments = {
+        assignment.item_index: assignment
+        for assignment in infer_semantic_reading_order(
+            [item[3] for item in normalized],
+            page.width_pt,
+            page.height_pt,
+        )
+    }
 
     elements: list[ElementIR] = []
-    for order, (_sort_bbox, raw, bbox_px, bbox_pdf) in enumerate(normalized, start=1):
+    for visual_index, (_sort_bbox, raw, bbox_px, bbox_pdf) in enumerate(normalized):
+        order_assignment = reading_order_assignments[visual_index]
         element_type = _normalize_type(raw.get("type") or raw.get("label") or raw.get("category"))
-        source_crop = _write_crop(page, bbox_px, crop_root, order) if crop_root is not None else None
+        source_crop = _write_crop(page, bbox_px, crop_root, visual_index + 1) if crop_root is not None else None
+        metadata = {k: v for k, v in raw.items() if k not in {"bbox", "bbox_px", "bbox_pdf", "text"}}
+        metadata.update(order_assignment.as_metadata())
         elements.append(
             ElementIR(
-                id=f"p{page.page_index + 1:04d}-e{order:04d}",
+                id=f"p{page.page_index + 1:04d}-e{visual_index + 1:04d}",
                 page_index=page.page_index,
                 type=element_type,
                 bbox_pdf=bbox_pdf,
@@ -124,10 +136,10 @@ def _normalize_page_elements(
                 markdown=raw.get("markdown"),
                 html=raw.get("html"),
                 confidence=_extract_confidence(raw),
-                reading_order=order,
+                reading_order=order_assignment.semantic_order,
                 style_hint=_style_hint_from_bbox(bbox_px, raw),
                 source_crop=source_crop,
-                metadata={k: v for k, v in raw.items() if k not in {"bbox", "bbox_px", "bbox_pdf", "text"}},
+                metadata=metadata,
             )
         )
     return elements

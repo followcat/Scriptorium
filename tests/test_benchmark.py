@@ -22,6 +22,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
+    assert all("multi_column_element_count" in case for case in report["cases"])
+    assert "total_multi_column_elements" in report["summary"]
     assert all(case["element_count"] > 0 for case in report["cases"])
     assert (tmp_path / "benchmark" / "benchmark_report.json").exists()
     assert (tmp_path / "benchmark" / "benchmark_summary.csv").exists()

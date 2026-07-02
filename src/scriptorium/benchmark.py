@@ -88,6 +88,8 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "shape_count": stats["shape_count"],
         "style_count": stats["style_count"],
         "annotation_count": stats["annotation_count"],
+        "multi_column_element_count": stats["multi_column_element_count"],
+        "column_flow_element_count": stats["column_flow_element_count"],
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
         "p95_diff_ratio": p95_diff_ratio,
@@ -111,6 +113,16 @@ def _document_stats(document: DocumentIR) -> dict[str, int]:
         "shape_count": sum(1 for element in elements if element.type == "shape"),
         "style_count": len(document.metadata.get("styles", {})),
         "annotation_count": sum(1 for element in elements if "annotation" in element.metadata),
+        "multi_column_element_count": sum(
+            1
+            for element in elements
+            if element.source_text.strip() and int(element.metadata.get("column_count") or 1) > 1
+        ),
+        "column_flow_element_count": sum(
+            1
+            for element in elements
+            if element.source_text.strip() and element.metadata.get("reading_order_strategy") == "column-flow-v1"
+        ),
     }
 
 
@@ -147,6 +159,8 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_pages": sum(int(case["page_count"]) for case in cases),
         "total_elements": sum(int(case["element_count"]) for case in cases),
         "total_editable_elements": sum(int(case["editable_element_count"]) for case in cases),
+        "total_multi_column_elements": sum(int(case["multi_column_element_count"]) for case in cases),
+        "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
     }
 
 
@@ -159,6 +173,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "shape_count",
         "style_count",
         "annotation_count",
+        "multi_column_element_count",
+        "column_flow_element_count",
         "visual_similarity",
         "max_diff_ratio",
         "mean_diff_ratio",
