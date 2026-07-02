@@ -28,6 +28,7 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         display_mode=display_mode,
         element_text=element_text,
         element_text_runs=element_text_runs,
+        shape_line=shape_line,
         annotation_attr=annotation_attr,
     )
     index_path = target / "index.html"
@@ -68,6 +69,24 @@ def annotation_attr(element: ElementIR, key: str, default: str = "") -> str:
             return str(value)
     value = element.metadata.get(key)
     return default if value is None else str(value)
+
+
+def shape_line(element: ElementIR) -> dict[str, float] | None:
+    points = element.metadata.get("line_points_pdf")
+    if not isinstance(points, list) or len(points) != 4:
+        return None
+    x0, y0, x1, y1 = (float(value) for value in points)
+    bbox = element.bbox_pdf
+    if bbox.width <= 0 or bbox.height <= 0:
+        return None
+    return {
+        "x0": round(x0 - bbox.x0, 4),
+        "y0": round(y0 - bbox.y0, 4),
+        "x1": round(x1 - bbox.x0, 4),
+        "y1": round(y1 - bbox.y0, 4),
+        "width": round(bbox.width, 4),
+        "height": round(bbox.height, 4),
+    }
 
 
 def _prepare_page_assets(page: PageIR, assets_dir: Path, include_background: bool = True) -> dict[str, object]:

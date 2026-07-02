@@ -24,10 +24,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
+    assert all("image_count" in case for case in report["cases"])
     assert all("multi_column_element_count" in case for case in report["cases"])
     assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
     assert all("reading_order_strategy_counts" in case for case in report["cases"])
     assert "total_multi_column_elements" in report["summary"]
+    assert "total_image_elements" in report["summary"]
     assert "total_recursive_xy_cut_elements" in report["summary"]
     assert "reading_order_strategy_counts" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2

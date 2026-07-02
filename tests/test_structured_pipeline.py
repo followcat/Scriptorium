@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import fitz
+
 from scriptorium.annotations import annotate_document
 from scriptorium.fixture import create_fixture
 from scriptorium.html_export import export_html
@@ -45,6 +47,70 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert 'data-scriptorium-edit-target="edited_text"' in html
     assert 'data-bbox-pdf="' in html
     assert "Scriptorium PDF" in html
+
+
+def test_structured_html_renders_native_line_shapes_as_svg(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "line_fixture.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=220, height=180)
+    page.draw_line(fitz.Point(40, 132), fitz.Point(172, 42), color=(0.1, 0.55, 0.25), width=2.5)
+    page.insert_text((36, 154), "Diagonal line", fontsize=11, fontname="helv")
+    doc.save(pdf_path)
+    doc.close()
+
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    line_shapes = [
+        element
+        for element in document.pages[0].elements
+        if element.type == "shape" and element.metadata.get("shape_geometry") == "line"
+    ]
+
+    assert len(line_shapes) == 1
+    assert line_shapes[0].metadata["line_points_pdf"] is not None
+
+    html_path = export_html(document, tmp_path / "html", display_mode="structured")
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'data-scriptorium-shape-geometry="line"' in html
+    assert '<svg class="shape-line"' in html
+    assert "<line " in html
+
+
+def test_dense_vector_region_uses_local_raster_fallback(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "dense_vector_fixture.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=360, height=300)
+    for index in range(130):
+        x0 = 42 + (index % 26) * 10
+        x1 = 48 + ((index * 7) % 26) * 10
+        color = (0.1, 0.5, 0.2) if index % 2 else (0.75, 0.1, 0.1)
+        page.draw_line(fitz.Point(x0, 72), fitz.Point(x1, 190), color=color, width=1.4)
+    page.insert_text((52, 118), "inside dense vector chart", fontsize=10, fontname="helv")
+    page.insert_text((52, 236), "Figure caption remains editable.", fontsize=11, fontname="helv")
+    doc.save(pdf_path)
+    doc.close()
+
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    page_ir = document.pages[0]
+    raster_regions = [
+        element
+        for element in page_ir.elements
+        if element.type == "image" and element.metadata.get("source") == "native-raster-region"
+    ]
+    texts = [element.source_text for element in page_ir.elements if element.source_text]
+
+    assert len(raster_regions) == 1
+    assert raster_regions[0].metadata["rasterized_shape_count"] >= 120
+    assert "inside dense vector chart" not in texts
+    assert "Figure caption remains editable." in texts
+
+    html_path = export_html(document, tmp_path / "html", display_mode="structured")
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'data-scriptorium-source="native-raster-region"' in html
+    assert '<img class="embedded-image"' in html
 
 
 def test_xml_node_edit_updates_only_edited_text(tmp_path: Path) -> None:

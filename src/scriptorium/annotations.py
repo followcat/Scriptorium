@@ -94,6 +94,7 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "column_span": element.metadata.get("column_span"),
             "flow_segment_index": int(element.metadata.get("flow_segment_index") or 1),
             "reading_order_strategy": element.metadata.get("reading_order_strategy", "visual-yx"),
+            "reading_order_region_path": element.metadata.get("reading_order_region_path"),
             "editable": bool(element.source_text.strip()),
             "edit_target": "edited_text" if element.source_text.strip() else None,
             "bbox_pdf": element.bbox_pdf.as_list(),
@@ -169,6 +170,9 @@ def _infer_layout_regions(shape_elements: list[ElementIR]) -> list[LayoutRegion]
 
 
 def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutRegion | None) -> str:
+    if element.type == "image":
+        return "image"
+
     if element.type == "shape":
         if layout_region:
             return f"{layout_region.kind}-shape"

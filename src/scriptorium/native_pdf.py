@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from hashlib import sha1
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import fitz
 
@@ -67,7 +68,7 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
             rendered_page.height_pt,
         )
     }
-    elements: list[ElementIR] = []
+    text_elements: list[ElementIR] = []
     for visual_index, raw in enumerate(raw_lines):
         order_assignment = reading_order_assignments[visual_index]
         bbox_pdf = clamp_bbox(raw["bbox"], rendered_page.width_pt, rendered_page.height_pt)
@@ -82,7 +83,7 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
             "text_runs": text_runs,
             **order_assignment.as_metadata(),
         }
-        elements.append(
+        text_elements.append(
             ElementIR(
                 id=f"p{rendered_page.page_index + 1:04d}-n{visual_index + 1:04d}",
                 page_index=rendered_page.page_index,
@@ -96,8 +97,209 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
                 metadata=metadata,
             )
         )
-    elements.extend(_extract_page_shape_elements(page, rendered_page, start_order=len(elements) + 1))
+    image_elements = _extract_page_image_elements(text_dict, rendered_page, start_order=len(text_elements) + 1)
+    shape_elements = _extract_page_shape_elements(
+        page,
+        rendered_page,
+        start_order=len(text_elements) + len(image_elements) + 1,
+    )
+    raster_elements = _extract_complex_vector_region_elements(
+        page,
+        rendered_page,
+        text_elements,
+        image_elements,
+        shape_elements,
+        start_order=len(text_elements) + len(image_elements) + 1,
+    )
+    if raster_elements:
+        raster_regions = [element.bbox_pdf for element in raster_elements]
+        text_elements = _elements_outside_regions(text_elements, raster_regions)
+        image_elements = _elements_outside_regions(image_elements, raster_regions)
+        shape_elements = _elements_outside_regions(shape_elements, raster_regions)
+    return [*text_elements, *image_elements, *raster_elements, *shape_elements]
+
+
+def _extract_complex_vector_region_elements(
+    page: fitz.Page,
+    rendered_page: RenderedPage,
+    text_elements: list[ElementIR],
+    image_elements: list[ElementIR],
+    shape_elements: list[ElementIR],
+    start_order: int,
+) -> list[ElementIR]:
+    region = _complex_vector_region(shape_elements, rendered_page)
+    if region is None:
+        return []
+
+    raster_dir = rendered_page.background_image.parent / "native-raster-regions" / f"page_{rendered_page.page_index + 1:04d}"
+    raster_dir.mkdir(parents=True, exist_ok=True)
+    raster_path = raster_dir / "region_0001.png"
+    pixmap = page.get_pixmap(
+        matrix=fitz.Matrix(rendered_page.scale_x, rendered_page.scale_y),
+        clip=fitz.Rect(region.x0, region.y0, region.x1, region.y1),
+        alpha=False,
+    )
+    pixmap.save(raster_path)
+    bbox_px = pdf_to_px_bbox(region, rendered_page.scale_x, rendered_page.scale_y)
+    hidden_text_count = sum(1 for element in text_elements if _bbox_center_inside(region, element.bbox_pdf))
+    hidden_image_count = sum(1 for element in image_elements if _bbox_center_inside(region, element.bbox_pdf))
+    hidden_shape_count = sum(1 for element in shape_elements if _bbox_center_inside(region, element.bbox_pdf))
+    return [
+        ElementIR(
+            id=f"p{rendered_page.page_index + 1:04d}-r0001",
+            page_index=rendered_page.page_index,
+            type="image",
+            bbox_pdf=region,
+            bbox_px=bbox_px,
+            source_text="",
+            confidence=0.92,
+            reading_order=start_order,
+            style_hint={
+                "line_height": 1,
+                "font_size_px": 1,
+                "font_family": "Arial, sans-serif",
+                "object_fit": "fill",
+            },
+            source_crop=str(raster_path),
+            metadata={
+                "source": "native-raster-region",
+                "raster_fallback": True,
+                "raster_reason": "dense-vector-region",
+                "rasterized_text_count": hidden_text_count,
+                "rasterized_image_count": hidden_image_count,
+                "rasterized_shape_count": hidden_shape_count,
+            },
+        )
+    ]
+
+
+def _complex_vector_region(shape_elements: list[ElementIR], rendered_page: RenderedPage) -> BBox | None:
+    if len(shape_elements) < 120:
+        return None
+    line_count = sum(1 for element in shape_elements if element.metadata.get("line_points_pdf") is not None)
+    if line_count < 20:
+        return None
+
+    region = _union_element_bbox(shape_elements)
+    page_area = rendered_page.width_pt * rendered_page.height_pt
+    region_area = region.width * region.height
+    if region.width < 80 or region.height < 80:
+        return None
+    if region_area > page_area * 0.7:
+        return None
+    return _pad_bbox(region, 2.0, rendered_page.width_pt, rendered_page.height_pt)
+
+
+def _union_element_bbox(elements: list[ElementIR]) -> BBox:
+    return BBox(
+        x0=min(element.bbox_pdf.x0 for element in elements),
+        y0=min(element.bbox_pdf.y0 for element in elements),
+        x1=max(element.bbox_pdf.x1 for element in elements),
+        y1=max(element.bbox_pdf.y1 for element in elements),
+    )
+
+
+def _pad_bbox(bbox: BBox, padding: float, page_width: float, page_height: float) -> BBox:
+    return clamp_bbox(
+        BBox(x0=bbox.x0 - padding, y0=bbox.y0 - padding, x1=bbox.x1 + padding, y1=bbox.y1 + padding),
+        page_width,
+        page_height,
+    )
+
+
+def _elements_outside_regions(elements: list[ElementIR], regions: list[BBox]) -> list[ElementIR]:
+    return [element for element in elements if not any(_bbox_center_inside(region, element.bbox_pdf) for region in regions)]
+
+
+def _bbox_center_inside(region: BBox, bbox: BBox) -> bool:
+    center_x = (bbox.x0 + bbox.x1) / 2
+    center_y = (bbox.y0 + bbox.y1) / 2
+    return region.x0 <= center_x <= region.x1 and region.y0 <= center_y <= region.y1
+
+
+def _extract_page_image_elements(
+    text_dict: dict[str, Any],
+    rendered_page: RenderedPage,
+    start_order: int,
+) -> list[ElementIR]:
+    image_blocks = _dedupe_image_blocks(
+        block for block in text_dict.get("blocks", []) if block.get("type") == 1 and block.get("image")
+    )
+    if not image_blocks:
+        return []
+
+    image_dir = rendered_page.background_image.parent / "native-images" / f"page_{rendered_page.page_index + 1:04d}"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    elements: list[ElementIR] = []
+    for offset, block in enumerate(image_blocks):
+        bbox_pdf = clamp_bbox(BBox.from_any(block.get("bbox")), rendered_page.width_pt, rendered_page.height_pt)
+        if bbox_pdf.width <= 0 or bbox_pdf.height <= 0:
+            continue
+        image_bytes = bytes(block.get("image") or b"")
+        if not image_bytes:
+            continue
+
+        ext = _safe_image_ext(block.get("ext"))
+        image_path = image_dir / f"image_{offset + 1:04d}.{ext}"
+        image_path.write_bytes(image_bytes)
+        bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
+        elements.append(
+            ElementIR(
+                id=f"p{rendered_page.page_index + 1:04d}-i{offset + 1:04d}",
+                page_index=rendered_page.page_index,
+                type="image",
+                bbox_pdf=bbox_pdf,
+                bbox_px=bbox_px,
+                source_text="",
+                confidence=1.0,
+                reading_order=start_order + offset,
+                style_hint={
+                    "line_height": 1,
+                    "font_size_px": 1,
+                    "font_family": "Arial, sans-serif",
+                    "object_fit": "fill",
+                },
+                source_crop=str(image_path),
+                metadata={
+                    "source": "native-image",
+                    "image_ext": ext,
+                    "image_width": int(block.get("width") or 0),
+                    "image_height": int(block.get("height") or 0),
+                    "image_size_bytes": len(image_bytes),
+                    "image_number": block.get("number"),
+                    "xres": int(block.get("xres") or 0),
+                    "yres": int(block.get("yres") or 0),
+                },
+            )
+        )
     return elements
+
+
+def _dedupe_image_blocks(blocks: Iterable[Any]) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[tuple[float, float, float, float], str, str]] = set()
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        image_bytes = bytes(block.get("image") or b"")
+        if not image_bytes:
+            continue
+        bbox = BBox.from_any(block.get("bbox"))
+        key = (
+            tuple(round(value, 3) for value in bbox.as_list()),
+            str(block.get("ext") or ""),
+            sha1(image_bytes).hexdigest(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(block)
+    return unique
+
+
+def _safe_image_ext(value: Any) -> str:
+    ext = str(value or "png").lower().strip().lstrip(".")
+    return ext if ext in {"png", "jpg", "jpeg", "webp"} else "png"
 
 
 def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, start_order: int) -> list[ElementIR]:
@@ -105,6 +307,7 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
     for offset, drawing in enumerate(page.get_drawings(), start=0):
         width_pt = float(drawing.get("width") or 0)
         shape_geometry = _drawing_geometry(drawing)
+        line_points_pdf = _line_points_from_drawing(drawing)
         bbox_pdf = _drawing_bbox(drawing, rendered_page, width_pt)
         if bbox_pdf is None:
             continue
@@ -115,11 +318,11 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
         stroke = _rgb_to_css(drawing.get("color"))
         if not fill and not stroke:
             continue
-        if shape_geometry in {"horizontal-line", "vertical-line"}:
-            fill_color = stroke or fill or "transparent"
-            stroke_color = "transparent"
-            border_width_pt = 0
-            border_width_px = 0
+        if line_points_pdf is not None:
+            fill_color = "transparent"
+            stroke_color = stroke or fill or "transparent"
+            border_width_pt = round(width_pt, 3) if width_pt else 1
+            border_width_px = round(border_width_pt * rendered_page.scale_x, 3)
         else:
             fill_color = fill or "transparent"
             stroke_color = stroke or "transparent"
@@ -150,6 +353,11 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
                     "drawing_type": drawing.get("type"),
                     "seqno": drawing.get("seqno"),
                     "shape_geometry": shape_geometry,
+                    "line_points_pdf": [round(value, 4) for value in line_points_pdf]
+                    if line_points_pdf is not None
+                    else None,
+                    "stroke_opacity": drawing.get("stroke_opacity"),
+                    "fill_opacity": drawing.get("fill_opacity"),
                     "drawing_item_count": len(drawing.get("items") or []),
                 },
             )
@@ -165,13 +373,20 @@ def _drawing_bbox(drawing: dict[str, Any], rendered_page: RenderedPage, width_pt
         return None
 
     x0, y0, x1, y1 = float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1)
-    stroke_width = max(width_pt, 0.5)
-    if x1 == x0:
-        x0 -= stroke_width / 2
-        x1 += stroke_width / 2
-    if y1 == y0:
-        y0 -= stroke_width / 2
-        y1 += stroke_width / 2
+    if _line_points_from_drawing(drawing) is not None:
+        stroke_padding = max(width_pt, 0.5) / 2
+        x0 -= stroke_padding
+        y0 -= stroke_padding
+        x1 += stroke_padding
+        y1 += stroke_padding
+    else:
+        stroke_width = max(width_pt, 0.5)
+        if x1 == x0:
+            x0 -= stroke_width / 2
+            x1 += stroke_width / 2
+        if y1 == y0:
+            y0 -= stroke_width / 2
+            y1 += stroke_width / 2
     return clamp_bbox(BBox.from_any([x0, y0, x1, y1]), rendered_page.width_pt, rendered_page.height_pt)
 
 
@@ -219,6 +434,19 @@ def _drawing_geometry(drawing: dict[str, Any]) -> str:
         if width <= 0.01 and height > 0:
             return "vertical-line"
     return "path"
+
+
+def _line_points_from_drawing(drawing: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    items = drawing.get("items") or []
+    if len(items) != 1:
+        return None
+    item = items[0]
+    if not item or item[0] != "l" or len(item) < 3:
+        return None
+    start, end = item[1], item[2]
+    if not isinstance(start, fitz.Point) or not isinstance(end, fitz.Point):
+        return None
+    return (float(start.x), float(start.y), float(end.x), float(end.y))
 
 
 def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]:
@@ -313,12 +541,24 @@ def _has_mixed_run_styles(runs: list[dict[str, Any]]) -> bool:
 
 def _css_font_family(pdf_font: str) -> str:
     normalized = pdf_font.lower()
-    if "arial" in normalized or "helvetica" in normalized:
+    if "arial" in normalized or "helvetica" in normalized or "liberationsans" in normalized or "nimbussan" in normalized:
         return "Arial, sans-serif"
-    if "times" in normalized or "serif" in normalized:
-        return "Times New Roman, serif"
-    if "courier" in normalized or "mono" in normalized:
+    if "courier" in normalized or "mono" in normalized or "nimbusmono" in normalized or "sftt" in normalized:
         return "Courier New, monospace"
+    if any(name in normalized for name in ("cmmi", "cmsy", "cmex", "msbm")):
+        return "Cambria Math, Times New Roman, serif"
+    if any(
+        name in normalized
+        for name in (
+            "times",
+            "serif",
+            "nimbusrom",
+            "nimbusroman",
+            "cmr",
+            "cmbx",
+        )
+    ):
+        return "Times New Roman, serif"
     return "Arial, sans-serif"
 
 
