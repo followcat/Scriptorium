@@ -31,6 +31,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `layout_group_id`: shared region id such as `table-001`, `figure-001`, or `separator-001`
    - `layout_group_kind`: inferred region kind for downstream editing and translation tools
    - `semantic_order`, `visual_order`, `column_index`, `column_count`, `column_span`, and `flow_segment_index`
+   - `reading_order_strategy` and `reading_order_region_path`
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
 3. `DocumentIR.metadata.layout_regions` records each inferred region with its page index, bbox, kind, confidence, and contributing shape ids.
@@ -48,7 +49,10 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-scriptorium-visual-order`
    - `data-scriptorium-column-index`
    - `data-scriptorium-column-count`
+   - `data-scriptorium-column-span`
    - `data-scriptorium-flow-segment`
+   - `data-scriptorium-reading-order-strategy`
+   - `data-scriptorium-reading-order-region`
    - `data-scriptorium-editable`
    - `data-scriptorium-edit-target`
    - `data-bbox-pdf`
@@ -64,12 +68,13 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 
 - `visual_order`: top-left visual order from bbox sorting.
 - `semantic_order`: reading order used by XML/DOM/export consumers.
-- `column-flow-v1`: a lightweight multi-column heuristic that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
+- `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
+- `column-flow-v1`: a lightweight multi-column fallback that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
+- `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
-The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
+The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
 
-- Recursive XY-Cut / XY-Cut++ for hierarchical page segmentation.
 - A pdfminer.six-style box-flow scorer for pages that need a continuous horizontal-vs-vertical ordering tradeoff.
 - Optional model/layout backends such as Docling, LayoutParser, PaddleOCR-VL, or PP-Structure outputs when available.
 
@@ -136,6 +141,8 @@ Metrics:
 - `annotation_count`: elements with annotation metadata.
 - `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
+- `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
+- `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 

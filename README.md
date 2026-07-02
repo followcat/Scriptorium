@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-18%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-19%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -55,6 +55,8 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
   data-scriptorium-layout-confidence="0.86"
   data-scriptorium-semantic-order="12"
   data-scriptorium-column-count="2"
+  data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+  data-scriptorium-reading-order-region="root/h1/v0"
   data-scriptorium-edit-target="edited_text"
   data-bbox-pdf="76.99,212.49,117.83,224.22"
   contenteditable="true"
@@ -75,11 +77,11 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | Hacker News live page printed by Playwright | 2 | 132 | 95 | 37 | 0 | 0.9792518 | 0.0207482 | 0.01067874 | yes / yes |
 | arXiv paper: Attention Is All You Need | 15 | 3758 | 1048 | 2710 | 163 | 0.88813653 | 0.11186347 | 0.07348926 | yes / yes |
-| Built-in benchmark fixtures, mean | 5 pages total | 61 | 42 | 19 | 9 | 0.98908544 | 0.01198732 | 0.01087427 | yes / yes |
+| Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 19 | 20 | 0.98939052 | 0.01198732 | 0.01057725 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
-内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 42 个期望文本节点；真实论文和网页样本暂未附带人工顺序标注，因此只报告 multi-column 覆盖数。
+内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序，真实论文和网页样本暂未附带人工顺序标注，因此只报告 multi-column 覆盖数。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -233,6 +235,8 @@ Tracked metrics:
 - page dimension match
 - multi-column element count
 - column-flow element count
+- recursive XY-Cut element count
+- reading-order strategy counts
 - semantic ground-truth case count
 - semantic order pair accuracy
 - semantic sequence similarity
@@ -267,6 +271,7 @@ Core files:
 - `src/scriptorium/models.py`: `DocumentIR`, page and element models
 - `src/scriptorium/native_pdf.py`: native text and drawing extraction
 - `src/scriptorium/annotations.py`: role/style/source/bbox annotation pass
+- `src/scriptorium/reading_order.py`: visual order, column-flow fallback, and recursive XY-Cut semantic order
 - `src/scriptorium/html_export.py`: standalone HTML export
 - `src/scriptorium/xml_edit.py`: XML node edit round trip
 - `src/scriptorium/benchmark.py`: reproducible quality benchmark
@@ -280,7 +285,7 @@ Core files:
 - element bbox in PDF points and pixels
 - `source_text`, `edited_text`, `translated_text`
 - `text_runs` for native PDF inline spans: text, bbox, font, weight, style, color, script, and run style id
-- `semantic_order`, `visual_order`, `column_index`, `column_count`, and `flow_segment_index`
+- `semantic_order`, `visual_order`, `column_index`, `column_count`, `flow_segment_index`, and `reading_order_region_path`
 - source kind: `native-pdf`, `native-drawing`, OCR fallback, etc.
 - role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
@@ -309,9 +314,9 @@ pytest
 Current local test baseline:
 
 ```text
-18 passed
+19 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, and column-flow semantic order for multi-column pages. The next useful work is adding stronger XY-Cut/model-backed ordering for irregular scientific pages, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, recursive XY-Cut semantic order for sectioned multi-column pages, and strategy coverage metrics. The next useful work is deeper real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.

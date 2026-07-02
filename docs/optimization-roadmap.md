@@ -7,25 +7,27 @@ This project optimizes two different outcomes:
 
 ## Current Implemented Path
 
+- `recursive-xy-cut-v1` recursively segments pages with horizontal and vertical whitespace cuts, so section headings can stay between independent column regions.
 - `column-flow-v1` detects common two-column text regions and orders text left-column first, then right-column.
 - Table-like grids stay row-major so table cells are not read as document columns.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
-- Benchmark reports now include `multi_column_element_count` and `column_flow_element_count`.
+- Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
+- Benchmark reports now include `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, and `reading_order_strategy_counts`.
 - Built-in fixtures write `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
 | Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|
-| Built-in fixtures | 9 | yes | 1.0 | 0.98908544 |
+| Built-in fixtures | 20 | yes | 1.0 | 0.98939052 |
 | arXiv Attention paper | 163 | no | n/a | 0.88813653 |
 | Hacker News print PDF | 0 | no | n/a | 0.9792518 |
 
 ## Next Optimization Options
 
-1. Recursive XY-Cut backend
+1. Recursive XY-Cut refinement
 
-   Use page regions and whitespace cuts to recursively segment headers, columns, figures, tables, and footers. This should improve irregular academic pages where a global two-column heuristic is too weak.
+   The first backend is implemented. Next refinements should add table-aware two-column table handling, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
 
 2. Box-flow scoring backend
 
