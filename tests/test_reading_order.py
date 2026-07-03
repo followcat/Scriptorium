@@ -8,6 +8,7 @@ from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
 from scriptorium.reading_order import (
     infer_box_flow_order,
+    infer_relation_graph_order,
     infer_semantic_reading_order,
     pairwise_order_disagreement,
     successor_order_disagreement,
@@ -261,6 +262,33 @@ def test_successor_disagreement_ignores_non_shared_items() -> None:
 
     assert disagreement.edge_count == 2
     assert disagreement.disagreement_count == 0
+
+
+def test_relation_graph_candidate_orders_column_successor_paths() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(5):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=60, y0=70 + row * 18, x1=240, y1=80 + row * 18))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=70 + row * 18, x1=500, y1=80 + row * 18))
+
+    candidate_order = infer_relation_graph_order(bboxes, page_width=612, page_height=792)
+
+    assert candidate_order == [*left_indices, *right_indices]
+
+
+def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:
+    bboxes: list[BBox] = []
+    for row in range(4):
+        for column in range(3):
+            bboxes.append(BBox(x0=70 + column * 150, y0=80 + row * 18, x1=110 + column * 150, y1=90 + row * 18))
+
+    candidate_order = infer_relation_graph_order(bboxes, page_width=612, page_height=792)
+
+    assert candidate_order == list(range(len(bboxes)))
 
 
 def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:

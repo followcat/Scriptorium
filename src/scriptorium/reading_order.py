@@ -105,6 +105,13 @@ class _BoxFlowResult:
 
 
 @dataclass(frozen=True)
+class _RelationGraphEdge:
+    source: int
+    target: int
+    score: float
+
+
+@dataclass(frozen=True)
 class PairwiseOrderDisagreement:
     pair_count: int
     disagreement_count: int
@@ -211,6 +218,68 @@ def infer_box_flow_order(
         return (score, row_bucket, bbox.x0, bbox.y0, index)
 
     return sorted(range(len(bboxes)), key=sort_key)
+
+
+def infer_relation_graph_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> list[int]:
+    """Return a geometry-only successor-graph candidate order.
+
+    This is a diagnostic primitive for relation-graph reading-order work. It
+    builds local successor edges, selects a degree-constrained path cover with
+    a max-regret rule, then serializes the resulting chains. It deliberately
+    avoids changing the selected semantic order until benchmark evidence says
+    the candidate should be trusted for a class of pages.
+    """
+
+    if not bboxes:
+        return []
+    visual_order = sorted(range(len(bboxes)), key=lambda index: reading_order_key(bboxes[index]))
+    source_indices = [
+        index
+        for index, bbox in enumerate(bboxes)
+        if bbox.width >= 8 and bbox.height >= 4
+    ]
+    if len(source_indices) < 2 or _looks_like_table_grid([bboxes[index] for index in source_indices], page_width):
+        return visual_order
+
+    heights = [bboxes[index].height for index in source_indices if bboxes[index].height > 0]
+    median_height = median(heights) if heights else 10.0
+    columns = _infer_column_clusters(bboxes, page_width, page_height, indices=source_indices)
+    column_by_item = _assign_columns(bboxes, columns) if columns else {}
+    column_bounds = _relation_graph_column_bounds(columns, bboxes)
+    edges = _relation_graph_candidate_edges(
+        bboxes,
+        page_width,
+        page_height,
+        source_indices,
+        median_height,
+        column_by_item,
+        column_bounds,
+    )
+    if not edges:
+        return visual_order
+
+    successor_by_item: dict[int, int] = {}
+    predecessor_by_item: dict[int, int] = {}
+    while len(successor_by_item) < len(source_indices) - 1:
+        edge = _select_relation_graph_edge(edges, successor_by_item, predecessor_by_item)
+        if edge is None:
+            break
+        successor_by_item[edge.source] = edge.target
+        predecessor_by_item[edge.target] = edge.source
+
+    ordered = _serialize_relation_graph_paths(
+        source_indices,
+        bboxes,
+        successor_by_item,
+        predecessor_by_item,
+    )
+    ordered_set = set(ordered)
+    ordered.extend(index for index in visual_order if index not in ordered_set)
+    return ordered
 
 
 def pairwise_order_disagreement(
@@ -1425,6 +1494,193 @@ def _xy_cut_evidence(result: _XyCutResult) -> tuple[str, ...]:
     if result.has_vertical_split:
         evidence.append("vertical-whitespace-cut")
     return tuple(evidence)
+
+
+def _relation_graph_column_bounds(columns: list[list[int]], bboxes: list[BBox]) -> dict[int, tuple[float, float]]:
+    bounds: dict[int, tuple[float, float]] = {}
+    for column_index, column in enumerate(columns):
+        if not column:
+            continue
+        bounds[column_index] = (
+            min(bboxes[item_index].y0 for item_index in column),
+            max(bboxes[item_index].y1 for item_index in column),
+        )
+    return bounds
+
+
+def _relation_graph_candidate_edges(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    source_indices: list[int],
+    median_height: float,
+    column_by_item: dict[int, int],
+    column_bounds: dict[int, tuple[float, float]],
+) -> list[_RelationGraphEdge]:
+    visual_order = sorted(source_indices, key=lambda index: reading_order_key(bboxes[index]))
+    visual_successor = {
+        item_index: visual_order[position + 1]
+        for position, item_index in enumerate(visual_order[:-1])
+    }
+    edges: list[_RelationGraphEdge] = []
+    max_candidates_per_source = 6
+    for source_index in source_indices:
+        scored: list[_RelationGraphEdge] = []
+        for target_index in source_indices:
+            if source_index == target_index:
+                continue
+            score = _relation_graph_edge_score(
+                bboxes[source_index],
+                bboxes[target_index],
+                page_width,
+                page_height,
+                median_height,
+                column_by_item.get(source_index),
+                column_by_item.get(target_index),
+                column_bounds,
+                visual_successor.get(source_index) == target_index,
+            )
+            if score > 0:
+                scored.append(_RelationGraphEdge(source=source_index, target=target_index, score=score))
+        edges.extend(
+            sorted(
+                scored,
+                key=lambda edge: (-edge.score, reading_order_key(bboxes[edge.target])),
+            )[:max_candidates_per_source]
+        )
+    return edges
+
+
+def _relation_graph_edge_score(
+    source: BBox,
+    target: BBox,
+    page_width: float,
+    page_height: float,
+    median_height: float,
+    source_column: int | None,
+    target_column: int | None,
+    column_bounds: dict[int, tuple[float, float]],
+    is_visual_successor: bool,
+) -> float:
+    vertical_gap = target.y0 - source.y1
+    horizontal_overlap = _horizontal_overlap_ratio(source, target)
+    center_delta = abs(_center_x(source) - _center_x(target))
+    same_column = (
+        source_column is not None
+        and target_column is not None
+        and source_column == target_column
+    )
+    same_stream = same_column or _spatial_graph_horizontally_related(source, target, page_width)
+    max_forward_gap = max(page_height * 0.08, median_height * 7.0)
+
+    if same_stream and -median_height * 0.35 <= vertical_gap <= max_forward_gap:
+        gap_score = 1.0 - min(max(vertical_gap, 0.0) / max_forward_gap, 1.0)
+        center_score = 1.0 - min(center_delta / max(page_width * 0.28, 1.0), 1.0)
+        overlap_score = min(horizontal_overlap, 1.0)
+        return _bounded_confidence(
+            0.42
+            + 0.24 * gap_score
+            + 0.18 * overlap_score
+            + 0.1 * center_score
+            + (0.08 if same_column else 0.0)
+        )
+
+    if (
+        source_column is not None
+        and target_column is not None
+        and target_column > source_column
+        and target.y0 < source.y0
+    ):
+        source_top, source_bottom = column_bounds.get(source_column, (0.0, page_height))
+        target_top, target_bottom = column_bounds.get(target_column, (0.0, page_height))
+        source_height = max(source_bottom - source_top, 1.0)
+        target_height = max(target_bottom - target_top, 1.0)
+        source_progress = (source.y1 - source_top) / source_height
+        target_progress = (target.y0 - target_top) / target_height
+        if source_progress >= 0.55 and target_progress <= 0.45:
+            horizontal_step = (_center_x(target) - _center_x(source)) / max(page_width, 1.0)
+            if horizontal_step > 0.08:
+                source_score = min((source_progress - 0.5) / 0.5, 1.0)
+                target_score = min((0.5 - target_progress) / 0.5, 1.0)
+                step_score = min(horizontal_step / 0.35, 1.0)
+                return _bounded_confidence(0.38 + 0.16 * source_score + 0.16 * target_score + 0.12 * step_score)
+
+    if is_visual_successor:
+        return 0.28
+    return 0.0
+
+
+def _select_relation_graph_edge(
+    edges: list[_RelationGraphEdge],
+    successor_by_item: dict[int, int],
+    predecessor_by_item: dict[int, int],
+) -> _RelationGraphEdge | None:
+    feasible = [
+        edge
+        for edge in edges
+        if edge.source not in successor_by_item
+        and edge.target not in predecessor_by_item
+        and edge.score >= 0.3
+        and not _relation_graph_would_cycle(edge.source, edge.target, successor_by_item)
+    ]
+    if not feasible:
+        return None
+
+    outgoing: dict[int, list[_RelationGraphEdge]] = {}
+    incoming: dict[int, list[_RelationGraphEdge]] = {}
+    for edge in feasible:
+        outgoing.setdefault(edge.source, []).append(edge)
+        incoming.setdefault(edge.target, []).append(edge)
+    for grouped_edges in [*outgoing.values(), *incoming.values()]:
+        grouped_edges.sort(key=lambda item: item.score, reverse=True)
+
+    def priority(edge: _RelationGraphEdge) -> tuple[float, float, int, int]:
+        source_regret = _relation_graph_regret(edge, outgoing[edge.source])
+        target_regret = _relation_graph_regret(edge, incoming[edge.target])
+        return (source_regret + target_regret, edge.score, -edge.source, -edge.target)
+
+    return max(feasible, key=priority)
+
+
+def _relation_graph_regret(edge: _RelationGraphEdge, alternatives: list[_RelationGraphEdge]) -> float:
+    for alternative in alternatives:
+        if alternative != edge:
+            return edge.score - alternative.score
+    return edge.score
+
+
+def _relation_graph_would_cycle(source: int, target: int, successor_by_item: dict[int, int]) -> bool:
+    cursor = target
+    visited: set[int] = set()
+    while cursor in successor_by_item:
+        if cursor == source or cursor in visited:
+            return True
+        visited.add(cursor)
+        cursor = successor_by_item[cursor]
+    return cursor == source
+
+
+def _serialize_relation_graph_paths(
+    source_indices: list[int],
+    bboxes: list[BBox],
+    successor_by_item: dict[int, int],
+    predecessor_by_item: dict[int, int],
+) -> list[int]:
+    heads = [item_index for item_index in source_indices if item_index not in predecessor_by_item]
+    ordered: list[int] = []
+    visited: set[int] = set()
+    for head_index in sorted(heads, key=lambda index: reading_order_key(bboxes[index])):
+        cursor = head_index
+        while cursor not in visited:
+            visited.add(cursor)
+            ordered.append(cursor)
+            if cursor not in successor_by_item:
+                break
+            cursor = successor_by_item[cursor]
+    for item_index in sorted(source_indices, key=lambda index: reading_order_key(bboxes[index])):
+        if item_index not in visited:
+            ordered.append(item_index)
+    return ordered
 
 
 def _spatial_graph_order(
