@@ -350,10 +350,63 @@ def _infer_column_clusters(bboxes: list[BBox], page_width: float, page_height: f
     if _looks_like_table_grid([bboxes[index] for index in candidate_indices], page_width):
         return [list(range(len(bboxes)))]
 
+    anchored_columns = _infer_repeated_start_columns(candidate_indices, bboxes, page_width)
+    if len(anchored_columns) >= 2:
+        return anchored_columns
+
     clusters = _split_column_cluster(candidate_indices, bboxes, page_width, page_height, max_columns=3)
     if len(clusters) < 2:
         return [list(range(len(bboxes)))]
     return sorted(clusters, key=lambda cluster: _cluster_x_center(cluster, bboxes))
+
+
+def _infer_repeated_start_columns(
+    indices: list[int],
+    bboxes: list[BBox],
+    page_width: float,
+) -> list[list[int]]:
+    tolerance = max(12.0, page_width * 0.03)
+    start_clusters: list[list[int]] = []
+    cluster_centers: list[float] = []
+    for index in sorted(indices, key=lambda item: bboxes[item].x0):
+        x0 = bboxes[index].x0
+        if not start_clusters or abs(x0 - cluster_centers[-1]) > tolerance:
+            start_clusters.append([index])
+            cluster_centers.append(x0)
+        else:
+            start_clusters[-1].append(index)
+            cluster_centers[-1] = sum(bboxes[item].x0 for item in start_clusters[-1]) / len(start_clusters[-1])
+
+    min_items = max(4, round(len(indices) * 0.12))
+    candidates = [
+        (cluster_centers[position], cluster)
+        for position, cluster in enumerate(start_clusters)
+        if len(cluster) >= min_items
+    ]
+    if len(candidates) < 2:
+        return []
+
+    best_pair: tuple[float, list[int], list[int]] | None = None
+    min_separation = page_width * 0.25
+    for left_position in range(len(candidates)):
+        left_x, left_cluster = candidates[left_position]
+        for right_x, right_cluster in candidates[left_position + 1 :]:
+            separation = right_x - left_x
+            if separation < min_separation:
+                continue
+            if _vertical_overlap_ratio(left_cluster, right_cluster, bboxes) < 0.2:
+                continue
+            score = len(left_cluster) + len(right_cluster) + separation / max(page_width, 1.0)
+            if best_pair is None or score > best_pair[0]:
+                best_pair = (score, left_cluster, right_cluster)
+
+    if best_pair is None:
+        return []
+    columns = sorted([best_pair[1], best_pair[2]], key=lambda cluster: _cluster_x_center(cluster, bboxes))
+    anchor_coverage = sum(len(cluster) for cluster in columns) / max(len(indices), 1)
+    if anchor_coverage < 0.55:
+        return []
+    return columns
 
 
 def _split_column_cluster(

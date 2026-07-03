@@ -3,6 +3,7 @@ from pathlib import Path
 from scriptorium.annotations import annotate_document
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.html_export import export_html
+from scriptorium.models import BBox
 from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
 from scriptorium.reading_order import infer_semantic_reading_order
@@ -91,6 +92,49 @@ def test_recursive_xy_cut_keeps_section_heading_between_column_regions(tmp_path:
     assert semantic_report["pages"][0]["actual_sequence"].index("Methods") > semantic_report["pages"][0][
         "actual_sequence"
     ].index("Background right two.")
+
+
+def test_column_flow_detects_academic_columns_from_repeated_left_edges() -> None:
+    bboxes = [BBox(x0=120, y0=42, x1=470, y1=62)]
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(18):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=100 + row * 13, x1=292, y1=110 + row * 13))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=307, y0=100 + row * 13, x1=527, y1=110 + row * 13))
+        if row in {3, 8, 13}:
+            left_indices.append(len(bboxes))
+            bboxes.append(BBox(x0=246, y0=100 + row * 13, x1=286, y1=110 + row * 13))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert all(by_item[index].strategy == "column-flow-v1" for index in left_indices + right_indices)
+
+
+def test_column_flow_does_not_treat_sparse_author_grid_as_body_columns() -> None:
+    bboxes = [
+        BBox(x0=124, y0=72, x1=488, y1=84),
+        BBox(x0=212, y0=148, x1=400, y1=166),
+        BBox(x0=133, y0=233, x1=204, y1=245),
+        BBox(x0=239, y0=233, x1=305, y1=245),
+        BBox(x0=339, y0=233, x1=397, y1=245),
+        BBox(x0=424, y0=233, x1=497, y1=245),
+        BBox(x0=284, y0=386, x1=328, y1=398),
+    ]
+    for row in range(12):
+        bboxes.append(BBox(x0=144, y0=413 + row * 11, x1=468, y1=423 + row * 11))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+
+    assert {assignment.column_count for assignment in assignments} == {1}
+    assert [assignment.semantic_order for assignment in assignments] == list(range(1, len(bboxes) + 1))
 
 
 def test_semantic_quality_penalizes_column_order_regression(tmp_path: Path) -> None:

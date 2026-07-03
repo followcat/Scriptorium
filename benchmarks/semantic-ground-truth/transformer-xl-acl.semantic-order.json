@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "description": "Partial semantic reading-order anchors for the ACL 2019 Transformer-XL paper. The labels focus on title, section headings, and main-body two-column transitions.",
+  "source": "https://aclanthology.org/P19-1285.pdf",
+  "pages": [
+    {
+      "page_index": 0,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Transformer-XL: Attentive Language Models",
+        "Beyond a Fixed-Length Context",
+        "Zihang Dai⇤12, Zhilin Yang⇤12, Yiming Yang1, Jaime Carbonell1,",
+        "Quoc V. Le2, Ruslan Salakhutdinov1",
+        "Abstract",
+        "Transformers have a potential of learning",
+        "dependency, but also resolves the context frag-",
+        "text articles with thousands of tokens.",
+        "1",
+        "Introduction",
+        "Language modeling is among the important prob-",
+        "dependency in sequential data.",
+        "Term Memory (LSTM) networks (Hochreiter and",
+        "refer to this problem as context fragmentation.",
+        "To address the aforementioned limitations of",
+        "We introduce the notion of recurrence into our"
+      ]
+    },
+    {
+      "page_index": 1,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "deep self-attention network. In particular, instead",
+        "one observed during training.",
+        "Transformer-XL obtained strong results on ﬁve",
+        "language modeling.",
+        "2",
+        "Related Work",
+        "In the last few years, the ﬁeld of language mod-",
+        "To capture the long-range context in language",
+        "sentation of the wider context into the network",
+        "as an additional input.",
+        "longer-term dependency.",
+        "3",
+        "Model",
+        "Given a corpus of tokens x = (x1, . . . , xT ), the",
+        "token.",
+        "3.1",
+        "Vanilla Transformer Language Models"
+      ]
+    },
+    {
+      "page_index": 2,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Figure 1: Illustration of the vanilla model with a segment length 4.",
+        "ageable sizes, and only train the model within",
+        "Section 1.",
+        "During evaluation, at each step, the vanilla",
+        "tion speed.",
+        "3.2",
+        "Segment-Level Recurrence with State",
+        "Reuse",
+        "To address the limitations of using a ﬁxed-length",
+        "avoiding context fragmentation. Formally, let the",
+        "where the function SG(·) stands for stop-gradient,"
+      ]
+    }
+  ]
+}
