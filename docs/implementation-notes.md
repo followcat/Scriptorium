@@ -226,6 +226,8 @@ Metrics:
 
 For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes. The tracked Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The tracked Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels.
 
+`compare_semantic_reading_order()` also accepts optional `candidate_orders`, keyed by candidate name, page index, and ordered element ids. Benchmark uses this to score `visual_yx`, `box_flow`, and `relation_graph` candidates against the same sidecar without changing `DocumentIR.semantic_order`. This creates an arbitration-ready evidence layer: disagreement diagnostics still show how far candidates are from the selected order, while sidecar-scored candidate metrics show whether a candidate is actually closer to labelled human order.
+
 ## Useful References
 
 - PaddleOCR GitHub: https://github.com/PaddlePaddle/PaddleOCR
@@ -339,6 +341,10 @@ Metrics:
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_successor_accuracy`: labelled adjacent successor-edge score when ground truth is available.
 - `semantic_successor_correct_count`, `semantic_successor_total_count`: raw successor-edge counts used for case and summary aggregation.
+- `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, and `relation_graph`.
+- `semantic_best_candidate_by_successor`: candidate name with the highest labelled successor-edge accuracy, using pairwise accuracy as the tie-breaker.
+- `semantic_best_candidate_successor_accuracy`: successor-edge accuracy of that best candidate.
+- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, and `semantic_relation_graph_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
@@ -379,6 +385,22 @@ Latest relation-graph diagnostics validation:
 | JD homepage screenshot PDF | `outputs/external/jd-home-relation-graph-diagnostics-v1` | 0.99576887 | n/a | 1927/8911 | 117/133 | 127/133 | dense OCR/web layout still needs semantic labels or external structure evidence |
 
 These relation-graph numbers are not correctness scores. They show that a local successor graph is a promising additional candidate, especially against box-flow successor disagreement, but broad pairwise disagreement and missing complex-page semantic ground truth prevent using it as the default order yet. The implementation is covered by `tests/test_reading_order.py::test_relation_graph_candidate_orders_column_successor_paths`, `tests/test_reading_order.py::test_relation_graph_candidate_keeps_table_like_grid_visual`, and benchmark field assertions in `tests/test_benchmark.py`.
+
+Latest semantic candidate scoring validation:
+
+- `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
+- `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, and `relation_graph` candidates for each page.
+- Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`.
+- Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
+- Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth` and benchmark field assertions in `tests/test_benchmark.py`.
+
+Built-in semantic candidate baseline:
+
+| Command Output | Selected Successor | Visual-YX Candidate | Box-Flow Candidate | Relation-Graph Candidate | Best Candidate Counts |
+|---|---:|---:|---:|---:|---|
+| `outputs/benchmark-semantic-candidate-metrics-v1` | 47/47 | 34/47 | 28/47 | 44/47 | `relation_graph: 2`, `visual_yx: 3` |
+
+This validates the metric and the candidate generation path. It does not promote relation graph to the selected order because selected semantic order already scores 47/47 on these fixtures, and complex external samples still need sidecars or model evidence for correctness scoring.
 
 Latest caption-flow validation:
 

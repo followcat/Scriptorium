@@ -14,6 +14,7 @@ This project optimizes two different outcomes:
 - Caption-flow uses native/OCR text labels to identify `Figure/Fig./Table/Algorithm + number` captions, keeps column-local captions in-column, and turns cross-gutter captions into local flow breaks.
 - Column-biased box-flow candidate diagnostics still compare the selected semantic order against a horizontal-flow order and report pairwise disagreement for all benchmarked pages.
 - Geometry-only relation-graph candidate diagnostics now compare the selected semantic order against local successor edges serialized through a max-regret path cover. This remains diagnostic-only until semantic/model evidence can arbitrate when it should override the selected order.
+- Semantic sidecars now score named candidate orders directly. Benchmark emits selected, visual-yx, box-flow, and relation-graph semantic candidate metrics where ground truth exists, so future arbitration can be evaluated against human labels instead of only candidate-vs-selected disagreement.
 - Pure table-like grids use `table-row-major-v1`, so table cells stay row-major without being reported as an unknown visual-order fallback.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
@@ -46,7 +47,7 @@ This project optimizes two different outcomes:
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow and relation-graph disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
 - Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order footnote/sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
-- Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy, labelled successor-edge accuracy, normalized sequence similarity, and box-flow successor-edge candidate disagreement.
+- Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy, labelled successor-edge accuracy, normalized sequence similarity, candidate-vs-selected disagreement, and sidecar-scored candidate order metrics.
 
 Current benchmark coverage:
 
@@ -82,7 +83,9 @@ Current relation-graph candidate diagnostics:
 | PUMA 2024 Annual Report, first 12 pages | 2473/15166 | 166/509 | 199/509 | candidate evidence for annual-report sidecar/model arbitration |
 | JD homepage screenshot PDF | 1927/8911 | 117/133 | 127/133 | still high risk; needs semantic labels or external structure evidence |
 
-The relation graph improves local successor disagreement on current complex samples, but this is not enough to promote it to the default orderer. The next capability step is arbitration: combine selected native heuristics, relation-graph successor edges, sidecar labels, roles, captions, tables, and optional Paddle/PP-Structure/Docling evidence, then only switch order when independent evidence supports it.
+The relation graph improves local successor disagreement on current complex samples, but this is not enough to promote it to the default orderer. The benchmark can now score relation-graph and box-flow candidates directly against semantic sidecars when labels exist. The next capability step is arbitration: combine selected native heuristics, relation-graph successor edges, sidecar labels, roles, captions, tables, and optional Paddle/PP-Structure/Docling evidence, then only switch order when independent evidence supports it.
+
+The first built-in semantic candidate baseline is `outputs/benchmark-semantic-candidate-metrics-v1`: selected order scores 47/47 successor edges, visual-yx scores 34/47, box-flow scores 28/47, and relation graph scores 44/47. This gives arbitration work a direct sidecar-scored signal without tuning against external complex samples that do not yet have labels.
 
 Current `--font-profile auto` sweep:
 
@@ -177,7 +180,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 6. Relation-graph candidate arbitration
 
-   The first geometry-only relation-graph candidate is implemented. It scores local successor edges from bbox geometry, guards table-like grids, selects an acyclic degree-constrained path cover with max-regret edge selection, and reports pairwise plus successor-edge disagreement. The next step is not to tune it against the current samples, but to add arbitration that can combine relation edges with role, caption/figure/table proximity, semantic sidecars, and optional model evidence before changing selected order. This follows recent work that treats reading order as relations rather than a single fragile permutation and should continue to be evaluated with successor-edge accuracy in addition to pairwise sequence accuracy.
+   The first geometry-only relation-graph candidate is implemented. It scores local successor edges from bbox geometry, guards table-like grids, selects an acyclic degree-constrained path cover with max-regret edge selection, and reports pairwise plus successor-edge disagreement. Benchmark also scores relation graph, box-flow, and visual-yx candidates directly against semantic sidecars. The next step is not to tune it against the current samples, but to add arbitration that can combine relation edges with role, caption/figure/table proximity, semantic sidecars, and optional model evidence before changing selected order. This follows recent work that treats reading order as relations rather than a single fragile permutation and should continue to be evaluated with successor-edge accuracy in addition to pairwise sequence accuracy.
 
 7. Real model evidence A/B
 
