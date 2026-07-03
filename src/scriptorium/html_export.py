@@ -14,7 +14,10 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     include_background = display_mode != "structured"
-    pages = [_prepare_page_assets(page, assets_dir, include_background=include_background) for page in document.pages]
+    pages = [
+        _prepare_page_assets(page, assets_dir, display_mode=display_mode, include_background=include_background)
+        for page in document.pages
+    ]
     env = Environment(
         loader=PackageLoader("scriptorium", "templates"),
         autoescape=select_autoescape(["html", "xml"]),
@@ -80,7 +83,7 @@ def _should_render_source_runs(element: ElementIR, display_mode: DisplayMode) ->
         return False
     if display_mode == "source":
         return True
-    if display_mode in {"structured", "edited"}:
+    if display_mode in {"structured", "edited", "fidelity"}:
         return element.edited_text is None
     if display_mode == "translated":
         return element.translated_text is None and element.edited_text is None
@@ -131,8 +134,13 @@ def shape_path(element: ElementIR) -> dict[str, object] | None:
     }
 
 
-def _prepare_page_assets(page: PageIR, assets_dir: Path, include_background: bool = True) -> dict[str, object]:
-    background_source = Path(page.background_image)
+def _prepare_page_assets(
+    page: PageIR,
+    assets_dir: Path,
+    display_mode: DisplayMode,
+    include_background: bool = True,
+) -> dict[str, object]:
+    background_source = _background_source(page, display_mode)
     page_asset_dir = assets_dir / f"page_{page.page_index + 1:04d}"
     page_asset_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,3 +169,11 @@ def _prepare_page_assets(page: PageIR, assets_dir: Path, include_background: boo
         "background": background_rel,
         "elements": elements,
     }
+
+
+def _background_source(page: PageIR, display_mode: DisplayMode) -> Path:
+    if display_mode == "fidelity" and page.background_svg:
+        svg_source = Path(page.background_svg)
+        if svg_source.exists():
+            return svg_source
+    return Path(page.background_image)

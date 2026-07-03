@@ -28,12 +28,19 @@ def extract_native_pdf_to_ir(
     rendered: RenderedDocument,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
+    font_size_scale: float = 1.0,
 ) -> DocumentIR:
     pages: list[PageIR] = []
     with fitz.open(rendered.source_pdf) as doc:
         for rendered_page in rendered.pages:
             page = doc[rendered_page.page_index]
-            elements = _extract_page_text_elements(page, rendered_page, font_profile=font_profile, raster_policy=raster_policy)
+            elements = _extract_page_text_elements(
+                page,
+                rendered_page,
+                font_profile=font_profile,
+                raster_policy=raster_policy,
+                font_size_scale=font_size_scale,
+            )
             pages.append(
                 PageIR(
                     page_index=rendered_page.page_index,
@@ -45,6 +52,7 @@ def extract_native_pdf_to_ir(
                     scale_x=rendered_page.scale_x,
                     scale_y=rendered_page.scale_y,
                     background_image=str(rendered_page.background_image),
+                    background_svg=str(rendered_page.background_svg) if rendered_page.background_svg else None,
                     elements=elements,
                 )
             )
@@ -57,10 +65,20 @@ def extract_native_pdf_to_ir(
         revisions=[
             RevisionIR(
                 reason="native-pdf-extraction",
-                payload={"source": "pymupdf-text-dict", "font_profile": font_profile, "raster_policy": raster_policy},
+                payload={
+                    "source": "pymupdf-text-dict",
+                    "font_profile": font_profile,
+                    "raster_policy": raster_policy,
+                    "font_size_scale": font_size_scale,
+                },
             )
         ],
-        metadata={"extraction_mode": "native", "font_profile": font_profile, "raster_policy": raster_policy},
+        metadata={
+            "extraction_mode": "native",
+            "font_profile": font_profile,
+            "raster_policy": raster_policy,
+            "font_size_scale": font_size_scale,
+        },
     )
 
 
@@ -70,6 +88,7 @@ def _extract_page_text_elements(
     *,
     font_profile: FontProfile,
     raster_policy: RasterPolicy,
+    font_size_scale: float,
 ) -> list[ElementIR]:
     text_dict = page.get_text("dict")
     raw_lines: list[dict[str, Any]] = []
@@ -100,8 +119,13 @@ def _extract_page_text_elements(
         order_assignment = reading_order_assignments[visual_index]
         bbox_pdf = clamp_bbox(raw["bbox"], rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
-        style = _style_from_spans(raw["spans"], bbox_pdf, font_profile=font_profile)
-        text_runs = _text_runs_from_spans(raw["spans"], rendered_page, font_profile=font_profile)
+        style = _style_from_spans(raw["spans"], bbox_pdf, font_profile=font_profile, font_size_scale=font_size_scale)
+        text_runs = _text_runs_from_spans(
+            raw["spans"],
+            rendered_page,
+            font_profile=font_profile,
+            font_size_scale=font_size_scale,
+        )
         metadata = {
             "source": "native-pdf",
             "span_count": len(raw["spans"]),
@@ -706,7 +730,13 @@ def _svg_number(value: float) -> str:
     return f"{rounded:g}"
 
 
-def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox, *, font_profile: FontProfile) -> dict[str, Any]:
+def _style_from_spans(
+    spans: list[dict[str, Any]],
+    bbox: BBox,
+    *,
+    font_profile: FontProfile,
+    font_size_scale: float,
+) -> dict[str, Any]:
     if not spans:
         return {
             "font_size_px": round(max(7.0, bbox.height * 0.72), 2),
@@ -714,17 +744,25 @@ def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox, *, font_profile: 
             "font_family": _css_font_family("serif", font_profile=font_profile),
         }
     first = next((span for span in spans if span.get("text", "").strip()), spans[0])
-    return _style_from_span(first, bbox, font_profile=font_profile)
+    return _style_from_span(first, bbox, font_profile=font_profile, font_size_scale=font_size_scale)
 
 
-def _style_from_span(span: dict[str, Any], bbox: BBox, *, font_profile: FontProfile) -> dict[str, Any]:
-    size = float(span.get("size", max(7.0, bbox.height * 0.72)))
+def _style_from_span(
+    span: dict[str, Any],
+    bbox: BBox,
+    *,
+    font_profile: FontProfile,
+    font_size_scale: float,
+) -> dict[str, Any]:
+    raw_size = float(span.get("size", max(7.0, bbox.height * 0.72)))
+    size = raw_size * font_size_scale
     font = str(span.get("font", "serif"))
     flags = int(span.get("flags", 0))
     script = "superscript" if flags & 1 else "baseline"
     return {
         "font_size_px": round(size * 96.0 / 72.0, 2),
-        "font_size_pt": round(size, 2),
+        "font_size_pt": round(raw_size, 2),
+        "font_size_scale": round(font_size_scale, 4),
         "line_height": 1.12,
         "font_family": _css_font_family(font, font_profile=font_profile),
         "font_weight": 700 if flags & 16 else 400,
@@ -743,6 +781,7 @@ def _text_runs_from_spans(
     rendered_page: RenderedPage,
     *,
     font_profile: FontProfile,
+    font_size_scale: float,
 ) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     for index, span in enumerate(spans):
@@ -751,7 +790,7 @@ def _text_runs_from_spans(
             continue
         bbox_pdf = clamp_bbox(BBox.from_any(span.get("bbox")), rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
-        style = _style_from_span(span, bbox_pdf, font_profile=font_profile)
+        style = _style_from_span(span, bbox_pdf, font_profile=font_profile, font_size_scale=font_size_scale)
         origin = span.get("origin")
         runs.append(
             {

@@ -94,10 +94,12 @@ def test_common_pdf_fonts_map_to_closer_browser_families() -> None:
 def test_native_pdf_records_font_profile(tmp_path: Path) -> None:
     pdf_path = _create_mixed_inline_pdf(tmp_path / "font-profile.pdf")
     rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
-    document = extract_native_pdf_to_ir(rendered, font_profile="local-urw")
+    document = extract_native_pdf_to_ir(rendered, font_profile="local-urw", font_size_scale=0.98)
 
     assert document.metadata["font_profile"] == "local-urw"
+    assert document.metadata["font_size_scale"] == 0.98
     assert document.revisions[-1].payload["font_profile"] == "local-urw"
+    assert document.revisions[-1].payload["font_size_scale"] == 0.98
 
 
 def _create_mixed_inline_pdf(path: Path) -> Path:

@@ -20,6 +20,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["case_count"] == 2
     assert report["font_profile"] == "browser-default"
     assert report["raster_policy"] == "dense"
+    assert report["html_mode"] == "structured"
+    assert report["font_size_scale"] == 1.0
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -36,8 +38,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
+    assert all("vector_background_page_count" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
+    assert all(case["html_mode"] == "structured" for case in report["cases"])
+    assert all(case["font_size_scale"] == 1.0 for case in report["cases"])
+    assert all(case["vector_background_page_count"] == 0 for case in report["cases"])
     assert "total_text_runs" in report["summary"]
     assert "total_mixed_inline_style_elements" in report["summary"]
     assert "total_multi_column_elements" in report["summary"]
@@ -45,9 +51,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_recursive_xy_cut_elements" in report["summary"]
     assert "reading_order_strategy_counts" in report["summary"]
     assert "font_profile_counts" in report["summary"]
+    assert report["summary"]["html_mode_counts"] == {"structured": 2}
+    assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
+    assert report["summary"]["total_vector_background_pages"] == 0
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
@@ -57,6 +66,23 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(case["element_count"] > 0 for case in report["cases"])
     assert (tmp_path / "benchmark" / "benchmark_report.json").exists()
     assert (tmp_path / "benchmark" / "benchmark_summary.csv").exists()
+
+
+def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(pdfs, tmp_path / "benchmark-fidelity", dpi=96, html_mode="fidelity")
+    case = report["cases"][0]
+    csv_text = (tmp_path / "benchmark-fidelity" / "benchmark_summary.csv").read_text(encoding="utf-8")
+
+    assert report["html_mode"] == "fidelity"
+    assert case["html_mode"] == "fidelity"
+    assert case["font_size_scale"] == 1.0
+    assert case["vector_background_page_count"] == case["page_count"]
+    assert "html_mode" in csv_text
+    assert "font_size_scale" in csv_text
+    assert "vector_background_page_count" in csv_text
+    assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-export.pdf").exists()
+    assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
 
 
 def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
@@ -117,3 +143,18 @@ def test_benchmark_can_auto_select_font_profile(tmp_path: Path) -> None:
     }
     assert all("total_seconds" in candidate for candidate in case["font_profile_candidates"])
     assert report["summary"]["font_profile_counts"][case["font_profile"]] == 1
+
+
+def test_benchmark_can_auto_select_font_size_scale(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(pdfs, tmp_path / "benchmark-auto-font-scale", dpi=96, font_size_scale="auto")
+    case = report["cases"][0]
+
+    assert report["font_size_scale"] == "auto"
+    assert case["font_size_scale_request"] == "auto"
+    assert case["font_size_scale_selected"] == case["font_size_scale"]
+    assert case["font_size_scale_auto_total_seconds"] >= case["font_size_scale_selected_total_seconds"]
+    assert case["total_seconds"] == case["font_size_scale_auto_total_seconds"]
+    assert {candidate["font_size_scale"] for candidate in case["font_size_scale_candidates"]} == {0.99, 1.0}
+    assert all("total_seconds" in candidate for candidate in case["font_size_scale_candidates"])
+    assert report["summary"]["font_size_scale_counts"][str(case["font_size_scale"])] == 1

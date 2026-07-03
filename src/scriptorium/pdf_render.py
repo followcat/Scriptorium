@@ -17,6 +17,7 @@ class RenderedPage:
     scale_x: float
     scale_y: float
     background_image: Path
+    background_svg: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,12 @@ class RenderedDocument:
     pages: list[RenderedPage]
 
 
-def render_pdf(pdf_path: str | Path, out_dir: str | Path, dpi: int = 192) -> RenderedDocument:
+def render_pdf(
+    pdf_path: str | Path,
+    out_dir: str | Path,
+    dpi: int = 192,
+    include_svg_background: bool = False,
+) -> RenderedDocument:
     source = Path(pdf_path).resolve()
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -37,6 +43,10 @@ def render_pdf(pdf_path: str | Path, out_dir: str | Path, dpi: int = 192) -> Ren
             pixmap = page.get_pixmap(dpi=dpi, alpha=False)
             image_path = target_dir / f"page_{page_index + 1:04d}.png"
             pixmap.save(image_path)
+            svg_path = None
+            if include_svg_background:
+                svg_path = target_dir / f"page_{page_index + 1:04d}.svg"
+                svg_path.write_text(page.get_svg_image(text_as_path=True), encoding="utf-8")
 
             rect = page.rect
             scale_x = pixmap.width / rect.width
@@ -52,6 +62,7 @@ def render_pdf(pdf_path: str | Path, out_dir: str | Path, dpi: int = 192) -> Ren
                     scale_x=float(scale_x),
                     scale_y=float(scale_y),
                     background_image=image_path,
+                    background_svg=svg_path,
                 )
             )
 

@@ -77,6 +77,36 @@
       text-align: justify;
       text-align-last: justify;
     }
+    body.mode-fidelity .element {
+      border: 0;
+      background: transparent;
+      outline: 0;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="false"] {
+      display: none;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover .text-run,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     .text-run {
       white-space: pre;
     }
@@ -193,18 +223,30 @@
     }
     @media print {
       html, body { background: #fff; }
-      .document { display: block; padding: 0; }
+      .document {
+        display: block;
+        padding: 0;
+        font-size: 0;
+        line-height: 0;
+      }
       .page {
+        display: block;
         width: var(--page-width-pt) !important;
         height: var(--page-height-pt) !important;
         margin: 0;
         box-shadow: none;
-        break-after: page;
-        page-break-after: always;
+        break-after: auto;
+        page-break-after: auto;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
-      .page:last-child { break-after: auto; page-break-after: auto; }
+      .page + .page {
+        break-before: page;
+        page-break-before: always;
+      }
+      body.mode-fidelity .element {
+        display: none !important;
+      }
     }
   </style>
 </head>
@@ -268,7 +310,7 @@
         data-scriptorium-flow-segment="{{ annotation_attr(element, 'flow_segment_index') }}"
         data-scriptorium-reading-order-strategy="{{ annotation_attr(element, 'reading_order_strategy') }}"
         data-scriptorium-reading-order-region="{{ annotation_attr(element, 'reading_order_region_path') }}"
-        contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual'] else 'false' }}"
+        contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual', 'fidelity'] else 'false' }}"
         spellcheck="false"
         style="
           left: {{ '%.3f'|format(box.x0 * layout_scale) }}px;

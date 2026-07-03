@@ -56,6 +56,7 @@ def normalize_ocr_to_ir(
                 scale_x=rendered_page.scale_x,
                 scale_y=rendered_page.scale_y,
                 background_image=str(rendered_page.background_image),
+                background_svg=str(rendered_page.background_svg) if rendered_page.background_svg else None,
                 elements=elements,
             )
         )

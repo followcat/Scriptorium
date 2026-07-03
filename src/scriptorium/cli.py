@@ -6,7 +6,7 @@ from typing import Literal, Optional
 import typer
 
 from .annotations import annotate_document
-from .benchmark import BenchmarkFontProfile, run_benchmark
+from .benchmark import BenchmarkFontProfile, BenchmarkHtmlMode, run_benchmark
 from .fixture import create_fixture
 from .html_export import export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
@@ -52,6 +52,17 @@ def benchmark_command(
         "dense",
         help="Native raster fallback policy: none, dense, or tables for experimental complex table regions.",
     ),
+    html_mode: BenchmarkHtmlMode = typer.Option(
+        "structured",
+        help=(
+            "HTML mode to score. structured redraws editable PDF elements; "
+            "fidelity keeps the page raster as the visible layer and overlays editable coordinates."
+        ),
+    ),
+    font_size_scale: str = typer.Option(
+        "1.0",
+        help="Global CSS font-size multiplier for visual calibration experiments, or auto.",
+    ),
     structure_json: Optional[list[Path]] = typer.Option(
         None,
         "--structure-json",
@@ -70,6 +81,8 @@ def benchmark_command(
         structure_jsons=structure_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
+        html_mode=html_mode,
+        font_size_scale=font_size_scale,
     )
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
@@ -79,6 +92,8 @@ def benchmark_command(
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
+    typer.echo(f"HTML mode: {report.get('html_mode')}")
+    typer.echo(f"Font size scale: {report.get('font_size_scale')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
@@ -120,13 +135,29 @@ def convert(
         "dense",
         help="Native raster fallback policy: none, dense, or tables for experimental complex table regions.",
     ),
+    svg_background: bool = typer.Option(
+        False,
+        "--svg-background",
+        help="Also export per-page SVG backgrounds for fidelity overlay HTML.",
+    ),
+    font_size_scale: float = typer.Option(
+        1.0,
+        min=0.9,
+        max=1.1,
+        help="Global CSS font-size multiplier for native PDF text extraction.",
+    ),
     dpi: int = typer.Option(192, min=72, max=600, help="PDF render DPI."),
 ) -> None:
     pages_dir = out_dir / "pages"
     crops_dir = out_dir / "crops"
-    rendered = render_pdf(pdf, pages_dir, dpi=dpi)
+    rendered = render_pdf(pdf, pages_dir, dpi=dpi, include_svg_background=svg_background)
     if extract_mode == "native" or (extract_mode == "auto" and ocr_json is None):
-        document = extract_native_pdf_to_ir(rendered, font_profile=font_profile, raster_policy=raster_policy)
+        document = extract_native_pdf_to_ir(
+            rendered,
+            font_profile=font_profile,
+            raster_policy=raster_policy,
+            font_size_scale=font_size_scale,
+        )
     else:
         ocr_payload = load_ocr_json(ocr_json) if ocr_json else None
         document = normalize_ocr_to_ir(rendered, ocr_payload, crop_dir=crops_dir)

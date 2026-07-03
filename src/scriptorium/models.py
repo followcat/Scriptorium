@@ -20,7 +20,7 @@ ElementType = Literal[
     "unknown",
 ]
 
-DisplayMode = Literal["background", "debug", "source", "edited", "translated", "bilingual", "structured"]
+DisplayMode = Literal["background", "debug", "source", "edited", "translated", "bilingual", "structured", "fidelity"]
 
 
 class BBox(BaseModel):
@@ -94,6 +94,7 @@ class PageIR(BaseModel):
     scale_x: float
     scale_y: float
     background_image: str
+    background_svg: str | None = None
     elements: list[ElementIR] = Field(default_factory=list)
 
 
