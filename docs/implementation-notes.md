@@ -210,6 +210,7 @@ Supported page match modes:
 Metrics:
 
 - `semantic_order_pair_accuracy`: pairwise order correctness across expected text nodes; this is Kendall-tau-like and catches left/right column swaps.
+- `semantic_successor_accuracy`: adjacent successor-edge correctness across expected text nodes. In `ordered-subsequence` mode, unlabelled actual text between two labelled nodes is ignored, but a labelled node inserted between them, a reversed adjacent pair, or a missing adjacent node breaks the edge. Reports also expose `semantic_successor_correct_count` and `semantic_successor_total_count`.
 - `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
 - `semantic_exact_page_match_rate`: page-level exact sequence match rate.
 - `ignored_text_count`: unlabelled actual text ignored by `ordered-subsequence` pages.
@@ -318,6 +319,8 @@ Metrics:
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.
 - `structure_evidence_reordered_page_count`: pages whose text order was reassigned from external block order.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
+- `semantic_successor_accuracy`: labelled adjacent successor-edge score when ground truth is available.
+- `semantic_successor_correct_count`, `semantic_successor_total_count`: raw successor-edge counts used for case and summary aggregation.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
@@ -325,6 +328,17 @@ Metrics:
 Benchmark PDF export normalizes page boxes to source dimensions when the `DocumentIR` page sizes are available, so a browser print-unit mismatch is reported as visual content difference only if pixels still differ after the page dimensions match.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
+
+Latest successor-metric validation:
+
+| Sample | Command Output | Visual Similarity | Pairwise Order | Successor Accuracy | Successor Edges | Notes |
+|---|---|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-successor-metrics-v1` | 0.9906702 | 1.0 | 1.0 | 47/47 | generated full-sequence sidecars across 5 cases |
+| arXiv Attention paper | `outputs/external/attention-successor-metrics-v1` | 0.96840246 | 1.0 | 1.0 | 33/33 | partial sidecar with 38 labelled text nodes |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-successor-metrics-v1` | 0.98160664 | 1.0 | 1.0 | 41/41 | partial real-paper sidecar with 44 labelled text nodes |
+| Hacker News print PDF | `outputs/external/web-hn-successor-metrics-v1` | 0.9800288 | 1.0 | 1.0 | 24/24 | partial web-to-PDF sidecar with 26 labelled text nodes |
+
+The successor metric complements pairwise order accuracy. Pairwise accuracy is stable for broad regressions such as swapped columns; successor accuracy is stricter about local continuity and is the metric to watch when relation-graph or model-evidence ordering starts predicting immediate next-node edges.
 
 Latest box-flow fallback validation:
 

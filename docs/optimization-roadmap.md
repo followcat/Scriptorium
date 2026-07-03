@@ -45,19 +45,19 @@ This project optimizes two different outcomes:
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
 - Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order footnote/sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
-- Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
+- Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy, labelled successor-edge accuracy, and normalized sequence similarity.
 
 Current benchmark coverage:
 
-| Sample | Multi-column elements | Mixed table-flow elements | Table row-major | Spatial graph | Box-flow elements | Captions | Box-flow disagreement | Page artifacts | Footnotes | Sidebars | OCR text | Semantic GT | Order accuracy | Visual similarity |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Built-in fixtures | 20 | 0 | 18 | 0 | 0 | 0 | 0.19494585 | 0 | 0 | 0 | 0 | yes | 1.0 | 0.9906702 |
-| arXiv Attention paper | 163 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.96840246 |
-| ACL Transformer-XL paper | 1213 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.95679576 |
-| ACL Transformer-XL first 3 pages, caption-flow | 321 | 0 | 0 | 0 | 0 | 3 figure | 0.0825672 | 1 | 7 | 0 | 0 | partial | 1.0 | 0.98160664 |
-| Hacker News print PDF | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
-| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 20 | 2 | 36 | 0 | no | n/a | 0.9795117 |
-| JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
+| Sample | Multi-column elements | Mixed table-flow elements | Table row-major | Spatial graph | Box-flow elements | Captions | Box-flow disagreement | Page artifacts | Footnotes | Sidebars | OCR text | Semantic GT | Order accuracy | Successor edges | Visual similarity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Built-in fixtures | 20 | 0 | 18 | 0 | 0 | 0 | 0.19494585 | 0 | 0 | 0 | 0 | yes | 1.0 | 47/47 | 0.9906702 |
+| arXiv Attention paper | 163 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 33/33 | 0.96840246 |
+| ACL Transformer-XL paper | 1213 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 41/41 | 0.95679576 |
+| ACL Transformer-XL first 3 pages, caption-flow | 321 | 0 | 0 | 0 | 0 | 3 figure | 0.0825672 | 1 | 7 | 0 | 0 | partial | 1.0 | 41/41 | 0.98160664 |
+| Hacker News print PDF | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 24/24 | 0.9800288 |
+| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 20 | 2 | 36 | 0 | no | n/a | n/a | 0.9795117 |
+| JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 0 | 0 | 0 | 134 | no | n/a | n/a | 0.99576887 |
 
 Current reading-order evidence coverage:
 
@@ -70,7 +70,7 @@ Current reading-order evidence coverage:
 
 The current built-in and external benchmark set reports 0 `spatial-graph-v1` and 0 `box-flow-v1` elements. That is intentional for this capability pass: both fallbacks are covered by weak-column unit tests and are guarded so they do not replace stronger repeated-anchor, table, sidebar, caption, footnote, or XY-Cut evidence on existing samples.
 
-Box-flow disagreement is a triage metric, not a semantic score. Transformer-XL's low ratio (`0.0825672`) is consistent with its labeled semantic order staying at `1.0`; JD's high ratio (`0.42778588`) flags dense OCR/web layout where more semantic labels or model structure evidence are needed before changing ordering rules.
+Box-flow disagreement is a triage metric, not a semantic score. Transformer-XL's low ratio (`0.0825672`) is consistent with its labeled semantic order staying at `1.0` and its successor edges staying at 41/41; JD's high ratio (`0.42778588`) flags dense OCR/web layout where more semantic labels or model structure evidence are needed before changing ordering rules.
 
 Current `--font-profile auto` sweep:
 
@@ -165,7 +165,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 6. Relation-graph ordering backend
 
-   The geometric box-flow candidate is implemented. The next step is a relation graph that scores local successor edges from geometry, role, caption/figure/table proximity, and optional model evidence, then selects an acyclic order or path cover. This follows recent work that treats reading order as relations rather than a single fragile permutation and should be evaluated with edge accuracy in addition to pairwise sequence accuracy.
+   The geometric box-flow candidate is implemented, and benchmark reports now include labelled successor-edge accuracy. The next step is a relation graph that scores local successor edges from geometry, role, caption/figure/table proximity, and optional model evidence, then selects an acyclic order or path cover. This follows recent work that treats reading order as relations rather than a single fragile permutation and should be evaluated with successor-edge accuracy in addition to pairwise sequence accuracy.
 
 7. Real model evidence A/B
 
@@ -181,6 +181,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
    - normalized edit distance between expected and exported source text
    - column order accuracy
+   - successor-edge accuracy for local reading-order continuity
    - table row-major preservation
    - figure/table caption proximity
    - footnote/header/footer order calibration and edge-case coverage
