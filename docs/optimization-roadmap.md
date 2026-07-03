@@ -8,7 +8,7 @@ This project optimizes two different outcomes:
 ## Current Implemented Path
 
 - `recursive-xy-cut-v1` recursively segments pages with horizontal and vertical whitespace cuts, so section headings can stay between independent column regions.
-- `column-flow-v1` detects common two-column text regions and orders text left-column first, then right-column.
+- `column-flow-v1` detects common two- and three-column text regions and orders text by column before moving to the next column.
 - Table-like grids stay row-major so table cells are not read as document columns.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
@@ -22,7 +22,8 @@ This project optimizes two different outcomes:
 - Benchmark printing normalizes exported page boxes to the source PDF dimensions, avoiding Chromium's 1px A4 page-size quantization from showing up as a persistent dimension mismatch.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
-- `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
+- `column-flow-v1` can detect real academic two/three-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
+- Table-like grid protection now requires repeated anchors to look like text-flow columns before bypassing row-major order, so short financial/table cells are not read down columns.
 - Mixed academic pages can now bypass the table-grid guard when repeated left-edge anchors strongly cover the body text, so formula/table noise no longer forces the whole page back to visual order.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
@@ -36,11 +37,11 @@ Current benchmark coverage:
 
 | Sample | Multi-column elements | OCR text | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|---:|
-| Built-in fixtures | 20 | 0 | yes | 1.0 | 0.99036719 |
+| Built-in fixtures | 20 | 0 | yes | 1.0 | 0.9906702 |
 | arXiv Attention paper | 163 | 0 | partial | 1.0 | 0.96840246 |
 | ACL Transformer-XL paper | 1213 | 0 | partial | 1.0 | 0.95679576 |
 | Hacker News print PDF | 0 | 0 | partial | 1.0 | 0.9800288 |
-| PUMA 2024 Annual Report, first 12 pages | 337 | 0 | no | n/a | 0.9795117 |
+| PUMA 2024 Annual Report, first 12 pages | 47 | 0 | no | n/a | 0.9795117 |
 | JD homepage screenshot PDF | 0 | 134 | no | n/a | 0.99576887 |
 
 Current `--font-profile auto` sweep:
@@ -96,10 +97,10 @@ Current additional complex-source baselines:
 
 | Sample | Scope | Structured visual | SVG fidelity | Raster fidelity | Selected path | Notes |
 |---|---:|---:|---:|---:|---|---|
-| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, 0 OCR fallback pages, high semantic-risk without sidecar |
+| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, 47 column-flow elements after short-cell table guard, high semantic-risk without sidecar |
 | JD homepage screenshot PDF | 1 / 1 page | 0.99536129 | 0.99536129 | 0.99576887 | `fidelity/raster` | image-only screenshot PDF, 134 transparent OCR edit anchors |
 
-The JD gain is not a visual-score gain; it is a structural/editability gain. The image-only PDF previously reported 1 image element and 0 editable text nodes. With generic OCR fallback it reports 135 elements, 134 editable `native-ocr` nodes, and keeps the same selected visual score. PUMA remains unchanged on OCR counts because its sampled pages expose native PDF text.
+The JD gain is not a visual-score gain; it is a structural/editability gain. The image-only PDF previously reported 1 image element and 0 editable text nodes. With generic OCR fallback it reports 135 elements, 134 editable `native-ocr` nodes, and keeps the same selected visual score. PUMA remains unchanged on OCR counts because its sampled pages expose native PDF text. Its multi-column count is now more conservative because short table-like cells no longer bypass row-major protection without text-flow evidence.
 
 Current reading-order risk diagnostics example:
 
@@ -113,11 +114,11 @@ Current reading-order risk diagnostics example:
 
 1. Expand real semantic ground truth for complex PDFs
 
-   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. The PUMA annual report first-12-pages benchmark now adds a high-risk non-paper sample with 337 multi-column elements and no semantic sidecar. Expand this to more pages and more document families, especially annual reports, equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
+   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. The PUMA annual report first-12-pages benchmark now adds a high-risk non-paper sample with 47 conservative column-flow elements and no semantic sidecar. Expand this to more pages and more document families, especially annual reports, equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Column-flow now tolerates formula noise between repeated two-column anchors and can split mixed table/body pages when anchors cover enough body text. Next refinements should add table-aware two-column table handling, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, and can split mixed table/body pages when anchors cover enough body text. Next refinements should add table-aware subregion segmentation, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
 
 3. Vector renderer refinement
 
