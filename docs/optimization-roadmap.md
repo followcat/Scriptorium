@@ -13,6 +13,7 @@ This project optimizes two different outcomes:
 - `box-flow-v1` handles weak irregular columns with a pdfminer-style column-biased candidate order, but only after stronger table, repeated-anchor, and spatial-graph paths decline the page.
 - Caption-flow uses native/OCR text labels to identify `Figure/Fig./Table/Algorithm + number` captions, keeps column-local captions in-column, and turns cross-gutter captions into local flow breaks.
 - Column-biased box-flow candidate diagnostics still compare the selected semantic order against a horizontal-flow order and report pairwise disagreement for all benchmarked pages.
+- Geometry-only relation-graph candidate diagnostics now compare the selected semantic order against local successor edges serialized through a max-regret path cover. This remains diagnostic-only until semantic/model evidence can arbitrate when it should override the selected order.
 - Pure table-like grids use `table-row-major-v1`, so table cells stay row-major without being reported as an unknown visual-order fallback.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
@@ -43,7 +44,7 @@ This project optimizes two different outcomes:
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
-- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
+- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow and relation-graph disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
 - Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order footnote/sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy, labelled successor-edge accuracy, normalized sequence similarity, and box-flow successor-edge candidate disagreement.
 
@@ -71,6 +72,17 @@ Current reading-order evidence coverage:
 The current built-in and external benchmark set reports 0 `spatial-graph-v1` and 0 `box-flow-v1` elements. That is intentional for this capability pass: both fallbacks are covered by weak-column unit tests and are guarded so they do not replace stronger repeated-anchor, table, sidebar, caption, footnote, or XY-Cut evidence on existing samples.
 
 Box-flow disagreement is a triage metric, not a semantic score. Transformer-XL's low pairwise ratio (`0.0825672`) is consistent with its labeled semantic order staying at `1.0`, while its 142/318 successor disagreement shows the column-biased candidate still loses many immediate local edges. JD's high pairwise ratio (`0.42778588`) and extreme successor disagreement (127/133) flag dense OCR/web layout where semantic labels or model structure evidence are needed before changing ordering rules.
+
+Current relation-graph candidate diagnostics:
+
+| Sample | Relation pairwise disagreement | Relation successor disagreement | Box-flow successor disagreement | Reading-order decision |
+|---|---:|---:|---:|---|
+| Built-in fixtures | 6/277 | 3/47 | 19/47 | diagnostic only; selected semantic order remains unchanged |
+| ACL Transformer-XL first 3 pages | 3526/17077 | 111/318 | 142/318 | lower local disagreement than box-flow, but pairwise disagreement blocks default selection |
+| PUMA 2024 Annual Report, first 12 pages | 2473/15166 | 166/509 | 199/509 | candidate evidence for annual-report sidecar/model arbitration |
+| JD homepage screenshot PDF | 1927/8911 | 117/133 | 127/133 | still high risk; needs semantic labels or external structure evidence |
+
+The relation graph improves local successor disagreement on current complex samples, but this is not enough to promote it to the default orderer. The next capability step is arbitration: combine selected native heuristics, relation-graph successor edges, sidecar labels, roles, captions, tables, and optional Paddle/PP-Structure/Docling evidence, then only switch order when independent evidence supports it.
 
 Current `--font-profile auto` sweep:
 
@@ -139,7 +151,7 @@ Current reading-order risk diagnostics example:
 | ACL Transformer-XL first 3 pages, formula-slot guard | 0.21573209 | medium | 3 | 0 | 3 | 2 | 1 | 0 | 277 |
 | PUMA Annual Report, first 12 pages | 0.35 | high | 5 | 0 | 5 | 3 | 4 | 0 | 521 |
 
-The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-flow counters and evidence counts make the risk score actionable: built-in pure tables no longer produce a high-risk visual-yx false positive, Transformer-XL now identifies 3 figure captions including 1 cross-column caption without changing its `1.0` semantic sidecar score, PUMA identifies 36 right-side secondary-flow nodes plus 2 footnote-flow nodes, current samples show the weak-column fallbacks have not taken over unrelated pages, and JD's high box-flow disagreement identifies it as a priority for semantic labeling or external structure evidence. The next work should focus on complex-document semantic labels, confidence calibration, candidate-order selection, and external structure evidence rather than only stronger global column detection.
+The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-flow/relation-graph counters and evidence counts make the risk score actionable: built-in pure tables no longer produce a high-risk visual-yx false positive, Transformer-XL now identifies 3 figure captions including 1 cross-column caption without changing its `1.0` semantic sidecar score, PUMA identifies 36 right-side secondary-flow nodes plus 2 footnote-flow nodes, current samples show the weak-column fallbacks have not taken over unrelated pages, relation-graph lowers local successor disagreement on several complex samples, and JD still remains a priority for semantic labeling or external structure evidence. The next work should focus on complex-document semantic labels, confidence calibration, candidate-order arbitration, and external structure evidence rather than only stronger global column detection.
 
 ## Next Optimization Options
 
@@ -149,7 +161,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, routes print-space-external sidebars and bottom-zone footnotes as secondary flow, identifies shallow figure/table/algorithm caption labels, and emits confidence/evidence metadata. Spatial graph and guarded box-flow now cover weak-column fallback paths when repeated anchors are unstable, and box-flow diagnostics expose candidate-order disagreement on all benchmarked pages. Next refinements should expand caption-to-figure/table proximity, confidence calibration against real semantic sidecars, and explicit candidate-order arbitration between native heuristics, model structure evidence, and relation-graph predictions.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, routes print-space-external sidebars and bottom-zone footnotes as secondary flow, identifies shallow figure/table/algorithm caption labels, and emits confidence/evidence metadata. Spatial graph and guarded box-flow now cover weak-column fallback paths when repeated anchors are unstable, while box-flow and relation-graph diagnostics expose candidate-order disagreement on all benchmarked pages. Next refinements should expand caption-to-figure/table proximity, confidence calibration against real semantic sidecars, and explicit candidate-order arbitration between native heuristics, model structure evidence, and relation-graph predictions.
 
 3. Vector renderer refinement
 
@@ -163,9 +175,9 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
    Benchmark-time `--font-profile auto`, `--font-size-scale auto`, and `--text-fit auto` now select between global candidates per PDF. The next step is to move from whole-document selection to per-page or per-font-cluster selection, without requiring a full multi-candidate print/compare pass for normal conversion. Current research found that most paper fonts are embedded Type1/PFA, which browsers cannot directly consume; usable TTF extraction is therefore only a partial solution. SVG text-fit also needs edit-state switching and line-height/baseline refinements so long translated replacements can reuse the same fitted layer safely.
 
-6. Relation-graph ordering backend
+6. Relation-graph candidate arbitration
 
-   The geometric box-flow candidate is implemented, and benchmark reports now include labelled successor-edge accuracy plus candidate successor-edge disagreement. The next step is a relation graph that scores local successor edges from geometry, role, caption/figure/table proximity, and optional model evidence, then selects an acyclic order or path cover. This follows recent work that treats reading order as relations rather than a single fragile permutation and should be evaluated with successor-edge accuracy in addition to pairwise sequence accuracy.
+   The first geometry-only relation-graph candidate is implemented. It scores local successor edges from bbox geometry, guards table-like grids, selects an acyclic degree-constrained path cover with max-regret edge selection, and reports pairwise plus successor-edge disagreement. The next step is not to tune it against the current samples, but to add arbitration that can combine relation edges with role, caption/figure/table proximity, semantic sidecars, and optional model evidence before changing selected order. This follows recent work that treats reading order as relations rather than a single fragile permutation and should continue to be evaluated with successor-edge accuracy in addition to pairwise sequence accuracy.
 
 7. Real model evidence A/B
 

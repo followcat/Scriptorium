@@ -142,6 +142,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `spatial-graph-v1`: a conservative weak-column fallback that builds vertical predecessor/successor chains from horizontal overlap and center proximity when repeated left-edge anchors are too unstable.
 - `box-flow-v1`: a guarded weak-column fallback that uses a pdfminer-style column-biased candidate only after table, repeated-anchor column flow, and spatial graph decline the page.
 - `infer_box_flow_order()`: a reusable pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the same primitive for pairwise disagreement diagnostics even when `box-flow-v1` is not selected.
+- `infer_relation_graph_order()`: a geometry-only successor-graph candidate sorter. It builds local successor edges, selects a degree-constrained path cover with a max-regret rule, and serializes the chains for benchmark diagnostics without replacing the selected semantic order.
 - `reading_order_caption_type`: shallow caption evidence inferred from native/OCR text labels such as `Figure 1`, `Fig. 2`, `Table 3`, or `Algorithm 1`. Column-local captions stay in their column; captions that cross the column gutter become local flow breaks and carry `caption-label`, `figure-caption`/`table-caption`, and `cross-column-caption` evidence.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
@@ -164,6 +165,8 @@ The table guard intentionally preserves obvious three-or-more-column grids as ro
 
 The box-flow diagnostic is separate from strategy selection. It compares the current semantic order against a column-biased continuous order and reports pairwise disagreement counts. Low disagreement on labeled two-column papers is evidence that the current structural path agrees with a generic horizontal-flow candidate; high disagreement on dense webpage/OCR pages identifies samples that need semantic labels or external structure evidence before changing the default order.
 
+The relation-graph diagnostic is also separate from strategy selection. It compares the current semantic order against a geometry-only local successor graph and reports both pairwise and adjacent-successor disagreement. The successor metric is the more relevant signal for this candidate because the graph predicts immediate next-node relations before serialization. Current results show lower local successor disagreement than box-flow on the complex samples, but pairwise disagreement remains high enough that the graph must stay candidate-only until semantic sidecars or external model evidence can arbitrate when it should take over.
+
 The sidebar and footnote rules follow the same principle as page artifacts: secondary material should stay addressable but should not distort the primary narrative flow. They are deliberately geometry-only and conservative, so regular three-column papers still keep three body columns while annual-report marginal notes and bottom-zone note clusters can be routed as secondary content.
 
 The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
@@ -183,6 +186,9 @@ Research references used for this pass:
 - LayoutReader / ReadingBank treats reading order as a first-class document understanding task and provides a large weakly supervised benchmark: https://aclanthology.org/2021.emnlp-main.389/
 - Docling's rule-based reading-order implementation uses above/below adjacency and horizontal overlap style geometry, which informed the conservative spatial-graph fallback: https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
 - Relation-based reading-order research frames page ordering as pairwise layout relations rather than only global y/x sorting: https://arxiv.org/html/2409.19672v1
+- Reading order inference for complex layouts can be formulated as graph/path-cover ordering over local relations: https://arxiv.org/html/2607.01018
+- GraphDoc is a reference for graph-based document structure analysis with reading-order and logical relations: https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf
+- PRImA reading-order work is useful context for representation and evaluation on complex layouts: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 - Sparse graph segmentation work is another reference point for graph-based reading-order recovery: https://arxiv.org/pdf/2305.02577
 - Reading-order evaluation can use pairwise ordering measures such as Kendall tau: https://aclanthology.org/J06-4002.pdf
 - ReadingBank is a reading-order benchmark built for document images: https://aclanthology.org/2021.emnlp-main.389/
@@ -295,6 +301,14 @@ Metrics:
 - `reading_order_box_flow_successor_disagreement_count`: adjacent successor edges that are not preserved by the candidate.
 - `reading_order_box_flow_successor_disagreement_ratio`: successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
 - `reading_order_box_flow_successor_disagreement_page_count`: pages with at least one box-flow successor-edge disagreement.
+- `reading_order_relation_graph_pair_count`: text-element pairs compared against the geometry-only relation-graph candidate.
+- `reading_order_relation_graph_disagreement_pair_count`: compared pairs whose order differs from the current semantic order.
+- `reading_order_relation_graph_disagreement_ratio`: relation-graph pairwise disagreement divided by compared pairs; diagnostic only, not a correctness score.
+- `reading_order_relation_graph_disagreement_page_count`: pages with at least one relation-graph pairwise disagreement.
+- `reading_order_relation_graph_successor_edge_count`: adjacent reference successor edges compared against the relation-graph candidate.
+- `reading_order_relation_graph_successor_disagreement_count`: adjacent successor edges that are not preserved by the relation-graph candidate.
+- `reading_order_relation_graph_successor_disagreement_ratio`: relation-graph successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
+- `reading_order_relation_graph_successor_disagreement_page_count`: pages with at least one relation-graph successor-edge disagreement.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -354,6 +368,17 @@ Latest box-flow fallback and successor-disagreement validation:
 | JD homepage screenshot PDF | `outputs/external/jd-home-successor-disagreement-v1` | 0.99576887 | n/a | 0.83 | 0 | 0.42778588 | 127/133 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
 
 The external and built-in samples above currently report `spatial_graph_element_count = 0` and `box_flow_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and both weak-column backends are guarded so they do not inflate scores by taking over unrelated benchmark cases. The box-flow pairwise disagreement ratio remains a triage signal for broad candidate-order differences; successor disagreement is the relation-graph-oriented signal for local next-node edge differences. JD's 127/133 successor disagreement is therefore a stronger local-continuity warning than its already high pairwise ratio. The spatial trigger is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the selected box-flow fallback is covered by `tests/test_reading_order.py::test_box_flow_fallback_orders_relaxed_irregular_columns`; the reusable candidate sorter is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`; successor diagnostics are covered by `tests/test_reading_order.py::test_successor_disagreement_counts_adjacent_candidate_edges`.
+
+Latest relation-graph diagnostics validation:
+
+| Sample | Command Output | Visual Similarity | Semantic Order | Relation Pairwise Disagreement | Relation Successor Disagreement | Box-Flow Successor Disagreement | Notes |
+|---|---|---:|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-relation-graph-diagnostics-v1` | 0.9906702 | 1.0 | 6/277 | 3/47 | 19/47 | relation graph improves local successor continuity on generated fixtures |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-relation-graph-diagnostics-v1` | 0.98160664 | 1.0 | 3526/17077 | 111/318 | 142/318 | lower local disagreement than box-flow, but still candidate-only |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-relation-graph-diagnostics-v1` | 0.9795117 | n/a | 2473/15166 | 166/509 | 199/509 | useful annual-report candidate signal before sidecar/model arbitration |
+| JD homepage screenshot PDF | `outputs/external/jd-home-relation-graph-diagnostics-v1` | 0.99576887 | n/a | 1927/8911 | 117/133 | 127/133 | dense OCR/web layout still needs semantic labels or external structure evidence |
+
+These relation-graph numbers are not correctness scores. They show that a local successor graph is a promising additional candidate, especially against box-flow successor disagreement, but broad pairwise disagreement and missing complex-page semantic ground truth prevent using it as the default order yet. The implementation is covered by `tests/test_reading_order.py::test_relation_graph_candidate_orders_column_successor_paths`, `tests/test_reading_order.py::test_relation_graph_candidate_keeps_table_like_grid_visual`, and benchmark field assertions in `tests/test_benchmark.py`.
 
 Latest caption-flow validation:
 

@@ -71,7 +71,7 @@ PUMA annual report, first 12 pages:
 
 ```bash
 ./.venv/bin/scriptorium benchmark data/external/puma-2024-annual-report.pdf \
-  --out-dir outputs/external/puma-2024-annual-report-caption-flow-v1 \
+  --out-dir outputs/external/puma-2024-annual-report-relation-graph-diagnostics-v1 \
   --dpi 144 \
   --max-pages 12 \
   --html-mode auto \
@@ -82,7 +82,7 @@ JD screenshot PDF:
 
 ```bash
 ./.venv/bin/scriptorium benchmark outputs/external/jd-home/input.pdf \
-  --out-dir outputs/external/jd-home-caption-flow-v1 \
+  --out-dir outputs/external/jd-home-relation-graph-diagnostics-v1 \
   --dpi 144 \
   --html-mode auto \
   --fidelity-background auto
@@ -90,17 +90,17 @@ JD screenshot PDF:
 
 ## Current Results
 
-| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Box-Flow Elements | Captions | Box-Flow Pairwise | Box-Flow Successor | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Box-Flow Elements | Captions | Box-Flow Pairwise | Box-Flow Successor | Relation Pairwise | Relation Successor | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 
 PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 0 table-like visual-yx pages. The current mixed-table/artifact/sidebar/footnote pass reports 99 direct column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, 36 right-side sidebar/marginalia elements, and 2 footnote elements, keeping detected local table islands row-major while surrounding body text can still use column flow.
 
 Semantic successor-edge metrics are intentionally unavailable for PUMA and JD until tracked `.semantic-order.json` sidecars are added. The current successor validation is covered by the built-in fixtures at 47/47 labelled edges, arXiv Attention at 33/33, Transformer-XL first 3 pages at 41/41, and Hacker News at 24/24; these metrics will become the main local-continuity score once external complex-page sidecars are expanded.
 
-Caption-flow v1 keeps the same PUMA/JD external scores while adding shallow figure/table/algorithm caption metadata. Both current external cases report 0 caption nodes because the sampled native/OCR text does not expose leading caption labels. They also report 0 spatial-graph and 0 box-flow nodes because stronger existing paths win first. PUMA has no pure `table-row-major-v1` nodes in the sampled pages because table-like regions are handled as mixed table islands; it still reports 36 `sidebar-secondary-flow` / `right-sidebar` evidence hits, 2 `footnote-secondary-flow` / `bottom-note-zone` evidence hits, 46 `table-island-row-major` hits, 20 `page-edge-artifact` hits, 163 `column-flow` hits, and 271 `single-column-visual-order` hits. JD reports 134 `recursive-xy-cut` OCR anchors with horizontal/vertical whitespace-cut evidence.
+The relation-graph diagnostics keep the same PUMA/JD external visual scores while adding a geometry-only successor-graph candidate next to the existing box-flow candidate. Both current external cases still report 0 caption nodes because the sampled native/OCR text does not expose leading caption labels. They also report 0 spatial-graph and 0 box-flow nodes because stronger existing paths win first. PUMA has no pure `table-row-major-v1` nodes in the sampled pages because table-like regions are handled as mixed table islands; it still reports 36 `sidebar-secondary-flow` / `right-sidebar` evidence hits, 2 `footnote-secondary-flow` / `bottom-note-zone` evidence hits, 46 `table-island-row-major` hits, 20 `page-edge-artifact` hits, 163 `column-flow` hits, and 271 `single-column-visual-order` hits. JD reports 134 `recursive-xy-cut` OCR anchors with horizontal/vertical whitespace-cut evidence.
 
-The box-flow disagreement ratios are not correctness scores. Pairwise disagreement flags broad candidate-order differences: PUMA's `0.17460108` indicates moderate candidate disagreement across 11 sampled pages, and JD's `0.42778588` is high for dense screenshot/OCR anchors. Successor disagreement is stricter about immediate next-node edges: PUMA reports 199/509 candidate edge disagreements, while JD reports 127/133. These values are useful for selecting pages that need semantic sidecars or external Paddle/PP-Structure/Docling evidence before changing ordering rules.
+The box-flow and relation-graph disagreement ratios are not correctness scores. Pairwise disagreement flags broad candidate-order differences: PUMA's box-flow ratio is `0.17460108`, while relation graph is `0.16306211`; JD's box-flow ratio is `0.42778588`, while relation graph is `0.21624958`. Successor disagreement is stricter about immediate next-node edges: PUMA improves from 199/509 box-flow disagreements to 166/509 relation-graph disagreements, and JD improves from 127/133 to 117/133. These values support keeping relation graph as a candidate signal, but PUMA and JD still need semantic sidecars or external Paddle/PP-Structure/Docling evidence before changing selected ordering rules.
 
 JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its OCR text now stays out of the mixed-table strategy after the duplicate-slot formula/table guard and is handled by recursive XY-Cut. Its reading risk is high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
