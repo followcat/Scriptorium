@@ -198,6 +198,58 @@ def test_table_grid_guard_allows_strong_mixed_layout_columns() -> None:
     )
 
 
+def test_mixed_table_island_keeps_body_columns_and_table_rows() -> None:
+    bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=540, y1=60)]
+    upper_left: list[int] = []
+    upper_right: list[int] = []
+    lower_left: list[int] = []
+    lower_right: list[int] = []
+    table_rows: list[list[int]] = []
+
+    for row in range(5):
+        upper_left.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=82 + row * 13, x1=286, y1=92 + row * 13))
+        upper_right.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=82 + row * 13, x1=532, y1=92 + row * 13))
+
+    for row in range(4):
+        table_row: list[int] = []
+        y0 = 170 + row * 15
+        for x0, x1 in [(72, 164), (250, 294), (360, 404), (472, 516)]:
+            table_row.append(len(bboxes))
+            bboxes.append(BBox(x0=x0, y0=y0, x1=x1, y1=y0 + 10))
+        table_rows.append(table_row)
+
+    for row in range(5):
+        lower_left.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=260 + row * 13, x1=286, y1=270 + row * 13))
+        lower_right.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=260 + row * 13, x1=532, y1=270 + row * 13))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+    table_indices = [index for row in table_rows for index in row]
+
+    assert {by_item[index].strategy for index in table_indices} == {"mixed-table-column-flow-v1"}
+    assert {by_item[index].column_span for index in table_indices} == {"table-full"}
+    assert all(by_item[index].region_path == "root/table-island-001" for index in table_indices)
+    assert max(by_item[index].semantic_order for index in upper_left) < min(
+        by_item[index].semantic_order for index in upper_right
+    )
+    assert max(by_item[index].semantic_order for index in upper_right) < min(
+        by_item[index].semantic_order for index in table_indices
+    )
+    assert [by_item[index].semantic_order for index in table_indices] == sorted(
+        by_item[index].semantic_order for index in table_indices
+    )
+    assert max(by_item[index].semantic_order for index in table_indices) < min(
+        by_item[index].semantic_order for index in lower_left
+    )
+    assert max(by_item[index].semantic_order for index in lower_left) < min(
+        by_item[index].semantic_order for index in lower_right
+    )
+
+
 def test_column_flow_does_not_treat_sparse_author_grid_as_body_columns() -> None:
     bboxes = [
         BBox(x0=124, y0=72, x1=488, y1=84),

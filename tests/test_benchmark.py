@@ -76,6 +76,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("mixed_inline_style_element_count" in case for case in report["cases"])
     assert all("multi_column_element_count" in case for case in report["cases"])
     assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
+    assert all("mixed_table_column_flow_element_count" in case for case in report["cases"])
     assert all("reading_order_strategy_counts" in case for case in report["cases"])
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
@@ -102,6 +103,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_multi_column_elements" in report["summary"]
     assert "total_image_elements" in report["summary"]
     assert "total_recursive_xy_cut_elements" in report["summary"]
+    assert "total_mixed_table_column_flow_elements" in report["summary"]
     assert "reading_order_strategy_counts" in report["summary"]
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
@@ -207,6 +209,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "vector_background_page_count" in csv_text
     assert "ocr_fallback_applied_page_count" in csv_text
     assert "ocr_text_count" in csv_text
+    assert "mixed_table_column_flow_element_count" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text
     assert "reading_order_table_like_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text

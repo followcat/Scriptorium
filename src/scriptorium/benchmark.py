@@ -232,6 +232,7 @@ def _run_case(
         "mixed_inline_style_element_count": stats["mixed_inline_style_element_count"],
         "multi_column_element_count": stats["multi_column_element_count"],
         "column_flow_element_count": stats["column_flow_element_count"],
+        "mixed_table_column_flow_element_count": stats["mixed_table_column_flow_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
         "layout_region_counts": stats["layout_region_counts"],
@@ -411,6 +412,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             1
             for element in text_elements
             if element.metadata.get("reading_order_strategy") == "column-flow-v1"
+        ),
+        "mixed_table_column_flow_element_count": sum(
+            1
+            for element in text_elements
+            if element.metadata.get("reading_order_strategy") == "mixed-table-column-flow-v1"
         ),
         "recursive_xy_cut_element_count": sum(
             1
@@ -693,6 +699,9 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_mixed_inline_style_elements": sum(int(case["mixed_inline_style_element_count"]) for case in cases),
         "total_multi_column_elements": sum(int(case["multi_column_element_count"]) for case in cases),
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
+        "total_mixed_table_column_flow_elements": sum(
+            int(case["mixed_table_column_flow_element_count"]) for case in cases
+        ),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
@@ -763,6 +772,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "mixed_inline_style_element_count",
         "multi_column_element_count",
         "column_flow_element_count",
+        "mixed_table_column_flow_element_count",
         "recursive_xy_cut_element_count",
         "table_region_count",
         "figure_region_count",
