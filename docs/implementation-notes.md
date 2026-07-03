@@ -291,6 +291,10 @@ Metrics:
 - `reading_order_box_flow_disagreement_pair_count`: compared pairs whose order differs from the current semantic order.
 - `reading_order_box_flow_disagreement_ratio`: disagreement pairs divided by compared pairs; diagnostic only, not a correctness score.
 - `reading_order_box_flow_disagreement_page_count`: pages with at least one box-flow disagreement.
+- `reading_order_box_flow_successor_edge_count`: adjacent reference successor edges compared against the column-biased box-flow candidate.
+- `reading_order_box_flow_successor_disagreement_count`: adjacent successor edges that are not preserved by the candidate.
+- `reading_order_box_flow_successor_disagreement_ratio`: successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
+- `reading_order_box_flow_successor_disagreement_page_count`: pages with at least one box-flow successor-edge disagreement.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -340,16 +344,16 @@ Latest successor-metric validation:
 
 The successor metric complements pairwise order accuracy. Pairwise accuracy is stable for broad regressions such as swapped columns; successor accuracy is stricter about local continuity and is the metric to watch when relation-graph or model-evidence ordering starts predicting immediate next-node edges.
 
-Latest box-flow fallback validation:
+Latest box-flow fallback and successor-disagreement validation:
 
-| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Box-Flow Elements | Box-Flow Disagreement | Spatial Graph | Table Row-Major | Footnotes | Sidebars | Key Evidence |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Built-in fixtures | `outputs/benchmark-box-flow-fallback-v1` | 0.9906702 | 1.0 | 0.80113208 | 0 | 0.19494585 | 0 | 18 | 0 | 0 | `table-row-major`, `recursive-xy-cut`, whitespace cuts |
-| Transformer-XL first 3 pages | `outputs/external/transformer-xl-box-flow-fallback-v1` | 0.98160664 | 1.0 | 0.9552648 | 0 | 0.0825672 | 0 | 0 | 7 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
-| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-box-flow-fallback-v1` | 0.9795117 | n/a | 0.82476488 | 0 | 0.17460108 | 0 | 0 | 2 | 36 right | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
-| JD homepage screenshot PDF | `outputs/external/jd-home-box-flow-fallback-v1` | 0.99576887 | n/a | 0.83 | 0 | 0.42778588 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
+| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Box-Flow Elements | Pairwise Disagreement | Successor Disagreement | Spatial Graph | Table Row-Major | Footnotes | Sidebars | Key Evidence |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-successor-disagreement-v1` | 0.9906702 | 1.0 | 0.80113208 | 0 | 0.19494585 | 19/47 | 0 | 18 | 0 | 0 | `table-row-major`, `recursive-xy-cut`, whitespace cuts |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-successor-disagreement-v1` | 0.98160664 | 1.0 | 0.9552648 | 0 | 0.0825672 | 142/318 | 0 | 0 | 7 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-successor-disagreement-v1` | 0.9795117 | n/a | 0.82476488 | 0 | 0.17460108 | 199/509 | 0 | 0 | 2 | 36 right | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
+| JD homepage screenshot PDF | `outputs/external/jd-home-successor-disagreement-v1` | 0.99576887 | n/a | 0.83 | 0 | 0.42778588 | 127/133 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
 
-The external and built-in samples above currently report `spatial_graph_element_count = 0` and `box_flow_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and both new weak-column backends are guarded so they do not inflate scores by taking over unrelated benchmark cases. The box-flow disagreement ratio remains a triage signal for samples where a column-biased candidate substantially disagrees with the selected order. The spatial trigger is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the selected box-flow fallback is covered by `tests/test_reading_order.py::test_box_flow_fallback_orders_relaxed_irregular_columns`; the reusable candidate sorter is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`.
+The external and built-in samples above currently report `spatial_graph_element_count = 0` and `box_flow_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and both weak-column backends are guarded so they do not inflate scores by taking over unrelated benchmark cases. The box-flow pairwise disagreement ratio remains a triage signal for broad candidate-order differences; successor disagreement is the relation-graph-oriented signal for local next-node edge differences. JD's 127/133 successor disagreement is therefore a stronger local-continuity warning than its already high pairwise ratio. The spatial trigger is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the selected box-flow fallback is covered by `tests/test_reading_order.py::test_box_flow_fallback_orders_relaxed_irregular_columns`; the reusable candidate sorter is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`; successor diagnostics are covered by `tests/test_reading_order.py::test_successor_disagreement_counts_adjacent_candidate_edges`.
 
 Latest caption-flow validation:
 
