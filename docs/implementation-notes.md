@@ -12,7 +12,8 @@ Current implementation status:
 
 - `--ocr-json` is the stable tested input for conversion quality work.
 - `PaddleOcrAdapter` is isolated in `scriptorium.ocr` and intentionally lazy-imports `paddleocr`.
-- The next Paddle-specific step is to map real `save_to_json` output from PaddleOCR-VL/PP-StructureV3 into the fallback JSON shape consumed by `normalize_ocr_to_ir`.
+- `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and fuses region bbox, label, content, confidence, and block order back into `DocumentIR`.
+- `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. The next Paddle-specific step is running real `save_to_json` payloads through this bridge and tracking native-only versus native-plus-structure deltas.
 
 ## Annotation Layer
 
@@ -36,6 +37,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `reading_order_strategy` and `reading_order_region_path`
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
+   - external structure labels from Paddle/PP-Structure evidence, mapped to roles such as `formula`, `running-header`, `footer`, `caption`, and `table-cell-text`
 3. `DocumentIR.metadata.layout_regions` records each inferred region with its page index, bbox, kind, confidence, and contributing shape ids.
 4. The HTML exporter exposes those marks as DOM attributes:
    - `data-scriptorium-role`
@@ -80,6 +82,28 @@ The native PDF path now handles these cases:
 
 This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, simple drawings, and supported SVG paths stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required clipping, grouping, and blend-mode semantics.
 
+## External Structure Evidence Fusion
+
+PaddleOCR-VL and PP-StructureV3 are best treated as optional evidence providers rather than replacements for native PDF extraction. Native extraction usually gives better font/style/bbox fidelity for digital PDFs, while document models can add missing OCR, layout labels, table/formula/chart regions, and reading-order block predictions.
+
+`src/scriptorium/structure_evidence.py` implements the current bridge:
+
+- `normalize_structure_evidence(payload, document)` accepts common Paddle JSON shapes, including `parsing_res_list` blocks with `block_bbox`, `block_label`, `block_content`, and `block_order`.
+- Pixel bboxes are converted to PDF-point bboxes using the page render scale already stored in `DocumentIR`.
+- `apply_structure_evidence(document, payload)` aligns model regions to native elements by element bbox coverage and text similarity.
+- Matched text elements receive `structure_evidence`, `external_structure_label`, and `external_structure_order` metadata.
+- When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`.
+- The annotation pass maps external labels into roles, so labels such as `formula`, `header`, `footer`, `table_caption`, and `table` can affect the structured HTML metadata.
+
+This gives the project an A/B path:
+
+```bash
+scriptorium convert input.pdf --out-dir outputs/native
+scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
+```
+
+The next quality step is to run real PaddleOCR-VL 1.6 or PP-StructureV3 payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
+
 ## Reading Order Layer
 
 PDF text is positioned drawing evidence, not guaranteed semantic text order. The current implementation keeps visual element IDs stable, then writes semantic ordering metadata:
@@ -107,6 +131,8 @@ Research references used for this pass:
 - XY-Cut / XY-Cut++ is a common document reading-order recovery family: https://arxiv.org/html/2504.10258v1
 - Docling targets detailed PDF layout and reading-order reconstruction: https://arxiv.org/html/2408.09869v5
 - LayoutParser provides model-oriented document layout structures and tooling: https://arxiv.org/abs/2103.15348
+- PP-StructureV3 documents multi-column reading-order recovery and outputs layout blocks with coordinates/order/content: https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html
+- PaddleOCR-VL 1.6 documents `PaddleOCRVL(pipeline_version="v1.6")`, prediction, and JSON saving: https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6
 
 ## Semantic-Order Benchmark
 

@@ -19,6 +19,35 @@ STYLE_KEYS = (
     "vertical_align",
 )
 
+STRUCTURE_ROLE_MAP = {
+    "abstract": "abstract",
+    "algorithm": "algorithm",
+    "chart": "chart-text",
+    "doc_title": "heading",
+    "document_title": "heading",
+    "figure": "figure-text",
+    "figure_caption": "caption",
+    "figure_table_title": "caption",
+    "figure_title": "caption",
+    "footer": "footer",
+    "footnote": "footnote",
+    "formula": "formula",
+    "formula_number": "formula-number",
+    "header": "running-header",
+    "list": "list-item",
+    "number": "page-number",
+    "page_number": "page-number",
+    "paragraph": "paragraph",
+    "paragraph_title": "heading",
+    "references": "references",
+    "seal": "seal-text",
+    "sidebar_text": "sidebar-text",
+    "table": "table-cell-text",
+    "table_caption": "caption",
+    "text": "paragraph",
+    "title": "heading",
+}
+
 
 @dataclass(frozen=True)
 class LayoutRegion:
@@ -181,6 +210,10 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     if layout_region and layout_region.kind == "table":
         return "table-cell-text"
 
+    structure_role = _external_structure_role(element)
+    if structure_role:
+        return structure_role
+
     font_size = float(element.style_hint.get("font_size_px", 0))
     font_weight = int(element.style_hint.get("font_weight", 400) or 400)
     if element.type == "title" or font_size >= max(20.0, median_font * 1.5):
@@ -188,6 +221,14 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     if font_weight >= 700 and font_size >= median_font:
         return "emphasized-text"
     return "paragraph"
+
+
+def _external_structure_role(element: ElementIR) -> str | None:
+    label = str(element.metadata.get("external_structure_label") or "").strip().lower()
+    if not label:
+        return None
+    normalized = label.replace("-", "_").replace(" ", "_")
+    return STRUCTURE_ROLE_MAP.get(normalized)
 
 
 def _layout_region_for(element: ElementIR, layout_regions: list[LayoutRegion]) -> LayoutRegion | None:

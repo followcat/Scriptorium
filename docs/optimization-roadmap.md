@@ -14,6 +14,7 @@ This project optimizes two different outcomes:
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
+- PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, and `reading_order_strategy_counts`.
@@ -32,7 +33,7 @@ Current benchmark coverage:
 
 1. Expand real semantic ground truth for complex PDFs
 
-   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Expand this to more pages and more document families, especially equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
+   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. Expand this to more pages and more document families, especially equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
 
 2. Recursive XY-Cut refinement
 
@@ -46,9 +47,9 @@ Current benchmark coverage:
 
    Add a continuous score similar to pdfminer.six `boxes_flow`, where horizontal and vertical proximity jointly decide text box order. This is useful for pages that are not cleanly separable into columns.
 
-5. Layout-model adapter
+5. Real model evidence A/B
 
-   Keep `reading_order.py` as the internal contract and add optional adapters for Docling, LayoutParser, PaddleOCR-VL, or PP-Structure when those tools provide region/order predictions.
+   The `structure_evidence.py` bridge is now implemented. Run real PaddleOCR-VL 1.6 and PP-StructureV3 `save_to_json` outputs against the same PDFs and compare `native` versus `native-plus-structure`. For digital PDFs, use model output to improve role/order/table/formula metadata while preserving native text/style. For scanned PDFs, use model output as the primary text source.
 
 6. Semantic-order benchmark expansion
 
@@ -74,3 +75,5 @@ Current benchmark coverage:
 - XY-Cut++ reading-order recovery: https://arxiv.org/html/2504.10258v1
 - Docling technical report: https://arxiv.org/html/2408.09869v5
 - LayoutParser paper: https://arxiv.org/abs/2103.15348
+- PP-StructureV3 pipeline usage and multi-column reading-order recovery: https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html
+- PaddleOCR-VL 1.6 model usage: https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6

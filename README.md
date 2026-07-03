@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-28%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-30%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -86,7 +86,7 @@ Transformer-XL 的 `dimension_match = false` 来自 Chromium 打印 A4 页面时
 
 内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Hacker News 网页打印 PDF 覆盖 2 页、26 个关键文本点，`semantic_order_pair_accuracy = 1.0`。
 
-最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。视觉侧保持上一轮收益：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。
+最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。报告还输出 partial labels 忽略文本的 zone/role/source 分布：Attention 当前忽略 147 个未标注节点，Transformer-XL 忽略 277 个，web-HN 忽略 69 个 table-cell 节点，用于决定下一批人工 ground truth。视觉侧保持上一轮收益：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -145,6 +145,15 @@ scriptorium convert \
   data/fixture/sample.pdf \
   --ocr-json data/fixture/sample.ocr.json \
   --out-dir outputs/sample
+```
+
+External structure evidence from PaddleOCR-VL / PP-StructureV3 style JSON can be fused without making the model runtime a core dependency:
+
+```bash
+scriptorium convert \
+  path/to/input.pdf \
+  --structure-json path/to/paddle-or-ppstructure.json \
+  --out-dir outputs/with-structure
 ```
 
 Export HTML:
@@ -264,8 +273,10 @@ flowchart LR
   A[PDF or Web Page] --> B[PyMuPDF Render]
   A --> C[Native PDF Extractor]
   A --> D[OCR JSON / Paddle Adapter]
+  D --> K[Structure Evidence Fusion]
   C --> E[DocumentIR]
   D --> E
+  K --> E
   E --> F[Annotation Pass]
   F --> G[Structured HTML]
   G --> H[XML Node Edit]
@@ -280,6 +291,7 @@ Core files:
 - `src/scriptorium/native_pdf.py`: native text and drawing extraction
 - `src/scriptorium/annotations.py`: role/style/source/bbox annotation pass
 - `src/scriptorium/reading_order.py`: visual order, column-flow fallback, and recursive XY-Cut semantic order
+- `src/scriptorium/structure_evidence.py`: PaddleOCR-VL/PP-Structure style external region/order evidence fusion
 - `src/scriptorium/html_export.py`: standalone HTML export
 - `src/scriptorium/xml_edit.py`: XML node edit round trip
 - `src/scriptorium/benchmark.py`: reproducible quality benchmark
@@ -296,6 +308,7 @@ Core files:
 - native drawing SVG evidence: simple line points and non-rectangular path data
 - native image/raster crops via `source_crop`
 - `semantic_order`, `visual_order`, `column_index`, `column_count`, `flow_segment_index`, and `reading_order_region_path`
+- optional external structure evidence such as `external_structure_label`, `external_structure_order`, and fused region metadata
 - source kind: `native-pdf`, `native-image`, `native-raster-region`, `native-drawing`, OCR fallback, etc.
 - role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
@@ -305,12 +318,14 @@ Core files:
 
 The original `source_text` is never overwritten. Inline runs are used when rendering source text; once an element has `edited_text` or `translated_text`, Scriptorium renders the replacement as plain editable text instead of forcing old source runs onto new content.
 
-## OCR Strategy
+## OCR And Structure Strategy
 
-The default tested path uses native PDF extraction or JSON fallback. The Paddle adapter is intentionally isolated:
+The default tested path uses native PDF extraction or JSON fallback. Heavy model runtimes remain optional, but their structured output can now assist the core pipeline:
 
 - conversion, annotation, HTML export, XML edit, and benchmark do not depend on the model runtime
-- real PaddleOCR-VL / PP-Structure output can be mapped into the same IR later
+- `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
+- `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
+- matched elements can receive external role/order metadata and `external-structure-fusion-v1` reading-order strategy
 - `requirements-ocr.txt` keeps heavyweight OCR dependencies optional
 
 ## Development
@@ -324,9 +339,9 @@ pytest
 Current local test baseline:
 
 ```text
-28 passed
+30 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, native drawing SVG path output, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is broader real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, native drawing SVG path output, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.

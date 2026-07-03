@@ -16,6 +16,7 @@ from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
+from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
 
@@ -69,6 +70,12 @@ def convert(
     pdf: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF."),
     out_dir: Path = typer.Option(Path("outputs/document"), help="Conversion output directory."),
     ocr_json: Optional[Path] = typer.Option(None, exists=True, readable=True, help="Fallback OCR JSON."),
+    structure_json: Optional[Path] = typer.Option(
+        None,
+        exists=True,
+        readable=True,
+        help="Optional PaddleOCR-VL/PP-StructureV3 style structure evidence JSON.",
+    ),
     extract_mode: Literal["auto", "ocr-json", "native"] = typer.Option(
         "auto",
         help="Extraction mode. auto uses OCR JSON when provided, otherwise native PDF text extraction.",
@@ -83,6 +90,8 @@ def convert(
     else:
         ocr_payload = load_ocr_json(ocr_json) if ocr_json else None
         document = normalize_ocr_to_ir(rendered, ocr_payload, crop_dir=crops_dir)
+    if structure_json:
+        apply_structure_evidence(document, load_structure_json(structure_json))
     annotate_document(document)
     ir_path = out_dir / "document.ir.json"
     document.save(ir_path)
