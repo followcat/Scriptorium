@@ -47,8 +47,6 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert 'data-scriptorium-edit-target="edited_text"' in html
     assert 'data-bbox-pdf="' in html
     assert "text-align-last: justify" in html
-    assert "font-variant-ligatures: none" in html
-    assert "font-synthesis: none" in html
     assert "Scriptorium PDF" in html
 
 
@@ -149,6 +147,51 @@ def test_dense_vector_region_uses_local_raster_fallback(tmp_path: Path) -> None:
 
     assert 'data-scriptorium-source="native-raster-region"' in html
     assert '<img class="embedded-image"' in html
+
+
+def test_complex_table_region_uses_local_raster_fallback(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "complex_table_fixture.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=420, height=360)
+    x0, y0 = 42, 54
+    cell_width, cell_height = 44, 24
+    for row in range(6):
+        for column in range(5):
+            left = x0 + column * cell_width
+            top = y0 + row * cell_height
+            page.draw_rect(
+                fitz.Rect(left, top, left + cell_width, top + cell_height),
+                color=(0.08, 0.26, 0.46),
+                width=0.7,
+            )
+            if row < 2 and column < 2:
+                page.insert_text((left + 5, top + 16), f"C{row}{column}", fontsize=8, fontname="helv")
+    page.insert_text((42, 260), "Table caption remains editable.", fontsize=11, fontname="helv")
+    doc.save(pdf_path)
+    doc.close()
+
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered, raster_policy="tables"))
+    page_ir = document.pages[0]
+    raster_regions = [
+        element
+        for element in page_ir.elements
+        if element.type == "image" and element.metadata.get("raster_reason") == "complex-table-vector-region"
+    ]
+    texts = [element.source_text for element in page_ir.elements if element.source_text]
+
+    assert len(raster_regions) == 1
+    assert raster_regions[0].metadata["raster_region_kind"] == "table"
+    assert raster_regions[0].metadata["rasterized_shape_count"] >= 30
+    assert raster_regions[0].metadata["rasterized_text_count"] >= 4
+    assert "C00" not in texts
+    assert "Table caption remains editable." in texts
+
+    html_path = export_html(document, tmp_path / "html", display_mode="structured")
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'data-scriptorium-source="native-raster-region"' in html
+    assert 'data-scriptorium-role="image"' in html
 
 
 def test_xml_node_edit_updates_only_edited_text(tmp_path: Path) -> None:

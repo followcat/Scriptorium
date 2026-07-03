@@ -241,6 +241,17 @@ scriptorium benchmark path/to/paper.pdf \
   --dpi 144
 ```
 
+Run a benchmark-time font calibration sweep and keep the better per-PDF result:
+
+```bash
+scriptorium benchmark path/to/paper.pdf \
+  --font-profile auto \
+  --out-dir outputs/font-profile-auto \
+  --dpi 144
+```
+
+`auto` runs both `browser-default` and `local-urw` candidates, writes both candidate artifacts under the case directory, and selects the higher `visual_similarity` result for the report. In the current real-sample sweep, it selected `local-urw` for Attention (`0.93202666 -> 0.93871982`) and kept `browser-default` for Transformer-XL (`0.93358709`) and Hacker News (`0.9800288`).
+
 Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 style evidence:
 
 ```bash
@@ -275,6 +286,12 @@ Tracked metrics:
 - recursive XY-Cut element count
 - reading-order strategy counts
 - font profile
+- font profile candidate scores when `--font-profile auto` is used
+- raster policy
+- text run count
+- mixed inline style element count
+- layout region counts
+- raster fallback count and rasterized text/image/shape counts
 - structure evidence source, region count, matched element count, and reordered page count
 - semantic ground-truth case count
 - semantic order pair accuracy
@@ -349,6 +366,8 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 
 - conversion, annotation, HTML export, XML edit, and benchmark do not depend on the model runtime
 - `--font-profile browser-default` is the stable default; `--font-profile local-urw` can be benchmarked when local Nimbus/DejaVu fonts are available
+- `scriptorium benchmark --font-profile auto` performs a reproducible two-profile sweep and records the selected profile plus both candidate scores
+- `--raster-policy dense` is the stable native fallback; `--raster-policy tables` is available as an explicit experiment, but current real-paper/web A/B results did not justify making table-region rasterization the default
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
 - matched elements can receive external role/order metadata and `external-structure-fusion-v1` reading-order strategy
@@ -371,4 +390,4 @@ Current local test baseline:
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, native drawing SVG path output, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, gated script-run positioning, native drawing SVG path output, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile calibration, recursive XY-Cut semantic order for sectioned multi-column pages, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.

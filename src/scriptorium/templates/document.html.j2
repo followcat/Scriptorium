@@ -57,10 +57,6 @@
       font-size: var(--font-size, 12px);
       font-weight: var(--font-weight, 400);
       font-style: var(--font-style, normal);
-      font-kerning: none;
-      font-synthesis: none;
-      font-variant-ligatures: none;
-      font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0;
       z-index: 1;
     }
     body.mode-background .element {
@@ -83,6 +79,19 @@
     }
     .text-run {
       white-space: pre;
+    }
+    .element.positioned-runs {
+      overflow: hidden !important;
+      white-space: normal;
+      text-align: left;
+      text-align-last: auto;
+    }
+    .element.positioned-runs .text-run {
+      position: absolute;
+      display: block;
+      overflow: visible;
+      line-height: 1;
+      transform-origin: left top;
     }
     body.mode-structured .element:focus {
       outline: 2px solid rgba(29, 97, 179, 0.82);
@@ -225,12 +234,13 @@
       {% set border_width = element.style_hint.get('border_width_pt', 0) * layout_scale if display_mode == 'structured' else element.style_hint.get('border_width_px', 0) %}
       {% set is_text_node = element.source_text|length > 0 %}
       {% set text_runs = element_text_runs(element, display_mode) %}
+      {% set use_positioned_runs = text_runs and should_position_text_runs(element, display_mode) %}
       {% set element_crop = wrapped.crop %}
       {% set line_shape = shape_line(element) %}
       {% set vector_shape = shape_path(element) %}
       <div
         id="{{ element.id }}"
-        class="element editable-node"
+        class="element editable-node{% if use_positioned_runs %} positioned-runs{% endif %}"
         data-id="{{ element.id }}"
         data-type="{{ element.type }}"
         data-scriptorium-element-id="{{ element.id }}"
@@ -275,7 +285,7 @@
           --stroke-color: {{ element.style_hint.get('stroke_color', 'transparent') }};
           --border-width: {{ border_width }}px;
         "
-      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}<span
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
           class="text-run"
           data-scriptorium-run-index="{{ run.index }}"
           data-scriptorium-run-style-id="{{ run.style_id }}"
@@ -289,10 +299,12 @@
             font-style: {{ run_style.get('font_style', element.style_hint.get('font_style', 'normal')) }};
             color: {{ run_style.get('text_color', element.style_hint.get('text_color', '#111')) }};
             vertical-align: {{ run_style.get('vertical_align', 'baseline') }};
-            font-kerning: none;
-            font-synthesis: none;
-            font-variant-ligatures: none;
-            font-feature-settings: 'liga' 0, 'clig' 0, 'calt' 0, 'kern' 0;
+            {% if use_positioned_runs %}
+            left: {{ '%.3f'|format((run_box[0] - box.x0) * layout_scale) }}px;
+            top: {{ '%.3f'|format((run_box[1] - box.y0) * layout_scale) }}px;
+            width: {{ '%.3f'|format((run_box[2] - run_box[0]) * layout_scale) }}px;
+            height: {{ '%.3f'|format((run_box[3] - run_box[1]) * layout_scale) }}px;
+            {% endif %}
           "
         >{{ run.text }}</span>{% endfor %}{% else %}{{ element_text(element, display_mode) }}{% endif %}</div>
       {% endfor %}

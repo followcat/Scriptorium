@@ -12,13 +12,16 @@ This project optimizes two different outcomes:
 - Table-like grids stay row-major so table cells are not read as document columns.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Native PDF extraction exposes benchmarkable font profiles: `browser-default` for stable baseline numbers and `local-urw` for explicit local Nimbus/DejaVu experiments.
+- Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
+- Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
 - `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, and auto font-profile candidate diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
@@ -29,6 +32,15 @@ Current benchmark coverage:
 | arXiv Attention paper | 163 | partial | 1.0 | 0.93202666 |
 | ACL Transformer-XL paper | 880 | partial | 1.0 | 0.93358709 |
 | Hacker News print PDF | 0 | partial | 1.0 | 0.9800288 |
+
+Current `--font-profile auto` sweep:
+
+| Sample | Selected profile | Default visual | Auto visual | Delta |
+|---|---|---:|---:|---:|
+| arXiv Attention paper | `local-urw` | 0.93202666 | 0.93871982 | +0.00669316 |
+| ACL Transformer-XL paper | `browser-default` | 0.93358709 | 0.93358709 | +0.00000000 |
+| Hacker News print PDF | `browser-default` | 0.9800288 | 0.9800288 | +0.00000000 |
+| Three-sample mean | mixed | 0.94854752 | 0.95077857 | +0.00223105 |
 
 ## Next Optimization Options
 
@@ -42,11 +54,11 @@ Current benchmark coverage:
 
 3. Vector renderer refinement
 
-   SVG path output now handles supported PyMuPDF drawing items (`l`, `c`, `re`, `qu`) without using rectangular approximations. Dense local raster fallback still sacrifices editability inside diagrams. The next step is preserving PDF clipping, blend modes, masks, and grouped draw ordering so more complex drawings can remain structured.
+   SVG path output now handles supported PyMuPDF drawing items (`l`, `c`, `re`, `qu`) without using rectangular approximations. Dense local raster fallback still sacrifices editability inside diagrams. A `tables` raster policy was tested but is not the default because current real-paper/web scores dropped. The next step is preserving PDF clipping, blend modes, masks, and grouped draw ordering so more complex drawings can remain structured.
 
-4. Evidence-driven font profile selection
+4. Finer evidence-driven font profile selection
 
-   `local-urw` improves some LaTeX-style papers but regresses others. The next step is to use page/font evidence and benchmark feedback to select font families per document or per font cluster, rather than using one global profile.
+   Benchmark-time `--font-profile auto` now selects between global profiles per PDF. The next step is to move from whole-document profile selection to per-page or per-font-cluster selection, without requiring a full two-profile print/compare pass for normal conversion.
 
 5. Box-flow scoring backend
 

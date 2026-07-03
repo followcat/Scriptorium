@@ -78,9 +78,12 @@ The native PDF path now handles these cases:
 - Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
 - Native extraction records a `font_profile`. `browser-default` is the stable default used for public benchmark numbers; `local-urw` is an explicit A/B profile that prefers locally installed Nimbus/DejaVu families for papers whose PDF fonts match those metrics better.
 - Current A/B evidence is mixed: `local-urw` improved Attention from `0.93202666` to `0.93871982`, but reduced Transformer-XL from `0.93358709` to `0.90096092`. Keep `browser-default` as the default until profile selection can be driven by page/font evidence rather than a global switch.
+- Benchmark-time `--font-profile auto` now runs both `browser-default` and `local-urw`, records both candidate artifacts, and selects the higher visual-similarity result per PDF. On the current real sample set it keeps Transformer-XL and Hacker News on `browser-default`, selects `local-urw` for Attention, and raises the three-sample mean visual similarity from about `0.94855` to about `0.95078`.
 - Structured text lines keep `white-space: pre` and add `text-align-last: justify` in `structured` mode. Each line still uses its extracted PDF bbox, but the browser can expand word spacing to match justified PDF lines more closely.
+- Short mixed text runs with script positioning, such as author footnote marks and compact superscripts, can be rendered as positioned child spans. The gate intentionally excludes long baseline-only citation/body lines because fully absolute run placement caused Transformer-XL page scaling and major visual regressions.
 - `native-drawing`: simple lines render as SVG `<line>`. Supported non-rectangular drawing items (`l`, `c`, `re`, `qu`) render as positioned SVG `<path>` with fill/stroke opacity, avoiding the previous rectangular approximation for polygons and rounded paths.
 - `native-raster-region`: when a page has a dense vector cluster with many line drawings, Scriptorium clips just that local region from the source PDF and exports it as one image node. Text and shape nodes whose centers fall inside that region are hidden to avoid duplicate rendering. Captions and surrounding body text remain editable.
+- `--raster-policy tables` is available for explicit experiments with complex table vector regions, but it is not the default. On the current Attention, Transformer-XL, and Hacker News set it reduced visual similarity because Chrome's reprinted bitmap regions introduced more anti-aliasing/compression difference than the structured table renderer did.
 
 This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, simple drawings, and supported SVG paths stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required clipping, grouping, and blend-mode semantics.
 
@@ -197,11 +200,16 @@ Metrics:
 - `shape_count`: structural drawing nodes.
 - `style_count`: inferred style buckets.
 - `annotation_count`: elements with annotation metadata.
+- `text_run_count`: source span/run count preserved for structured rendering.
+- `mixed_inline_style_element_count`: text elements containing multiple rendered run styles.
 - `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
-- `font_profile`: CSS font fallback profile used by native extraction, useful for comparing default browser fallback with local URW/DejaVu paper-font experiments.
+- `font_profile`: CSS font fallback profile used by native extraction, useful for comparing default browser fallback with local URW/DejaVu paper-font experiments. With benchmark `--font-profile auto`, each case also records `font_profile_candidates`, `font_profile_request`, and `font_profile_selected`.
+- `raster_policy`: native local-raster fallback policy.
+- `layout_region_counts`: inferred table/figure/separator region counts.
+- `raster_fallback_count`, `rasterized_text_count`, `rasterized_image_count`, and `rasterized_shape_count`: editability cost of local raster fallback regions.
 - `structure_evidence_source`: optional JSON evidence source used by the case.
 - `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure style JSON.
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.

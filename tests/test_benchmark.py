@@ -19,6 +19,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
 
     assert report["case_count"] == 2
     assert report["font_profile"] == "browser-default"
+    assert report["raster_policy"] == "dense"
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -36,12 +37,14 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
+    assert all(case["raster_policy"] == "dense" for case in report["cases"])
     assert "total_text_runs" in report["summary"]
     assert "total_mixed_inline_style_elements" in report["summary"]
     assert "total_multi_column_elements" in report["summary"]
     assert "total_image_elements" in report["summary"]
     assert "total_recursive_xy_cut_elements" in report["summary"]
     assert "reading_order_strategy_counts" in report["summary"]
+    assert "font_profile_counts" in report["summary"]
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
@@ -96,3 +99,21 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
         "structure_evidence_matched_element_count"
     ]
     assert "structure_evidence_matched_element_count" in csv_text
+
+
+def test_benchmark_can_auto_select_font_profile(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(pdfs, tmp_path / "benchmark-auto-font", dpi=96, font_profile="auto")
+    case = report["cases"][0]
+
+    assert report["font_profile"] == "auto"
+    assert case["font_profile_request"] == "auto"
+    assert case["font_profile_selected"] == case["font_profile"]
+    assert case["font_profile_auto_total_seconds"] >= case["font_profile_selected_total_seconds"]
+    assert case["total_seconds"] == case["font_profile_auto_total_seconds"]
+    assert {candidate["font_profile"] for candidate in case["font_profile_candidates"]} == {
+        "browser-default",
+        "local-urw",
+    }
+    assert all("total_seconds" in candidate for candidate in case["font_profile_candidates"])
+    assert report["summary"]["font_profile_counts"][case["font_profile"]] == 1

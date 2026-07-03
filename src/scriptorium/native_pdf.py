@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
+from statistics import median
 from typing import Any, Iterable, Literal
 
 import fitz
@@ -12,14 +14,26 @@ from .pdf_render import RenderedDocument, RenderedPage
 from .reading_order import infer_semantic_reading_order
 
 FontProfile = Literal["browser-default", "local-urw"]
+RasterPolicy = Literal["none", "dense", "tables"]
 
 
-def extract_native_pdf_to_ir(rendered: RenderedDocument, font_profile: FontProfile = "browser-default") -> DocumentIR:
+@dataclass(frozen=True)
+class _RasterRegion:
+    bbox: BBox
+    reason: str
+    kind: str
+
+
+def extract_native_pdf_to_ir(
+    rendered: RenderedDocument,
+    font_profile: FontProfile = "browser-default",
+    raster_policy: RasterPolicy = "dense",
+) -> DocumentIR:
     pages: list[PageIR] = []
     with fitz.open(rendered.source_pdf) as doc:
         for rendered_page in rendered.pages:
             page = doc[rendered_page.page_index]
-            elements = _extract_page_text_elements(page, rendered_page, font_profile=font_profile)
+            elements = _extract_page_text_elements(page, rendered_page, font_profile=font_profile, raster_policy=raster_policy)
             pages.append(
                 PageIR(
                     page_index=rendered_page.page_index,
@@ -43,10 +57,10 @@ def extract_native_pdf_to_ir(rendered: RenderedDocument, font_profile: FontProfi
         revisions=[
             RevisionIR(
                 reason="native-pdf-extraction",
-                payload={"source": "pymupdf-text-dict", "font_profile": font_profile},
+                payload={"source": "pymupdf-text-dict", "font_profile": font_profile, "raster_policy": raster_policy},
             )
         ],
-        metadata={"extraction_mode": "native", "font_profile": font_profile},
+        metadata={"extraction_mode": "native", "font_profile": font_profile, "raster_policy": raster_policy},
     )
 
 
@@ -55,6 +69,7 @@ def _extract_page_text_elements(
     rendered_page: RenderedPage,
     *,
     font_profile: FontProfile,
+    raster_policy: RasterPolicy,
 ) -> list[ElementIR]:
     text_dict = page.get_text("dict")
     raw_lines: list[dict[str, Any]] = []
@@ -122,6 +137,7 @@ def _extract_page_text_elements(
         image_elements,
         shape_elements,
         start_order=len(text_elements) + len(image_elements) + 1,
+        raster_policy=raster_policy,
     )
     if raster_elements:
         raster_regions = [element.bbox_pdf for element in raster_elements]
@@ -138,51 +154,77 @@ def _extract_complex_vector_region_elements(
     image_elements: list[ElementIR],
     shape_elements: list[ElementIR],
     start_order: int,
+    raster_policy: RasterPolicy,
 ) -> list[ElementIR]:
-    region = _complex_vector_region(shape_elements, rendered_page)
-    if region is None:
+    raster_regions = _complex_vector_regions(shape_elements, rendered_page, raster_policy=raster_policy)
+    if not raster_regions:
         return []
 
     raster_dir = rendered_page.background_image.parent / "native-raster-regions" / f"page_{rendered_page.page_index + 1:04d}"
     raster_dir.mkdir(parents=True, exist_ok=True)
-    raster_path = raster_dir / "region_0001.png"
-    pixmap = page.get_pixmap(
-        matrix=fitz.Matrix(rendered_page.scale_x, rendered_page.scale_y),
-        clip=fitz.Rect(region.x0, region.y0, region.x1, region.y1),
-        alpha=False,
-    )
-    pixmap.save(raster_path)
-    bbox_px = pdf_to_px_bbox(region, rendered_page.scale_x, rendered_page.scale_y)
-    hidden_text_count = sum(1 for element in text_elements if _bbox_center_inside(region, element.bbox_pdf))
-    hidden_image_count = sum(1 for element in image_elements if _bbox_center_inside(region, element.bbox_pdf))
-    hidden_shape_count = sum(1 for element in shape_elements if _bbox_center_inside(region, element.bbox_pdf))
-    return [
-        ElementIR(
-            id=f"p{rendered_page.page_index + 1:04d}-r0001",
-            page_index=rendered_page.page_index,
-            type="image",
-            bbox_pdf=region,
-            bbox_px=bbox_px,
-            source_text="",
-            confidence=0.92,
-            reading_order=start_order,
-            style_hint={
-                "line_height": 1,
-                "font_size_px": 1,
-                "font_family": "Arial, sans-serif",
-                "object_fit": "fill",
-            },
-            source_crop=str(raster_path),
-            metadata={
-                "source": "native-raster-region",
-                "raster_fallback": True,
-                "raster_reason": "dense-vector-region",
-                "rasterized_text_count": hidden_text_count,
-                "rasterized_image_count": hidden_image_count,
-                "rasterized_shape_count": hidden_shape_count,
-            },
+
+    elements: list[ElementIR] = []
+    for offset, raster_region in enumerate(raster_regions, start=1):
+        region = raster_region.bbox
+        raster_path = raster_dir / f"region_{offset:04d}.png"
+        pixmap = page.get_pixmap(
+            matrix=fitz.Matrix(rendered_page.scale_x, rendered_page.scale_y),
+            clip=fitz.Rect(region.x0, region.y0, region.x1, region.y1),
+            alpha=False,
         )
-    ]
+        pixmap.save(raster_path)
+        bbox_px = pdf_to_px_bbox(region, rendered_page.scale_x, rendered_page.scale_y)
+        hidden_text_count = sum(1 for element in text_elements if _bbox_center_inside(region, element.bbox_pdf))
+        hidden_image_count = sum(1 for element in image_elements if _bbox_center_inside(region, element.bbox_pdf))
+        hidden_shape_count = sum(1 for element in shape_elements if _bbox_center_inside(region, element.bbox_pdf))
+        elements.append(
+            ElementIR(
+                id=f"p{rendered_page.page_index + 1:04d}-r{offset:04d}",
+                page_index=rendered_page.page_index,
+                type="image",
+                bbox_pdf=region,
+                bbox_px=bbox_px,
+                source_text="",
+                confidence=0.92,
+                reading_order=start_order + offset - 1,
+                style_hint={
+                    "line_height": 1,
+                    "font_size_px": 1,
+                    "font_family": "Arial, sans-serif",
+                    "object_fit": "fill",
+                },
+                source_crop=str(raster_path),
+                metadata={
+                    "source": "native-raster-region",
+                    "raster_fallback": True,
+                    "raster_policy": raster_policy,
+                    "raster_reason": raster_region.reason,
+                    "raster_region_kind": raster_region.kind,
+                    "raster_region_index": offset,
+                    "rasterized_text_count": hidden_text_count,
+                    "rasterized_image_count": hidden_image_count,
+                    "rasterized_shape_count": hidden_shape_count,
+                },
+            )
+        )
+    return elements
+
+
+def _complex_vector_regions(
+    shape_elements: list[ElementIR],
+    rendered_page: RenderedPage,
+    raster_policy: RasterPolicy,
+) -> list[_RasterRegion]:
+    if raster_policy == "none":
+        return []
+
+    candidates: list[_RasterRegion] = []
+    dense_region = _complex_vector_region(shape_elements, rendered_page)
+    if dense_region is not None:
+        candidates.append(_RasterRegion(dense_region, reason="dense-vector-region", kind="dense-vector"))
+    if raster_policy == "tables":
+        candidates.extend(_complex_table_vector_regions(shape_elements, rendered_page))
+    return _dedupe_raster_regions(candidates)
 
 
 def _complex_vector_region(shape_elements: list[ElementIR], rendered_page: RenderedPage) -> BBox | None:
@@ -200,6 +242,114 @@ def _complex_vector_region(shape_elements: list[ElementIR], rendered_page: Rende
     if region_area > page_area * 0.7:
         return None
     return _pad_bbox(region, 2.0, rendered_page.width_pt, rendered_page.height_pt)
+
+
+def _complex_table_vector_regions(shape_elements: list[ElementIR], rendered_page: RenderedPage) -> list[_RasterRegion]:
+    regions: list[_RasterRegion] = []
+    for cluster in _cluster_vector_shapes(shape_elements):
+        if not _is_complex_table_vector_cluster(cluster, rendered_page):
+            continue
+        region = _pad_bbox(_union_element_bbox(cluster), 1.5, rendered_page.width_pt, rendered_page.height_pt)
+        regions.append(_RasterRegion(region, reason="complex-table-vector-region", kind="table"))
+    return sorted(regions, key=lambda item: (item.bbox.y0, item.bbox.x0))
+
+
+def _is_complex_table_vector_cluster(cluster: list[ElementIR], rendered_page: RenderedPage) -> bool:
+    if len(cluster) < 24:
+        return False
+
+    bbox = _union_element_bbox(cluster)
+    page_area = rendered_page.width_pt * rendered_page.height_pt
+    if bbox.width < 80 or bbox.height < 40:
+        return False
+    if bbox.width * bbox.height > page_area * 0.65:
+        return False
+
+    horizontal_lines = [element for element in cluster if _shape_geometry(element) == "horizontal-line"]
+    vertical_lines = [element for element in cluster if _shape_geometry(element) == "vertical-line"]
+    rectangles = [element for element in cluster if _shape_geometry(element) == "rectangle"]
+    if len(horizontal_lines) >= 4 and len(vertical_lines) >= 4:
+        return True
+
+    if len(rectangles) >= 24:
+        x_positions = _unique_positions([element.bbox_pdf.x0 for element in rectangles])
+        y_positions = _unique_positions([element.bbox_pdf.y0 for element in rectangles])
+        return len(x_positions) >= 3 and len(y_positions) >= 3
+
+    return False
+
+
+def _cluster_vector_shapes(shape_elements: list[ElementIR]) -> list[list[ElementIR]]:
+    if not shape_elements:
+        return []
+
+    parent = list(range(len(shape_elements)))
+    tolerance = _shape_cluster_tolerance(shape_elements)
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for left in range(len(shape_elements)):
+        for right in range(left + 1, len(shape_elements)):
+            if _bboxes_close(shape_elements[left].bbox_pdf, shape_elements[right].bbox_pdf, tolerance):
+                union(left, right)
+
+    grouped: dict[int, list[ElementIR]] = {}
+    for index, element in enumerate(shape_elements):
+        grouped.setdefault(find(index), []).append(element)
+    return list(grouped.values())
+
+
+def _shape_cluster_tolerance(shape_elements: list[ElementIR]) -> float:
+    widths = [float(element.style_hint.get("border_width_pt", 0) or 0) for element in shape_elements]
+    widths = [width for width in widths if width > 0]
+    return max(3.0, min(8.0, median(widths) * 4)) if widths else 3.0
+
+
+def _bboxes_close(left: BBox, right: BBox, tolerance: float) -> bool:
+    horizontal_gap = max(0.0, max(left.x0, right.x0) - min(left.x1, right.x1))
+    vertical_gap = max(0.0, max(left.y0, right.y0) - min(left.y1, right.y1))
+    return horizontal_gap <= tolerance and vertical_gap <= tolerance
+
+
+def _shape_geometry(element: ElementIR) -> str:
+    return str(element.metadata.get("shape_geometry") or "unknown")
+
+
+def _unique_positions(values: list[float], tolerance: float = 2.0) -> list[float]:
+    positions: list[float] = []
+    for value in sorted(values):
+        if not positions or abs(value - positions[-1]) > tolerance:
+            positions.append(value)
+    return positions
+
+
+def _dedupe_raster_regions(candidates: list[_RasterRegion]) -> list[_RasterRegion]:
+    accepted: list[_RasterRegion] = []
+    for candidate in sorted(candidates, key=lambda item: item.bbox.width * item.bbox.height, reverse=True):
+        if any(_bbox_overlap_ratio(candidate.bbox, existing.bbox) >= 0.82 for existing in accepted):
+            continue
+        accepted.append(candidate)
+    return sorted(accepted, key=lambda item: (item.bbox.y0, item.bbox.x0))
+
+
+def _bbox_overlap_ratio(left: BBox, right: BBox) -> float:
+    overlap_width = max(0.0, min(left.x1, right.x1) - max(left.x0, right.x0))
+    overlap_height = max(0.0, min(left.y1, right.y1) - max(left.y0, right.y0))
+    overlap_area = overlap_width * overlap_height
+    if overlap_area <= 0:
+        return 0.0
+    smaller_area = max(1.0, min(left.width * left.height, right.width * right.height))
+    return overlap_area / smaller_area
 
 
 def _union_element_bbox(elements: list[ElementIR]) -> BBox:

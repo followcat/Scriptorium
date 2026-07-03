@@ -28,6 +28,7 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         display_mode=display_mode,
         element_text=element_text,
         element_text_runs=element_text_runs,
+        should_position_text_runs=should_position_text_runs,
         shape_line=shape_line,
         shape_path=shape_path,
         annotation_attr=annotation_attr,
@@ -48,6 +49,30 @@ def element_text_runs(element: ElementIR, display_mode: DisplayMode) -> list[dic
     if not isinstance(runs, list):
         return []
     return [run for run in runs if isinstance(run, dict) and str(run.get("text", ""))]
+
+
+def should_position_text_runs(element: ElementIR, display_mode: DisplayMode) -> bool:
+    if display_mode != "structured":
+        return False
+    if not element.source_text.strip() or not bool(element.metadata.get("mixed_inline_style")):
+        return False
+
+    runs = element_text_runs(element, display_mode)
+    if len(runs) < 2 or len(runs) > 4:
+        return False
+    if len(element.source_text) > 90:
+        return False
+    return any(_run_script(run) != "baseline" for run in runs)
+
+
+def _run_script(run: dict[str, object]) -> str:
+    script = str(run.get("script") or "").strip()
+    if script:
+        return script
+    style = run.get("style")
+    if isinstance(style, dict):
+        return str(style.get("vertical_align") or "baseline")
+    return "baseline"
 
 
 def _should_render_source_runs(element: ElementIR, display_mode: DisplayMode) -> bool:

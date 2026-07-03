@@ -3,7 +3,7 @@ from pathlib import Path
 import fitz
 
 from scriptorium.annotations import annotate_document
-from scriptorium.html_export import export_html
+from scriptorium.html_export import export_html, should_position_text_runs
 from scriptorium.native_pdf import _css_font_family, extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
 
@@ -55,6 +55,29 @@ def test_structured_html_renders_inline_runs_until_element_is_edited(tmp_path: P
 
     assert 'class="text-run"' not in edited_html
     assert "Edited plain text" in edited_html
+
+
+def test_positioned_text_runs_are_limited_to_short_script_runs(tmp_path: Path) -> None:
+    pdf_path = _create_mixed_inline_pdf(tmp_path / "positioned-runs.pdf")
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    element = next(element for element in document.pages[0].elements if element.source_text.startswith("Normal"))
+    baseline_run = next(run for run in element.metadata["text_runs"] if run["script"] == "baseline")
+    superscript_run = next(run for run in element.metadata["text_runs"] if run["script"] == "superscript")
+
+    short_script_element = element.model_copy(deep=True)
+    short_script_element.source_text = "x2"
+    short_script_element.metadata["text_runs"] = [baseline_run, superscript_run]
+    short_script_element.metadata["text_run_count"] = 2
+    short_script_element.metadata["mixed_inline_style"] = True
+
+    baseline_only_element = short_script_element.model_copy(deep=True)
+    baseline_only_element.metadata["text_runs"] = [baseline_run, baseline_run]
+
+    assert should_position_text_runs(short_script_element, "structured") is True
+    assert should_position_text_runs(short_script_element, "source") is False
+    assert should_position_text_runs(element, "structured") is False
+    assert should_position_text_runs(baseline_only_element, "structured") is False
 
 
 def test_common_pdf_fonts_map_to_closer_browser_families() -> None:

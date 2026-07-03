@@ -6,18 +6,21 @@ import math
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import export_html
 from .models import DocumentIR
-from .native_pdf import FontProfile, extract_native_pdf_to_ir
+from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
 from .semantic_quality import compare_semantic_reading_order
 from .structure_evidence import apply_structure_evidence, load_structure_json
+
+BenchmarkFontProfile = Literal["browser-default", "local-urw", "auto"]
+FONT_PROFILE_CANDIDATES: tuple[FontProfile, ...] = ("browser-default", "local-urw")
 
 
 def run_benchmark(
@@ -25,7 +28,8 @@ def run_benchmark(
     out_dir: str | Path,
     dpi: int = 192,
     structure_jsons: list[str | Path] | None = None,
-    font_profile: FontProfile = "browser-default",
+    font_profile: BenchmarkFontProfile = "browser-default",
+    raster_policy: RasterPolicy = "dense",
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -34,21 +38,34 @@ def run_benchmark(
 
     cases: list[dict[str, Any]] = []
     for pdf_path in input_pdfs:
-        cases.append(
-            _run_case(
-                pdf_path,
-                target / "cases" / pdf_path.stem,
-                dpi=dpi,
-                structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
-                font_profile=font_profile,
+        if font_profile == "auto":
+            cases.append(
+                _run_auto_font_case(
+                    pdf_path,
+                    target / "cases" / pdf_path.stem,
+                    dpi=dpi,
+                    structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+                    raster_policy=raster_policy,
+                )
             )
-        )
+        else:
+            cases.append(
+                _run_case(
+                    pdf_path,
+                    target / "cases" / pdf_path.stem,
+                    dpi=dpi,
+                    structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+                    font_profile=font_profile,
+                    raster_policy=raster_policy,
+                )
+            )
 
     summary = _summarize(cases)
     report = {
         "version": 1,
         "dpi": dpi,
         "font_profile": font_profile,
+        "raster_policy": raster_policy,
         "case_count": len(cases),
         "summary": summary,
         "cases": cases,
@@ -64,6 +81,7 @@ def _run_case(
     dpi: int,
     structure_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
+    raster_policy: RasterPolicy = "dense",
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
@@ -73,7 +91,7 @@ def _run_case(
     timings["render_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    document = extract_native_pdf_to_ir(rendered, font_profile=font_profile)
+    document = extract_native_pdf_to_ir(rendered, font_profile=font_profile, raster_policy=raster_policy)
     if structure_json is not None:
         apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
     annotate_document(document)
@@ -132,6 +150,7 @@ def _run_case(
         "rasterized_image_count": stats["rasterized_image_count"],
         "rasterized_shape_count": stats["rasterized_shape_count"],
         "font_profile": stats["font_profile"],
+        "raster_policy": stats["raster_policy"],
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
@@ -149,6 +168,58 @@ def _run_case(
         "total_seconds": total_seconds,
         "timings": timings,
     }
+
+
+def _run_auto_font_case(
+    pdf_path: Path,
+    out_dir: Path,
+    dpi: int,
+    structure_json: Path | None,
+    raster_policy: RasterPolicy,
+) -> dict[str, Any]:
+    start = time.perf_counter()
+    candidates = [
+        _run_case(
+            pdf_path,
+            out_dir / profile,
+            dpi=dpi,
+            structure_json=structure_json,
+            font_profile=profile,
+            raster_policy=raster_policy,
+        )
+        for profile in FONT_PROFILE_CANDIDATES
+    ]
+    auto_total_seconds = _elapsed(start)
+    selected = max(
+        candidates,
+        key=lambda case: (
+            float(case["visual_similarity"]),
+            -float(case["mean_diff_ratio"]),
+            -float(case["total_seconds"]),
+        ),
+    )
+    selected_candidate_seconds = selected["total_seconds"]
+    candidate_summaries = [
+        {
+            "font_profile": candidate["font_profile"],
+            "visual_similarity": candidate["visual_similarity"],
+            "max_diff_ratio": candidate["max_diff_ratio"],
+            "mean_diff_ratio": candidate["mean_diff_ratio"],
+            "p95_diff_ratio": candidate["p95_diff_ratio"],
+            "total_seconds": candidate["total_seconds"],
+            "html": candidate["html"],
+            "exported_pdf": candidate["exported_pdf"],
+            "quality_report": candidate["quality_report"],
+        }
+        for candidate in candidates
+    ]
+    selected["font_profile_request"] = "auto"
+    selected["font_profile_selected"] = selected["font_profile"]
+    selected["font_profile_selected_total_seconds"] = selected_candidate_seconds
+    selected["font_profile_auto_total_seconds"] = auto_total_seconds
+    selected["total_seconds"] = auto_total_seconds
+    selected["font_profile_candidates"] = candidate_summaries
+    return selected
 
 
 def _document_stats(document: DocumentIR) -> dict[str, Any]:
@@ -202,6 +273,7 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             int(element.metadata.get("rasterized_shape_count") or 0) for element in raster_elements
         ),
         "font_profile": str(document.metadata.get("font_profile") or "unknown"),
+        "raster_policy": str(document.metadata.get("raster_policy") or "unknown"),
         "structure_evidence_source": structure_evidence.get("source"),
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
@@ -250,6 +322,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
+        "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "layout_region_counts": _sum_case_count_dicts(cases, "layout_region_counts"),
         "total_table_regions": sum(int(case["table_region_count"]) for case in cases),
         "total_figure_regions": sum(int(case["figure_region_count"]) for case in cases),
@@ -290,6 +363,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "rasterized_image_count",
         "rasterized_shape_count",
         "font_profile",
+        "raster_policy",
         "structure_evidence_source",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
@@ -326,6 +400,11 @@ def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for case in cases:
         counts.update(case.get("reading_order_strategy_counts") or {})
+    return dict(sorted(counts.items()))
+
+
+def _sum_case_values(cases: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: Counter[str] = Counter(str(case.get(key) or "unknown") for case in cases)
     return dict(sorted(counts.items()))
 
 
