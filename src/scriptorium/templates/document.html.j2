@@ -94,6 +94,11 @@
       color: transparent !important;
       -webkit-text-fill-color: transparent;
     }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.88);
+    }
     body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
     body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
       color: var(--text-color, #111) !important;
@@ -247,6 +252,18 @@
       body.mode-fidelity .element {
         display: none !important;
       }
+      body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+        display: block !important;
+        overflow: hidden;
+        white-space: pre-wrap;
+        text-align: left;
+        text-align-last: auto;
+        color: var(--text-color, #111) !important;
+        -webkit-text-fill-color: currentColor;
+        background: #fff;
+        outline: 0;
+        z-index: 2;
+      }
     }
   </style>
 </head>
@@ -276,6 +293,7 @@
       {% set border_width = element.style_hint.get('border_width_pt', 0) * layout_scale if display_mode == 'structured' else element.style_hint.get('border_width_px', 0) %}
       {% set is_text_node = element.source_text|length > 0 %}
       {% set text_runs = element_text_runs(element, display_mode) %}
+      {% set has_replacement = has_replacement_text(element, display_mode) %}
       {% set use_positioned_runs = text_runs and should_position_text_runs(element, display_mode) %}
       {% set element_crop = wrapped.crop %}
       {% set line_shape = shape_line(element) %}
@@ -297,6 +315,7 @@
         data-scriptorium-shape-path="{{ 'true' if vector_shape else 'false' }}"
         data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
         data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
+        data-scriptorium-has-replacement="{{ 'true' if has_replacement else 'false' }}"
         data-bbox-pdf="{{ element.bbox_pdf.as_list()|join(',') }}"
         data-bbox-px="{{ element.bbox_px.as_list()|join(',') }}"
         data-xml-node="element"

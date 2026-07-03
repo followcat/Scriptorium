@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import fitz
+
 from scriptorium.fixture import create_fixture
 from scriptorium.html_export import export_html
 from scriptorium.models import DocumentIR, RevisionIR
 from scriptorium.ocr import load_ocr_json, normalize_ocr_to_ir
+from scriptorium.pdf_export import print_html_to_pdf
 from scriptorium.pdf_render import render_pdf
 
 
@@ -43,6 +46,24 @@ def test_fidelity_html_keeps_background_with_editable_overlay(tmp_path: Path) ->
     assert "color: transparent !important" in html
 
 
+def test_fidelity_prints_edited_replacement_overlay(tmp_path: Path) -> None:
+    pdf_path, ocr_path = create_fixture(tmp_path / "fixture")
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144, include_svg_background=True)
+    document = normalize_ocr_to_ir(rendered, load_ocr_json(ocr_path), crop_dir=tmp_path / "crops")
+    document.pages[0].elements[0].edited_text = "Edited title"
+
+    html_path = export_html(document, tmp_path / "fidelity-html", display_mode="fidelity")
+    html = html_path.read_text(encoding="utf-8")
+    printed_pdf = print_html_to_pdf(html_path, tmp_path / "fidelity-edited.pdf")
+
+    assert 'data-scriptorium-has-replacement="true"' in html
+    assert "Edited title" in html
+
+    with fitz.open(printed_pdf) as doc:
+        printed_text = "\n".join(page.get_text() for page in doc)
+    assert "Edited title" in printed_text
+
+
 def test_edit_and_translation_do_not_overwrite_source(tmp_path: Path) -> None:
     pdf_path, ocr_path = create_fixture(tmp_path / "fixture")
     rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
@@ -57,4 +78,5 @@ def test_edit_and_translation_do_not_overwrite_source(tmp_path: Path) -> None:
     assert element.text_for_mode("source") == "Scriptorium PDF"
     assert element.text_for_mode("edited") == "Edited title"
     assert element.text_for_mode("translated") == "Titre traduit"
+    assert element.text_for_mode("fidelity") == "Titre traduit"
     assert document.revisions[-1].reason == "test-edit"

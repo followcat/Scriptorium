@@ -136,6 +136,7 @@ def _run_case(
     timings["semantic_compare_seconds"] = _elapsed(start)
 
     stats = _document_stats(document)
+    reading_order_risk = _reading_order_risk_metrics(document, semantic_quality)
     max_diff_ratio = float(quality["max_diff_ratio"])
     mean_diff_ratio = float(quality["mean_diff_ratio"])
     p95_diff_ratio = float(quality["p95_diff_ratio"])
@@ -178,6 +179,7 @@ def _run_case(
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": stats["structure_evidence_reordered_page_count"],
+        **reading_order_risk,
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
         "p95_diff_ratio": p95_diff_ratio,
@@ -325,6 +327,106 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     }
 
 
+def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str, Any]) -> dict[str, Any]:
+    column_geometry_pages = 0
+    visual_yx_column_pages = 0
+    text_count = 0
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        text_count += len(text_elements)
+        if not _page_has_column_geometry(page.width_pt, [element.bbox_pdf for element in text_elements]):
+            continue
+        column_geometry_pages += 1
+        page_strategies = Counter(
+            str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
+        )
+        if page_strategies.get("visual-yx", 0) > sum(page_strategies.values()) * 0.6:
+            visual_yx_column_pages += 1
+
+    semantic_available = bool(semantic_quality.get("ground_truth_available"))
+    ignored_count = int(semantic_quality.get("semantic_ignored_text_count") or 0) if semantic_available else 0
+    missing_count = int(semantic_quality.get("semantic_missing_text_count") or 0) if semantic_available else 0
+    extra_count = int(semantic_quality.get("semantic_extra_text_count") or 0) if semantic_available else 0
+    actual_count = int(semantic_quality.get("semantic_actual_text_count") or 0) if semantic_available else text_count
+    expected_count = int(semantic_quality.get("semantic_expected_text_count") or 0) if semantic_available else 0
+    unlabeled_count = ignored_count if semantic_available else text_count
+
+    page_count = max(document.page_count, 1)
+    column_risk = visual_yx_column_pages / page_count
+    unlabeled_ratio = unlabeled_count / max(actual_count, text_count, 1)
+    missing_extra_ratio = (missing_count + extra_count) / max(expected_count, actual_count, text_count, 1)
+    no_ground_truth_risk = 1.0 if not semantic_available and text_count else 0.0
+    score = min(
+        1.0,
+        0.45 * column_risk
+        + 0.25 * min(unlabeled_ratio, 1.0)
+        + 0.2 * min(missing_extra_ratio, 1.0)
+        + 0.1 * no_ground_truth_risk,
+    )
+    return {
+        "reading_order_risk_score": round(score, 8),
+        "reading_order_risk_level": _risk_level(score),
+        "reading_order_column_geometry_page_count": column_geometry_pages,
+        "reading_order_visual_yx_column_page_count": visual_yx_column_pages,
+        "reading_order_unlabeled_text_risk_count": unlabeled_count,
+        "reading_order_semantic_ignored_text_ratio": round(unlabeled_ratio, 8),
+        "reading_order_semantic_missing_extra_ratio": round(missing_extra_ratio, 8),
+        "reading_order_ground_truth_available": semantic_available,
+    }
+
+
+def _page_has_column_geometry(page_width: float, bboxes: list[Any]) -> bool:
+    candidates = [
+        bbox
+        for bbox in bboxes
+        if bbox.width >= 8 and bbox.height >= 4 and bbox.width <= page_width * 0.72
+    ]
+    if len(candidates) < 8:
+        return False
+
+    tolerance = max(12.0, page_width * 0.03)
+    clusters: list[list[Any]] = []
+    centers: list[float] = []
+    for bbox in sorted(candidates, key=lambda item: item.x0):
+        if not clusters or abs(bbox.x0 - centers[-1]) > tolerance:
+            clusters.append([bbox])
+            centers.append(bbox.x0)
+            continue
+        clusters[-1].append(bbox)
+        centers[-1] = sum(item.x0 for item in clusters[-1]) / len(clusters[-1])
+
+    min_items = max(4, round(len(candidates) * 0.12))
+    repeated = [(centers[index], cluster) for index, cluster in enumerate(clusters) if len(cluster) >= min_items]
+    if len(repeated) < 2:
+        return False
+
+    for left_index, (left_x, left_cluster) in enumerate(repeated):
+        for right_x, right_cluster in repeated[left_index + 1 :]:
+            if right_x - left_x < page_width * 0.25:
+                continue
+            if _bbox_group_vertical_overlap(left_cluster, right_cluster) >= 0.2:
+                return True
+    return False
+
+
+def _bbox_group_vertical_overlap(left: list[Any], right: list[Any]) -> float:
+    left_y0 = min(bbox.y0 for bbox in left)
+    left_y1 = max(bbox.y1 for bbox in left)
+    right_y0 = min(bbox.y0 for bbox in right)
+    right_y1 = max(bbox.y1 for bbox in right)
+    overlap = max(0.0, min(left_y1, right_y1) - max(left_y0, right_y0))
+    denominator = max(1.0, min(left_y1 - left_y0, right_y1 - right_y0))
+    return overlap / denominator
+
+
+def _risk_level(score: float) -> str:
+    if score >= 0.35:
+        return "high"
+    if score >= 0.15:
+        return "medium"
+    return "low"
+
+
 def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     if not cases:
         return {}
@@ -384,6 +486,20 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_structure_evidence_reordered_pages": sum(
             int(case["structure_evidence_reordered_page_count"]) for case in cases
         ),
+        "mean_reading_order_risk_score": round(
+            sum(float(case["reading_order_risk_score"]) for case in cases) / len(cases),
+            8,
+        ),
+        "reading_order_risk_level_counts": _sum_case_values(cases, "reading_order_risk_level"),
+        "total_reading_order_column_geometry_pages": sum(
+            int(case["reading_order_column_geometry_page_count"]) for case in cases
+        ),
+        "total_reading_order_visual_yx_column_pages": sum(
+            int(case["reading_order_visual_yx_column_page_count"]) for case in cases
+        ),
+        "total_reading_order_unlabeled_text_risk_count": sum(
+            int(case["reading_order_unlabeled_text_risk_count"]) for case in cases
+        ),
         **_summarize_semantic_cases(semantic_cases),
     }
 
@@ -418,6 +534,12 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
+        "reading_order_risk_score",
+        "reading_order_risk_level",
+        "reading_order_column_geometry_page_count",
+        "reading_order_visual_yx_column_page_count",
+        "reading_order_unlabeled_text_risk_count",
+        "reading_order_semantic_ignored_text_ratio",
         "visual_similarity",
         "semantic_ground_truth_available",
         "semantic_order_pair_accuracy",

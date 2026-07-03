@@ -39,6 +39,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
     assert all("vector_background_page_count" in case for case in report["cases"])
+    assert all("reading_order_risk_score" in case for case in report["cases"])
+    assert all("reading_order_risk_level" in case for case in report["cases"])
+    assert all("reading_order_column_geometry_page_count" in case for case in report["cases"])
+    assert all("reading_order_unlabeled_text_risk_count" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
     assert all(case["html_mode"] == "structured" for case in report["cases"])
@@ -57,6 +61,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
     assert report["summary"]["total_vector_background_pages"] == 0
+    assert "mean_reading_order_risk_score" in report["summary"]
+    assert "reading_order_risk_level_counts" in report["summary"]
+    assert "total_reading_order_column_geometry_pages" in report["summary"]
+    assert "total_reading_order_unlabeled_text_risk_count" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
@@ -81,6 +89,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "html_mode" in csv_text
     assert "font_size_scale" in csv_text
     assert "vector_background_page_count" in csv_text
+    assert "reading_order_risk_score" in csv_text
     assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-export.pdf").exists()
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
 

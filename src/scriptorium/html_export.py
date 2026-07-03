@@ -32,6 +32,7 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         element_text=element_text,
         element_text_runs=element_text_runs,
         should_position_text_runs=should_position_text_runs,
+        has_replacement_text=has_replacement_text,
         shape_line=shape_line,
         shape_path=shape_path,
         annotation_attr=annotation_attr,
@@ -66,6 +67,10 @@ def should_position_text_runs(element: ElementIR, display_mode: DisplayMode) -> 
     if len(element.source_text) > 90:
         return False
     return any(_run_script(run) != "baseline" for run in runs)
+
+
+def has_replacement_text(element: ElementIR, display_mode: DisplayMode) -> bool:
+    return display_mode == "fidelity" and bool((element.translated_text or element.edited_text or "").strip())
 
 
 def _run_script(run: dict[str, object]) -> str:

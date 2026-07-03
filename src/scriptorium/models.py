@@ -70,6 +70,8 @@ class ElementIR(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def text_for_mode(self, mode: DisplayMode) -> str:
+        if mode == "fidelity":
+            return self.translated_text or self.edited_text or self.source_text
         if mode == "structured":
             return self.edited_text or self.source_text
         if mode == "translated":
