@@ -12,7 +12,7 @@ from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import FidelityBackground, HtmlTextFit, export_html
 from .models import DocumentIR
-from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
+from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
@@ -41,6 +41,9 @@ def run_benchmark(
     structure_jsons: list[str | Path] | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
+    ocr_fallback: OcrFallback = "image-only",
+    ocr_language: str = "eng+chi_sim",
+    ocr_dpi: int = 144,
     html_mode: BenchmarkHtmlMode = "structured",
     font_size_scale: BenchmarkFontSizeScale = 1.0,
     text_fit: BenchmarkTextFit = "none",
@@ -73,6 +76,9 @@ def run_benchmark(
                     max_pages=max_pages_request,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     raster_policy=raster_policy,
+                    ocr_fallback=ocr_fallback,
+                    ocr_language=ocr_language,
+                    ocr_dpi=ocr_dpi,
                     html_mode=html_mode_request,
                     font_size_scale=font_size_scale_request,
                     font_profile=font_profile,
@@ -91,6 +97,9 @@ def run_benchmark(
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
+                    ocr_fallback=ocr_fallback,
+                    ocr_language=ocr_language,
+                    ocr_dpi=ocr_dpi,
                     html_mode=html_mode_request,
                     font_size_scale=float(font_size_scale_request),
                     text_fit=text_fit_request,
@@ -105,6 +114,9 @@ def run_benchmark(
         "max_pages": max_pages_request,
         "font_profile": font_profile,
         "raster_policy": raster_policy,
+        "ocr_fallback": ocr_fallback,
+        "ocr_language": ocr_language,
+        "ocr_dpi": ocr_dpi,
         "html_mode": html_mode_request,
         "font_size_scale": font_size_scale_request,
         "text_fit": text_fit_request,
@@ -126,6 +138,9 @@ def _run_case(
     structure_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
+    ocr_fallback: OcrFallback = "image-only",
+    ocr_language: str = "eng+chi_sim",
+    ocr_dpi: int = 144,
     html_mode: HtmlMode = "structured",
     font_size_scale: float = 1.0,
     text_fit: HtmlTextFit = "none",
@@ -150,6 +165,9 @@ def _run_case(
         font_profile=font_profile,
         raster_policy=raster_policy,
         font_size_scale=font_size_scale,
+        ocr_fallback=ocr_fallback,
+        ocr_language=ocr_language,
+        ocr_dpi=ocr_dpi,
     )
     if structure_json is not None:
         apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
@@ -224,6 +242,11 @@ def _run_case(
         "vector_background_page_count": stats["vector_background_page_count"],
         "font_profile": stats["font_profile"],
         "raster_policy": stats["raster_policy"],
+        "ocr_fallback": stats["ocr_fallback"],
+        "ocr_fallback_applied_page_count": stats["ocr_fallback_applied_page_count"],
+        "ocr_text_count": stats["ocr_text_count"],
+        "image_only_candidate_page_count": stats["image_only_candidate_page_count"],
+        "textless_page_count": stats["textless_page_count"],
         "html_mode": html_mode,
         "font_size_scale": stats["font_size_scale"],
         "text_fit": text_fit,
@@ -255,6 +278,9 @@ def _run_calibrated_case(
     max_pages: int | None,
     structure_json: Path | None,
     raster_policy: RasterPolicy,
+    ocr_fallback: OcrFallback,
+    ocr_language: str,
+    ocr_dpi: int,
     html_mode: BenchmarkHtmlMode,
     font_size_scale: BenchmarkFontSizeScale,
     font_profile: BenchmarkFontProfile,
@@ -271,6 +297,9 @@ def _run_calibrated_case(
             structure_json=structure_json,
             font_profile=profile,
             raster_policy=raster_policy,
+            ocr_fallback=ocr_fallback,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
             html_mode=mode,
             font_size_scale=scale,
             text_fit=fit,
@@ -401,6 +430,13 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "vector_background_page_count": sum(1 for page in document.pages if page.background_svg),
         "font_profile": str(document.metadata.get("font_profile") or "unknown"),
         "raster_policy": str(document.metadata.get("raster_policy") or "unknown"),
+        "ocr_fallback": str(document.metadata.get("ocr_fallback") or "unknown"),
+        "ocr_fallback_applied_page_count": _ocr_fallback_applied_page_count(document),
+        "ocr_text_count": sum(1 for element in text_elements if element.metadata.get("source") == "native-ocr"),
+        "image_only_candidate_page_count": _page_extraction_count(document, "image_only_candidate", True),
+        "textless_page_count": sum(
+            1 for page in document.pages if not any(element.source_text.strip() for element in page.elements)
+        ),
         "font_size_scale": float(document.metadata.get("font_size_scale") or 1.0),
         "structure_evidence_source": structure_evidence.get("source"),
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
@@ -551,6 +587,11 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
+        "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
+        "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
+        "total_ocr_text_elements": sum(int(case["ocr_text_count"]) for case in cases),
+        "total_image_only_candidate_pages": sum(int(case["image_only_candidate_page_count"]) for case in cases),
+        "total_textless_pages": sum(int(case["textless_page_count"]) for case in cases),
         "html_mode_counts": _sum_case_values(cases, "html_mode"),
         "font_size_scale_counts": _sum_case_values(cases, "font_size_scale"),
         "text_fit_counts": _sum_case_values(cases, "text_fit"),
@@ -613,6 +654,11 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "vector_background_page_count",
         "font_profile",
         "raster_policy",
+        "ocr_fallback",
+        "ocr_fallback_applied_page_count",
+        "ocr_text_count",
+        "image_only_candidate_page_count",
+        "textless_page_count",
         "html_mode",
         "font_size_scale",
         "text_fit",
@@ -854,6 +900,21 @@ def _layout_region_counts(document: DocumentIR) -> dict[str, int]:
             if isinstance(region, dict) and region.get("kind"):
                 counts[str(region["kind"])] += 1
     return dict(sorted(counts.items()))
+
+
+def _page_extraction_records(document: DocumentIR) -> list[dict[str, Any]]:
+    records = document.metadata.get("page_extraction")
+    if not isinstance(records, list):
+        return []
+    return [record for record in records if isinstance(record, dict)]
+
+
+def _page_extraction_count(document: DocumentIR, key: str, expected: Any) -> int:
+    return sum(1 for record in _page_extraction_records(document) if record.get(key) == expected)
+
+
+def _ocr_fallback_applied_page_count(document: DocumentIR) -> int:
+    return _page_extraction_count(document, "ocr_fallback_status", "applied")
 
 
 def _structure_json_by_pdf(input_pdfs: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:

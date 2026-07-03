@@ -166,6 +166,30 @@
       outline-offset: 2px;
       background: rgba(255, 255, 255, 0.82);
     }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+      text-align: left;
+      text-align-last: auto;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover .text-run,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     body.mode-debug .element {
       border: 1px solid var(--overlay-border);
       background: var(--debug-fill);

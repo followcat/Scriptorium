@@ -15,6 +15,7 @@ from .reading_order import infer_semantic_reading_order
 
 FontProfile = Literal["browser-default", "local-urw"]
 RasterPolicy = Literal["none", "dense", "tables"]
+OcrFallback = Literal["off", "image-only"]
 
 
 @dataclass(frozen=True)
@@ -24,23 +25,37 @@ class _RasterRegion:
     kind: str
 
 
+@dataclass(frozen=True)
+class _PageExtraction:
+    elements: list[ElementIR]
+    diagnostics: dict[str, Any]
+
+
 def extract_native_pdf_to_ir(
     rendered: RenderedDocument,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
     font_size_scale: float = 1.0,
+    ocr_fallback: OcrFallback = "image-only",
+    ocr_language: str = "eng+chi_sim",
+    ocr_dpi: int = 144,
 ) -> DocumentIR:
     pages: list[PageIR] = []
+    page_diagnostics: list[dict[str, Any]] = []
     with fitz.open(rendered.source_pdf) as doc:
         for rendered_page in rendered.pages:
             page = doc[rendered_page.page_index]
-            elements = _extract_page_text_elements(
+            extraction = _extract_page_text_elements(
                 page,
                 rendered_page,
                 font_profile=font_profile,
                 raster_policy=raster_policy,
                 font_size_scale=font_size_scale,
+                ocr_fallback=ocr_fallback,
+                ocr_language=ocr_language,
+                ocr_dpi=ocr_dpi,
             )
+            page_diagnostics.append(extraction.diagnostics)
             pages.append(
                 PageIR(
                     page_index=rendered_page.page_index,
@@ -53,7 +68,7 @@ def extract_native_pdf_to_ir(
                     scale_y=rendered_page.scale_y,
                     background_image=str(rendered_page.background_image),
                     background_svg=str(rendered_page.background_svg) if rendered_page.background_svg else None,
-                    elements=elements,
+                    elements=extraction.elements,
                 )
             )
 
@@ -70,6 +85,9 @@ def extract_native_pdf_to_ir(
                     "font_profile": font_profile,
                     "raster_policy": raster_policy,
                     "font_size_scale": font_size_scale,
+                    "ocr_fallback": ocr_fallback,
+                    "ocr_language": ocr_language,
+                    "ocr_dpi": ocr_dpi,
                 },
             )
         ],
@@ -78,6 +96,10 @@ def extract_native_pdf_to_ir(
             "font_profile": font_profile,
             "raster_policy": raster_policy,
             "font_size_scale": font_size_scale,
+            "ocr_fallback": ocr_fallback,
+            "ocr_language": ocr_language,
+            "ocr_dpi": ocr_dpi,
+            "page_extraction": page_diagnostics,
         },
     )
 
@@ -89,21 +111,39 @@ def _extract_page_text_elements(
     font_profile: FontProfile,
     raster_policy: RasterPolicy,
     font_size_scale: float,
-) -> list[ElementIR]:
+    ocr_fallback: OcrFallback,
+    ocr_language: str,
+    ocr_dpi: int,
+) -> _PageExtraction:
     text_dict = page.get_text("dict")
-    raw_lines: list[dict[str, Any]] = []
-    for block in text_dict.get("blocks", []):
-        if block.get("type") != 0:
-            continue
-        for line in block.get("lines", []):
-            spans = [span for span in line.get("spans", []) if span.get("text", "")]
-            if not spans:
-                continue
-            text = "".join(span.get("text", "") for span in spans).strip()
-            if not text:
-                continue
-            bbox = BBox.from_any(line.get("bbox"))
-            raw_lines.append({"bbox": bbox, "text": text, "spans": spans})
+    raw_lines = _raw_text_lines_from_dict(text_dict)
+    image_coverage = _image_area_coverage(text_dict, rendered_page)
+    source_kind = "native-pdf"
+    id_prefix = "n"
+    text_confidence = 1.0
+    ocr_status = "not-needed" if raw_lines else "not-candidate"
+    ocr_language_used: str | None = None
+    ocr_error: str | None = None
+    ocr_candidate = not raw_lines and image_coverage >= 0.6
+    if ocr_candidate:
+        if ocr_fallback == "image-only":
+            ocr_lines, ocr_language_used, ocr_error = _ocr_raw_text_lines(
+                page,
+                language=ocr_language,
+                dpi=ocr_dpi,
+            )
+            if ocr_lines:
+                raw_lines = ocr_lines
+                source_kind = "native-ocr"
+                id_prefix = "o"
+                text_confidence = 0.72
+                ocr_status = "applied"
+            elif ocr_error:
+                ocr_status = "unavailable"
+            else:
+                ocr_status = "no-text"
+        else:
+            ocr_status = "disabled"
 
     raw_lines.sort(key=lambda item: reading_order_key(item["bbox"]))
     reading_order_assignments = {
@@ -127,22 +167,30 @@ def _extract_page_text_elements(
             font_size_scale=font_size_scale,
         )
         metadata = {
-            "source": "native-pdf",
+            "source": source_kind,
             "span_count": len(raw["spans"]),
             "text_run_count": len(text_runs),
             "mixed_inline_style": _has_mixed_run_styles(text_runs),
             "text_runs": text_runs,
             **order_assignment.as_metadata(),
         }
+        if source_kind == "native-ocr":
+            metadata.update(
+                {
+                    "ocr_fallback": True,
+                    "ocr_language": ocr_language_used or ocr_language,
+                    "ocr_dpi": ocr_dpi,
+                }
+            )
         text_elements.append(
             ElementIR(
-                id=f"p{rendered_page.page_index + 1:04d}-n{visual_index + 1:04d}",
+                id=f"p{rendered_page.page_index + 1:04d}-{id_prefix}{visual_index + 1:04d}",
                 page_index=rendered_page.page_index,
                 type="title" if style["font_size_px"] >= 22 else "text",
                 bbox_pdf=bbox_pdf,
                 bbox_px=bbox_px,
                 source_text=raw["text"],
-                confidence=1.0,
+                confidence=text_confidence,
                 reading_order=order_assignment.semantic_order,
                 style_hint=style,
                 metadata=metadata,
@@ -168,7 +216,82 @@ def _extract_page_text_elements(
         text_elements = _elements_outside_regions(text_elements, raster_regions)
         image_elements = _elements_outside_regions(image_elements, raster_regions)
         shape_elements = _elements_outside_regions(shape_elements, raster_regions)
-    return [*text_elements, *image_elements, *raster_elements, *shape_elements]
+    diagnostics = {
+        "page_index": rendered_page.page_index,
+        "native_text_line_count": sum(1 for line in _raw_text_lines_from_dict(text_dict) if line["text"].strip()),
+        "text_line_count": len(text_elements),
+        "image_area_coverage": round(image_coverage, 6),
+        "image_only_candidate": ocr_candidate,
+        "ocr_fallback": ocr_fallback,
+        "ocr_fallback_status": ocr_status,
+        "ocr_language_requested": ocr_language,
+        "ocr_language_used": ocr_language_used,
+        "ocr_dpi": ocr_dpi,
+        "ocr_error": ocr_error,
+    }
+    return _PageExtraction(
+        elements=[*text_elements, *image_elements, *raster_elements, *shape_elements],
+        diagnostics=diagnostics,
+    )
+
+
+def _raw_text_lines_from_dict(text_dict: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_lines: list[dict[str, Any]] = []
+    for block in text_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = [span for span in line.get("spans", []) if span.get("text", "")]
+            if not spans:
+                continue
+            text = "".join(span.get("text", "") for span in spans).strip()
+            if not text:
+                continue
+            bbox = BBox.from_any(line.get("bbox"))
+            raw_lines.append({"bbox": bbox, "text": text, "spans": spans})
+    return raw_lines
+
+
+def _ocr_raw_text_lines(
+    page: fitz.Page,
+    *,
+    language: str,
+    dpi: int,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    errors: list[str] = []
+    for candidate in _ocr_language_candidates(language):
+        try:
+            textpage = page.get_textpage_ocr(language=candidate, dpi=dpi)
+            raw_lines = _raw_text_lines_from_dict(page.get_text("dict", textpage=textpage))
+        except Exception as exc:  # pragma: no cover - depends on local Tesseract installation.
+            errors.append(f"{candidate}: {type(exc).__name__}: {exc}")
+            continue
+        if raw_lines:
+            return raw_lines, candidate, None
+    return [], None, "; ".join(errors) if errors else None
+
+
+def _ocr_language_candidates(language: str) -> tuple[str, ...]:
+    requested = language.strip() or "eng"
+    candidates = [requested]
+    if requested != "eng":
+        candidates.append("eng")
+    return tuple(dict.fromkeys(candidates))
+
+
+def _image_area_coverage(text_dict: dict[str, Any], rendered_page: RenderedPage) -> float:
+    page_area = max(1.0, rendered_page.width_pt * rendered_page.height_pt)
+    blocks = _dedupe_image_blocks(
+        block for block in text_dict.get("blocks", []) if block.get("type") == 1 and block.get("image")
+    )
+    area = 0.0
+    for block in blocks:
+        try:
+            bbox = clamp_bbox(BBox.from_any(block.get("bbox")), rendered_page.width_pt, rendered_page.height_pt)
+        except (TypeError, ValueError):
+            continue
+        area += bbox.width * bbox.height
+    return min(area / page_area, 1.0)
 
 
 def _extract_complex_vector_region_elements(

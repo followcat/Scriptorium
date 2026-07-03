@@ -1,9 +1,43 @@
 import json
+import shutil
 from pathlib import Path
+
+import fitz
+import pytest
+from PIL import Image, ImageDraw, ImageFont
 
 from scriptorium.benchmark import run_benchmark
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.semantic_quality import semantic_ground_truth_path
+
+
+def _require_tesseract() -> None:
+    if shutil.which("tesseract") is None:
+        pytest.skip("Tesseract is required for image-only OCR fallback benchmark coverage.")
+
+
+def _readable_test_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    if font_path.exists():
+        return ImageFont.truetype(str(font_path), size=size)
+    return ImageFont.load_default()
+
+
+def _create_image_only_text_pdf(tmp_path: Path) -> Path:
+    image_path = tmp_path / "benchmark_image_only.png"
+    image = Image.new("RGB", (1000, 420), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((70, 86), "BENCHMARK OCR", font=_readable_test_font(76), fill=(0, 0, 0))
+    draw.text((74, 216), "IMAGE ONLY PAGE", font=_readable_test_font(62), fill=(10, 10, 10))
+    image.save(image_path)
+
+    pdf_path = tmp_path / "benchmark_image_only.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=500, height=210)
+    page.insert_image(fitz.Rect(0, 0, 500, 210), filename=image_path)
+    doc.save(pdf_path)
+    doc.close()
+    return pdf_path
 
 
 def test_benchmark_fixtures_create_multiple_pdfs(tmp_path: Path) -> None:
@@ -28,6 +62,11 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
     assert report["summary"]["total_pages"] >= 2
+    assert report["summary"]["ocr_fallback_counts"] == {"image-only": 2}
+    assert "total_ocr_fallback_applied_pages" in report["summary"]
+    assert "total_ocr_text_elements" in report["summary"]
+    assert "total_image_only_candidate_pages" in report["summary"]
+    assert "total_textless_pages" in report["summary"]
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
@@ -41,6 +80,11 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
     assert all("vector_background_page_count" in case for case in report["cases"])
+    assert all("ocr_fallback" in case for case in report["cases"])
+    assert all("ocr_fallback_applied_page_count" in case for case in report["cases"])
+    assert all("ocr_text_count" in case for case in report["cases"])
+    assert all("image_only_candidate_page_count" in case for case in report["cases"])
+    assert all("textless_page_count" in case for case in report["cases"])
     assert all("reading_order_risk_score" in case for case in report["cases"])
     assert all("reading_order_risk_level" in case for case in report["cases"])
     assert all("reading_order_column_geometry_page_count" in case for case in report["cases"])
@@ -124,6 +168,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "text_fit" in csv_text
     assert "fidelity_background" in csv_text
     assert "vector_background_page_count" in csv_text
+    assert "ocr_fallback_applied_page_count" in csv_text
+    assert "ocr_text_count" in csv_text
     assert "reading_order_risk_score" in csv_text
     assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-svg-export.pdf").exists()
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
@@ -243,6 +289,42 @@ def test_benchmark_can_auto_select_font_size_scale(tmp_path: Path) -> None:
     assert {candidate["font_size_scale"] for candidate in case["font_size_scale_candidates"]} == {0.99, 1.0}
     assert all("total_seconds" in candidate for candidate in case["font_size_scale_candidates"])
     assert report["summary"]["font_size_scale_counts"][str(case["font_size_scale"])] == 1
+
+
+def test_benchmark_reports_image_only_ocr_fallback_metrics(tmp_path: Path) -> None:
+    _require_tesseract()
+    pdf_path = _create_image_only_text_pdf(tmp_path)
+    report = run_benchmark(
+        [pdf_path],
+        tmp_path / "benchmark-image-only-ocr",
+        dpi=96,
+        ocr_language="eng",
+        ocr_dpi=200,
+    )
+    case = report["cases"][0]
+    csv_text = (tmp_path / "benchmark-image-only-ocr" / "benchmark_summary.csv").read_text(encoding="utf-8")
+    ir = json.loads(Path(case["ir"]).read_text(encoding="utf-8"))
+    ocr_text = " ".join(
+        element["source_text"].upper()
+        for page in ir["pages"]
+        for element in page["elements"]
+        if element["metadata"].get("source") == "native-ocr"
+    )
+
+    assert report["ocr_fallback"] == "image-only"
+    assert report["ocr_language"] == "eng"
+    assert report["ocr_dpi"] == 200
+    assert case["ocr_fallback_applied_page_count"] == 1
+    assert case["ocr_text_count"] > 0
+    assert case["image_only_candidate_page_count"] == 1
+    assert case["textless_page_count"] == 0
+    assert case["editable_element_count"] >= case["ocr_text_count"]
+    assert report["summary"]["total_ocr_fallback_applied_pages"] == 1
+    assert report["summary"]["total_ocr_text_elements"] == case["ocr_text_count"]
+    assert "BENCHMARK" in ocr_text
+    assert "OCR" in ocr_text
+    assert "ocr_fallback_applied_page_count" in csv_text
+    assert "ocr_text_count" in csv_text
 
 
 def test_benchmark_can_auto_select_text_fit(tmp_path: Path) -> None:

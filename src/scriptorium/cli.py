@@ -10,7 +10,7 @@ from .benchmark import BenchmarkFidelityBackground, BenchmarkFontProfile, Benchm
 from .fixture import create_fixture
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
-from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
+from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import load_ocr_json, normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
@@ -57,6 +57,20 @@ def benchmark_command(
         "dense",
         help="Native raster fallback policy: none, dense, or tables for experimental complex table regions.",
     ),
+    ocr_fallback: OcrFallback = typer.Option(
+        "image-only",
+        help="OCR fallback policy for native extraction: off or image-only for textless raster pages.",
+    ),
+    ocr_language: str = typer.Option(
+        "eng+chi_sim",
+        help="Tesseract language list for image-only OCR fallback, for example eng or eng+chi_sim.",
+    ),
+    ocr_dpi: int = typer.Option(
+        144,
+        min=72,
+        max=600,
+        help="OCR render DPI used only by the image-only fallback.",
+    ),
     html_mode: BenchmarkHtmlMode = typer.Option(
         "structured",
         help=(
@@ -99,6 +113,9 @@ def benchmark_command(
         structure_jsons=structure_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
+        ocr_fallback=ocr_fallback,
+        ocr_language=ocr_language,
+        ocr_dpi=ocr_dpi,
         html_mode=html_mode,
         font_size_scale=font_size_scale,
         text_fit=text_fit,
@@ -113,6 +130,9 @@ def benchmark_command(
     typer.echo(f"Max pages: {report.get('max_pages')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
+    typer.echo(f"OCR fallback: {report.get('ocr_fallback')}")
+    typer.echo(f"OCR language: {report.get('ocr_language')}")
+    typer.echo(f"OCR DPI: {report.get('ocr_dpi')}")
     typer.echo(f"HTML mode: {report.get('html_mode')}")
     typer.echo(f"Font size scale: {report.get('font_size_scale')}")
     typer.echo(f"Text fit: {report.get('text_fit')}")
@@ -120,6 +140,8 @@ def benchmark_command(
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
+    typer.echo(f"OCR fallback pages: {report['summary'].get('total_ocr_fallback_applied_pages')}")
+    typer.echo(f"OCR text elements: {report['summary'].get('total_ocr_text_elements')}")
     typer.echo(f"Structure evidence regions: {report['summary'].get('total_structure_evidence_regions')}")
     typer.echo(f"Structure evidence matched elements: {report['summary'].get('total_structure_evidence_matched_elements')}")
 
@@ -158,6 +180,20 @@ def convert(
         "dense",
         help="Native raster fallback policy: none, dense, or tables for experimental complex table regions.",
     ),
+    ocr_fallback: OcrFallback = typer.Option(
+        "image-only",
+        help="OCR fallback policy for native extraction: off or image-only for textless raster pages.",
+    ),
+    ocr_language: str = typer.Option(
+        "eng+chi_sim",
+        help="Tesseract language list for image-only OCR fallback, for example eng or eng+chi_sim.",
+    ),
+    ocr_dpi: int = typer.Option(
+        144,
+        min=72,
+        max=600,
+        help="OCR render DPI used only by the image-only fallback.",
+    ),
     svg_background: bool = typer.Option(
         False,
         "--svg-background",
@@ -180,6 +216,9 @@ def convert(
             font_profile=font_profile,
             raster_policy=raster_policy,
             font_size_scale=font_size_scale,
+            ocr_fallback=ocr_fallback,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
         )
     else:
         ocr_payload = load_ocr_json(ocr_json) if ocr_json else None
