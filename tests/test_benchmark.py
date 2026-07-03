@@ -6,8 +6,9 @@ import fitz
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from scriptorium.benchmark import run_benchmark
+from scriptorium.benchmark import _page_reading_order_geometry_profile, run_benchmark
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
+from scriptorium.models import BBox
 from scriptorium.semantic_quality import semantic_ground_truth_path
 
 
@@ -114,6 +115,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_reading_order_risk_score" in report["summary"]
     assert "reading_order_risk_level_counts" in report["summary"]
     assert "total_reading_order_column_geometry_pages" in report["summary"]
+    assert "total_reading_order_repeated_anchor_pages" in report["summary"]
+    assert "max_reading_order_repeated_anchor_columns" in report["summary"]
+    assert "total_reading_order_table_like_pages" in report["summary"]
+    assert "total_reading_order_table_like_visual_yx_pages" in report["summary"]
     assert "total_reading_order_unlabeled_text_risk_count" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
@@ -145,6 +150,38 @@ def test_benchmark_can_limit_large_documents_to_first_pages(tmp_path: Path) -> N
     assert "max_pages" in csv_text
 
 
+def test_reading_order_geometry_profile_separates_text_flow_columns_from_tables() -> None:
+    text_flow_boxes: list[BBox] = []
+    table_boxes: list[BBox] = []
+    for row in range(10):
+        y0 = 70 + row * 13
+        text_flow_boxes.extend(
+            [
+                BBox(x0=52, y0=y0, x1=176, y1=y0 + 10),
+                BBox(x0=224, y0=y0, x1=348, y1=y0 + 10),
+                BBox(x0=396, y0=y0, x1=520, y1=y0 + 10),
+            ]
+        )
+        table_boxes.extend(
+            [
+                BBox(x0=80, y0=y0, x1=106, y1=y0 + 10),
+                BBox(x0=218, y0=y0, x1=247, y1=y0 + 10),
+                BBox(x0=398, y0=y0, x1=427, y1=y0 + 10),
+                BBox(x0=518, y0=y0, x1=545, y1=y0 + 10),
+            ]
+        )
+
+    text_flow = _page_reading_order_geometry_profile(576, text_flow_boxes)
+    table = _page_reading_order_geometry_profile(576, table_boxes)
+
+    assert text_flow["repeated_anchor_column_count"] == 3
+    assert text_flow["table_like"] is True
+    assert text_flow["text_flow_column_geometry"] is True
+    assert table["repeated_anchor_column_count"] == 3
+    assert table["table_like"] is True
+    assert table["text_flow_column_geometry"] is False
+
+
 def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
     report = run_benchmark(
@@ -170,6 +207,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "vector_background_page_count" in csv_text
     assert "ocr_fallback_applied_page_count" in csv_text
     assert "ocr_text_count" in csv_text
+    assert "reading_order_repeated_anchor_page_count" in csv_text
+    assert "reading_order_table_like_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text
     assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-svg-export.pdf").exists()
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}

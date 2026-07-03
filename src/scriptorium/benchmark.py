@@ -5,7 +5,9 @@ import json
 import math
 import time
 from collections import Counter
+from itertools import combinations
 from pathlib import Path
+from statistics import median
 from typing import Any, Literal
 
 from .annotations import annotate_document
@@ -448,18 +450,30 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
 def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str, Any]) -> dict[str, Any]:
     column_geometry_pages = 0
     visual_yx_column_pages = 0
+    repeated_anchor_pages = 0
+    max_repeated_anchor_columns = 0
+    table_like_pages = 0
+    table_like_visual_yx_pages = 0
     text_count = 0
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
         text_count += len(text_elements)
-        if not _page_has_column_geometry(page.width_pt, [element.bbox_pdf for element in text_elements]):
-            continue
-        column_geometry_pages += 1
+        geometry = _page_reading_order_geometry_profile(page.width_pt, [element.bbox_pdf for element in text_elements])
+        if int(geometry["repeated_anchor_column_count"]) >= 2:
+            repeated_anchor_pages += 1
+            max_repeated_anchor_columns = max(max_repeated_anchor_columns, int(geometry["repeated_anchor_column_count"]))
+        if bool(geometry["table_like"]):
+            table_like_pages += 1
         page_strategies = Counter(
             str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
         )
-        if page_strategies.get("visual-yx", 0) > sum(page_strategies.values()) * 0.6:
-            visual_yx_column_pages += 1
+        visual_yx_dominant = page_strategies.get("visual-yx", 0) > sum(page_strategies.values()) * 0.6
+        if bool(geometry["text_flow_column_geometry"]):
+            column_geometry_pages += 1
+            if visual_yx_dominant:
+                visual_yx_column_pages += 1
+        if bool(geometry["table_like"]) and visual_yx_dominant:
+            table_like_visual_yx_pages += 1
 
     semantic_available = bool(semantic_quality.get("ground_truth_available"))
     ignored_count = int(semantic_quality.get("semantic_ignored_text_count") or 0) if semantic_available else 0
@@ -486,6 +500,10 @@ def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str
         "reading_order_risk_level": _risk_level(score),
         "reading_order_column_geometry_page_count": column_geometry_pages,
         "reading_order_visual_yx_column_page_count": visual_yx_column_pages,
+        "reading_order_repeated_anchor_page_count": repeated_anchor_pages,
+        "reading_order_max_repeated_anchor_columns": max_repeated_anchor_columns,
+        "reading_order_table_like_page_count": table_like_pages,
+        "reading_order_table_like_visual_yx_page_count": table_like_visual_yx_pages,
         "reading_order_unlabeled_text_risk_count": unlabeled_count,
         "reading_order_semantic_ignored_text_ratio": round(unlabeled_ratio, 8),
         "reading_order_semantic_missing_extra_ratio": round(missing_extra_ratio, 8),
@@ -493,19 +511,37 @@ def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str
     }
 
 
-def _page_has_column_geometry(page_width: float, bboxes: list[Any]) -> bool:
+def _page_reading_order_geometry_profile(page_width: float, bboxes: list[Any]) -> dict[str, Any]:
     candidates = [
         bbox
         for bbox in bboxes
         if bbox.width >= 8 and bbox.height >= 4 and bbox.width <= page_width * 0.72
     ]
     if len(candidates) < 8:
-        return False
+        return {
+            "repeated_anchor_column_count": 0,
+            "text_flow_column_geometry": False,
+            "table_like": False,
+        }
 
+    repeated_clusters = _repeated_anchor_clusters(page_width, candidates)
+    repeated_anchor_column_count = _selected_repeated_anchor_column_count(page_width, repeated_clusters)
+    table_like = _bboxes_look_like_table_grid(candidates, page_width)
+    text_flow_column_geometry = repeated_anchor_column_count >= 2 and (
+        not table_like or _anchor_clusters_look_like_text_flows(repeated_clusters, page_width)
+    )
+    return {
+        "repeated_anchor_column_count": repeated_anchor_column_count,
+        "text_flow_column_geometry": text_flow_column_geometry,
+        "table_like": table_like,
+    }
+
+
+def _repeated_anchor_clusters(page_width: float, bboxes: list[Any]) -> list[tuple[float, list[Any]]]:
     tolerance = max(12.0, page_width * 0.03)
     clusters: list[list[Any]] = []
     centers: list[float] = []
-    for bbox in sorted(candidates, key=lambda item: item.x0):
+    for bbox in sorted(bboxes, key=lambda item: item.x0):
         if not clusters or abs(bbox.x0 - centers[-1]) > tolerance:
             clusters.append([bbox])
             centers.append(bbox.x0)
@@ -513,18 +549,91 @@ def _page_has_column_geometry(page_width: float, bboxes: list[Any]) -> bool:
         clusters[-1].append(bbox)
         centers[-1] = sum(item.x0 for item in clusters[-1]) / len(clusters[-1])
 
-    min_items = max(4, round(len(candidates) * 0.12))
-    repeated = [(centers[index], cluster) for index, cluster in enumerate(clusters) if len(cluster) >= min_items]
-    if len(repeated) < 2:
+    min_items = max(4, round(len(bboxes) * 0.12))
+    return [(centers[index], cluster) for index, cluster in enumerate(clusters) if len(cluster) >= min_items]
+
+
+def _selected_repeated_anchor_column_count(page_width: float, clusters: list[tuple[float, list[Any]]]) -> int:
+    for column_count in range(min(3, len(clusters)), 1, -1):
+        min_separation = page_width * (0.16 if column_count >= 3 else 0.25)
+        for selected in combinations(clusters, column_count):
+            centers = [center for center, _cluster in selected]
+            groups = [cluster for _center, cluster in selected]
+            if any(centers[index + 1] - centers[index] < min_separation for index in range(len(centers) - 1)):
+                continue
+            if any(
+                _bbox_group_vertical_overlap(groups[index], groups[index + 1]) < 0.2
+                for index in range(len(groups) - 1)
+            ):
+                continue
+            return column_count
+    return 0
+
+
+def _anchor_clusters_look_like_text_flows(clusters: list[tuple[float, list[Any]]], page_width: float) -> bool:
+    min_median_width = page_width * 0.08
+    for _center, cluster in clusters:
+        widths = [bbox.width for bbox in cluster if bbox.width > 0]
+        if widths and median(widths) >= min_median_width:
+            return True
+    return False
+
+
+def _bboxes_look_like_table_grid(bboxes: list[Any], page_width: float) -> bool:
+    heights = [bbox.height for bbox in bboxes if bbox.height > 0]
+    y_tolerance = max(4.0, median(heights) * 0.8) if heights else 8.0
+    rows = _bbox_row_clusters(bboxes, tolerance=y_tolerance)
+    if len(rows) < 3:
+        return False
+    multi_cell_rows = [row for row in rows if len(row) >= 3]
+    if len(multi_cell_rows) < 3 or len(multi_cell_rows) / len(rows) < 0.5:
         return False
 
-    for left_index, (left_x, left_cluster) in enumerate(repeated):
-        for right_x, right_cluster in repeated[left_index + 1 :]:
-            if right_x - left_x < page_width * 0.25:
-                continue
-            if _bbox_group_vertical_overlap(left_cluster, right_cluster) >= 0.2:
-                return True
-    return False
+    repeated_x_clusters = _numeric_position_clusters(
+        [_bbox_center_x(bbox) for row in multi_cell_rows for bbox in row],
+        tolerance=page_width * 0.04,
+    )
+    return len(repeated_x_clusters) >= 3
+
+
+def _bbox_row_clusters(bboxes: list[Any], tolerance: float) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    row_centers: list[float] = []
+    for bbox in sorted(bboxes, key=_bbox_center_y):
+        center = _bbox_center_y(bbox)
+        matched = False
+        for index, row_center in enumerate(row_centers):
+            if abs(center - row_center) <= tolerance:
+                rows[index].append(bbox)
+                row_centers[index] = sum(_bbox_center_y(item) for item in rows[index]) / len(rows[index])
+                matched = True
+                break
+        if not matched:
+            rows.append([bbox])
+            row_centers.append(center)
+    return rows
+
+
+def _numeric_position_clusters(values: list[float], tolerance: float) -> list[list[float]]:
+    clusters: list[list[float]] = []
+    for value in sorted(values):
+        if not clusters or abs(value - clusters[-1][-1]) > tolerance:
+            clusters.append([value])
+        else:
+            clusters[-1].append(value)
+    return clusters
+
+
+def _bbox_center_x(bbox: Any) -> float:
+    return (bbox.x0 + bbox.x1) / 2
+
+
+def _bbox_center_y(bbox: Any) -> float:
+    return (bbox.y0 + bbox.y1) / 2
+
+
+def _page_has_column_geometry(page_width: float, bboxes: list[Any]) -> bool:
+    return bool(_page_reading_order_geometry_profile(page_width, bboxes)["text_flow_column_geometry"])
 
 
 def _bbox_group_vertical_overlap(left: list[Any], right: list[Any]) -> float:
@@ -622,6 +731,16 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_visual_yx_column_pages": sum(
             int(case["reading_order_visual_yx_column_page_count"]) for case in cases
         ),
+        "total_reading_order_repeated_anchor_pages": sum(
+            int(case["reading_order_repeated_anchor_page_count"]) for case in cases
+        ),
+        "max_reading_order_repeated_anchor_columns": max(
+            int(case["reading_order_max_repeated_anchor_columns"]) for case in cases
+        ),
+        "total_reading_order_table_like_pages": sum(int(case["reading_order_table_like_page_count"]) for case in cases),
+        "total_reading_order_table_like_visual_yx_pages": sum(
+            int(case["reading_order_table_like_visual_yx_page_count"]) for case in cases
+        ),
         "total_reading_order_unlabeled_text_risk_count": sum(
             int(case["reading_order_unlabeled_text_risk_count"]) for case in cases
         ),
@@ -671,6 +790,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_risk_level",
         "reading_order_column_geometry_page_count",
         "reading_order_visual_yx_column_page_count",
+        "reading_order_repeated_anchor_page_count",
+        "reading_order_max_repeated_anchor_columns",
+        "reading_order_table_like_page_count",
+        "reading_order_table_like_visual_yx_page_count",
         "reading_order_unlabeled_text_risk_count",
         "reading_order_semantic_ignored_text_ratio",
         "visual_similarity",
