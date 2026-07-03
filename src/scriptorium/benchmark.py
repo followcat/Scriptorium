@@ -39,6 +39,12 @@ HTML_MODE_CANDIDATES: tuple[HtmlMode, ...] = ("structured", "fidelity")
 FONT_SIZE_SCALE_CANDIDATES: tuple[float, ...] = (0.99, 1.0)
 TEXT_FIT_CANDIDATES: tuple[HtmlTextFit, ...] = ("none", "svg")
 FIDELITY_BACKGROUND_CANDIDATES: tuple[FidelityBackground, ...] = ("svg", "raster")
+SEMANTIC_ORDER_CANDIDATES: tuple[str, ...] = (
+    "visual_yx",
+    "box_flow",
+    "relation_graph",
+    "external_structure",
+)
 
 
 def run_benchmark(
@@ -655,11 +661,7 @@ def _reading_order_relation_graph_diagnostics(document: DocumentIR) -> dict[str,
 
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
-    orders: dict[str, dict[int, list[str]]] = {
-        "visual_yx": {},
-        "box_flow": {},
-        "relation_graph": {},
-    }
+    orders: dict[str, dict[int, list[str]]] = {candidate_name: {} for candidate_name in SEMANTIC_ORDER_CANDIDATES}
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
         if len(text_elements) < 2:
@@ -682,9 +684,55 @@ def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list
                 page_height=page.height_pt,
             ),
         }
+        external_structure_order = _external_structure_candidate_order(text_elements)
+        if external_structure_order:
+            candidates["external_structure"] = external_structure_order
         for candidate_name, candidate_order in candidates.items():
             orders[candidate_name][page.page_index] = [str(text_elements[index].id) for index in candidate_order]
     return orders
+
+
+def _external_structure_candidate_order(elements: list[Any]) -> list[int]:
+    indexed_orders: list[tuple[int, int]] = []
+    for index, element in enumerate(elements):
+        order = element.metadata.get("external_structure_order")
+        if order is None:
+            continue
+        try:
+            indexed_orders.append((int(order), index))
+        except (TypeError, ValueError):
+            continue
+    if len({order for order, _index in indexed_orders}) < 2:
+        return []
+
+    ranked_indices = {
+        index
+        for _order, index in indexed_orders
+    }
+    ordered_indices = sorted(
+        ranked_indices,
+        key=lambda index: (
+            int(elements[index].metadata.get("external_structure_order") or 1_000_000),
+            elements[index].reading_order,
+            elements[index].bbox_pdf.y0,
+            elements[index].bbox_pdf.x0,
+            index,
+        ),
+    )
+    ordered_indices.extend(
+        index
+        for index, element in sorted(
+            enumerate(elements),
+            key=lambda item: (
+                item[1].reading_order,
+                item[1].bbox_pdf.y0,
+                item[1].bbox_pdf.x0,
+                item[0],
+            ),
+        )
+        if index not in ranked_indices
+    )
+    return ordered_indices
 
 
 def _reading_order_candidate_diagnostics(
@@ -1218,6 +1266,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_box_flow_successor_accuracy",
         "semantic_relation_graph_order_pair_accuracy",
         "semantic_relation_graph_successor_accuracy",
+        "semantic_external_structure_order_pair_accuracy",
+        "semantic_external_structure_successor_accuracy",
         "semantic_ignored_text_count",
         "semantic_missing_text_count",
         "semantic_extra_text_count",
@@ -1559,7 +1609,7 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
 
 def _semantic_candidate_case_metrics(candidate_metrics: dict[str, Any]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
-    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+    for candidate_name in SEMANTIC_ORDER_CANDIDATES:
         candidate = candidate_metrics.get(candidate_name)
         if not isinstance(candidate, dict):
             candidate = {}
@@ -1645,7 +1695,7 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _empty_semantic_candidate_summary() -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+    for candidate_name in SEMANTIC_ORDER_CANDIDATES:
         summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = None
         summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = None
         summary[f"total_semantic_{candidate_name}_successor_correct_count"] = 0
@@ -1655,7 +1705,7 @@ def _empty_semantic_candidate_summary() -> dict[str, Any]:
 
 def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+    for candidate_name in SEMANTIC_ORDER_CANDIDATES:
         pairwise_correct = sum(int(case[f"semantic_{candidate_name}_pairwise_correct_count"]) for case in cases)
         pairwise_total = sum(int(case[f"semantic_{candidate_name}_pairwise_total_count"]) for case in cases)
         successor_correct = sum(int(case[f"semantic_{candidate_name}_successor_correct_count"]) for case in cases)

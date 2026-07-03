@@ -6,9 +6,9 @@ import fitz
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from scriptorium.benchmark import _page_reading_order_geometry_profile, run_benchmark
+from scriptorium.benchmark import _page_reading_order_geometry_profile, _semantic_candidate_orders, run_benchmark
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
-from scriptorium.models import BBox
+from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.semantic_quality import semantic_ground_truth_path
 
 
@@ -127,6 +127,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_external_structure_successor_accuracy" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
     assert all(case["html_mode"] == "structured" for case in report["cases"])
@@ -197,6 +198,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_semantic_visual_yx_successor_accuracy" in report["summary"]
     assert "mean_semantic_box_flow_successor_accuracy" in report["summary"]
     assert "mean_semantic_relation_graph_successor_accuracy" in report["summary"]
+    assert "mean_semantic_external_structure_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
     assert all(case["semantic_ground_truth_available"] for case in report["cases"])
     assert all("semantic_successor_accuracy" in case for case in report["cases"])
@@ -259,6 +261,21 @@ def test_reading_order_geometry_profile_separates_text_flow_columns_from_tables(
     assert table["text_flow_column_geometry"] is False
 
 
+def test_semantic_candidate_orders_include_external_structure_order() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1, 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2, 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3, 1),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4, 2),
+        ]
+    )
+
+    candidates = _semantic_candidate_orders(document)
+
+    assert candidates["external_structure"][0] == ["left-one", "left-two", "right-one", "right-two"]
+
+
 def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
     report = run_benchmark(
@@ -302,6 +319,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_relation_graph_successor_disagreement_ratio" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_relation_graph_successor_accuracy" in csv_text
+    assert "semantic_external_structure_successor_accuracy" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text
     assert "reading_order_table_like_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text
@@ -390,6 +408,40 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
         "structure_evidence_matched_element_count"
     ]
     assert "structure_evidence_matched_element_count" in csv_text
+    assert "semantic_external_structure_successor_accuracy" in csv_text
+
+
+def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int]]) -> DocumentIR:
+    elements = [
+        ElementIR(
+            id=element_id,
+            page_index=0,
+            type="text",
+            bbox_pdf=bbox,
+            bbox_px=bbox,
+            source_text=text,
+            reading_order=reading_order,
+            metadata={
+                "source": "unit-test",
+                "reading_order_strategy": "visual-yx",
+                "external_structure_order": external_order,
+            },
+        )
+        for element_id, text, bbox, reading_order, external_order in items
+    ]
+    page = PageIR(
+        page_index=0,
+        width_pt=200,
+        height_pt=200,
+        width_px=200,
+        height_px=200,
+        render_dpi=72,
+        scale_x=1.0,
+        scale_y=1.0,
+        background_image="",
+        elements=elements,
+    )
+    return DocumentIR(source_pdf="candidate.pdf", render_dpi=72, page_count=1, pages=[page])
 
 
 def test_benchmark_can_auto_select_font_profile(tmp_path: Path) -> None:
