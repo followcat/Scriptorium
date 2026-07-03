@@ -92,6 +92,15 @@ class _SpatialGraphResult:
 
 
 @dataclass(frozen=True)
+class _BoxFlowResult:
+    ordered_indices: list[int]
+    columns: list[list[int]]
+    confidence: float
+    evidence: tuple[str, ...]
+    full_width_indices: set[int]
+
+
+@dataclass(frozen=True)
 class PairwiseOrderDisagreement:
     pair_count: int
     disagreement_count: int
@@ -323,6 +332,48 @@ def _column_flow_assignments(
                     item_index: _artifact_evidence(artifact_type_by_item[item_index])
                     if item_index in artifact_type_by_item
                     else spatial_graph_result.evidence
+                    for item_index in range(len(bboxes))
+                },
+            )
+        box_flow_result = _box_flow_order(bboxes, page_width, page_height, body_indices)
+        if box_flow_result is not None:
+            header_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "header"
+            }
+            footer_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "footer"
+            }
+            ordered_indices = [
+                *sorted(header_indices, key=lambda index: reading_order_key(bboxes[index])),
+                *box_flow_result.ordered_indices,
+                *sorted(footer_indices, key=lambda index: reading_order_key(bboxes[index])),
+            ]
+            return _assign_order_metadata(
+                ordered_indices,
+                bboxes,
+                page_width,
+                page_height,
+                visual_rank,
+                strategy=_box_flow_strategy(artifact_type_by_item),
+                flow_segment_by_item=_flow_segments_for_order(ordered_indices, bboxes),
+                artifact_type_by_item=artifact_type_by_item,
+                scope_by_item={item_index: "page-artifact" for item_index in artifact_type_by_item},
+                column_span_by_item={
+                    item_index: _artifact_column_span(artifact_type)
+                    for item_index, artifact_type in artifact_type_by_item.items()
+                },
+                columns=box_flow_result.columns,
+                full_width_by_item=box_flow_result.full_width_indices | set(artifact_type_by_item),
+                confidence_by_item={
+                    item_index: _artifact_confidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else box_flow_result.confidence
+                    for item_index in range(len(bboxes))
+                },
+                evidence_by_item={
+                    item_index: _artifact_evidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else box_flow_result.evidence
                     for item_index in range(len(bboxes))
                 },
             )
@@ -988,6 +1039,15 @@ def _spatial_graph_strategy(artifact_type_by_item: dict[int, str]) -> str:
     )
 
 
+def _box_flow_strategy(artifact_type_by_item: dict[int, str]) -> str:
+    return _qualified_strategy(
+        "box-flow-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item={},
+        footnote_indices=set(),
+    )
+
+
 def _qualified_strategy(
     base_strategy: str,
     artifact_type_by_item: dict[int, str],
@@ -1197,6 +1257,157 @@ def _spatial_graph_order(
         confidence=confidence,
         evidence=evidence,
     )
+
+
+def _box_flow_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    indices: list[int],
+) -> _BoxFlowResult | None:
+    source_indices = [
+        index
+        for index in indices
+        if bboxes[index].width >= 8 and bboxes[index].height >= 4
+    ]
+    if len(source_indices) < 8 or _looks_like_table_grid([bboxes[index] for index in source_indices], page_width):
+        return None
+
+    full_width_indices = {
+        index
+        for index in source_indices
+        if bboxes[index].width >= page_width * 0.62
+    }
+    ordered_indices: list[int] = []
+    selected_columns: list[list[int]] | None = None
+    max_disagreement_ratio = 0.0
+    accepted_segment_count = 0
+    pending_segment: list[int] = []
+
+    def flush_segment() -> None:
+        nonlocal selected_columns
+        nonlocal max_disagreement_ratio
+        nonlocal accepted_segment_count
+        if not pending_segment:
+            return
+        segment = list(pending_segment)
+        pending_segment.clear()
+        segment_result = _box_flow_segment_order(bboxes, page_width, page_height, segment)
+        if segment_result is None:
+            ordered_indices.extend(sorted(segment, key=lambda index: reading_order_key(bboxes[index])))
+            return
+        ordered_segment, segment_columns, disagreement_ratio = segment_result
+        ordered_indices.extend(ordered_segment)
+        accepted_segment_count += 1
+        max_disagreement_ratio = max(max_disagreement_ratio, disagreement_ratio)
+        if selected_columns is None or sum(len(column) for column in segment_columns) > sum(
+            len(column) for column in selected_columns
+        ):
+            selected_columns = segment_columns
+
+    for item_index in sorted(indices, key=lambda index: reading_order_key(bboxes[index])):
+        if item_index in full_width_indices:
+            flush_segment()
+            ordered_indices.append(item_index)
+        else:
+            pending_segment.append(item_index)
+    flush_segment()
+
+    if accepted_segment_count == 0 or not selected_columns or len(selected_columns) < 2:
+        return None
+
+    confidence = _bounded_confidence(0.7 + 0.12 * min(max_disagreement_ratio / 0.35, 1.0))
+    return _BoxFlowResult(
+        ordered_indices=ordered_indices,
+        columns=selected_columns,
+        confidence=confidence,
+        evidence=("box-flow", "candidate-order-disagreement", "column-biased-flow"),
+        full_width_indices=full_width_indices,
+    )
+
+
+def _box_flow_segment_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    segment: list[int],
+) -> tuple[list[int], list[list[int]], float] | None:
+    source_segment = [
+        index
+        for index in segment
+        if bboxes[index].width >= 8 and bboxes[index].height >= 4 and bboxes[index].width <= page_width * 0.62
+    ]
+    if len(source_segment) < 8:
+        return None
+    if _looks_like_table_grid([bboxes[index] for index in source_segment], page_width):
+        return None
+
+    visual_order = sorted(source_segment, key=lambda index: reading_order_key(bboxes[index]))
+    local_order = infer_box_flow_order(
+        [bboxes[index] for index in source_segment],
+        page_width=page_width,
+        page_height=page_height,
+        boxes_flow=-0.75,
+    )
+    candidate_order = [source_segment[index] for index in local_order]
+    disagreement = pairwise_order_disagreement(visual_order, candidate_order)
+    if disagreement.disagreement_ratio < 0.12:
+        return None
+
+    columns = _box_flow_columns_from_candidate(source_segment, bboxes, page_width)
+    if columns is None:
+        return None
+    if _min_column_vertical_overlap(columns, bboxes) < 0.2:
+        return None
+
+    ordered = [
+        item_index
+        for column in sorted(columns, key=lambda column_indices: _cluster_x_center(column_indices, bboxes))
+        for item_index in sorted(column, key=lambda index: reading_order_key(bboxes[index]))
+    ]
+    ordered_set = set(ordered)
+    ordered.extend(
+        index
+        for index in sorted(segment, key=lambda item: reading_order_key(bboxes[item]))
+        if index not in ordered_set
+    )
+    return ordered, columns, disagreement.disagreement_ratio
+
+
+def _box_flow_columns_from_candidate(
+    indices: list[int],
+    bboxes: list[BBox],
+    page_width: float,
+) -> list[list[int]] | None:
+    ordered = sorted(indices, key=lambda index: _center_x(bboxes[index]))
+    gaps = [
+        (_center_x(bboxes[ordered[position + 1]]) - _center_x(bboxes[ordered[position]]), position)
+        for position in range(len(ordered) - 1)
+    ]
+    if not gaps:
+        return None
+
+    best_columns: list[list[int]] | None = None
+    best_score = -1.0
+    for gap, split_position in gaps:
+        if gap < page_width * 0.12:
+            continue
+        left = ordered[: split_position + 1]
+        right = ordered[split_position + 1 :]
+        if len(left) < 3 or len(right) < 3:
+            continue
+        center_separation = _cluster_x_center(right, bboxes) - _cluster_x_center(left, bboxes)
+        if center_separation < page_width * 0.18:
+            continue
+        vertical_overlap = _vertical_overlap_ratio(left, right, bboxes)
+        if vertical_overlap < 0.2:
+            continue
+        balance = min(len(left), len(right)) / max(len(left), len(right))
+        score = 3.0 * balance + min(vertical_overlap, 1.0) + center_separation / max(page_width, 1.0)
+        if score > best_score:
+            best_score = score
+            best_columns = [left, right]
+    return best_columns
 
 
 def _spatial_graph_horizontally_related(first: BBox, second: BBox, page_width: float) -> bool:

@@ -237,6 +237,35 @@ def test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering() -> None:
     assert disagreement.disagreement_ratio > 0.2
 
 
+def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+    left_x_values = (80, 180, 280)
+    right_x_values = (380, 480, 580)
+
+    for row in range(9):
+        left_indices.append(len(bboxes))
+        left_x0 = left_x_values[row % len(left_x_values)]
+        bboxes.append(BBox(x0=left_x0, y0=90 + row * 16, x1=left_x0 + 150, y1=101 + row * 16))
+        right_indices.append(len(bboxes))
+        right_x0 = right_x_values[row % len(right_x_values)]
+        bboxes.append(BBox(x0=right_x0, y0=90 + row * 16, x1=right_x0 + 150, y1=101 + row * 16))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=760, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].strategy for index in left_indices + right_indices} == {"box-flow-v1"}
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert {by_item[index].column_index for index in left_indices} == {0}
+    assert {by_item[index].column_index for index in right_indices} == {1}
+    assert all("box-flow" in by_item[index].evidence for index in left_indices + right_indices)
+    assert all("candidate-order-disagreement" in by_item[index].evidence for index in left_indices + right_indices)
+
+
 def test_sidebar_notes_do_not_become_body_columns() -> None:
     bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=526, y1=60)]
     left_indices: list[int] = []
