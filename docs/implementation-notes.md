@@ -89,6 +89,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It requires enough repeated anchors per column and at least 55% coverage of candidate body lines, so sparse author grids do not become false two-column pages.
+- Visual row ordering uses a small row bucket to absorb tiny PDF extraction offsets while keeping dense list rows separate, which matters for web-to-PDF ranked lists.
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
@@ -115,7 +116,7 @@ The built-in benchmark fixtures now write a sidecar file next to each generated 
 example.semantic-order.json
 ```
 
-The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source PDF and then under `benchmarks/semantic-ground-truth/` for a matching `<pdf-stem>.semantic-order.json`. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
+The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source PDF and then under `benchmarks/semantic-ground-truth/` for matching repo sidecars. Repo-level lookup supports both `<pdf-stem>.semantic-order.json` and `<parent-dir>.<pdf-stem>.semantic-order.json`, so generic files like `web-hn/input.pdf` can have stable tracked labels without colliding with other `input.pdf` samples. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
 
 Supported page match modes:
 
@@ -128,10 +129,11 @@ Metrics:
 - `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
 - `semantic_exact_page_match_rate`: page-level exact sequence match rate.
 - `ignored_text_count`: unlabelled actual text ignored by `ordered-subsequence` pages.
+- `ignored_text_zone_counts`, `ignored_text_role_counts`, and `ignored_text_source_counts`: where ignored text lives and what the annotation layer thinks it is, useful for deciding which unlabeled regions should become future ground truth.
 - `semantic_missing_text_count`: expected text nodes not found in extraction.
 - `semantic_extra_text_count`: extracted text nodes not present in the ground truth.
 
-For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes. The tracked Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes.
+For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes. The tracked Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The tracked Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels.
 
 ## Useful References
 
@@ -172,5 +174,6 @@ Metrics:
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
+- `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.

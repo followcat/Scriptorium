@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-26%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-28%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -84,9 +84,9 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 
 Transformer-XL 的 `dimension_match = false` 来自 Chromium 打印 A4 页面时产生的 1px 宽度量化差异；页数匹配，diff 仍按未拉伸画布严格比较。
 
-内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，`semantic_order_pair_accuracy = 1.0`。网页样本暂未附带人工顺序标注。
+内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Hacker News 网页打印 PDF 覆盖 2 页、26 个关键文本点，`semantic_order_pair_accuracy = 1.0`。
 
-最新复杂页优化把 arXiv Attention 论文从 `0.92601817` 继续提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。主要变化是 structured 文本行按 PDF bbox 做末行对齐以补偿 PDF word spacing，为真实 ACL 双栏论文加入重复左边界锚点分栏，并把 native drawing path 输出为 SVG path；锚点分栏带覆盖率约束，避免把标题页作者网格误判成正文双栏。
+最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。视觉侧保持上一轮收益：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -247,6 +247,7 @@ Tracked metrics:
 - semantic order pair accuracy
 - semantic sequence similarity
 - semantic ignored text count for partial labels
+- semantic ignored text zone/role/source counts for partial labels
 - semantic missing/extra text count
 - `total_seconds`
 - stage timings: render, extraction/annotation, HTML export, PDF print, visual comparison, semantic comparison
@@ -323,7 +324,7 @@ pytest
 Current local test baseline:
 
 ```text
-26 passed
+28 passed
 ```
 
 ## Project Status
