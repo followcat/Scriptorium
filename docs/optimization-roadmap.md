@@ -15,8 +15,9 @@ This project optimizes two different outcomes:
 - Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Benchmark `--font-size-scale auto` runs a small CSS font-size sweep, records candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Benchmark `--text-fit auto` compares normal editable HTML text with an SVG text-fit layer that uses PDF run bboxes and `textLength` to match line widths while retaining a transparent editable proxy.
-- Benchmark `--html-mode auto` compares the structured redraw path with the SVG-background fidelity overlay path and selects the higher visual-similarity case per PDF.
-- `fidelity` HTML mode keeps SVG page backgrounds visible while overlaying transparent editable coordinate nodes. Print hides unchanged overlays so source-preservation measures the vector background layer, while edited/translated nodes print as local white-background replacement overlays.
+- Benchmark `--html-mode auto` compares the structured redraw path with fidelity overlay paths and selects the higher visual-similarity case per PDF.
+- Benchmark `--fidelity-background auto` compares SVG page backgrounds with raster page backgrounds for fidelity mode. SVG keeps a vector/zoom-friendly source layer; raster often wins strict pixel parity on complex pages.
+- `fidelity` HTML mode keeps SVG or raster page backgrounds visible while overlaying transparent editable coordinate nodes. Print hides unchanged overlays so source-preservation measures the background layer, while edited/translated nodes print as local white-background replacement overlays.
 - Benchmark printing normalizes exported page boxes to the source PDF dimensions, avoiding Chromium's 1px A4 page-size quantization from showing up as a persistent dimension mismatch.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
@@ -77,16 +78,16 @@ Current `--html-mode fidelity` SVG overlay sweep:
 | Hacker News print PDF | 0.9800288 | 0.99490923 | +0.01488043 | 2 |
 | Three-sample mean | 0.94854752 | 0.98645759 | +0.03791007 | 28 |
 
-Current `--html-mode auto --font-size-scale auto --text-fit auto` sweep:
+Current `--html-mode auto --fidelity-background auto` sweep:
 
-| Sample | Best structured | Auto visual | Delta | Selected mode | Page/size match |
-|---|---:|---:|---:|---|---|
-| arXiv Attention paper | 0.96840246 | 0.98809524 | +0.01969278 | `fidelity` | yes / yes |
-| ACL Transformer-XL paper | 0.95679576 | 0.97636829 | +0.01957253 | `fidelity` | yes / yes |
-| Hacker News print PDF | 0.9800288 | 0.99490923 | +0.01488043 | `fidelity` | yes / yes |
-| Three-sample mean | 0.96840901 | 0.98645759 | +0.01804858 | mixed | yes / yes |
+| Sample | Best structured | SVG fidelity | Raster fidelity | Auto visual | Selected path |
+|---|---:|---:|---:|---:|---|
+| arXiv Attention paper | 0.96840246 | 0.98809524 | 1.0 | 1.0 | `fidelity/raster` |
+| ACL Transformer-XL paper | 0.95679576 | 0.97636829 | 0.98096887 | 0.98096887 | `fidelity/raster` |
+| Hacker News print PDF | 0.9800288 | 0.99490923 | 1.0 | 1.0 | `fidelity/raster` |
+| Three-sample mean | 0.96840901 | 0.98645759 | 0.99365629 | 0.99365629 | mixed |
 
-The fidelity path now has a minimal edit-print path: edited or translated nodes print as local white-background replacement overlays. It still needs smarter masks, adaptive text fitting, and conflict handling for long translations, but it proves that the HTML can carry recognized coordinate nodes while preserving the original visual page much more closely than a full structured redraw. `--html-mode auto` makes this tradeoff explicit by measuring both paths and recording the selected mode in the report.
+The fidelity path now has a minimal edit-print path: edited or translated nodes print as local white-background replacement overlays. Raster backgrounds pushed two current real samples to perfect visual parity and raised Transformer-XL from `0.97636829` to `0.98096887`, but SVG backgrounds remain important for vector inspection and future non-raster editing strategies. The remaining Transformer-XL difference is no longer reading-order driven: semantic order is `1.0`, risk is `0.08879982 / low`, and the worst raster diff is page 7 with `0.01903113`.
 
 Current reading-order risk diagnostics example:
 
@@ -112,7 +113,7 @@ Current reading-order risk diagnostics example:
 
 4. Refine edit masks and replacement fitting for fidelity mode
 
-   `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. `--html-mode auto` makes this the benchmark-selected path for the current complex samples, but editing still needs an edit-aware compositor with better masks, padding derived from glyph extents, automatic font-size fitting for translated text, and overlap/conflict detection when replacements are longer than the source bbox.
+   `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. `--html-mode auto --fidelity-background auto` makes this the benchmark-selected path for the current complex samples, but editing still needs an edit-aware compositor with better masks, padding derived from glyph extents, automatic font-size fitting for translated text, and overlap/conflict detection when replacements are longer than the source bbox. The compositor should work with both SVG and raster backgrounds so the benchmark can choose visual fidelity without losing edit architecture.
 
 5. Finer evidence-driven font, scale, and text-fit selection
 
