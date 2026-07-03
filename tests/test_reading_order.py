@@ -338,6 +338,59 @@ def test_footnotes_do_not_interrupt_multicolumn_body_flow() -> None:
     assert all("bottom-note-zone" in by_item[index].evidence for index in footnote_indices)
 
 
+def test_cross_column_caption_creates_local_flow_break() -> None:
+    bboxes: list[BBox] = []
+    texts: list[str] = []
+    upper_left: list[int] = []
+    upper_right: list[int] = []
+    lower_left: list[int] = []
+    lower_right: list[int] = []
+
+    def add_box(bbox: BBox, text: str) -> int:
+        bboxes.append(bbox)
+        texts.append(text)
+        return len(bboxes) - 1
+
+    for row in range(4):
+        upper_left.append(add_box(BBox(x0=72, y0=82 + row * 14, x1=286, y1=93 + row * 14), f"Left top {row}"))
+        upper_right.append(add_box(BBox(x0=320, y0=82 + row * 14, x1=532, y1=93 + row * 14), f"Right top {row}"))
+
+    caption_index = add_box(BBox(x0=190, y0=158, x1=430, y1=171), "Figure 2. Cross-column architecture")
+    continuation_index = add_box(BBox(x0=190, y0=175, x1=420, y1=187), "continued caption text")
+
+    for row in range(4):
+        lower_left.append(add_box(BBox(x0=72, y0=218 + row * 14, x1=286, y1=229 + row * 14), f"Left bottom {row}"))
+        lower_right.append(add_box(BBox(x0=320, y0=218 + row * 14, x1=532, y1=229 + row * 14), f"Right bottom {row}"))
+
+    assignments = infer_semantic_reading_order(
+        bboxes,
+        page_width=612,
+        page_height=792,
+        strategy="column-flow-v1",
+        texts=texts,
+    )
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert max(by_item[index].semantic_order for index in upper_left) < min(
+        by_item[index].semantic_order for index in upper_right
+    )
+    assert max(by_item[index].semantic_order for index in upper_right) < by_item[caption_index].semantic_order
+    assert by_item[caption_index].semantic_order < by_item[continuation_index].semantic_order
+    assert by_item[continuation_index].semantic_order < min(
+        by_item[index].semantic_order for index in lower_left
+    )
+    assert max(by_item[index].semantic_order for index in lower_left) < min(
+        by_item[index].semantic_order for index in lower_right
+    )
+    assert by_item[caption_index].caption_type == "figure"
+    assert by_item[continuation_index].caption_type == "figure"
+    assert by_item[caption_index].column_span == "caption-full"
+    assert by_item[caption_index].column_index is None
+    assert "caption-label" in by_item[caption_index].evidence
+    assert "cross-column-caption" in by_item[caption_index].evidence
+    assert "float-caption" in by_item[continuation_index].evidence
+
+
 def test_column_flow_keeps_running_margins_outside_body_columns() -> None:
     bboxes: list[BBox] = [
         BBox(x0=248, y0=16, x1=364, y1=27),

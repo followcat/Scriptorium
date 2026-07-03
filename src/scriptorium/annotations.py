@@ -127,6 +127,7 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "reading_order_scope": element.metadata.get("reading_order_scope", "body"),
             "reading_order_artifact_type": element.metadata.get("reading_order_artifact_type"),
             "reading_order_sidebar_type": element.metadata.get("reading_order_sidebar_type"),
+            "reading_order_caption_type": element.metadata.get("reading_order_caption_type"),
             "reading_order_confidence": float(element.metadata.get("reading_order_confidence") or 0.0),
             "reading_order_evidence": _reading_order_evidence(element),
             "reading_order_evidence_summary": element.metadata.get("reading_order_evidence_summary", ""),
@@ -226,6 +227,9 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     footnote_role = _reading_order_footnote_role(element)
     if footnote_role:
         return footnote_role
+    caption_role = _reading_order_caption_role(element)
+    if caption_role:
+        return caption_role
     sidebar_role = _reading_order_sidebar_role(element)
     if sidebar_role:
         return sidebar_role
@@ -259,6 +263,12 @@ def _reading_order_sidebar_role(element: ElementIR) -> str | None:
 def _reading_order_footnote_role(element: ElementIR) -> str | None:
     if str(element.metadata.get("reading_order_scope") or "").strip() == "footnote":
         return "footnote"
+    return None
+
+
+def _reading_order_caption_role(element: ElementIR) -> str | None:
+    if str(element.metadata.get("reading_order_caption_type") or "").strip():
+        return "caption"
     return None
 
 

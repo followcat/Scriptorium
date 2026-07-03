@@ -152,6 +152,7 @@ def _extract_page_text_elements(
             [raw["bbox"] for raw in raw_lines],
             rendered_page.width_pt,
             rendered_page.height_pt,
+            texts=[raw["text"] for raw in raw_lines],
         )
     }
     text_elements: list[ElementIR] = []

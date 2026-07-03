@@ -116,6 +116,7 @@ def _normalize_page_elements(
             [item[3] for item in normalized],
             page.width_pt,
             page.height_pt,
+            texts=[_extract_text(item[1]) for item in normalized],
         )
     }
 

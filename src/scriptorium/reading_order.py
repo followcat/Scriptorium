@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
+import re
 from typing import Literal
 from statistics import median
 
@@ -25,6 +26,7 @@ class ReadingOrderAssignment:
     artifact_type: str | None = None
     scope: str = "body"
     sidebar_type: str | None = None
+    caption_type: str | None = None
     confidence: float = 0.5
     evidence: tuple[str, ...] = ()
 
@@ -46,6 +48,7 @@ class ReadingOrderAssignment:
             "reading_order_scope": scope,
             "reading_order_artifact_type": self.artifact_type,
             "reading_order_sidebar_type": self.sidebar_type,
+            "reading_order_caption_type": self.caption_type,
             "reading_order_confidence": _bounded_confidence(self.confidence),
             "reading_order_evidence": list(self.evidence),
             "reading_order_evidence_summary": ",".join(self.evidence),
@@ -79,6 +82,7 @@ class _OrderToken:
     column_index: int | None
     full_width: bool
     region_path: str | None = None
+    caption_type: str | None = None
     confidence: float = 0.5
     evidence: tuple[str, ...] = ()
 
@@ -112,6 +116,7 @@ def infer_semantic_reading_order(
     page_width: float,
     page_height: float,
     strategy: ReadingOrderStrategy = "auto",
+    texts: list[str] | None = None,
 ) -> list[ReadingOrderAssignment]:
     """Infer human-oriented reading order from positioned line boxes.
 
@@ -129,6 +134,7 @@ def infer_semantic_reading_order(
     if strategy == "visual-yx":
         return _visual_assignments(visual_indices, visual_rank)
 
+    normalized_texts = _normalize_texts(texts, len(bboxes))
     table_islands = _infer_table_islands(bboxes, page_width, page_height)
     if strategy in {"auto", "column-flow-v1"} and table_islands:
         mixed_table_assignments = _mixed_table_column_flow_assignments(
@@ -138,6 +144,7 @@ def infer_semantic_reading_order(
             visual_indices,
             visual_rank,
             table_islands,
+            normalized_texts,
         )
         if mixed_table_assignments is not None:
             return mixed_table_assignments
@@ -158,7 +165,7 @@ def infer_semantic_reading_order(
             default_evidence=_xy_cut_evidence(xy_result),
         )
 
-    return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank)
+    return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank, normalized_texts)
 
 
 def infer_box_flow_order(
@@ -228,14 +235,17 @@ def _visual_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
     artifact_type_by_item: dict[int, str] | None = None,
+    caption_type_by_item: dict[int, str] | None = None,
     strategy: str = "visual-yx",
     base_confidence: float = 0.62,
     base_evidence: tuple[str, ...] = ("visual-yx",),
 ) -> list[ReadingOrderAssignment]:
     artifact_type_by_item = artifact_type_by_item or {}
+    caption_type_by_item = caption_type_by_item or {}
     assignments: list[ReadingOrderAssignment] = []
     for order, item_index in enumerate(visual_indices, start=1):
         artifact_type = artifact_type_by_item.get(item_index)
+        caption_type = caption_type_by_item.get(item_index)
         assignments.append(
             ReadingOrderAssignment(
                 item_index=item_index,
@@ -243,14 +253,24 @@ def _visual_assignments(
                 visual_order=visual_rank[item_index],
                 column_index=None if artifact_type else 0,
                 column_count=1,
-                column_span=_artifact_column_span(artifact_type) if artifact_type else "single",
+                column_span=_artifact_column_span(artifact_type)
+                if artifact_type
+                else "caption-column"
+                if caption_type
+                else "single",
                 flow_segment_index=1,
                 strategy=strategy,
                 artifact_type=artifact_type,
-                confidence=_artifact_confidence(artifact_type) if artifact_type else base_confidence,
+                caption_type=caption_type,
+                confidence=_artifact_confidence(artifact_type)
+                if artifact_type
+                else _caption_confidence(caption_type)
+                if caption_type
+                else base_confidence,
                 evidence=_merge_evidence(
                     base_evidence,
                     _artifact_evidence(artifact_type) if artifact_type else (),
+                    _caption_evidence(caption_type, full_width=False) if caption_type else (),
                 ),
             )
         )
@@ -263,12 +283,14 @@ def _column_flow_assignments(
     page_height: float,
     visual_indices: list[int],
     visual_rank: dict[int, int],
+    texts: list[str],
 ) -> list[ReadingOrderAssignment]:
     artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
     non_artifact_indices = [index for index in range(len(bboxes)) if index not in artifact_type_by_item]
     sidebar_type_by_item = _infer_sidebar_items(bboxes, page_width, page_height, indices=non_artifact_indices)
     non_sidebar_indices = [index for index in non_artifact_indices if index not in sidebar_type_by_item]
     footnote_indices = _infer_footnote_items(bboxes, page_width, page_height, indices=non_sidebar_indices)
+    caption_type_by_item = _infer_caption_items(bboxes, texts, page_width, page_height, indices=non_sidebar_indices)
     body_indices = [
         index
         for index in range(len(bboxes))
@@ -284,6 +306,7 @@ def _column_flow_assignments(
                 visual_indices,
                 visual_rank,
                 artifact_type_by_item=artifact_type_by_item,
+                caption_type_by_item=caption_type_by_item,
                 strategy=_table_row_major_strategy(artifact_type_by_item),
                 base_confidence=0.82,
                 base_evidence=("table-row-major", "table-grid-slots"),
@@ -312,9 +335,18 @@ def _column_flow_assignments(
                 artifact_type_by_item=artifact_type_by_item,
                 scope_by_item={item_index: "page-artifact" for item_index in artifact_type_by_item},
                 column_span_by_item={
-                    item_index: _artifact_column_span(artifact_type)
-                    for item_index, artifact_type in artifact_type_by_item.items()
+                    **{
+                        item_index: _artifact_column_span(artifact_type)
+                        for item_index, artifact_type in artifact_type_by_item.items()
+                    },
+                    **{
+                        item_index: "caption-full"
+                        if bboxes[item_index].width >= page_width * 0.62
+                        else "caption-column"
+                        for item_index in caption_type_by_item
+                    },
                 },
+                caption_type_by_item=caption_type_by_item,
                 columns=spatial_graph_result.columns,
                 full_width_by_item={
                     item_index
@@ -325,12 +357,19 @@ def _column_flow_assignments(
                 confidence_by_item={
                     item_index: _artifact_confidence(artifact_type_by_item[item_index])
                     if item_index in artifact_type_by_item
+                    else _caption_confidence(caption_type_by_item[item_index])
+                    if item_index in caption_type_by_item
                     else spatial_graph_result.confidence
                     for item_index in range(len(bboxes))
                 },
                 evidence_by_item={
                     item_index: _artifact_evidence(artifact_type_by_item[item_index])
                     if item_index in artifact_type_by_item
+                    else _caption_evidence(
+                        caption_type_by_item[item_index],
+                        bboxes[item_index].width >= page_width * 0.62,
+                    )
+                    if item_index in caption_type_by_item
                     else spatial_graph_result.evidence
                     for item_index in range(len(bboxes))
                 },
@@ -359,20 +398,36 @@ def _column_flow_assignments(
                 artifact_type_by_item=artifact_type_by_item,
                 scope_by_item={item_index: "page-artifact" for item_index in artifact_type_by_item},
                 column_span_by_item={
-                    item_index: _artifact_column_span(artifact_type)
-                    for item_index, artifact_type in artifact_type_by_item.items()
+                    **{
+                        item_index: _artifact_column_span(artifact_type)
+                        for item_index, artifact_type in artifact_type_by_item.items()
+                    },
+                    **{
+                        item_index: "caption-full"
+                        if item_index in box_flow_result.full_width_indices
+                        else "caption-column"
+                        for item_index in caption_type_by_item
+                    },
                 },
+                caption_type_by_item=caption_type_by_item,
                 columns=box_flow_result.columns,
                 full_width_by_item=box_flow_result.full_width_indices | set(artifact_type_by_item),
                 confidence_by_item={
                     item_index: _artifact_confidence(artifact_type_by_item[item_index])
                     if item_index in artifact_type_by_item
+                    else _caption_confidence(caption_type_by_item[item_index])
+                    if item_index in caption_type_by_item
                     else box_flow_result.confidence
                     for item_index in range(len(bboxes))
                 },
                 evidence_by_item={
                     item_index: _artifact_evidence(artifact_type_by_item[item_index])
                     if item_index in artifact_type_by_item
+                    else _caption_evidence(
+                        caption_type_by_item[item_index],
+                        item_index in box_flow_result.full_width_indices,
+                    )
+                    if item_index in caption_type_by_item
                     else box_flow_result.evidence
                     for item_index in range(len(bboxes))
                 },
@@ -381,6 +436,7 @@ def _column_flow_assignments(
             visual_indices,
             visual_rank,
             artifact_type_by_item=artifact_type_by_item,
+            caption_type_by_item=caption_type_by_item,
             base_confidence=0.74,
             base_evidence=("single-column-visual-order",),
         )
@@ -393,6 +449,10 @@ def _column_flow_assignments(
         if item_index in artifact_type_by_item
         or item_index in sidebar_type_by_item
         or item_index in footnote_indices
+        or (
+            item_index in caption_type_by_item
+            and _is_cross_column_caption(bbox, columns, bboxes, page_width)
+        )
         or _is_full_width_box(bbox, columns, bboxes, page_width)
     }
     column_span_by_item = {
@@ -406,6 +466,12 @@ def _column_flow_assignments(
         }
     )
     column_span_by_item.update({item_index: "footnote" for item_index in footnote_indices})
+    column_span_by_item.update(
+        {
+            item_index: "caption-full" if item_index in full_width else "caption-column"
+            for item_index in caption_type_by_item
+        }
+    )
 
     ordered_indices: list[int] = []
     flow_segment_by_item: dict[int, int] = {}
@@ -459,8 +525,10 @@ def _column_flow_assignments(
             **{item_index: "footnote" for item_index in footnote_indices},
         },
         sidebar_type_by_item=sidebar_type_by_item,
+        caption_type_by_item=caption_type_by_item,
         column_span_by_item=column_span_by_item,
         columns=columns,
+        full_width_by_item=full_width,
         confidence_by_item={
             item_index: _artifact_confidence(artifact_type_by_item[item_index])
             if item_index in artifact_type_by_item
@@ -468,6 +536,8 @@ def _column_flow_assignments(
             if item_index in sidebar_type_by_item
             else _footnote_confidence()
             if item_index in footnote_indices
+            else _caption_confidence(caption_type_by_item[item_index])
+            if item_index in caption_type_by_item
             else column_confidence
             for item_index in range(len(bboxes))
         },
@@ -482,6 +552,9 @@ def _column_flow_assignments(
                 _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
                 _sidebar_evidence(sidebar_type_by_item[item_index]) if item_index in sidebar_type_by_item else (),
                 _footnote_evidence() if item_index in footnote_indices else (),
+                _caption_evidence(caption_type_by_item[item_index], item_index in full_width)
+                if item_index in caption_type_by_item
+                else (),
             )
             for item_index in range(len(bboxes))
         },
@@ -495,6 +568,7 @@ def _mixed_table_column_flow_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
     table_islands: list[_TableIsland],
+    texts: list[str],
 ) -> list[ReadingOrderAssignment] | None:
     table_by_item = {
         item_index: island
@@ -517,6 +591,7 @@ def _mixed_table_column_flow_assignments(
         and index not in sidebar_type_by_item
         and index not in footnote_indices
     ]
+    caption_type_by_item = _infer_caption_items(bboxes, texts, page_width, page_height, indices=non_table_indices)
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=non_table_indices)
     column_by_item = _assign_columns(bboxes, columns)
     column_confidence, column_evidence = _column_flow_profile(columns, bboxes, non_table_indices, page_width)
@@ -526,6 +601,10 @@ def _mixed_table_column_flow_assignments(
         if item_index in artifact_type_by_item
         or item_index in sidebar_type_by_item
         or item_index in footnote_indices
+        or (
+            item_index in caption_type_by_item
+            and _is_cross_column_caption(bboxes[item_index], columns, bboxes, page_width)
+        )
         or (item_index in non_table_indices and _is_full_width_box(bboxes[item_index], columns, bboxes, page_width))
     }
 
@@ -602,12 +681,15 @@ def _mixed_table_column_flow_assignments(
             indices=(item_index,),
             column_index=None if item_full_width else column_by_item[item_index],
             full_width=item_full_width,
+            caption_type=caption_type_by_item.get(item_index),
             confidence=_artifact_confidence(artifact_type)
             if artifact_type
             else _sidebar_confidence(sidebar_type)
             if sidebar_type
             else _footnote_confidence()
             if is_footnote
+            else _caption_confidence(caption_type_by_item[item_index])
+            if item_index in caption_type_by_item
             else column_confidence,
             evidence=_merge_evidence(
                 column_evidence,
@@ -617,6 +699,9 @@ def _mixed_table_column_flow_assignments(
                 _artifact_evidence(artifact_type) if artifact_type else (),
                 _sidebar_evidence(sidebar_type) if sidebar_type else (),
                 _footnote_evidence() if is_footnote else (),
+                _caption_evidence(caption_type_by_item[item_index], item_full_width)
+                if item_index in caption_type_by_item
+                else (),
             ),
         )
         if token.full_width:
@@ -676,6 +761,7 @@ def _mixed_table_column_flow_assignments(
             if item_index in footnote_indices
             else "body",
             sidebar_type=sidebar_type_by_item.get(item_index),
+            caption_type=caption_type_by_item.get(item_index),
             confidence=confidence_by_item[item_index],
             evidence=evidence_by_item[item_index],
         )
@@ -692,6 +778,8 @@ def _order_token_sort_key(token: _OrderToken) -> tuple[int, float, float, str]:
 def _column_span_for_token(token: _OrderToken, column_count: int) -> str:
     if token.kind == "table":
         return "table-full" if token.full_width else "table-column"
+    if token.caption_type:
+        return "caption-full" if token.full_width else "caption-column"
     if token.full_width:
         return "full"
     return "single" if column_count == 1 else "column"
@@ -709,6 +797,7 @@ def _assign_order_metadata(
     artifact_type_by_item: dict[int, str] | None = None,
     scope_by_item: dict[int, str] | None = None,
     sidebar_type_by_item: dict[int, str] | None = None,
+    caption_type_by_item: dict[int, str] | None = None,
     column_span_by_item: dict[int, str] | None = None,
     columns: list[list[int]] | None = None,
     confidence_by_item: dict[int, float] | None = None,
@@ -720,6 +809,7 @@ def _assign_order_metadata(
     artifact_type_by_item = artifact_type_by_item or {}
     scope_by_item = scope_by_item or {}
     sidebar_type_by_item = sidebar_type_by_item or {}
+    caption_type_by_item = caption_type_by_item or {}
     column_span_by_item = column_span_by_item or {}
     confidence_by_item = confidence_by_item or {}
     evidence_by_item = evidence_by_item or {}
@@ -761,6 +851,7 @@ def _assign_order_metadata(
                 artifact_type=artifact_type_by_item.get(item_index),
                 scope=scope_by_item.get(item_index, "body"),
                 sidebar_type=sidebar_type_by_item.get(item_index),
+                caption_type=caption_type_by_item.get(item_index),
                 confidence=confidence_by_item.get(
                     item_index,
                     _artifact_confidence(artifact_type_by_item[item_index])
@@ -769,6 +860,8 @@ def _assign_order_metadata(
                     if item_index in sidebar_type_by_item
                     else _footnote_confidence()
                     if scope_by_item.get(item_index) == "footnote"
+                    else _caption_confidence(caption_type_by_item[item_index])
+                    if item_index in caption_type_by_item
                     else default_confidence,
                 ),
                 evidence=_merge_evidence(
@@ -782,6 +875,9 @@ def _assign_order_metadata(
                     _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
                     _sidebar_evidence(sidebar_type_by_item[item_index]) if item_index in sidebar_type_by_item else (),
                     _footnote_evidence() if scope_by_item.get(item_index) == "footnote" else (),
+                    _caption_evidence(caption_type_by_item[item_index], is_full_width)
+                    if item_index in caption_type_by_item
+                    else (),
                 ),
             )
         )
@@ -993,6 +1089,147 @@ def _footnote_confidence() -> float:
 
 def _footnote_evidence() -> tuple[str, ...]:
     return ("footnote-secondary-flow", "bottom-note-zone")
+
+
+def _normalize_texts(texts: list[str] | None, expected_count: int) -> list[str]:
+    if not texts:
+        return [""] * expected_count
+    normalized = [str(text or "") for text in texts[:expected_count]]
+    if len(normalized) < expected_count:
+        normalized.extend("" for _ in range(expected_count - len(normalized)))
+    return normalized
+
+
+def _infer_caption_items(
+    bboxes: list[BBox],
+    texts: list[str],
+    page_width: float,
+    page_height: float,
+    indices: list[int] | None = None,
+) -> dict[int, str]:
+    source_indices = list(range(len(bboxes))) if indices is None else list(indices)
+    if not source_indices or not texts:
+        return {}
+
+    caption_type_by_item: dict[int, str] = {}
+    candidate_indices = [
+        index
+        for index in source_indices
+        if 0 <= index < len(texts)
+        and _caption_type_for_text(texts[index]) is not None
+        and _caption_geometry_is_plausible(bboxes[index], page_width, page_height)
+    ]
+    for index in candidate_indices:
+        caption_type_by_item[index] = _caption_type_for_text(texts[index]) or "figure"
+
+    if not caption_type_by_item:
+        return {}
+
+    heights = [bboxes[index].height for index in source_indices if bboxes[index].height > 0]
+    median_height = median(heights) if heights else 10.0
+    max_gap = max(4.0, median_height * 0.85)
+    max_continuations = 2
+    ordered_source = sorted(source_indices, key=lambda index: reading_order_key(bboxes[index]))
+    used = set(caption_type_by_item)
+
+    for anchor_index in sorted(candidate_indices, key=lambda index: reading_order_key(bboxes[index])):
+        anchor_box = bboxes[anchor_index]
+        caption_type = caption_type_by_item[anchor_index]
+        continuation_count = 0
+        current_bottom = anchor_box.y1
+        for candidate_index in ordered_source:
+            if candidate_index in used or candidate_index == anchor_index:
+                continue
+            candidate_box = bboxes[candidate_index]
+            gap = candidate_box.y0 - current_bottom
+            if gap < -median_height * 0.25:
+                continue
+            if gap > max_gap:
+                if candidate_box.y0 > current_bottom:
+                    break
+                continue
+            if not _caption_continuation_geometry(anchor_box, candidate_box, page_width, median_height):
+                continue
+            caption_type_by_item[candidate_index] = caption_type
+            used.add(candidate_index)
+            continuation_count += 1
+            current_bottom = max(current_bottom, candidate_box.y1)
+            if continuation_count >= max_continuations:
+                break
+
+    return caption_type_by_item
+
+
+def _caption_type_for_text(text: str) -> str | None:
+    compact = " ".join(text.strip().split()).lower()
+    if not compact:
+        return None
+    if re.match(r"^(fig\.?|figure)\s+([0-9]+|[ivxlcdm]+)[a-z]?\s*([:.\-]|$|\s)", compact):
+        return "figure"
+    if re.match(r"^(tab\.?|table)\s+([0-9]+|[ivxlcdm]+)[a-z]?\s*([:.\-]|$|\s)", compact):
+        return "table"
+    if re.match(r"^(alg\.?|algorithm)\s+([0-9]+|[ivxlcdm]+)[a-z]?\s*([:.\-]|$|\s)", compact):
+        return "algorithm"
+    return None
+
+
+def _caption_geometry_is_plausible(bbox: BBox, page_width: float, page_height: float) -> bool:
+    if bbox.width < max(28.0, page_width * 0.08) or bbox.height <= 0:
+        return False
+    if bbox.y1 <= min(page_height * 0.06, 42.0):
+        return False
+    if bbox.y0 >= max(page_height * 0.92, page_height - 42.0):
+        return False
+    return bbox.height <= max(28.0, page_height * 0.055)
+
+
+def _caption_continuation_geometry(
+    anchor_box: BBox,
+    candidate_box: BBox,
+    page_width: float,
+    median_height: float,
+) -> bool:
+    if candidate_box.height <= 0 or candidate_box.height > max(28.0, median_height * 1.55):
+        return False
+    if candidate_box.width < max(24.0, page_width * 0.08):
+        return False
+    x0_delta = abs(candidate_box.x0 - anchor_box.x0)
+    overlap = _horizontal_overlap_ratio(anchor_box, candidate_box)
+    return overlap >= 0.5 or x0_delta <= max(14.0, page_width * 0.025)
+
+
+def _is_cross_column_caption(
+    bbox: BBox,
+    columns: list[list[int]],
+    bboxes: list[BBox],
+    page_width: float,
+) -> bool:
+    if len(columns) < 2:
+        return False
+    if _is_full_width_box(bbox, columns, bboxes, page_width):
+        return True
+    center = _center_x(bbox)
+    return (
+        bbox.width >= page_width * 0.32
+        and page_width * 0.25 <= center <= page_width * 0.75
+        and bbox.x0 <= max(bboxes[index].x1 for index in columns[0])
+        and bbox.x1 >= min(bboxes[index].x0 for index in columns[-1])
+    )
+
+
+def _caption_confidence(caption_type: str | None) -> float:
+    return 0.82 if caption_type else 0.62
+
+
+def _caption_evidence(caption_type: str | None, full_width: bool) -> tuple[str, ...]:
+    if not caption_type:
+        return ()
+    return (
+        "caption-label",
+        f"{caption_type}-caption",
+        "cross-column-caption" if full_width else "column-caption",
+        "float-caption",
+    )
 
 
 def _column_flow_strategy(

@@ -243,6 +243,8 @@ def _run_case(
         "reading_order_footnote_element_count": stats["reading_order_footnote_element_count"],
         "reading_order_sidebar_element_count": stats["reading_order_sidebar_element_count"],
         "reading_order_sidebar_counts": stats["reading_order_sidebar_counts"],
+        "reading_order_caption_element_count": stats["reading_order_caption_element_count"],
+        "reading_order_caption_counts": stats["reading_order_caption_counts"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
         "reading_order_confidence_element_count": stats["reading_order_confidence_element_count"],
         "reading_order_mean_confidence": stats["reading_order_mean_confidence"],
@@ -415,6 +417,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         for element in text_elements
         if element.metadata.get("reading_order_scope") == "sidebar"
     )
+    reading_order_caption_counts = Counter(
+        str(element.metadata.get("reading_order_caption_type"))
+        for element in text_elements
+        if element.metadata.get("reading_order_caption_type")
+    )
     reading_order_confidences = _reading_order_confidences(text_elements)
     reading_order_evidence_counts = Counter(
         evidence
@@ -515,6 +522,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             1 for element in text_elements if element.metadata.get("reading_order_scope") == "sidebar"
         ),
         "reading_order_sidebar_counts": dict(sorted(reading_order_sidebar_counts.items())),
+        "reading_order_caption_element_count": sum(
+            1 for element in text_elements if element.metadata.get("reading_order_caption_type")
+        ),
+        "reading_order_caption_counts": dict(sorted(reading_order_caption_counts.items())),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
         "reading_order_confidence_element_count": len(reading_order_confidences),
         "reading_order_mean_confidence": round(
@@ -872,6 +883,8 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_footnote_elements": sum(int(case["reading_order_footnote_element_count"]) for case in cases),
         "total_reading_order_sidebar_elements": sum(int(case["reading_order_sidebar_element_count"]) for case in cases),
         "reading_order_sidebar_counts": _sum_case_count_dicts(cases, "reading_order_sidebar_counts"),
+        "total_reading_order_caption_elements": sum(int(case["reading_order_caption_element_count"]) for case in cases),
+        "reading_order_caption_counts": _sum_case_count_dicts(cases, "reading_order_caption_counts"),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
         "mean_reading_order_confidence": _weighted_case_mean(
             cases,
@@ -971,6 +984,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_footnote_element_count",
         "reading_order_sidebar_element_count",
         "reading_order_sidebar_counts",
+        "reading_order_caption_element_count",
+        "reading_order_caption_counts",
         "reading_order_confidence_element_count",
         "reading_order_mean_confidence",
         "reading_order_low_confidence_element_count",

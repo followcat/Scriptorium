@@ -42,18 +42,28 @@ def test_native_pdf_image_blocks_render_as_structured_html(tmp_path: Path) -> No
     rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
     document = annotate_document(extract_native_pdf_to_ir(rendered))
     image_elements = [element for element in document.pages[0].elements if element.type == "image"]
+    caption_elements = [
+        element
+        for element in document.pages[0].elements
+        if element.source_text.startswith("Figure 1:")
+    ]
 
     assert len(image_elements) == 1
     assert image_elements[0].metadata["source"] == "native-image"
     assert image_elements[0].metadata["annotation"]["role"] == "image"
     assert image_elements[0].source_crop is not None
     assert Path(image_elements[0].source_crop).exists()
+    assert len(caption_elements) == 1
+    assert caption_elements[0].metadata["reading_order_caption_type"] == "figure"
+    assert caption_elements[0].metadata["annotation"]["role"] == "caption"
 
     html_path = export_html(document, tmp_path / "html", display_mode="structured")
     html = html_path.read_text(encoding="utf-8")
 
     assert 'data-type="image"' in html
     assert 'data-scriptorium-source="native-image"' in html
+    assert 'data-scriptorium-role="caption"' in html
+    assert 'data-scriptorium-reading-order-caption="figure"' in html
     assert '<img class="embedded-image"' in html
 
 
