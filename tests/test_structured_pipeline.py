@@ -78,6 +78,41 @@ def test_structured_html_renders_native_line_shapes_as_svg(tmp_path: Path) -> No
     assert "<line " in html
 
 
+def test_structured_html_renders_native_path_shapes_as_svg(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "path_fixture.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=220, height=180)
+    page.draw_polyline(
+        [fitz.Point(42, 42), fitz.Point(168, 64), fitz.Point(96, 132)],
+        color=(0.05, 0.25, 0.65),
+        fill=(0.7, 0.82, 0.95),
+        width=1.25,
+        closePath=True,
+    )
+    page.insert_text((42, 156), "Polygon shape", fontsize=11, fontname="helv")
+    doc.save(pdf_path)
+    doc.close()
+
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    path_shapes = [
+        element
+        for element in document.pages[0].elements
+        if element.type == "shape" and element.metadata.get("svg_path_pdf")
+    ]
+
+    assert len(path_shapes) == 1
+    assert path_shapes[0].metadata["drawing_item_count"] >= 3
+    assert "L " in path_shapes[0].metadata["svg_path_pdf"]
+
+    html_path = export_html(document, tmp_path / "html", display_mode="structured")
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'data-scriptorium-shape-path="true"' in html
+    assert '<svg class="shape-vector"' in html
+    assert "<path " in html
+
+
 def test_dense_vector_region_uses_local_raster_fallback(tmp_path: Path) -> None:
     pdf_path = tmp_path / "dense_vector_fixture.pdf"
     doc = fitz.open()

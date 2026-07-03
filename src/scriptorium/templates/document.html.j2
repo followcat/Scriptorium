@@ -122,7 +122,18 @@
       background: transparent;
       border: 0;
     }
+    .element[data-scriptorium-shape-path="true"] {
+      overflow: visible;
+      background: transparent;
+      border: 0;
+    }
     .shape-line {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .shape-vector {
       display: block;
       width: 100%;
       height: 100%;
@@ -145,6 +156,10 @@
       border: var(--border-width, 0px) solid var(--stroke-color, transparent);
     }
     body.mode-structured .element[data-scriptorium-shape-line="true"] {
+      background: transparent;
+      border: 0;
+    }
+    body.mode-structured .element[data-scriptorium-shape-path="true"] {
       background: transparent;
       border: 0;
     }
@@ -208,6 +223,7 @@
       {% set text_runs = element_text_runs(element, display_mode) %}
       {% set element_crop = wrapped.crop %}
       {% set line_shape = shape_line(element) %}
+      {% set vector_shape = shape_path(element) %}
       <div
         id="{{ element.id }}"
         class="element editable-node"
@@ -222,6 +238,7 @@
         data-scriptorium-layout-confidence="{{ annotation_attr(element, 'layout_group_confidence') }}"
         data-scriptorium-shape-geometry="{{ annotation_attr(element, 'shape_geometry') }}"
         data-scriptorium-shape-line="{{ 'true' if line_shape else 'false' }}"
+        data-scriptorium-shape-path="{{ 'true' if vector_shape else 'false' }}"
         data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
         data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
         data-bbox-pdf="{{ element.bbox_pdf.as_list()|join(',') }}"
@@ -254,7 +271,7 @@
           --stroke-color: {{ element.style_hint.get('stroke_color', 'transparent') }};
           --border-width: {{ border_width }}px;
         "
-      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}<span
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}<span
           class="text-run"
           data-scriptorium-run-index="{{ run.index }}"
           data-scriptorium-run-style-id="{{ run.style_id }}"

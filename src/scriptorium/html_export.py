@@ -29,6 +29,7 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         element_text=element_text,
         element_text_runs=element_text_runs,
         shape_line=shape_line,
+        shape_path=shape_path,
         annotation_attr=annotation_attr,
     )
     index_path = target / "index.html"
@@ -86,6 +87,22 @@ def shape_line(element: ElementIR) -> dict[str, float] | None:
         "y1": round(y1 - bbox.y0, 4),
         "width": round(bbox.width, 4),
         "height": round(bbox.height, 4),
+    }
+
+
+def shape_path(element: ElementIR) -> dict[str, object] | None:
+    path = element.metadata.get("svg_path_pdf")
+    if not isinstance(path, str) or not path:
+        return None
+    bbox = element.bbox_pdf
+    if bbox.width <= 0 or bbox.height <= 0:
+        return None
+    return {
+        "path": path,
+        "width": round(bbox.width, 4),
+        "height": round(bbox.height, 4),
+        "fill_rule": str(element.metadata.get("svg_fill_rule") or "nonzero"),
+        "stroke_width": float(element.metadata.get("svg_stroke_width_pt") or 0),
     }
 
 

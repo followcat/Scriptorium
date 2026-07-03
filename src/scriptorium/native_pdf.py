@@ -313,6 +313,7 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
             continue
         if bbox_pdf.width <= 0 or bbox_pdf.height <= 0:
             continue
+        svg_path_pdf = None if line_points_pdf is not None else _svg_path_from_drawing(drawing, bbox_pdf)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
         fill = _rgb_to_css(drawing.get("fill"))
         stroke = _rgb_to_css(drawing.get("color"))
@@ -328,6 +329,7 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
             stroke_color = stroke or "transparent"
             border_width_pt = round(width_pt, 3) if width_pt else 0
             border_width_px = round(width_pt * rendered_page.scale_x, 3) if width_pt else 0
+        svg_stroke_width_pt = border_width_pt if border_width_pt else (0.5 if svg_path_pdf and stroke else 0)
         shapes.append(
             ElementIR(
                 id=f"p{rendered_page.page_index + 1:04d}-s{offset + 1:04d}",
@@ -359,6 +361,9 @@ def _extract_page_shape_elements(page: fitz.Page, rendered_page: RenderedPage, s
                     "stroke_opacity": drawing.get("stroke_opacity"),
                     "fill_opacity": drawing.get("fill_opacity"),
                     "drawing_item_count": len(drawing.get("items") or []),
+                    "svg_path_pdf": svg_path_pdf,
+                    "svg_fill_rule": "evenodd" if drawing.get("even_odd") else "nonzero",
+                    "svg_stroke_width_pt": round(svg_stroke_width_pt, 3),
                 },
             )
         )
@@ -447,6 +452,96 @@ def _line_points_from_drawing(drawing: dict[str, Any]) -> tuple[float, float, fl
     if not isinstance(start, fitz.Point) or not isinstance(end, fitz.Point):
         return None
     return (float(start.x), float(start.y), float(end.x), float(end.y))
+
+
+def _svg_path_from_drawing(drawing: dict[str, Any], bbox: BBox) -> str | None:
+    path: list[str] = []
+    current: fitz.Point | None = None
+    for item in drawing.get("items") or []:
+        operator = item[0] if item else None
+        if operator == "l" and len(item) >= 3:
+            start, end = item[1], item[2]
+            if not isinstance(start, fitz.Point) or not isinstance(end, fitz.Point):
+                return None
+            if current is None or not _same_point(current, start):
+                path.append(f"M {_svg_point(start, bbox)}")
+            path.append(f"L {_svg_point(end, bbox)}")
+            current = end
+        elif operator == "c" and len(item) >= 5:
+            start, control_1, control_2, end = item[1], item[2], item[3], item[4]
+            if not all(isinstance(point, fitz.Point) for point in (start, control_1, control_2, end)):
+                return None
+            if current is None or not _same_point(current, start):
+                path.append(f"M {_svg_point(start, bbox)}")
+            path.append(f"C {_svg_point(control_1, bbox)} {_svg_point(control_2, bbox)} {_svg_point(end, bbox)}")
+            current = end
+        elif operator == "re" and len(item) >= 2:
+            rect = item[1]
+            if not isinstance(rect, fitz.Rect):
+                return None
+            path.append(
+                " ".join(
+                    [
+                        f"M {_svg_xy(rect.x0, rect.y0, bbox)}",
+                        f"L {_svg_xy(rect.x1, rect.y0, bbox)}",
+                        f"L {_svg_xy(rect.x1, rect.y1, bbox)}",
+                        f"L {_svg_xy(rect.x0, rect.y1, bbox)}",
+                        "Z",
+                    ]
+                )
+            )
+            current = None
+        elif operator == "qu" and len(item) >= 2:
+            points = _quad_points(item[1])
+            if points is None:
+                return None
+            path.append(
+                " ".join(
+                    [
+                        f"M {_svg_point(points[0], bbox)}",
+                        f"L {_svg_point(points[1], bbox)}",
+                        f"L {_svg_point(points[2], bbox)}",
+                        f"L {_svg_point(points[3], bbox)}",
+                        "Z",
+                    ]
+                )
+            )
+            current = None
+        else:
+            return None
+
+    if not path:
+        return None
+    if drawing.get("closePath") and path[-1] != "Z":
+        path.append("Z")
+    return " ".join(path)
+
+
+def _quad_points(value: Any) -> tuple[fitz.Point, fitz.Point, fitz.Point, fitz.Point] | None:
+    if all(hasattr(value, attribute) for attribute in ("ul", "ur", "lr", "ll")):
+        return (value.ul, value.ur, value.lr, value.ll)
+    if isinstance(value, (list, tuple)) and len(value) == 4 and all(isinstance(point, fitz.Point) for point in value):
+        return (value[0], value[1], value[2], value[3])
+    return None
+
+
+def _same_point(left: fitz.Point, right: fitz.Point) -> bool:
+    return abs(float(left.x) - float(right.x)) <= 0.01 and abs(float(left.y) - float(right.y)) <= 0.01
+
+
+def _svg_point(point: fitz.Point, bbox: BBox) -> str:
+    return _svg_xy(float(point.x), float(point.y), bbox)
+
+
+def _svg_xy(x: float, y: float, bbox: BBox) -> str:
+    return f"{_svg_number(x - bbox.x0)} {_svg_number(y - bbox.y0)}"
+
+
+def _svg_number(value: float) -> str:
+    rounded = round(value, 4)
+    if abs(rounded) < 0.0001:
+        rounded = 0
+    return f"{rounded:g}"
 
 
 def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]:
