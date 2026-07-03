@@ -57,6 +57,10 @@
       font-size: var(--font-size, 12px);
       font-weight: var(--font-weight, 400);
       font-style: var(--font-style, normal);
+      font-kerning: none;
+      font-synthesis: none;
+      font-variant-ligatures: none;
+      font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0;
       z-index: 1;
     }
     body.mode-background .element {
@@ -285,6 +289,10 @@
             font-style: {{ run_style.get('font_style', element.style_hint.get('font_style', 'normal')) }};
             color: {{ run_style.get('text_color', element.style_hint.get('text_color', '#111')) }};
             vertical-align: {{ run_style.get('vertical_align', 'baseline') }};
+            font-kerning: none;
+            font-synthesis: none;
+            font-variant-ligatures: none;
+            font-feature-settings: 'liga' 0, 'clig' 0, 'calt' 0, 'kern' 0;
           "
         >{{ run.text }}</span>{% endfor %}{% else %}{{ element_text(element, display_mode) }}{% endif %}</div>
       {% endfor %}

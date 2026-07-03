@@ -27,14 +27,24 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
     assert all("image_count" in case for case in report["cases"])
+    assert all("text_run_count" in case for case in report["cases"])
+    assert all("mixed_inline_style_element_count" in case for case in report["cases"])
     assert all("multi_column_element_count" in case for case in report["cases"])
     assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
     assert all("reading_order_strategy_counts" in case for case in report["cases"])
+    assert all("layout_region_counts" in case for case in report["cases"])
+    assert all("table_region_count" in case for case in report["cases"])
+    assert all("raster_fallback_count" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
+    assert "total_text_runs" in report["summary"]
+    assert "total_mixed_inline_style_elements" in report["summary"]
     assert "total_multi_column_elements" in report["summary"]
     assert "total_image_elements" in report["summary"]
     assert "total_recursive_xy_cut_elements" in report["summary"]
     assert "reading_order_strategy_counts" in report["summary"]
+    assert "layout_region_counts" in report["summary"]
+    assert "total_table_regions" in report["summary"]
+    assert "total_raster_fallbacks" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
@@ -79,6 +89,8 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert case["structure_evidence_source"] == f"structure-json:{structure_json.name}"
     assert case["structure_evidence_region_count"] == 1
     assert case["structure_evidence_matched_element_count"] > 0
+    assert "text_run_count" in csv_text
+    assert "raster_fallback_count" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1
     assert report["summary"]["total_structure_evidence_matched_elements"] == case[
         "structure_evidence_matched_element_count"

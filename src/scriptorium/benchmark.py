@@ -118,10 +118,19 @@ def _run_case(
         "shape_count": stats["shape_count"],
         "style_count": stats["style_count"],
         "annotation_count": stats["annotation_count"],
+        "text_run_count": stats["text_run_count"],
+        "mixed_inline_style_element_count": stats["mixed_inline_style_element_count"],
         "multi_column_element_count": stats["multi_column_element_count"],
         "column_flow_element_count": stats["column_flow_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
+        "layout_region_counts": stats["layout_region_counts"],
+        "table_region_count": stats["table_region_count"],
+        "figure_region_count": stats["figure_region_count"],
+        "raster_fallback_count": stats["raster_fallback_count"],
+        "rasterized_text_count": stats["rasterized_text_count"],
+        "rasterized_image_count": stats["rasterized_image_count"],
+        "rasterized_shape_count": stats["rasterized_shape_count"],
         "font_profile": stats["font_profile"],
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
@@ -145,6 +154,8 @@ def _run_case(
 def _document_stats(document: DocumentIR) -> dict[str, Any]:
     elements = [element for page in document.pages for element in page.elements]
     text_elements = [element for element in elements if element.source_text.strip()]
+    raster_elements = [element for element in elements if element.metadata.get("raster_fallback")]
+    layout_region_counts = _layout_region_counts(document)
     reading_order_strategy_counts = Counter(
         str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
     )
@@ -159,6 +170,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "shape_count": sum(1 for element in elements if element.type == "shape"),
         "style_count": len(document.metadata.get("styles", {})),
         "annotation_count": sum(1 for element in elements if "annotation" in element.metadata),
+        "text_run_count": sum(int(element.metadata.get("text_run_count") or 0) for element in text_elements),
+        "mixed_inline_style_element_count": sum(
+            1 for element in text_elements if bool(element.metadata.get("mixed_inline_style"))
+        ),
         "multi_column_element_count": sum(
             1
             for element in text_elements
@@ -175,6 +190,17 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             if element.metadata.get("reading_order_strategy") == "recursive-xy-cut-v1"
         ),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
+        "layout_region_counts": layout_region_counts,
+        "table_region_count": int(layout_region_counts.get("table", 0)),
+        "figure_region_count": int(layout_region_counts.get("figure", 0)),
+        "raster_fallback_count": len(raster_elements),
+        "rasterized_text_count": sum(int(element.metadata.get("rasterized_text_count") or 0) for element in raster_elements),
+        "rasterized_image_count": sum(
+            int(element.metadata.get("rasterized_image_count") or 0) for element in raster_elements
+        ),
+        "rasterized_shape_count": sum(
+            int(element.metadata.get("rasterized_shape_count") or 0) for element in raster_elements
+        ),
         "font_profile": str(document.metadata.get("font_profile") or "unknown"),
         "structure_evidence_source": structure_evidence.get("source"),
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
@@ -218,10 +244,19 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_elements": sum(int(case["element_count"]) for case in cases),
         "total_editable_elements": sum(int(case["editable_element_count"]) for case in cases),
         "total_image_elements": sum(int(case["image_count"]) for case in cases),
+        "total_text_runs": sum(int(case["text_run_count"]) for case in cases),
+        "total_mixed_inline_style_elements": sum(int(case["mixed_inline_style_element_count"]) for case in cases),
         "total_multi_column_elements": sum(int(case["multi_column_element_count"]) for case in cases),
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
+        "layout_region_counts": _sum_case_count_dicts(cases, "layout_region_counts"),
+        "total_table_regions": sum(int(case["table_region_count"]) for case in cases),
+        "total_figure_regions": sum(int(case["figure_region_count"]) for case in cases),
+        "total_raster_fallbacks": sum(int(case["raster_fallback_count"]) for case in cases),
+        "total_rasterized_text_elements": sum(int(case["rasterized_text_count"]) for case in cases),
+        "total_rasterized_image_elements": sum(int(case["rasterized_image_count"]) for case in cases),
+        "total_rasterized_shape_elements": sum(int(case["rasterized_shape_count"]) for case in cases),
         "total_structure_evidence_regions": sum(int(case["structure_evidence_region_count"]) for case in cases),
         "total_structure_evidence_matched_elements": sum(
             int(case["structure_evidence_matched_element_count"]) for case in cases
@@ -243,9 +278,17 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "shape_count",
         "style_count",
         "annotation_count",
+        "text_run_count",
+        "mixed_inline_style_element_count",
         "multi_column_element_count",
         "column_flow_element_count",
         "recursive_xy_cut_element_count",
+        "table_region_count",
+        "figure_region_count",
+        "raster_fallback_count",
+        "rasterized_text_count",
+        "rasterized_image_count",
+        "rasterized_shape_count",
         "font_profile",
         "structure_evidence_source",
         "structure_evidence_region_count",
@@ -283,6 +326,20 @@ def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for case in cases:
         counts.update(case.get("reading_order_strategy_counts") or {})
+    return dict(sorted(counts.items()))
+
+
+def _layout_region_counts(document: DocumentIR) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for page_regions in document.metadata.get("layout_regions", []):
+        if not isinstance(page_regions, dict):
+            continue
+        regions = page_regions.get("regions")
+        if not isinstance(regions, list):
+            continue
+        for region in regions:
+            if isinstance(region, dict) and region.get("kind"):
+                counts[str(region["kind"])] += 1
     return dict(sorted(counts.items()))
 
 
