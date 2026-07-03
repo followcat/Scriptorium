@@ -14,6 +14,7 @@ This project optimizes two different outcomes:
 - Native PDF extraction exposes benchmarkable font profiles: `browser-default` for stable baseline numbers and `local-urw` for explicit local Nimbus/DejaVu experiments.
 - Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Benchmark `--font-size-scale auto` runs a small CSS font-size sweep, records candidate artifacts, and selects the higher visual-similarity case per PDF.
+- Benchmark `--text-fit auto` compares normal editable HTML text with an SVG text-fit layer that uses PDF run bboxes and `textLength` to match line widths while retaining a transparent editable proxy.
 - `fidelity` HTML mode keeps SVG page backgrounds visible while overlaying transparent editable coordinate nodes. Print hides unchanged overlays so source-preservation measures the vector background layer, while edited/translated nodes print as local white-background replacement overlays.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
@@ -31,8 +32,8 @@ Current benchmark coverage:
 | Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|
 | Built-in fixtures | 20 | yes | 1.0 | 0.99036719 |
-| arXiv Attention paper | 163 | partial | 1.0 | 0.93202666 |
-| ACL Transformer-XL paper | 880 | partial | 1.0 | 0.93358709 |
+| arXiv Attention paper | 163 | partial | 1.0 | 0.96840246 |
+| ACL Transformer-XL paper | 880 | partial | 1.0 | 0.95658128 |
 | Hacker News print PDF | 0 | partial | 1.0 | 0.9800288 |
 
 Current `--font-profile auto` sweep:
@@ -54,6 +55,15 @@ Current `--font-size-scale auto` sweep with `browser-default`:
 | Three-sample mean | mixed | 0.94854752 | 0.95010622 | +0.00155870 |
 
 Combined `--font-profile auto --font-size-scale auto` on Attention selected `local-urw` + `1.0`, matching the current best Attention score of `0.93871982`.
+
+Current `--font-size-scale auto --text-fit auto` sweep with `browser-default`:
+
+| Sample | Selected text fit | Previous best structured | Auto text-fit visual | Delta |
+|---|---|---:|---:|---:|
+| arXiv Attention paper | `0.99 + svg` | 0.93670278 | 0.96840246 | +0.03169968 |
+| ACL Transformer-XL paper | `0.99 + svg` | 0.93358709 | 0.95658128 | +0.02299419 |
+| Hacker News print PDF | `none` | 0.9800288 | 0.9800288 | +0.00000000 |
+| Three-sample mean | mixed | 0.95010622 | 0.96833751 | +0.01823129 |
 
 Current `--html-mode fidelity` SVG overlay sweep:
 
@@ -90,9 +100,9 @@ Current reading-order risk diagnostics example:
 
    `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. The next step is an edit-aware compositor with better masks, padding derived from glyph extents, automatic font-size fitting for translated text, and overlap/conflict detection when replacements are longer than the source bbox.
 
-5. Finer evidence-driven font and scale selection
+5. Finer evidence-driven font, scale, and text-fit selection
 
-   Benchmark-time `--font-profile auto` and `--font-size-scale auto` now select between global candidates per PDF. The next step is to move from whole-document selection to per-page or per-font-cluster selection, without requiring a full multi-candidate print/compare pass for normal conversion. Current research found that most paper fonts are embedded Type1/PFA, which browsers cannot directly consume; usable TTF extraction is therefore only a partial solution.
+   Benchmark-time `--font-profile auto`, `--font-size-scale auto`, and `--text-fit auto` now select between global candidates per PDF. The next step is to move from whole-document selection to per-page or per-font-cluster selection, without requiring a full multi-candidate print/compare pass for normal conversion. Current research found that most paper fonts are embedded Type1/PFA, which browsers cannot directly consume; usable TTF extraction is therefore only a partial solution. SVG text-fit also needs edit-state switching and line-height/baseline refinements so long translated replacements can reuse the same fitted layer safely.
 
 6. Box-flow scoring backend
 
