@@ -233,6 +233,7 @@ def _run_case(
         "multi_column_element_count": stats["multi_column_element_count"],
         "column_flow_element_count": stats["column_flow_element_count"],
         "mixed_table_column_flow_element_count": stats["mixed_table_column_flow_element_count"],
+        "table_row_major_element_count": stats["table_row_major_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_artifact_element_count": stats["reading_order_artifact_element_count"],
         "reading_order_artifact_counts": stats["reading_order_artifact_counts"],
@@ -461,6 +462,15 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
                 "marginal-footnote-aware-mixed-table-column-flow-v1",
                 "sidebar-footnote-aware-mixed-table-column-flow-v1",
                 "marginal-sidebar-footnote-aware-mixed-table-column-flow-v1",
+            }
+        ),
+        "table_row_major_element_count": sum(
+            1
+            for element in text_elements
+            if element.metadata.get("reading_order_strategy")
+            in {
+                "table-row-major-v1",
+                "marginal-aware-table-row-major-v1",
             }
         ),
         "recursive_xy_cut_element_count": sum(
@@ -786,6 +796,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_mixed_table_column_flow_elements": sum(
             int(case["mixed_table_column_flow_element_count"]) for case in cases
         ),
+        "total_table_row_major_elements": sum(int(case["table_row_major_element_count"]) for case in cases),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "total_reading_order_artifact_elements": sum(int(case["reading_order_artifact_element_count"]) for case in cases),
         "reading_order_artifact_counts": _sum_case_count_dicts(cases, "reading_order_artifact_counts"),
@@ -871,6 +882,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "multi_column_element_count",
         "column_flow_element_count",
         "mixed_table_column_flow_element_count",
+        "table_row_major_element_count",
         "recursive_xy_cut_element_count",
         "reading_order_artifact_element_count",
         "reading_order_footnote_element_count",

@@ -72,7 +72,10 @@ def test_table_fixture_keeps_row_major_order(tmp_path: Path) -> None:
 
     assert orders == sorted(orders)
     assert all(text_by_value[text].metadata["column_count"] == 1 for text in row_major)
-    assert all(text_by_value[text].metadata["reading_order_strategy"] == "visual-yx" for text in row_major)
+    assert all(text_by_value[text].metadata["reading_order_strategy"] == "table-row-major-v1" for text in row_major)
+    assert all("table-row-major" in text_by_value[text].metadata["reading_order_evidence"] for text in row_major)
+    assert all("table-grid-slots" in text_by_value[text].metadata["reading_order_evidence"] for text in row_major)
+    assert all(text_by_value[text].metadata["reading_order_confidence"] >= 0.8 for text in row_major)
 
 
 def test_recursive_xy_cut_keeps_section_heading_between_column_regions(tmp_path: Path) -> None:

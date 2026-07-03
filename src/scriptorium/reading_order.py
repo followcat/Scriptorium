@@ -141,6 +141,7 @@ def _visual_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
     artifact_type_by_item: dict[int, str] | None = None,
+    strategy: str = "visual-yx",
     base_confidence: float = 0.62,
     base_evidence: tuple[str, ...] = ("visual-yx",),
 ) -> list[ReadingOrderAssignment]:
@@ -157,7 +158,7 @@ def _visual_assignments(
                 column_count=1,
                 column_span=_artifact_column_span(artifact_type) if artifact_type else "single",
                 flow_segment_index=1,
-                strategy="visual-yx",
+                strategy=strategy,
                 artifact_type=artifact_type,
                 confidence=_artifact_confidence(artifact_type) if artifact_type else base_confidence,
                 evidence=_merge_evidence(
@@ -191,6 +192,15 @@ def _column_flow_assignments(
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=body_indices)
     column_count = len(columns)
     if column_count < 2 and not sidebar_type_by_item and not footnote_indices:
+        if _looks_like_table_grid([bboxes[index] for index in body_indices], page_width):
+            return _visual_assignments(
+                visual_indices,
+                visual_rank,
+                artifact_type_by_item=artifact_type_by_item,
+                strategy=_table_row_major_strategy(artifact_type_by_item),
+                base_confidence=0.82,
+                base_evidence=("table-row-major", "table-grid-slots"),
+            )
         return _visual_assignments(
             visual_indices,
             visual_rank,
@@ -828,6 +838,15 @@ def _mixed_table_flow_strategy(
         artifact_type_by_item=artifact_type_by_item,
         sidebar_type_by_item=sidebar_type_by_item,
         footnote_indices=footnote_indices,
+    )
+
+
+def _table_row_major_strategy(artifact_type_by_item: dict[int, str]) -> str:
+    return _qualified_strategy(
+        "table-row-major-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item={},
+        footnote_indices=set(),
     )
 
 
