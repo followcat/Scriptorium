@@ -115,6 +115,39 @@
     .text-run {
       white-space: pre;
     }
+    .element.text-fit {
+      overflow: hidden;
+      white-space: normal;
+      text-align: left !important;
+      text-align-last: auto !important;
+    }
+    .text-fit-layer {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+    .editable-text-proxy {
+      position: absolute;
+      inset: 0;
+      display: block;
+      overflow: visible;
+      white-space: pre;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      pointer-events: auto;
+    }
+    body.mode-structured .element.text-fit:focus .text-fit-layer {
+      opacity: 0.18;
+    }
+    body.mode-structured .element.text-fit:focus .editable-text-proxy {
+      color: var(--text-color, #111);
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.82);
+    }
     .element.positioned-runs {
       overflow: hidden !important;
       white-space: normal;
@@ -264,6 +297,9 @@
         outline: 0;
         z-index: 2;
       }
+      .element.text-fit .editable-text-proxy {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -294,13 +330,15 @@
       {% set is_text_node = element.source_text|length > 0 %}
       {% set text_runs = element_text_runs(element, display_mode) %}
       {% set has_replacement = has_replacement_text(element, display_mode) %}
-      {% set use_positioned_runs = text_runs and should_position_text_runs(element, display_mode) %}
+      {% set use_svg_text_fit = should_use_svg_text_fit(element, display_mode, text_fit) %}
+      {% set svg_text_fit = svg_text_fit_geometry(element, display_mode) if use_svg_text_fit else none %}
+      {% set use_positioned_runs = text_runs and should_position_text_runs(element, display_mode) and not use_svg_text_fit %}
       {% set element_crop = wrapped.crop %}
       {% set line_shape = shape_line(element) %}
       {% set vector_shape = shape_path(element) %}
       <div
         id="{{ element.id }}"
-        class="element editable-node{% if use_positioned_runs %} positioned-runs{% endif %}"
+        class="element editable-node{% if use_positioned_runs %} positioned-runs{% endif %}{% if use_svg_text_fit %} text-fit{% endif %}"
         data-id="{{ element.id }}"
         data-type="{{ element.type }}"
         data-scriptorium-element-id="{{ element.id }}"
@@ -313,6 +351,7 @@
         data-scriptorium-shape-geometry="{{ annotation_attr(element, 'shape_geometry') }}"
         data-scriptorium-shape-line="{{ 'true' if line_shape else 'false' }}"
         data-scriptorium-shape-path="{{ 'true' if vector_shape else 'false' }}"
+        data-scriptorium-text-fit="{{ 'svg' if use_svg_text_fit else 'none' }}"
         data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
         data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
         data-scriptorium-has-replacement="{{ 'true' if has_replacement else 'false' }}"
@@ -346,7 +385,7 @@
           --stroke-color: {{ element.style_hint.get('stroke_color', 'transparent') }};
           --border-width: {{ border_width }}px;
         "
-      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif use_svg_text_fit and svg_text_fit %}<svg class="text-fit-layer" viewBox="0 0 {{ svg_text_fit.width }} {{ svg_text_fit.height }}" preserveAspectRatio="none" aria-hidden="true">{% for run in svg_text_fit.runs %}<text xml:space="preserve" x="{{ run.x }}" y="{{ run.y }}" textLength="{{ run.text_length }}" lengthAdjust="spacingAndGlyphs" fill="{{ run.text_color }}" font-family="{{ run.font_family }}" font-size="{{ run.font_size }}" font-weight="{{ run.font_weight }}" font-style="{{ run.font_style }}">{{ run.text }}</text>{% endfor %}</svg><span class="editable-text-proxy">{{ element_text(element, display_mode) }}</span>{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
           class="text-run"
           data-scriptorium-run-index="{{ run.index }}"
           data-scriptorium-run-style-id="{{ run.style_id }}"

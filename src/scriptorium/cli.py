@@ -6,9 +6,9 @@ from typing import Literal, Optional
 import typer
 
 from .annotations import annotate_document
-from .benchmark import BenchmarkFontProfile, BenchmarkHtmlMode, run_benchmark
+from .benchmark import BenchmarkFontProfile, BenchmarkHtmlMode, BenchmarkTextFit, run_benchmark
 from .fixture import create_fixture
-from .html_export import export_html
+from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import load_ocr_json, normalize_ocr_to_ir
@@ -63,6 +63,10 @@ def benchmark_command(
         "1.0",
         help="Global CSS font-size multiplier for visual calibration experiments, or auto.",
     ),
+    text_fit: BenchmarkTextFit = typer.Option(
+        "none",
+        help="Structured text fitting strategy: none, svg, or auto to benchmark both and keep the better case.",
+    ),
     structure_json: Optional[list[Path]] = typer.Option(
         None,
         "--structure-json",
@@ -83,6 +87,7 @@ def benchmark_command(
         raster_policy=raster_policy,
         html_mode=html_mode,
         font_size_scale=font_size_scale,
+        text_fit=text_fit,
     )
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
@@ -94,6 +99,7 @@ def benchmark_command(
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
     typer.echo(f"HTML mode: {report.get('html_mode')}")
     typer.echo(f"Font size scale: {report.get('font_size_scale')}")
+    typer.echo(f"Text fit: {report.get('text_fit')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
@@ -175,9 +181,13 @@ def export_html_command(
     ir_json: Path = typer.Argument(..., exists=True, readable=True, help="DocumentIR JSON."),
     out_dir: Path = typer.Option(Path("outputs/html"), help="HTML output directory."),
     display_mode: DisplayMode = typer.Option("background", help="HTML display mode."),
+    text_fit: HtmlTextFit = typer.Option(
+        "none",
+        help="Structured text fitting strategy. svg emits a fitted SVG text layer plus editable proxy.",
+    ),
 ) -> None:
     document = DocumentIR.load(ir_json)
-    html_path = export_html(document, out_dir, display_mode=display_mode)
+    html_path = export_html(document, out_dir, display_mode=display_mode, text_fit=text_fit)
     typer.echo(f"HTML: {html_path}")
 
 

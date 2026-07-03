@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
-from .html_export import export_html
+from .html_export import HtmlTextFit, export_html
 from .models import DocumentIR
 from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
@@ -22,8 +22,10 @@ from .structure_evidence import apply_structure_evidence, load_structure_json
 BenchmarkFontProfile = Literal["browser-default", "local-urw", "auto"]
 BenchmarkHtmlMode = Literal["structured", "fidelity"]
 BenchmarkFontSizeScale = float | Literal["auto"]
+BenchmarkTextFit = Literal["none", "svg", "auto"]
 FONT_PROFILE_CANDIDATES: tuple[FontProfile, ...] = ("browser-default", "local-urw")
 FONT_SIZE_SCALE_CANDIDATES: tuple[float, ...] = (0.99, 1.0)
+TEXT_FIT_CANDIDATES: tuple[HtmlTextFit, ...] = ("none", "svg")
 
 
 def run_benchmark(
@@ -35,16 +37,18 @@ def run_benchmark(
     raster_policy: RasterPolicy = "dense",
     html_mode: BenchmarkHtmlMode = "structured",
     font_size_scale: BenchmarkFontSizeScale = 1.0,
+    text_fit: BenchmarkTextFit = "none",
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
     font_size_scale_request = _font_size_scale_request(font_size_scale)
+    text_fit_request = _text_fit_request(text_fit)
     input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
     structure_json_by_pdf = _structure_json_by_pdf(input_pdfs, structure_jsons or [])
 
     cases: list[dict[str, Any]] = []
     for pdf_path in input_pdfs:
-        if font_profile == "auto" or font_size_scale_request == "auto":
+        if font_profile == "auto" or font_size_scale_request == "auto" or text_fit_request == "auto":
             cases.append(
                 _run_calibrated_case(
                     pdf_path,
@@ -55,6 +59,7 @@ def run_benchmark(
                     html_mode=html_mode,
                     font_size_scale=font_size_scale_request,
                     font_profile=font_profile,
+                    text_fit=text_fit_request,
                 )
             )
         else:
@@ -68,6 +73,7 @@ def run_benchmark(
                     raster_policy=raster_policy,
                     html_mode=html_mode,
                     font_size_scale=float(font_size_scale_request),
+                    text_fit=text_fit_request,
                 )
             )
 
@@ -79,6 +85,7 @@ def run_benchmark(
         "raster_policy": raster_policy,
         "html_mode": html_mode,
         "font_size_scale": font_size_scale_request,
+        "text_fit": text_fit_request,
         "case_count": len(cases),
         "summary": summary,
         "cases": cases,
@@ -97,6 +104,7 @@ def _run_case(
     raster_policy: RasterPolicy = "dense",
     html_mode: BenchmarkHtmlMode = "structured",
     font_size_scale: float = 1.0,
+    text_fit: HtmlTextFit = "none",
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
@@ -120,7 +128,7 @@ def _run_case(
     timings["extract_annotate_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    html_path = export_html(document, out_dir / "html", display_mode=html_mode)
+    html_path = export_html(document, out_dir / "html", display_mode=html_mode, text_fit=text_fit)
     timings["export_html_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
@@ -175,6 +183,7 @@ def _run_case(
         "raster_policy": stats["raster_policy"],
         "html_mode": html_mode,
         "font_size_scale": stats["font_size_scale"],
+        "text_fit": text_fit,
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
@@ -204,23 +213,27 @@ def _run_calibrated_case(
     html_mode: BenchmarkHtmlMode,
     font_size_scale: BenchmarkFontSizeScale,
     font_profile: BenchmarkFontProfile,
+    text_fit: BenchmarkTextFit,
 ) -> dict[str, Any]:
     start = time.perf_counter()
     profile_candidates = FONT_PROFILE_CANDIDATES if font_profile == "auto" else (font_profile,)
     scale_candidates = _font_size_scale_candidates(font_size_scale)
+    text_fit_candidates = _text_fit_candidates(text_fit)
     candidates = [
         _run_case(
             pdf_path,
-            out_dir / f"{profile}-scale-{_font_size_scale_slug(scale)}",
+            out_dir / f"{profile}-scale-{_font_size_scale_slug(scale)}-text-fit-{fit}",
             dpi=dpi,
             structure_json=structure_json,
             font_profile=profile,
             raster_policy=raster_policy,
             html_mode=html_mode,
             font_size_scale=scale,
+            text_fit=fit,
         )
         for profile in profile_candidates
         for scale in scale_candidates
+        for fit in text_fit_candidates
     ]
     calibration_total_seconds = _elapsed(start)
     selected = max(
@@ -237,6 +250,7 @@ def _run_calibrated_case(
             "font_profile": candidate["font_profile"],
             "html_mode": candidate["html_mode"],
             "font_size_scale": candidate["font_size_scale"],
+            "text_fit": candidate["text_fit"],
             "visual_similarity": candidate["visual_similarity"],
             "max_diff_ratio": candidate["max_diff_ratio"],
             "mean_diff_ratio": candidate["mean_diff_ratio"],
@@ -252,17 +266,23 @@ def _run_calibrated_case(
     selected["font_profile_selected"] = selected["font_profile"]
     selected["font_size_scale_request"] = font_size_scale
     selected["font_size_scale_selected"] = selected["font_size_scale"]
+    selected["text_fit_request"] = text_fit
+    selected["text_fit_selected"] = selected["text_fit"]
     selected["calibration_selected_total_seconds"] = selected_candidate_seconds
     selected["calibration_total_seconds"] = calibration_total_seconds
     selected["total_seconds"] = calibration_total_seconds
     selected["font_profile_candidates"] = candidate_summaries
     selected["font_size_scale_candidates"] = candidate_summaries
+    selected["text_fit_candidates"] = candidate_summaries
     if font_profile == "auto":
         selected["font_profile_auto_total_seconds"] = calibration_total_seconds
         selected["font_profile_selected_total_seconds"] = selected_candidate_seconds
     if font_size_scale == "auto":
         selected["font_size_scale_auto_total_seconds"] = calibration_total_seconds
         selected["font_size_scale_selected_total_seconds"] = selected_candidate_seconds
+    if text_fit == "auto":
+        selected["text_fit_auto_total_seconds"] = calibration_total_seconds
+        selected["text_fit_selected_total_seconds"] = selected_candidate_seconds
     return selected
 
 
@@ -471,6 +491,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "html_mode_counts": _sum_case_values(cases, "html_mode"),
         "font_size_scale_counts": _sum_case_values(cases, "font_size_scale"),
+        "text_fit_counts": _sum_case_values(cases, "text_fit"),
         "layout_region_counts": _sum_case_count_dicts(cases, "layout_region_counts"),
         "total_table_regions": sum(int(case["table_region_count"]) for case in cases),
         "total_figure_regions": sum(int(case["figure_region_count"]) for case in cases),
@@ -530,6 +551,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "raster_policy",
         "html_mode",
         "font_size_scale",
+        "text_fit",
         "structure_evidence_source",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
@@ -597,6 +619,20 @@ def _font_size_scale_request(font_size_scale: BenchmarkFontSizeScale) -> Benchma
 
 def _font_size_scale_slug(scale: float) -> str:
     return f"{scale:.3f}".rstrip("0").rstrip(".").replace(".", "p")
+
+
+def _text_fit_candidates(text_fit: BenchmarkTextFit) -> tuple[HtmlTextFit, ...]:
+    if text_fit == "auto":
+        return TEXT_FIT_CANDIDATES
+    if text_fit not in TEXT_FIT_CANDIDATES:
+        raise ValueError(f"text_fit must be one of none, svg, or auto, got {text_fit}")
+    return (text_fit,)
+
+
+def _text_fit_request(text_fit: BenchmarkTextFit) -> BenchmarkTextFit:
+    if text_fit == "auto":
+        return "auto"
+    return _text_fit_candidates(text_fit)[0]
 
 
 def _layout_region_counts(document: DocumentIR) -> dict[str, int]:

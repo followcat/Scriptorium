@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Literal
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from .models import DisplayMode, DocumentIR, ElementIR, PageIR
+from .models import BBox, DisplayMode, DocumentIR, ElementIR, PageIR
+
+HtmlTextFit = Literal["none", "svg"]
 
 
-def export_html(document: DocumentIR, out_dir: str | Path, display_mode: DisplayMode = "background") -> Path:
+def export_html(
+    document: DocumentIR,
+    out_dir: str | Path,
+    display_mode: DisplayMode = "background",
+    text_fit: HtmlTextFit = "none",
+) -> Path:
     target = Path(out_dir)
     assets_dir = target / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
@@ -32,10 +40,13 @@ def export_html(document: DocumentIR, out_dir: str | Path, display_mode: Display
         element_text=element_text,
         element_text_runs=element_text_runs,
         should_position_text_runs=should_position_text_runs,
+        should_use_svg_text_fit=should_use_svg_text_fit,
+        svg_text_fit_geometry=svg_text_fit_geometry,
         has_replacement_text=has_replacement_text,
         shape_line=shape_line,
         shape_path=shape_path,
         annotation_attr=annotation_attr,
+        text_fit=text_fit,
     )
     index_path = target / "index.html"
     index_path.write_text(html, encoding="utf-8")
@@ -69,6 +80,74 @@ def should_position_text_runs(element: ElementIR, display_mode: DisplayMode) -> 
     return any(_run_script(run) != "baseline" for run in runs)
 
 
+def should_use_svg_text_fit(element: ElementIR, display_mode: DisplayMode, text_fit: HtmlTextFit) -> bool:
+    if display_mode != "structured" or text_fit != "svg":
+        return False
+    if not element.source_text.strip() or element.edited_text is not None or element.translated_text is not None:
+        return False
+    if element.type not in {"text", "title"}:
+        return False
+    if element.bbox_pdf.width <= 0 or element.bbox_pdf.height <= 0:
+        return False
+    return True
+
+
+def svg_text_fit_geometry(element: ElementIR, display_mode: DisplayMode) -> dict[str, object] | None:
+    if display_mode != "structured" or not element.source_text.strip():
+        return None
+
+    box = element.bbox_pdf
+    if box.width <= 0 or box.height <= 0:
+        return None
+
+    runs = element_text_runs(element, display_mode)
+    if not runs:
+        runs = [
+            {
+                "text": element.source_text,
+                "bbox_pdf": box.as_list(),
+                "origin_pdf": None,
+                "style": element.style_hint,
+                "script": element.style_hint.get("script", "baseline"),
+            }
+        ]
+
+    geometry_runs: list[dict[str, object]] = []
+    for run in runs:
+        text = str(run.get("text") or "")
+        if not text:
+            continue
+        try:
+            run_box = _bbox_list(run.get("bbox_pdf"), fallback=box.as_list())
+        except (TypeError, ValueError):
+            continue
+        style = run.get("style") if isinstance(run.get("style"), dict) else element.style_hint
+        origin = run.get("origin_pdf")
+        y = _run_baseline_y(origin, run_box, box)
+        geometry_runs.append(
+            {
+                "text": text,
+                "x": _round_svg(max(0.0, run_box[0] - box.x0)),
+                "y": _round_svg(y),
+                "text_length": _round_svg(max(0.01, run_box[2] - run_box[0])),
+                "font_family": str(style.get("font_family") or element.style_hint.get("font_family") or "serif"),
+                "font_size": _round_svg(_svg_font_size(style, element.style_hint)),
+                "font_weight": _font_weight(style, element.style_hint),
+                "font_style": str(style.get("font_style") or element.style_hint.get("font_style") or "normal"),
+                "text_color": str(style.get("text_color") or element.style_hint.get("text_color") or "#111"),
+            }
+        )
+
+    if not geometry_runs:
+        return None
+
+    return {
+        "width": _round_svg(box.width),
+        "height": _round_svg(box.height),
+        "runs": geometry_runs,
+    }
+
+
 def has_replacement_text(element: ElementIR, display_mode: DisplayMode) -> bool:
     return display_mode == "fidelity" and bool((element.translated_text or element.edited_text or "").strip())
 
@@ -93,6 +172,44 @@ def _should_render_source_runs(element: ElementIR, display_mode: DisplayMode) ->
     if display_mode == "translated":
         return element.translated_text is None and element.edited_text is None
     return False
+
+
+def _bbox_list(value: object, fallback: list[float]) -> list[float]:
+    source = value if isinstance(value, (list, tuple)) and len(value) == 4 else fallback
+    return [float(item) for item in source]
+
+
+def _run_baseline_y(origin: object, run_box: list[float], element_box: BBox) -> float:
+    if isinstance(origin, (list, tuple)) and len(origin) >= 2:
+        return max(0.0, float(origin[1]) - element_box.y0)
+    return max(0.0, run_box[3] - element_box.y0 - max(0.0, run_box[3] - run_box[1]) * 0.16)
+
+
+def _svg_font_size(style: dict[str, object], fallback: dict[str, object]) -> float:
+    scale = _font_size_scale(style, fallback)
+    font_size_pt = style.get("font_size_pt")
+    if isinstance(font_size_pt, (int, float)) and font_size_pt > 0:
+        return float(font_size_pt) * scale
+    font_size_px = style.get("font_size_px") or fallback.get("font_size_px")
+    if isinstance(font_size_px, (int, float)) and font_size_px > 0:
+        return float(font_size_px) * 72.0 / 96.0
+    return 9.0
+
+
+def _font_size_scale(style: dict[str, object], fallback: dict[str, object]) -> float:
+    value = style.get("font_size_scale") or fallback.get("font_size_scale") or 1.0
+    return float(value) if isinstance(value, (int, float)) and value > 0 else 1.0
+
+
+def _font_weight(style: dict[str, object], fallback: dict[str, object]) -> int | str:
+    value = style.get("font_weight") or fallback.get("font_weight") or 400
+    if isinstance(value, (int, float)):
+        return int(value)
+    return str(value)
+
+
+def _round_svg(value: float) -> float:
+    return round(float(value), 4)
 
 
 def annotation_attr(element: ElementIR, key: str, default: str = "") -> str:

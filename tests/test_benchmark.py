@@ -22,6 +22,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["raster_policy"] == "dense"
     assert report["html_mode"] == "structured"
     assert report["font_size_scale"] == 1.0
+    assert report["text_fit"] == "none"
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -47,6 +48,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
     assert all(case["html_mode"] == "structured" for case in report["cases"])
     assert all(case["font_size_scale"] == 1.0 for case in report["cases"])
+    assert all(case["text_fit"] == "none" for case in report["cases"])
     assert all(case["vector_background_page_count"] == 0 for case in report["cases"])
     assert "total_text_runs" in report["summary"]
     assert "total_mixed_inline_style_elements" in report["summary"]
@@ -57,6 +59,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
+    assert report["summary"]["text_fit_counts"] == {"none": 2}
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
@@ -88,6 +91,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert case["vector_background_page_count"] == case["page_count"]
     assert "html_mode" in csv_text
     assert "font_size_scale" in csv_text
+    assert "text_fit" in csv_text
     assert "vector_background_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text
     assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-export.pdf").exists()
@@ -167,3 +171,18 @@ def test_benchmark_can_auto_select_font_size_scale(tmp_path: Path) -> None:
     assert {candidate["font_size_scale"] for candidate in case["font_size_scale_candidates"]} == {0.99, 1.0}
     assert all("total_seconds" in candidate for candidate in case["font_size_scale_candidates"])
     assert report["summary"]["font_size_scale_counts"][str(case["font_size_scale"])] == 1
+
+
+def test_benchmark_can_auto_select_text_fit(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(pdfs, tmp_path / "benchmark-auto-text-fit", dpi=96, text_fit="auto")
+    case = report["cases"][0]
+
+    assert report["text_fit"] == "auto"
+    assert case["text_fit_request"] == "auto"
+    assert case["text_fit_selected"] == case["text_fit"]
+    assert case["text_fit_auto_total_seconds"] >= case["text_fit_selected_total_seconds"]
+    assert case["total_seconds"] == case["text_fit_auto_total_seconds"]
+    assert {candidate["text_fit"] for candidate in case["text_fit_candidates"]} == {"none", "svg"}
+    assert all("total_seconds" in candidate for candidate in case["text_fit_candidates"])
+    assert report["summary"]["text_fit_counts"][case["text_fit"]] == 1

@@ -50,6 +50,21 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert "Scriptorium PDF" in html
 
 
+def test_structured_html_can_render_svg_text_fit_layer(tmp_path: Path) -> None:
+    pdf_path, _ = create_fixture(tmp_path / "fixture")
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = annotate_document(extract_native_pdf_to_ir(rendered))
+
+    html_path = export_html(document, tmp_path / "html", display_mode="structured", text_fit="svg")
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'data-scriptorium-text-fit="svg"' in html
+    assert '<svg class="text-fit-layer"' in html
+    assert 'lengthAdjust="spacingAndGlyphs"' in html
+    assert 'class="editable-text-proxy"' in html
+    assert "Scriptorium PDF" in html
+
+
 def test_structured_html_renders_native_line_shapes_as_svg(tmp_path: Path) -> None:
     pdf_path = tmp_path / "line_fixture.pdf"
     doc = fitz.open()
