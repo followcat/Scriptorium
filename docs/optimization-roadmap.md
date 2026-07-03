@@ -42,7 +42,7 @@ This project optimizes two different outcomes:
 - Footnote detection routes compact bottom-zone notes as `reading_order_scope = footnote`, keeping them after body columns but before sidebars and footer artifacts.
 - Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `spatial-graph`, `horizontal-overlap-chain`, `multi-head-flow`, `table-row-major`, `table-island-row-major`, `caption-label`, `cross-column-caption`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, and `external-structure-order`.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
-- PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
+- PaddleOCR-VL / PP-StructureV3 / Docling JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity. Docling `body.children` order now becomes `external_structure_order` evidence when its provenance bboxes match native elements.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow and relation-graph disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
@@ -184,7 +184,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 7. Real model evidence A/B
 
-   The `structure_evidence.py` bridge and benchmark `--structure-json` input are now implemented. Run real PaddleOCR-VL 1.6 and PP-StructureV3 `save_to_json` outputs against the same PDFs and compare `native` versus `native-plus-structure`. For digital PDFs, use model output to improve role/order/table/formula metadata while preserving native text/style. For scanned PDFs, use model output as the primary text source.
+   The `structure_evidence.py` bridge and benchmark `--structure-json` input are now implemented. Run real PaddleOCR-VL 1.6, PP-StructureV3 `save_to_json`, and DoclingDocument JSON outputs against the same PDFs and compare `native` versus `native-plus-structure`. For digital PDFs, use model output to improve role/order/table/formula metadata while preserving native text/style. For scanned PDFs, use model output as the primary text source.
 
 8. OCR fallback refinement
 
@@ -222,6 +222,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 - Reading order inference for complex document layouts with graph/path-cover ordering: https://arxiv.org/html/2607.01018
 - Graph-based document structure analysis with reading-order and logical relations: https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf
 - Docling technical report: https://arxiv.org/html/2408.09869v5
+- DoclingDocument concept and JSON structure notes: https://docling-project.github.io/docling/concepts/docling_document/
 - LayoutParser paper: https://arxiv.org/abs/2103.15348
 - PP-StructureV3 pipeline usage and multi-column reading-order recovery: https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html
 - PaddleOCR-VL 1.6 model usage: https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6

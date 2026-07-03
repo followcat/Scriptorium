@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-72%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-73%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -21,7 +21,7 @@ Scriptorium PDF 是一个核心转换引擎，目标不是把 PDF 页面截图�
 
 - 从 PDF 提取 native text、字体、颜色、粗细、坐标、image block 和 drawing/shape。
 - 对没有原生文字且页面主要由图像构成的扫描/截图 PDF，自动补 `native-ocr` 透明编辑锚点。
-- 从 OCR / PaddleOCR-VL / PP-Structure 输出归一化到同一个 `DocumentIR`。
+- 从 OCR / PaddleOCR-VL / PP-Structure / Docling 输出归一化到同一个 `DocumentIR`。
 - 生成 `structured` HTML：文本节点可编辑，图形节点保留结构，DOM 上带识别标记。
 - 支持 XML 级局部节点编辑，再回写到 IR 并重新导出 HTML/PDF。
 - 用 Playwright 打印网页或 HTML 为 PDF，再用渲染图对比生成相似度指标。
@@ -208,12 +208,12 @@ scriptorium convert \
   --out-dir outputs/sample
 ```
 
-External structure evidence from PaddleOCR-VL / PP-StructureV3 style JSON can be fused without making the model runtime a core dependency:
+External structure evidence from PaddleOCR-VL / PP-StructureV3 / Docling JSON can be fused without making the model runtime a core dependency:
 
 ```bash
 scriptorium convert \
   path/to/input.pdf \
-  --structure-json path/to/paddle-or-ppstructure.json \
+  --structure-json path/to/paddle-ppstructure-or-docling.json \
   --out-dir outputs/with-structure
 ```
 
@@ -398,7 +398,7 @@ scriptorium benchmark path/to/scanned-or-screenshot.pdf \
 
 Use `--ocr-fallback off` to measure visual source preservation without adding OCR text anchors.
 
-Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 style evidence:
+Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 / Docling evidence:
 
 ```bash
 scriptorium benchmark \
@@ -546,7 +546,7 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 - `--ocr-fallback image-only` is the default native fallback for scanned/screenshot PDFs: pages with no native text and high image coverage get transparent `native-ocr` edit anchors while the original image remains the visual layer
 - `--ocr-language` and `--ocr-dpi` control the local Tesseract/PyMuPDF OCR pass; benchmark reports include `ocr_fallback_applied_page_count`, `ocr_text_count`, `image_only_candidate_page_count`, and `textless_page_count`
 - `--raster-policy dense` is the stable native fallback; `--raster-policy tables` is available as an explicit experiment, but current real-paper/web A/B results did not justify making table-region rasterization the default
-- `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
+- `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON and DoclingDocument JSON with region bbox, label, content, and external reading order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
 - matched elements can receive external role/order metadata and `external-structure-fusion-v1` reading-order strategy
 - `scriptorium benchmark --structure-json ...` reports whether those regions matched elements or changed page order, enabling native-only versus native-plus-structure A/B runs
@@ -563,9 +563,9 @@ pytest
 Current local test baseline:
 
 ```text
-72 passed
+73 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, image-only OCR fallback, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, repeated-anchor two/three-column flow detection with table guard protection, spatial-graph weak-column fallback, guarded box-flow fallback plus candidate disagreement diagnostics, geometry-only relation-graph candidate diagnostics, sidecar-scored semantic candidate order metrics including external structure order, semantic candidate arbitration diagnostics, shallow caption-flow detection for figure/table/algorithm labels, local table-island segmentation for mixed table/body pages, page-artifact tagging, sidebar/marginalia secondary-flow routing, per-element reading-order confidence/evidence metadata, table-vs-column reading-order diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, relation-graph candidate arbitration, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, image-only OCR fallback, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, repeated-anchor two/three-column flow detection with table guard protection, spatial-graph weak-column fallback, guarded box-flow fallback plus candidate disagreement diagnostics, geometry-only relation-graph candidate diagnostics, sidecar-scored semantic candidate order metrics including external structure order, semantic candidate arbitration diagnostics, shallow caption-flow detection for figure/table/algorithm labels, local table-island segmentation for mixed table/body pages, page-artifact tagging, sidebar/marginalia secondary-flow routing, per-element reading-order confidence/evidence metadata, table-vs-column reading-order diagnostics, Paddle/PP-Structure/Docling external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, relation-graph candidate arbitration, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.

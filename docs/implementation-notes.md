@@ -12,9 +12,9 @@ Current implementation status:
 
 - `--ocr-json` is the stable tested input for conversion quality work.
 - `PaddleOcrAdapter` is isolated in `scriptorium.ocr` and intentionally lazy-imports `paddleocr`.
-- `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and fuses region bbox, label, content, confidence, and block order back into `DocumentIR`.
+- `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and DoclingDocument JSON, then fuses region bbox, label, content, confidence, and external reading order back into `DocumentIR`.
 - Native extraction has an `image-only` OCR fallback for scanned or screenshot PDFs. It triggers only when a page has no native text and image blocks cover most of the page, then emits `native-ocr` text anchors without replacing the original image element.
-- `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. The next Paddle-specific step is running real `save_to_json` payloads through this bridge and tracking native-only versus native-plus-structure deltas.
+- `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. It also parses Docling `body.children` trees, resolves refs such as `#/texts/0` and `#/groups/0`, reads `prov` bbox/page evidence, and supports both top-left and bottom-left bbox origins. The next model-specific step is running real PaddleOCR-VL, PP-StructureV3, and Docling payloads through this bridge and tracking native-only versus native-plus-structure deltas.
 
 ## Annotation Layer
 
@@ -40,7 +40,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `reading_order_confidence`, `reading_order_evidence`, and `reading_order_evidence_summary` for explaining the geometry/model evidence behind each ordering decision
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
-   - external structure labels from Paddle/PP-Structure evidence, mapped to roles such as `formula`, `running-header`, `footer`, `caption`, and `table-cell-text`
+   - external structure labels from Paddle/PP-Structure/Docling evidence, mapped to roles such as `formula`, `running-header`, `footer`, `caption`, and `table-cell-text`
 3. `DocumentIR.metadata.layout_regions` records each inferred region with its page index, bbox, kind, confidence, and contributing shape ids.
 4. The HTML exporter exposes those marks as DOM attributes:
    - `data-scriptorium-role`
@@ -108,11 +108,13 @@ This is an explicit fidelity/editability tradeoff: ordinary text, tables, separa
 
 ## External Structure Evidence Fusion
 
-PaddleOCR-VL and PP-StructureV3 are best treated as optional evidence providers rather than replacements for native PDF extraction. Native extraction usually gives better font/style/bbox fidelity for digital PDFs, while document models can add missing OCR, layout labels, table/formula/chart regions, and reading-order block predictions.
+PaddleOCR-VL, PP-StructureV3, and Docling are best treated as optional evidence providers rather than replacements for native PDF extraction. Native extraction usually gives better font/style/bbox fidelity for digital PDFs, while document models can add missing OCR, layout labels, table/formula/chart regions, and reading-order block predictions.
 
 `src/scriptorium/structure_evidence.py` implements the current bridge:
 
 - `normalize_structure_evidence(payload, document)` accepts common Paddle JSON shapes, including `parsing_res_list` blocks with `block_bbox`, `block_label`, `block_content`, and `block_order`.
+- It also accepts DoclingDocument JSON. The parser traverses `body.children` in order, resolves JSON pointer refs into `texts`, `tables`, `pictures`, `key_value_items`, and `groups`, and turns item `prov` entries into page-local structure regions.
+- Docling bboxes are treated as PDF page coordinates. `coord_origin = TOPLEFT` is used directly; `coord_origin = BOTTOMLEFT` is flipped through the current page height before matching native elements.
 - Pixel bboxes are converted to PDF-point bboxes using the page render scale already stored in `DocumentIR`.
 - `apply_structure_evidence(document, payload)` aligns model regions to native elements by element bbox coverage and text similarity.
 - Matched text elements receive `structure_evidence`, `external_structure_label`, and `external_structure_order` metadata.
@@ -129,7 +131,7 @@ scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/b
 scriptorium benchmark input.pdf --font-profile local-urw --out-dir outputs/benchmark-local-urw
 ```
 
-The benchmark command accepts one or more `--structure-json` files, matched by argument order or by names such as `<pdf-stem>.structure.json` and `<parent-dir>.<pdf-stem>.structure.json`. The next quality step is to run real PaddleOCR-VL 1.6 or PP-StructureV3 payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
+The benchmark command accepts one or more `--structure-json` files, matched by argument order or by names such as `<pdf-stem>.structure.json` and `<parent-dir>.<pdf-stem>.structure.json`. The next quality step is to run real PaddleOCR-VL 1.6, PP-StructureV3, or Docling payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
 
 ## Reading Order Layer
 
@@ -185,6 +187,7 @@ Research references used for this pass:
 - pdfminer.six exposes `LAParams.boxes_flow` for horizontal-vs-vertical text box ordering: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
 - LayoutReader / ReadingBank treats reading order as a first-class document understanding task and provides a large weakly supervised benchmark: https://aclanthology.org/2021.emnlp-main.389/
 - Docling's rule-based reading-order implementation uses above/below adjacency and horizontal overlap style geometry, which informed the conservative spatial-graph fallback: https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
+- DoclingDocument stores document items under `texts`, `tables`, `pictures`, `key_value_items`, and groups, with logical order represented by the `body` tree: https://docling-project.github.io/docling/concepts/docling_document/
 - Relation-based reading-order research frames page ordering as pairwise layout relations rather than only global y/x sorting: https://arxiv.org/html/2409.19672v1
 - Reading order inference for complex layouts can be formulated as graph/path-cover ordering over local relations: https://arxiv.org/html/2607.01018
 - GraphDoc is a reference for graph-based document structure analysis with reading-order and logical relations: https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf
@@ -335,7 +338,7 @@ Metrics:
 - `layout_region_counts`: inferred table/figure/separator region counts.
 - `raster_fallback_count`, `rasterized_text_count`, `rasterized_image_count`, and `rasterized_shape_count`: editability cost of local raster fallback regions.
 - `structure_evidence_source`: optional JSON evidence source used by the case.
-- `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure style JSON.
+- `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure/Docling structure JSON.
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.
 - `structure_evidence_reordered_page_count`: pages whose text order was reassigned from external block order.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
@@ -394,7 +397,7 @@ Latest semantic candidate scoring validation:
 
 - `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
 - `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, and `relation_graph` candidates for each page.
-- `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure style evidence has at least two distinct block orders on a page.
+- `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure/Docling evidence has at least two distinct block orders on a page.
 - Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
