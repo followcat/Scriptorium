@@ -142,6 +142,35 @@ def test_column_flow_tolerates_formula_noise_between_academic_columns() -> None:
     )
 
 
+def test_column_flow_detects_three_repeated_anchor_columns() -> None:
+    bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=520, y1=58)]
+    first_column: list[int] = []
+    second_column: list[int] = []
+    third_column: list[int] = []
+
+    for row in range(12):
+        first_column.append(len(bboxes))
+        bboxes.append(BBox(x0=52, y0=92 + row * 13, x1=176, y1=102 + row * 13))
+        second_column.append(len(bboxes))
+        bboxes.append(BBox(x0=224, y0=92 + row * 13, x1=348, y1=102 + row * 13))
+        third_column.append(len(bboxes))
+        bboxes.append(BBox(x0=396, y0=92 + row * 13, x1=520, y1=102 + row * 13))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=576, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in first_column + second_column + third_column} == {3}
+    assert max(by_item[index].semantic_order for index in first_column) < min(
+        by_item[index].semantic_order for index in second_column
+    )
+    assert max(by_item[index].semantic_order for index in second_column) < min(
+        by_item[index].semantic_order for index in third_column
+    )
+    assert {by_item[index].column_index for index in first_column} == {0}
+    assert {by_item[index].column_index for index in second_column} == {1}
+    assert {by_item[index].column_index for index in third_column} == {2}
+
+
 def test_table_grid_guard_allows_strong_mixed_layout_columns() -> None:
     bboxes: list[BBox] = []
     left_indices: list[int] = []

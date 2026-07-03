@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Literal
 from statistics import median
 
@@ -349,7 +350,11 @@ def _infer_column_clusters(bboxes: list[BBox], page_width: float, page_height: f
 
     anchored_columns = _infer_repeated_start_columns(candidate_indices, bboxes, page_width)
     if _looks_like_table_grid([bboxes[index] for index in candidate_indices], page_width):
-        if len(anchored_columns) >= 2 and _anchor_coverage(anchored_columns, candidate_indices) >= 0.6:
+        if (
+            len(anchored_columns) >= 2
+            and _anchor_coverage(anchored_columns, candidate_indices) >= 0.6
+            and _anchored_columns_look_like_text_flows(anchored_columns, bboxes, page_width)
+        ):
             return anchored_columns
         return [list(range(len(bboxes)))]
 
@@ -388,31 +393,56 @@ def _infer_repeated_start_columns(
     if len(candidates) < 2:
         return []
 
-    best_pair: tuple[float, list[int], list[int]] | None = None
-    min_separation = page_width * 0.25
-    for left_position in range(len(candidates)):
-        left_x, left_cluster = candidates[left_position]
-        for right_x, right_cluster in candidates[left_position + 1 :]:
-            separation = right_x - left_x
-            if separation < min_separation:
-                continue
-            if _vertical_overlap_ratio(left_cluster, right_cluster, bboxes) < 0.2:
-                continue
-            score = len(left_cluster) + len(right_cluster) + separation / max(page_width, 1.0)
-            if best_pair is None or score > best_pair[0]:
-                best_pair = (score, left_cluster, right_cluster)
+    return _select_repeated_start_columns(candidates, bboxes, page_width, total_count=len(indices))
 
-    if best_pair is None:
-        return []
-    columns = sorted([best_pair[1], best_pair[2]], key=lambda cluster: _cluster_x_center(cluster, bboxes))
-    anchor_coverage = sum(len(cluster) for cluster in columns) / max(len(indices), 1)
-    if anchor_coverage < 0.45:
-        return []
-    return columns
+
+def _select_repeated_start_columns(
+    candidates: list[tuple[float, list[int]]],
+    bboxes: list[BBox],
+    page_width: float,
+    total_count: int,
+) -> list[list[int]]:
+    best_columns: list[list[int]] = []
+    best_score = -1.0
+    max_columns = min(3, len(candidates))
+    for column_count in range(max_columns, 1, -1):
+        min_separation = page_width * (0.16 if column_count >= 3 else 0.25)
+        min_coverage = 0.48 if column_count >= 3 else 0.45
+        for selected in combinations(candidates, column_count):
+            centers = [center for center, _cluster in selected]
+            clusters = [cluster for _center, cluster in selected]
+            if any(centers[index + 1] - centers[index] < min_separation for index in range(len(centers) - 1)):
+                continue
+            if any(
+                _vertical_overlap_ratio(clusters[index], clusters[index + 1], bboxes) < 0.2
+                for index in range(len(clusters) - 1)
+            ):
+                continue
+            coverage = sum(len(cluster) for cluster in clusters) / max(total_count, 1)
+            if coverage < min_coverage:
+                continue
+            balance = min(len(cluster) for cluster in clusters) / max(len(cluster) for cluster in clusters)
+            spread = (centers[-1] - centers[0]) / max(page_width, 1.0)
+            score = coverage * 3 + balance + spread
+            if score > best_score:
+                best_score = score
+                best_columns = clusters
+        if best_columns:
+            return sorted(best_columns, key=lambda cluster: _cluster_x_center(cluster, bboxes))
+    return []
 
 
 def _anchor_coverage(columns: list[list[int]], indices: list[int]) -> float:
     return sum(len(column) for column in columns) / max(len(indices), 1)
+
+
+def _anchored_columns_look_like_text_flows(columns: list[list[int]], bboxes: list[BBox], page_width: float) -> bool:
+    min_median_width = page_width * 0.08
+    for column in columns:
+        widths = [bboxes[index].width for index in column if bboxes[index].width > 0]
+        if not widths or median(widths) < min_median_width:
+            return False
+    return True
 
 
 def _split_column_cluster(
