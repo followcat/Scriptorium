@@ -88,7 +88,7 @@ Transformer-XL 的 `dimension_match = false` 来自 Chromium 打印 A4 页面时
 
 最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。报告还输出 partial labels 忽略文本的 zone/role/source 分布：Attention 当前忽略 147 个未标注节点，Transformer-XL 忽略 277 个，web-HN 忽略 69 个 table-cell 节点，用于决定下一批人工 ground truth。视觉侧的主要瓶颈已经转向字体/浏览器重绘差异：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。字体 profile A/B 显示 `local-urw` 能把 Attention 提到 `0.93871982`，但会把 Transformer-XL 拉低到 `0.90096092`，因此默认仍使用稳定的 `browser-default`，本地字体 profile 只作为显式实验选项。新增的 `--font-size-scale auto` 会在 `0.99` 和 `1.0` 之间校准：Attention 在默认字体下从 `0.93202666` 到 `0.93670278`，Transformer-XL 和 web-HN 自动保留 `1.0`。
 
-`--html-mode fidelity` 是新的高保真 overlay 路径：HTML 可见层使用每页 SVG 背景，识别出的文本/结构节点仍以透明 `contenteditable` 坐标锚点存在；打印时隐藏 overlay，只打印背景层。它适合“未编辑状态接近原 PDF + 保留后续编辑定位能力”的架构验证，编辑后打印还需要后续遮罩/替换层。当前 fidelity/SVG 分数：Attention `0.98809524`，Transformer-XL `0.9750043`，web-HN `0.99490923`。
+`--html-mode fidelity` 是新的高保真 overlay 路径：HTML 可见层使用每页 SVG 背景，识别出的文本/结构节点仍以透明 `contenteditable` 坐标锚点存在；未编辑时打印只输出背景层，已编辑或已翻译节点会作为局部白底 replacement layer 打印。它适合“未编辑状态接近原 PDF + 保留后续编辑定位能力”的架构验证。当前 fidelity/SVG 未编辑分数：Attention `0.98809524`，Transformer-XL `0.9750043`，web-HN `0.99490923`。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -319,6 +319,7 @@ Tracked metrics:
 - column-flow element count
 - recursive XY-Cut element count
 - reading-order strategy counts
+- reading-order risk score, risk level, column-geometry page count, and unlabeled-text risk count
 - font profile
 - font profile candidate scores when `--font-profile auto` is used
 - font size scale and candidate scores when `--font-size-scale auto` is used
@@ -404,7 +405,7 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 - `--font-profile browser-default` is the stable default; `--font-profile local-urw` can be benchmarked when local Nimbus/DejaVu fonts are available
 - `scriptorium benchmark --font-profile auto` performs a reproducible two-profile sweep and records the selected profile plus both candidate scores
 - `scriptorium benchmark --font-size-scale auto` performs a small font-size sweep and records the selected scale plus candidate scores
-- `scriptorium benchmark --html-mode fidelity` benchmarks the SVG-background editable overlay path for source-preservation quality
+- `scriptorium benchmark --html-mode fidelity` benchmarks the SVG-background editable overlay path for source-preservation quality and supports edited/translated replacement overlays
 - `--raster-policy dense` is the stable native fallback; `--raster-policy tables` is available as an explicit experiment, but current real-paper/web A/B results did not justify making table-region rasterization the default
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
@@ -423,9 +424,9 @@ pytest
 Current local test baseline:
 
 ```text
-39 passed
+40 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, gated script-run positioning, native drawing SVG path output, optional fidelity overlay backgrounds, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile and font-size calibration, recursive XY-Cut semantic order for sectioned multi-column pages, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, gated script-run positioning, native drawing SVG path output, fidelity SVG overlay with edited/translated replacement printing, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile and font-size calibration, recursive XY-Cut semantic order for sectioned multi-column pages, reading-order risk diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.

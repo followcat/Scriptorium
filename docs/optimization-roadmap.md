@@ -14,7 +14,7 @@ This project optimizes two different outcomes:
 - Native PDF extraction exposes benchmarkable font profiles: `browser-default` for stable baseline numbers and `local-urw` for explicit local Nimbus/DejaVu experiments.
 - Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Benchmark `--font-size-scale auto` runs a small CSS font-size sweep, records candidate artifacts, and selects the higher visual-similarity case per PDF.
-- `fidelity` HTML mode keeps SVG page backgrounds visible while overlaying transparent editable coordinate nodes; print hides the overlay so the source-preservation score measures the vector background layer. This gives a high-fidelity baseline for the future edit-mask/replacement path.
+- `fidelity` HTML mode keeps SVG page backgrounds visible while overlaying transparent editable coordinate nodes. Print hides unchanged overlays so source-preservation measures the vector background layer, while edited/translated nodes print as local white-background replacement overlays.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
 - `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
@@ -23,7 +23,7 @@ This project optimizes two different outcomes:
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
-- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, and auto font-profile candidate diagnostics.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, auto font-profile candidate, and reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
@@ -64,7 +64,13 @@ Current `--html-mode fidelity` SVG overlay sweep:
 | Hacker News print PDF | 0.9800288 | 0.99490923 | +0.01488043 | 2 |
 | Three-sample mean | 0.94854752 | 0.98600292 | +0.03745540 | 28 |
 
-The fidelity path is not the final edit-print path: edited or translated text still needs a page-local text mask and replacement layer. It does, however, prove that the HTML can carry recognized coordinate nodes while preserving the original visual page much more closely than a full structured redraw.
+The fidelity path now has a minimal edit-print path: edited or translated nodes print as local white-background replacement overlays. It still needs smarter masks, adaptive text fitting, and conflict handling for long translations, but it proves that the HTML can carry recognized coordinate nodes while preserving the original visual page much more closely than a full structured redraw.
+
+Current reading-order risk diagnostics example:
+
+| Sample | Risk score | Risk level | Column-geometry pages | Visual-yx column pages | Unlabeled risk text |
+|---|---:|---|---:|---:|---:|
+| arXiv Attention paper with partial sidecar | 0.07829172 | low | 3 | 1 | 147 |
 
 ## Next Optimization Options
 
@@ -80,9 +86,9 @@ The fidelity path is not the final edit-print path: edited or translated text st
 
    SVG path output now handles supported PyMuPDF drawing items (`l`, `c`, `re`, `qu`) without using rectangular approximations. Dense local raster fallback still sacrifices editability inside diagrams. A `tables` raster policy was tested but is not the default because current real-paper/web scores dropped. The next step is preserving PDF clipping, blend modes, masks, and grouped draw ordering so more complex drawings can remain structured.
 
-4. Edit-mask and replacement layer for fidelity mode
+4. Refine edit masks and replacement fitting for fidelity mode
 
-   `fidelity` mode now preserves source visuals by printing SVG page backgrounds and hiding transparent coordinate overlays. The next step is an edit-aware compositor: when `edited_text` or `translated_text` exists, mask the original text area from the background and print the replacement layer for that region only. This would connect high source fidelity to real PDF editing instead of treating overlay nodes as metadata only.
+   `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. The next step is an edit-aware compositor with better masks, padding derived from glyph extents, automatic font-size fitting for translated text, and overlap/conflict detection when replacements are longer than the source bbox.
 
 5. Finer evidence-driven font and scale selection
 
