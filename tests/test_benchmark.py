@@ -98,6 +98,21 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
 
 
+def test_benchmark_can_auto_select_html_mode(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(pdfs, tmp_path / "benchmark-auto-html-mode", dpi=96, html_mode="auto")
+    case = report["cases"][0]
+
+    assert report["html_mode"] == "auto"
+    assert case["html_mode_request"] == "auto"
+    assert case["html_mode_selected"] == case["html_mode"]
+    assert case["html_mode_auto_total_seconds"] >= case["html_mode_selected_total_seconds"]
+    assert case["total_seconds"] == case["html_mode_auto_total_seconds"]
+    assert {candidate["html_mode"] for candidate in case["html_mode_candidates"]} == {"structured", "fidelity"}
+    assert all("visual_similarity" in candidate for candidate in case["html_mode_candidates"])
+    assert report["summary"]["html_mode_counts"][case["html_mode"]] == 1
+
+
 def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
     structure_json = tmp_path / f"{pdfs[0].stem}.structure.json"

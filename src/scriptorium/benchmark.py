@@ -20,10 +20,12 @@ from .semantic_quality import compare_semantic_reading_order
 from .structure_evidence import apply_structure_evidence, load_structure_json
 
 BenchmarkFontProfile = Literal["browser-default", "local-urw", "auto"]
-BenchmarkHtmlMode = Literal["structured", "fidelity"]
+HtmlMode = Literal["structured", "fidelity"]
+BenchmarkHtmlMode = Literal["structured", "fidelity", "auto"]
 BenchmarkFontSizeScale = float | Literal["auto"]
 BenchmarkTextFit = Literal["none", "svg", "auto"]
 FONT_PROFILE_CANDIDATES: tuple[FontProfile, ...] = ("browser-default", "local-urw")
+HTML_MODE_CANDIDATES: tuple[HtmlMode, ...] = ("structured", "fidelity")
 FONT_SIZE_SCALE_CANDIDATES: tuple[float, ...] = (0.99, 1.0)
 TEXT_FIT_CANDIDATES: tuple[HtmlTextFit, ...] = ("none", "svg")
 
@@ -41,6 +43,7 @@ def run_benchmark(
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
+    html_mode_request = _html_mode_request(html_mode)
     font_size_scale_request = _font_size_scale_request(font_size_scale)
     text_fit_request = _text_fit_request(text_fit)
     input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
@@ -48,7 +51,12 @@ def run_benchmark(
 
     cases: list[dict[str, Any]] = []
     for pdf_path in input_pdfs:
-        if font_profile == "auto" or font_size_scale_request == "auto" or text_fit_request == "auto":
+        if (
+            font_profile == "auto"
+            or html_mode_request == "auto"
+            or font_size_scale_request == "auto"
+            or text_fit_request == "auto"
+        ):
             cases.append(
                 _run_calibrated_case(
                     pdf_path,
@@ -56,7 +64,7 @@ def run_benchmark(
                     dpi=dpi,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     raster_policy=raster_policy,
-                    html_mode=html_mode,
+                    html_mode=html_mode_request,
                     font_size_scale=font_size_scale_request,
                     font_profile=font_profile,
                     text_fit=text_fit_request,
@@ -71,7 +79,7 @@ def run_benchmark(
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
-                    html_mode=html_mode,
+                    html_mode=html_mode_request,
                     font_size_scale=float(font_size_scale_request),
                     text_fit=text_fit_request,
                 )
@@ -83,7 +91,7 @@ def run_benchmark(
         "dpi": dpi,
         "font_profile": font_profile,
         "raster_policy": raster_policy,
-        "html_mode": html_mode,
+        "html_mode": html_mode_request,
         "font_size_scale": font_size_scale_request,
         "text_fit": text_fit_request,
         "case_count": len(cases),
@@ -102,7 +110,7 @@ def _run_case(
     structure_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
-    html_mode: BenchmarkHtmlMode = "structured",
+    html_mode: HtmlMode = "structured",
     font_size_scale: float = 1.0,
     text_fit: HtmlTextFit = "none",
 ) -> dict[str, Any]:
@@ -132,7 +140,11 @@ def _run_case(
     timings["export_html_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    exported_pdf = print_html_to_pdf(html_path, out_dir / f"{html_mode}-export.pdf")
+    exported_pdf = print_html_to_pdf(
+        html_path,
+        out_dir / f"{html_mode}-export.pdf",
+        page_sizes_pt=[(page.width_pt, page.height_pt) for page in document.pages],
+    )
     timings["print_pdf_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
@@ -216,24 +228,24 @@ def _run_calibrated_case(
     text_fit: BenchmarkTextFit,
 ) -> dict[str, Any]:
     start = time.perf_counter()
-    profile_candidates = FONT_PROFILE_CANDIDATES if font_profile == "auto" else (font_profile,)
-    scale_candidates = _font_size_scale_candidates(font_size_scale)
-    text_fit_candidates = _text_fit_candidates(text_fit)
     candidates = [
         _run_case(
             pdf_path,
-            out_dir / f"{profile}-scale-{_font_size_scale_slug(scale)}-text-fit-{fit}",
+            out_dir / f"{mode}-{profile}-scale-{_font_size_scale_slug(scale)}-text-fit-{fit}",
             dpi=dpi,
             structure_json=structure_json,
             font_profile=profile,
             raster_policy=raster_policy,
-            html_mode=html_mode,
+            html_mode=mode,
             font_size_scale=scale,
             text_fit=fit,
         )
-        for profile in profile_candidates
-        for scale in scale_candidates
-        for fit in text_fit_candidates
+        for mode, profile, scale, fit in _calibration_candidates(
+            font_profile=font_profile,
+            html_mode=html_mode,
+            font_size_scale=font_size_scale,
+            text_fit=text_fit,
+        )
     ]
     calibration_total_seconds = _elapsed(start)
     selected = max(
@@ -264,6 +276,8 @@ def _run_calibrated_case(
     ]
     selected["font_profile_request"] = font_profile
     selected["font_profile_selected"] = selected["font_profile"]
+    selected["html_mode_request"] = html_mode
+    selected["html_mode_selected"] = selected["html_mode"]
     selected["font_size_scale_request"] = font_size_scale
     selected["font_size_scale_selected"] = selected["font_size_scale"]
     selected["text_fit_request"] = text_fit
@@ -272,11 +286,15 @@ def _run_calibrated_case(
     selected["calibration_total_seconds"] = calibration_total_seconds
     selected["total_seconds"] = calibration_total_seconds
     selected["font_profile_candidates"] = candidate_summaries
+    selected["html_mode_candidates"] = candidate_summaries
     selected["font_size_scale_candidates"] = candidate_summaries
     selected["text_fit_candidates"] = candidate_summaries
     if font_profile == "auto":
         selected["font_profile_auto_total_seconds"] = calibration_total_seconds
         selected["font_profile_selected_total_seconds"] = selected_candidate_seconds
+    if html_mode == "auto":
+        selected["html_mode_auto_total_seconds"] = calibration_total_seconds
+        selected["html_mode_selected_total_seconds"] = selected_candidate_seconds
     if font_size_scale == "auto":
         selected["font_size_scale_auto_total_seconds"] = calibration_total_seconds
         selected["font_size_scale_selected_total_seconds"] = selected_candidate_seconds
@@ -600,6 +618,65 @@ def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
 def _sum_case_values(cases: list[dict[str, Any]], key: str) -> dict[str, int]:
     counts: Counter[str] = Counter(str(case.get(key) or "unknown") for case in cases)
     return dict(sorted(counts.items()))
+
+
+def _calibration_candidates(
+    *,
+    font_profile: BenchmarkFontProfile,
+    html_mode: BenchmarkHtmlMode,
+    font_size_scale: BenchmarkFontSizeScale,
+    text_fit: BenchmarkTextFit,
+) -> list[tuple[HtmlMode, FontProfile, float, HtmlTextFit]]:
+    candidates: list[tuple[HtmlMode, FontProfile, float, HtmlTextFit]] = []
+    for mode in _html_mode_candidates(html_mode):
+        for profile in _font_profile_candidates_for_mode(font_profile, mode):
+            for scale in _font_size_scale_candidates_for_mode(font_size_scale, mode):
+                for fit in _text_fit_candidates_for_mode(text_fit, mode):
+                    candidates.append((mode, profile, scale, fit))
+    return candidates
+
+
+def _font_profile_candidates_for_mode(
+    font_profile: BenchmarkFontProfile,
+    html_mode: HtmlMode,
+) -> tuple[FontProfile, ...]:
+    if font_profile == "auto":
+        if html_mode == "fidelity":
+            return ("browser-default",)
+        return FONT_PROFILE_CANDIDATES
+    return (font_profile,)
+
+
+def _font_size_scale_candidates_for_mode(
+    font_size_scale: BenchmarkFontSizeScale,
+    html_mode: HtmlMode,
+) -> tuple[float, ...]:
+    if font_size_scale == "auto" and html_mode == "fidelity":
+        return (1.0,)
+    return _font_size_scale_candidates(font_size_scale)
+
+
+def _text_fit_candidates_for_mode(
+    text_fit: BenchmarkTextFit,
+    html_mode: HtmlMode,
+) -> tuple[HtmlTextFit, ...]:
+    if text_fit == "auto" and html_mode == "fidelity":
+        return ("none",)
+    return _text_fit_candidates(text_fit)
+
+
+def _html_mode_candidates(html_mode: BenchmarkHtmlMode) -> tuple[HtmlMode, ...]:
+    if html_mode == "auto":
+        return HTML_MODE_CANDIDATES
+    if html_mode not in HTML_MODE_CANDIDATES:
+        raise ValueError(f"html_mode must be one of structured, fidelity, or auto, got {html_mode}")
+    return (html_mode,)
+
+
+def _html_mode_request(html_mode: BenchmarkHtmlMode) -> BenchmarkHtmlMode:
+    if html_mode == "auto":
+        return "auto"
+    return _html_mode_candidates(html_mode)[0]
 
 
 def _font_size_scale_candidates(font_size_scale: BenchmarkFontSizeScale) -> tuple[float, ...]:
