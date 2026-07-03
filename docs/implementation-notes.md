@@ -237,8 +237,12 @@ Metrics:
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
-- `reading_order_column_geometry_page_count`: pages with repeated column anchors and overlapping vertical extent.
+- `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
 - `reading_order_visual_yx_column_page_count`: column-like pages where more than 60% of text still uses `visual-yx`.
+- `reading_order_repeated_anchor_page_count`: pages with repeated left-edge anchors and overlapping vertical extent, before table-vs-text-flow filtering.
+- `reading_order_max_repeated_anchor_columns`: maximum repeated-anchor column count detected in a case.
+- `reading_order_table_like_page_count`: pages whose text boxes look like a three-or-more-column grid.
+- `reading_order_table_like_visual_yx_page_count`: table-like pages that stay mostly row-major visual order; useful for distinguishing intentional table protection from missed text-flow columns.
 - `reading_order_unlabeled_text_risk_count`: ignored text count for partial sidecars, or all text when no semantic ground truth is available.
 - `font_profile`: CSS font fallback profile used by native extraction, useful for comparing default browser fallback with local URW/DejaVu paper-font experiments. With benchmark `--font-profile auto`, each case also records `font_profile_candidates`, `font_profile_request`, and `font_profile_selected`.
 - `font_size_scale`: CSS font-size multiplier used by native extraction. With benchmark `--font-size-scale auto`, each case also records `font_size_scale_candidates`, `font_size_scale_request`, and `font_size_scale_selected`.

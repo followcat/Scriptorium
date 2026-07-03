@@ -30,7 +30,7 @@ This project optimizes two different outcomes:
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
-- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, and reading-order risk diagnostics.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
@@ -104,11 +104,13 @@ The JD gain is not a visual-score gain; it is a structural/editability gain. The
 
 Current reading-order risk diagnostics example:
 
-| Sample | Risk score | Risk level | Column-geometry pages | Visual-yx column pages | Unlabeled risk text |
-|---|---:|---|---:|---:|---:|
-| arXiv Attention paper with partial sidecar | 0.07829172 | low | 3 | 1 | 147 |
-| ACL Transformer-XL before mixed-layout guard refinement | 0.17061801 | medium | 10 | 3 | 277 |
-| ACL Transformer-XL after mixed-layout guard refinement | 0.08879982 | low | 10 | 1 | 277 |
+| Sample | Risk score | Risk level | Text-flow column pages | Visual-yx column pages | Repeated-anchor pages | Max anchors | Table-like pages | Table-like visual-yx | Unlabeled risk text |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| Built-in fixtures | 0.09 | mixed | 3 | 1 | 3 | 3 | 1 | 1 | 0 |
+| ACL Transformer-XL after mixed-layout guard refinement | 0.08879982 | low | 10 | 1 | n/a | n/a | n/a | n/a | 277 |
+| PUMA Annual Report, first 12 pages | 0.5 | high | 5 | 4 | 5 | 3 | 4 | 4 | 521 |
+
+The extra repeated-anchor/table-like counters make the risk score actionable: PUMA's high score now shows that the next work should focus on table-aware subregion segmentation or semantic sidecars, not just stronger global column detection.
 
 ## Next Optimization Options
 
@@ -162,8 +164,10 @@ Current reading-order risk diagnostics example:
 - pdf2htmlEX feature list for native text, font/position preservation, clipping, and image+hidden-text fallback: https://github.com/pdf2htmlEX/pdf2htmlEX/wiki/Feature-List
 - PDF Association "Deriving HTML from PDF" specification: https://pdfa.org/download-area/specifications/Deriving_HTML_from_PDF.pdf
 - W3C PDF reading-order technique PDF3: https://www.w3.org/TR/WCAG-TECHS/PDF3.html
+- PRImA reading-order representation/evaluation for complex layouts: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 - pdfminer.six `LAParams.boxes_flow`: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
 - Kendall tau for information ordering evaluation: https://aclanthology.org/J06-4002.pdf
+- Modeling reading order as relations for visually-rich documents: https://aclanthology.org/2024.emnlp-main.540/
 - LayoutReader / ReadingBank reading-order benchmark: https://aclanthology.org/2021.emnlp-main.389/
 - XY-Cut++ reading-order recovery: https://arxiv.org/html/2504.10258v1
 - Docling technical report: https://arxiv.org/html/2408.09869v5

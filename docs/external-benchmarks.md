@@ -95,6 +95,6 @@ JD screenshot PDF:
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 15 | 279 | `0.5 / high` |
 | JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 1 | 0 | `0.35 / high` |
 
-PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current three-column/table-guard pass reports 47 column-flow elements, keeping short table-like cells row-major unless they look like text-flow columns.
+PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 4 table-like visual-yx pages. The current three-column/table-guard pass reports 47 column-flow elements, keeping short table-like cells row-major unless they look like text-flow columns.
 
 JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its reading risk is now high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
