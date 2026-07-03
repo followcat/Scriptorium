@@ -140,7 +140,8 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated two- or three-column text flows, keeps tables row-major, and orders each flow segment by column then vertical position.
 - `spatial-graph-v1`: a conservative weak-column fallback that builds vertical predecessor/successor chains from horizontal overlap and center proximity when repeated left-edge anchors are too unstable.
-- `infer_box_flow_order()`: a pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the column-biased candidate only for pairwise disagreement diagnostics; it does not replace the selected semantic order.
+- `box-flow-v1`: a guarded weak-column fallback that uses a pdfminer-style column-biased candidate only after table, repeated-anchor column flow, and spatial graph decline the page.
+- `infer_box_flow_order()`: a reusable pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the same primitive for pairwise disagreement diagnostics even when `box-flow-v1` is not selected.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
 - `reading_order_confidence`: a bounded, conservative heuristic confidence for the assigned ordering path. It is not a semantic accuracy score; it summarizes evidence strength so later editors/translators can route low-confidence nodes to review or model assistance.
@@ -157,7 +158,9 @@ The table guard intentionally preserves obvious three-or-more-column grids as ro
 
 `spatial-graph-v1` runs after table and repeated-anchor column checks, not before them. It filters out table-like grids, ignores tiny boxes, links nearby vertically ordered boxes that overlap horizontally or have close centers, and accepts the result only when at least two significant chains cover 65% or more of non-full-width text, have enough horizontal separation, and overlap vertically. This keeps it useful for irregular two-column OCR/PDF boxes without letting it replace stronger existing column, table, artifact, sidebar, or footnote paths.
 
-The box-flow diagnostic is intentionally separate from the selected strategy. It compares the current semantic order against a column-biased continuous order and reports pairwise disagreement counts. Low disagreement on labeled two-column papers is evidence that the current structural path agrees with a generic horizontal-flow candidate; high disagreement on dense webpage/OCR pages identifies samples that need semantic labels or external structure evidence before changing the default order.
+`box-flow-v1` is deliberately guarded. It runs after the table guard, repeated-anchor column flow, and spatial graph fallback. It splits the page on full-width visual breaks, compares visual order with a column-biased candidate inside each segment, and accepts a segment only when candidate disagreement, balanced two-way x split, vertical overlap, and horizontal separation all pass. The selected order then becomes column-major within that weak segment, with `box-flow`, `candidate-order-disagreement`, and `column-biased-flow` evidence.
+
+The box-flow diagnostic is separate from strategy selection. It compares the current semantic order against a column-biased continuous order and reports pairwise disagreement counts. Low disagreement on labeled two-column papers is evidence that the current structural path agrees with a generic horizontal-flow candidate; high disagreement on dense webpage/OCR pages identifies samples that need semantic labels or external structure evidence before changing the default order.
 
 The sidebar and footnote rules follow the same principle as page artifacts: secondary material should stay addressable but should not distort the primary narrative flow. They are deliberately geometry-only and conservative, so regular three-column papers still keep three body columns while annual-report marginal notes and bottom-zone note clusters can be routed as secondary content.
 
@@ -268,6 +271,7 @@ Metrics:
 - `mixed_table_column_flow_element_count`: editable text nodes ordered by `mixed-table-column-flow-v1`.
 - `table_row_major_element_count`: editable text nodes ordered by `table-row-major-v1`.
 - `spatial_graph_element_count`: editable text nodes ordered by `spatial-graph-v1`.
+- `box_flow_element_count`: editable text nodes ordered by `box-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_artifact_element_count`: editable text nodes identified as page-level artifacts such as running headers or footers.
 - `reading_order_artifact_counts`: per-artifact-type counts in the JSON summary and case reports.
@@ -319,13 +323,13 @@ Benchmark PDF export normalizes page boxes to source dimensions when the `Docume
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
 
-Latest box-flow diagnostics validation:
+Latest box-flow fallback validation:
 
-| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Box-Flow Disagreement | Spatial Graph | Table Row-Major | Footnotes | Sidebars | Key Evidence |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Built-in fixtures | `outputs/benchmark-box-flow-diagnostics` | 0.9906702 | 1.0 | 0.80113208 | 0.19494585 | 0 | 18 | 0 | 0 | `table-row-major`, `recursive-xy-cut`, whitespace cuts |
-| Transformer-XL first 3 pages | `outputs/external/transformer-xl-box-flow-diagnostics` | 0.98160664 | 1.0 | 0.9552648 | 0.0825672 | 0 | 0 | 7 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
-| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-box-flow-diagnostics` | 0.9795117 | n/a | 0.82476488 | 0.17460108 | 0 | 0 | 2 | 36 right | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
-| JD homepage screenshot PDF | `outputs/external/jd-home-box-flow-diagnostics` | 0.99576887 | n/a | 0.83 | 0.42778588 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
+| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Box-Flow Elements | Box-Flow Disagreement | Spatial Graph | Table Row-Major | Footnotes | Sidebars | Key Evidence |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-box-flow-fallback-v1` | 0.9906702 | 1.0 | 0.80113208 | 0 | 0.19494585 | 0 | 18 | 0 | 0 | `table-row-major`, `recursive-xy-cut`, whitespace cuts |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-box-flow-fallback-v1` | 0.98160664 | 1.0 | 0.9552648 | 0 | 0.0825672 | 0 | 0 | 7 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-box-flow-fallback-v1` | 0.9795117 | n/a | 0.82476488 | 0 | 0.17460108 | 0 | 0 | 2 | 36 right | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
+| JD homepage screenshot PDF | `outputs/external/jd-home-box-flow-fallback-v1` | 0.99576887 | n/a | 0.83 | 0 | 0.42778588 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
 
-The external and built-in samples above currently report `spatial_graph_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and the new backend is guarded so it does not inflate scores by taking over unrelated benchmark cases. The box-flow disagreement ratio now gives an additional triage signal for samples where a column-biased candidate substantially disagrees with the selected order. The trigger condition is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the box-flow candidate is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`.
+The external and built-in samples above currently report `spatial_graph_element_count = 0` and `box_flow_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and both new weak-column backends are guarded so they do not inflate scores by taking over unrelated benchmark cases. The box-flow disagreement ratio remains a triage signal for samples where a column-biased candidate substantially disagrees with the selected order. The spatial trigger is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the selected box-flow fallback is covered by `tests/test_reading_order.py::test_box_flow_fallback_orders_relaxed_irregular_columns`; the reusable candidate sorter is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`.
