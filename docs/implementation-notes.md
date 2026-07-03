@@ -226,7 +226,7 @@ Metrics:
 
 For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes. The tracked Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The tracked Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels.
 
-`compare_semantic_reading_order()` also accepts optional `candidate_orders`, keyed by candidate name, page index, and ordered element ids. Benchmark uses this to score `visual_yx`, `box_flow`, and `relation_graph` candidates against the same sidecar without changing `DocumentIR.semantic_order`. This creates an arbitration-ready evidence layer: disagreement diagnostics still show how far candidates are from the selected order, while sidecar-scored candidate metrics show whether a candidate is actually closer to labelled human order.
+`compare_semantic_reading_order()` also accepts optional `candidate_orders`, keyed by candidate name, page index, and ordered element ids. Benchmark uses this to score `visual_yx`, `box_flow`, `relation_graph`, and, when at least two external block orders are matched, `external_structure` candidates against the same sidecar without changing `DocumentIR.semantic_order`. This creates an arbitration-ready evidence layer: disagreement diagnostics still show how far candidates are from the selected order, while sidecar-scored candidate metrics show whether a candidate is actually closer to labelled human order.
 
 ## Useful References
 
@@ -341,10 +341,10 @@ Metrics:
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_successor_accuracy`: labelled adjacent successor-edge score when ground truth is available.
 - `semantic_successor_correct_count`, `semantic_successor_total_count`: raw successor-edge counts used for case and summary aggregation.
-- `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, and `relation_graph`.
+- `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, `relation_graph`, and `external_structure`.
 - `semantic_best_candidate_by_successor`: candidate name with the highest labelled successor-edge accuracy, using pairwise accuracy as the tie-breaker.
 - `semantic_best_candidate_successor_accuracy`: successor-edge accuracy of that best candidate.
-- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, and `semantic_relation_graph_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
+- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
@@ -390,6 +390,7 @@ Latest semantic candidate scoring validation:
 
 - `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
 - `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, and `relation_graph` candidates for each page.
+- `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure style evidence has at least two distinct block orders on a page.
 - Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth` and benchmark field assertions in `tests/test_benchmark.py`.
