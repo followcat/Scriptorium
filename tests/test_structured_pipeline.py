@@ -46,6 +46,7 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert 'data-scriptorium-layout-confidence="' in html
     assert 'data-scriptorium-edit-target="edited_text"' in html
     assert 'data-bbox-pdf="' in html
+    assert "text-align-last: justify" in html
     assert "Scriptorium PDF" in html
 
 
