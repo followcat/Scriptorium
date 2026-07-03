@@ -171,6 +171,41 @@ def test_column_flow_detects_three_repeated_anchor_columns() -> None:
     assert {by_item[index].column_index for index in third_column} == {2}
 
 
+def test_column_flow_keeps_running_margins_outside_body_columns() -> None:
+    bboxes: list[BBox] = [
+        BBox(x0=248, y0=16, x1=364, y1=27),
+        BBox(x0=72, y0=58, x1=540, y1=74),
+    ]
+    header_index = 0
+    title_index = 1
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(8):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=112 + row * 14, x1=286, y1=122 + row * 14))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=112 + row * 14, x1=532, y1=122 + row * 14))
+    footer_index = len(bboxes)
+    bboxes.append(BBox(x0=296, y0=758, x1=316, y1=770))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert by_item[header_index].artifact_type == "header"
+    assert by_item[header_index].column_span == "artifact-header"
+    assert by_item[footer_index].artifact_type == "footer"
+    assert by_item[footer_index].column_span == "artifact-footer"
+    assert by_item[header_index].semantic_order < by_item[title_index].semantic_order
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert by_item[footer_index].semantic_order > max(by_item[index].semantic_order for index in right_indices)
+    assert {by_item[index].strategy for index in [header_index, *left_indices, *right_indices, footer_index]} == {
+        "marginal-aware-column-flow-v1"
+    }
+
+
 def test_table_grid_guard_allows_strong_mixed_layout_columns() -> None:
     bboxes: list[BBox] = []
     left_indices: list[int] = []
@@ -247,6 +282,47 @@ def test_mixed_table_island_keeps_body_columns_and_table_rows() -> None:
     )
     assert max(by_item[index].semantic_order for index in lower_left) < min(
         by_item[index].semantic_order for index in lower_right
+    )
+
+
+def test_formula_fragments_do_not_become_table_islands() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(8):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=110 + row * 13.5, x1=290, y1=122 + row * 13.5))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=307, y0=110 + row * 13.5, x1=525, y1=122 + row * 13.5))
+
+    for y0 in [252, 266, 280]:
+        bboxes.append(BBox(x0=72, y0=y0, x1=290, y1=y0 + 12))
+        for x0, x1 in [
+            (314, 335),
+            (321, 345),
+            (351, 386),
+            (387, 419),
+            (405, 419),
+            (425, 456),
+            (426, 454),
+            (467, 498),
+            (484, 515),
+        ]:
+            bboxes.append(BBox(x0=x0, y0=y0 + 1, x1=x1, y1=y0 + 12))
+
+    for row in range(8):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=350 + row * 13.5, x1=290, y1=362 + row * 13.5))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=307, y0=350 + row * 13.5, x1=525, y1=362 + row * 13.5))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert all("mixed-table-column-flow-v1" not in assignment.strategy for assignment in assignments)
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
     )
 
 

@@ -124,6 +124,8 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "flow_segment_index": int(element.metadata.get("flow_segment_index") or 1),
             "reading_order_strategy": element.metadata.get("reading_order_strategy", "visual-yx"),
             "reading_order_region_path": element.metadata.get("reading_order_region_path"),
+            "reading_order_scope": element.metadata.get("reading_order_scope", "body"),
+            "reading_order_artifact_type": element.metadata.get("reading_order_artifact_type"),
             "editable": bool(element.source_text.strip()),
             "edit_target": "edited_text" if element.source_text.strip() else None,
             "bbox_pdf": element.bbox_pdf.as_list(),
@@ -214,6 +216,10 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     if structure_role:
         return structure_role
 
+    artifact_role = _reading_order_artifact_role(element)
+    if artifact_role:
+        return artifact_role
+
     font_size = float(element.style_hint.get("font_size_px", 0))
     font_weight = int(element.style_hint.get("font_weight", 400) or 400)
     if element.type == "title" or font_size >= max(20.0, median_font * 1.5):
@@ -221,6 +227,15 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     if font_weight >= 700 and font_size >= median_font:
         return "emphasized-text"
     return "paragraph"
+
+
+def _reading_order_artifact_role(element: ElementIR) -> str | None:
+    artifact_type = str(element.metadata.get("reading_order_artifact_type") or "").strip()
+    if artifact_type == "header":
+        return "running-header"
+    if artifact_type == "footer":
+        return "footer"
+    return None
 
 
 def _external_structure_role(element: ElementIR) -> str | None:

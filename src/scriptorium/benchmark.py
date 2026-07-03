@@ -234,6 +234,8 @@ def _run_case(
         "column_flow_element_count": stats["column_flow_element_count"],
         "mixed_table_column_flow_element_count": stats["mixed_table_column_flow_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
+        "reading_order_artifact_element_count": stats["reading_order_artifact_element_count"],
+        "reading_order_artifact_counts": stats["reading_order_artifact_counts"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
@@ -388,6 +390,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     reading_order_strategy_counts = Counter(
         str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
     )
+    reading_order_artifact_counts = Counter(
+        str(element.metadata.get("reading_order_artifact_type"))
+        for element in text_elements
+        if element.metadata.get("reading_order_artifact_type")
+    )
     structure_evidence = document.metadata.get("structure_evidence")
     if not isinstance(structure_evidence, dict):
         structure_evidence = {}
@@ -411,18 +418,23 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "column_flow_element_count": sum(
             1
             for element in text_elements
-            if element.metadata.get("reading_order_strategy") == "column-flow-v1"
+            if element.metadata.get("reading_order_strategy") in {"column-flow-v1", "marginal-aware-column-flow-v1"}
         ),
         "mixed_table_column_flow_element_count": sum(
             1
             for element in text_elements
-            if element.metadata.get("reading_order_strategy") == "mixed-table-column-flow-v1"
+            if element.metadata.get("reading_order_strategy")
+            in {"mixed-table-column-flow-v1", "marginal-aware-mixed-table-column-flow-v1"}
         ),
         "recursive_xy_cut_element_count": sum(
             1
             for element in text_elements
             if element.metadata.get("reading_order_strategy") == "recursive-xy-cut-v1"
         ),
+        "reading_order_artifact_element_count": sum(
+            1 for element in text_elements if element.metadata.get("reading_order_scope") == "page-artifact"
+        ),
+        "reading_order_artifact_counts": dict(sorted(reading_order_artifact_counts.items())),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
         "layout_region_counts": layout_region_counts,
         "table_region_count": int(layout_region_counts.get("table", 0)),
@@ -703,6 +715,8 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             int(case["mixed_table_column_flow_element_count"]) for case in cases
         ),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
+        "total_reading_order_artifact_elements": sum(int(case["reading_order_artifact_element_count"]) for case in cases),
+        "reading_order_artifact_counts": _sum_case_count_dicts(cases, "reading_order_artifact_counts"),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
@@ -774,6 +788,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "column_flow_element_count",
         "mixed_table_column_flow_element_count",
         "recursive_xy_cut_element_count",
+        "reading_order_artifact_element_count",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",

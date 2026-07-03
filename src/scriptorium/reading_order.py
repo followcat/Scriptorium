@@ -22,6 +22,7 @@ class ReadingOrderAssignment:
     flow_segment_index: int
     strategy: str
     region_path: str | None = None
+    artifact_type: str | None = None
 
     def as_metadata(self) -> dict[str, object]:
         return {
@@ -33,6 +34,8 @@ class ReadingOrderAssignment:
             "flow_segment_index": self.flow_segment_index,
             "reading_order_strategy": self.strategy,
             "reading_order_region_path": self.region_path,
+            "reading_order_scope": "page-artifact" if self.artifact_type else "body",
+            "reading_order_artifact_type": self.artifact_type,
         }
 
 
@@ -120,17 +123,22 @@ def infer_semantic_reading_order(
 def _visual_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
+    artifact_type_by_item: dict[int, str] | None = None,
 ) -> list[ReadingOrderAssignment]:
+    artifact_type_by_item = artifact_type_by_item or {}
     return [
         ReadingOrderAssignment(
             item_index=item_index,
             semantic_order=order,
             visual_order=visual_rank[item_index],
-            column_index=0,
+            column_index=None if item_index in artifact_type_by_item else 0,
             column_count=1,
-            column_span="single",
+            column_span=_artifact_column_span(artifact_type_by_item[item_index])
+            if item_index in artifact_type_by_item
+            else "single",
             flow_segment_index=1,
             strategy="visual-yx",
+            artifact_type=artifact_type_by_item.get(item_index),
         )
         for order, item_index in enumerate(visual_indices, start=1)
     ]
@@ -143,16 +151,22 @@ def _column_flow_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
 ) -> list[ReadingOrderAssignment]:
-    columns = _infer_column_clusters(bboxes, page_width, page_height)
+    artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
+    body_indices = [index for index in range(len(bboxes)) if index not in artifact_type_by_item]
+    columns = _infer_column_clusters(bboxes, page_width, page_height, indices=body_indices)
     column_count = len(columns)
     if column_count < 2:
-        return _visual_assignments(visual_indices, visual_rank)
+        return _visual_assignments(visual_indices, visual_rank, artifact_type_by_item=artifact_type_by_item)
 
     column_by_item = _assign_columns(bboxes, columns)
     full_width = {
         item_index
         for item_index, bbox in enumerate(bboxes)
-        if _is_full_width_box(bbox, columns, bboxes, page_width)
+        if item_index in artifact_type_by_item or _is_full_width_box(bbox, columns, bboxes, page_width)
+    }
+    column_span_by_item = {
+        item_index: _artifact_column_span(artifact_type)
+        for item_index, artifact_type in artifact_type_by_item.items()
     }
 
     ordered_indices: list[int] = []
@@ -189,8 +203,11 @@ def _column_flow_assignments(
         page_width,
         page_height,
         visual_rank,
-        strategy="column-flow-v1",
+        strategy="marginal-aware-column-flow-v1" if artifact_type_by_item else "column-flow-v1",
         flow_segment_by_item=flow_segment_by_item,
+        artifact_type_by_item=artifact_type_by_item,
+        column_span_by_item=column_span_by_item,
+        columns=columns,
     )
 
 
@@ -210,13 +227,19 @@ def _mixed_table_column_flow_assignments(
     if not table_by_item or len(table_by_item) / max(len(bboxes), 1) >= 0.75:
         return None
 
-    non_table_indices = [index for index in range(len(bboxes)) if index not in table_by_item]
+    artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
+    non_table_indices = [
+        index
+        for index in range(len(bboxes))
+        if index not in table_by_item and index not in artifact_type_by_item
+    ]
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=non_table_indices)
     column_by_item = _assign_columns(bboxes, columns)
     full_width_items = {
         item_index
-        for item_index in non_table_indices
-        if _is_full_width_box(bboxes[item_index], columns, bboxes, page_width)
+        for item_index in range(len(bboxes))
+        if item_index in artifact_type_by_item
+        or (item_index in non_table_indices and _is_full_width_box(bboxes[item_index], columns, bboxes, page_width))
     }
 
     emitted_islands: set[int] = set()
@@ -290,12 +313,17 @@ def _mixed_table_column_flow_assignments(
             item_index=item_index,
             semantic_order=semantic_order,
             visual_order=visual_rank[item_index],
-            column_index=column_index_by_item[item_index],
+            column_index=None if item_index in artifact_type_by_item else column_index_by_item[item_index],
             column_count=len(columns),
-            column_span=column_span_by_item[item_index],
+            column_span=_artifact_column_span(artifact_type_by_item[item_index])
+            if item_index in artifact_type_by_item
+            else column_span_by_item[item_index],
             flow_segment_index=flow_segment_by_item[item_index],
-            strategy="mixed-table-column-flow-v1",
+            strategy="marginal-aware-mixed-table-column-flow-v1"
+            if artifact_type_by_item
+            else "mixed-table-column-flow-v1",
             region_path=region_path_by_item.get(item_index),
+            artifact_type=artifact_type_by_item.get(item_index),
         )
         for semantic_order, item_index in enumerate(ordered_indices, start=1)
     ]
@@ -324,14 +352,19 @@ def _assign_order_metadata(
     strategy: str,
     flow_segment_by_item: dict[int, int] | None = None,
     region_path_by_item: dict[int, str] | None = None,
+    artifact_type_by_item: dict[int, str] | None = None,
+    column_span_by_item: dict[int, str] | None = None,
+    columns: list[list[int]] | None = None,
 ) -> list[ReadingOrderAssignment]:
-    columns = _infer_column_clusters(bboxes, page_width, page_height)
+    artifact_type_by_item = artifact_type_by_item or {}
+    column_span_by_item = column_span_by_item or {}
+    columns = columns or _infer_column_clusters(bboxes, page_width, page_height)
     column_count = len(columns)
     column_by_item = _assign_columns(bboxes, columns)
     full_width = {
         item_index
         for item_index, bbox in enumerate(bboxes)
-        if _is_full_width_box(bbox, columns, bboxes, page_width)
+        if item_index in artifact_type_by_item or _is_full_width_box(bbox, columns, bboxes, page_width)
     }
     if flow_segment_by_item is None:
         flow_segment_by_item = _flow_segments_for_order(ordered_indices, bboxes)
@@ -346,10 +379,14 @@ def _assign_order_metadata(
                 visual_order=visual_rank[item_index],
                 column_index=None if is_full_width else column_by_item[item_index],
                 column_count=column_count,
-                column_span="full" if is_full_width else "column",
+                column_span=column_span_by_item.get(
+                    item_index,
+                    "full" if is_full_width else "column",
+                ),
                 flow_segment_index=flow_segment_by_item[item_index],
                 strategy=strategy,
                 region_path=(region_path_by_item or {}).get(item_index),
+                artifact_type=artifact_type_by_item.get(item_index),
             )
         )
     return assignments
@@ -494,6 +531,42 @@ def _flow_segments_for_order(ordered_indices: list[int], bboxes: list[BBox]) -> 
     return segments
 
 
+def _infer_marginal_artifacts(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> dict[int, str]:
+    if len(bboxes) < 6:
+        return {}
+
+    top_limit = min(page_height * 0.06, 42.0)
+    bottom_limit = max(page_height * 0.92, page_height - 42.0)
+    max_height = max(8.0, min(24.0, page_height * 0.035))
+    artifacts: dict[int, str] = {}
+    for index, bbox in enumerate(bboxes):
+        if bbox.height <= 0 or bbox.height > max_height:
+            continue
+        if bbox.y1 <= top_limit and _looks_like_running_margin_line(bbox, page_width):
+            artifacts[index] = "header"
+        elif bbox.y0 >= bottom_limit and _looks_like_running_margin_line(bbox, page_width):
+            artifacts[index] = "footer"
+    return artifacts
+
+
+def _looks_like_running_margin_line(bbox: BBox, page_width: float) -> bool:
+    if bbox.width <= 0:
+        return False
+    center = _center_x(bbox)
+    centered = page_width * 0.28 <= center <= page_width * 0.72
+    near_edge = bbox.x0 <= page_width * 0.18 or bbox.x1 >= page_width * 0.82
+    compact = bbox.width <= page_width * 0.72
+    return compact and (centered or near_edge)
+
+
+def _artifact_column_span(artifact_type: str) -> str:
+    return f"artifact-{artifact_type}"
+
+
 def _infer_column_clusters(
     bboxes: list[BBox],
     page_width: float,
@@ -520,7 +593,7 @@ def _infer_column_clusters(
             and _anchored_columns_look_like_text_flows(anchored_columns, bboxes, page_width)
         ):
             return anchored_columns
-        return [list(range(len(bboxes)))]
+        return [source_indices]
 
     if len(anchored_columns) >= 2:
         return anchored_columns
@@ -560,6 +633,7 @@ def _infer_table_islands(bboxes: list[BBox], page_width: float, page_height: flo
         tuple(index for index in row if index in repeated_slots_by_item)
         for row in tableish_rows
         if sum(1 for index in row if index in repeated_slots_by_item) >= 3
+        and _row_has_unique_repeated_slots(row, repeated_slots_by_item)
     ]
     if len(eligible_rows) < 3:
         return []
@@ -639,6 +713,11 @@ def _table_repeated_slot_by_item(
             if abs(_center_x(bboxes[item_index]) - center) <= tolerance:
                 slot_by_item[item_index] = slot_index
     return slot_by_item
+
+
+def _row_has_unique_repeated_slots(row: tuple[int, ...], slot_by_item: dict[int, int]) -> bool:
+    slots = [slot_by_item[index] for index in row if index in slot_by_item]
+    return len(slots) == len(set(slots))
 
 
 def _consecutive_table_row_runs(
