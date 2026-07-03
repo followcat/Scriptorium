@@ -36,6 +36,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `layout_group_kind`: inferred region kind for downstream editing and translation tools
    - `semantic_order`, `visual_order`, `column_index`, `column_count`, `column_span`, and `flow_segment_index`
    - `reading_order_strategy` and `reading_order_region_path`
+   - `reading_order_scope` and `reading_order_artifact_type` for page-level running headers/footers
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
    - external structure labels from Paddle/PP-Structure evidence, mapped to roles such as `formula`, `running-header`, `footer`, `caption`, and `table-cell-text`
@@ -133,11 +134,12 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated two- or three-column text flows, keeps tables row-major, and orders each flow segment by column then vertical position.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It now evaluates up to three repeated anchor columns, requires enough anchors per column and at least 45-48% coverage of candidate body lines, so sparse author grids do not become false column pages while formula/noise boxes between columns do not force fallback.
+- Marginal page artifacts are detected with a conservative geometry gate at the top/bottom page edge. They remain editable/visible elements, but get `reading_order_scope = page-artifact`, `reading_order_artifact_type = header|footer`, `artifact-header` / `artifact-footer` column spans, and annotation roles such as `running-header` or `footer`.
 - Visual row ordering uses a small row bucket to absorb tiny PDF extraction offsets while keeping dense list rows separate, which matters for web-to-PDF ranked lists.
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
-The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. Local table islands are detected only when there are at least three consecutive aligned rows, repeated x slots, and a majority of short cells; pages where table-like rows dominate the text still fall back to the older whole-table visual behavior. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
+The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. Local table islands are detected only when there are at least three consecutive aligned rows, repeated x slots, a majority of short cells, and no duplicate repeated slot within a row; this last guard prevents formula/math fragments from being treated as table cells. Pages where table-like rows dominate the text still fall back to the older whole-table visual behavior. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
 
 The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
 
@@ -147,6 +149,8 @@ The current heuristic is intentionally modular in `src/scriptorium/reading_order
 Research references used for this pass:
 
 - PyMuPDF documents that PDF text may not appear in natural reading order and exposes sorting helpers: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
+- W3C PDF14 describes running headers and footers as pagination artifacts: https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF14
+- W3C PDF4 lists page headers/footers among artifact examples: https://www.w3.org/TR/WCAG20-TECHS/PDF4.html
 - pdfminer.six exposes `LAParams.boxes_flow` for horizontal-vs-vertical text box ordering: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
 - Reading-order evaluation can use pairwise ordering measures such as Kendall tau: https://aclanthology.org/J06-4002.pdf
 - ReadingBank is a reading-order benchmark built for document images: https://aclanthology.org/2021.emnlp-main.389/
@@ -236,6 +240,8 @@ Metrics:
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 - `mixed_table_column_flow_element_count`: editable text nodes ordered by `mixed-table-column-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
+- `reading_order_artifact_element_count`: editable text nodes identified as page-level artifacts such as running headers or footers.
+- `reading_order_artifact_counts`: per-artifact-type counts in the JSON summary and case reports.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
