@@ -71,7 +71,7 @@ PUMA annual report, first 12 pages:
 
 ```bash
 ./.venv/bin/scriptorium benchmark data/external/puma-2024-annual-report.pdf \
-  --out-dir outputs/external/puma-2024-annual-report-margin-artifact-benchmark-v2 \
+  --out-dir outputs/external/puma-2024-annual-report-reading-order-evidence-v2 \
   --dpi 144 \
   --max-pages 12 \
   --html-mode auto \
@@ -82,7 +82,7 @@ JD screenshot PDF:
 
 ```bash
 ./.venv/bin/scriptorium benchmark outputs/external/jd-home/input.pdf \
-  --out-dir outputs/external/jd-home-margin-artifact-benchmark \
+  --out-dir outputs/external/jd-home-reading-order-evidence-v2 \
   --dpi 144 \
   --html-mode auto \
   --fidelity-background auto
@@ -90,11 +90,13 @@ JD screenshot PDF:
 
 ## Current Results
 
-| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Page Artifacts | Images | Shapes | Reading Risk |
+| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Page Artifacts | RO Confidence | Low-Conf RO | Reading Risk |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 20 | 15 | 279 | `0.3875 / high` |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 1 | 0 | `0.35 / high` |
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 20 | 0.83316123 | 0 | `0.3875 / high` |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 
 PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 1 table-like visual-yx page. The current mixed-table/artifact pass reports 47 column-flow elements, 238 mixed-table-flow elements, and 20 header artifacts, keeping detected local table islands row-major while surrounding body text can still use column flow.
+
+Reading-order evidence v2 adds an audit trail for these diagnostics. PUMA reports 64 `table-island-row-major` elements, 20 `page-edge-artifact` elements, 177 `column-flow` evidence hits, and 271 `single-column-visual-order` hits. JD reports 134 `recursive-xy-cut` OCR anchors with horizontal/vertical whitespace-cut evidence.
 
 JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its OCR text now stays out of the mixed-table strategy after the duplicate-slot formula/table guard and is handled by recursive XY-Cut. Its reading risk is high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.

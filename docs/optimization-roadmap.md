@@ -28,12 +28,13 @@ This project optimizes two different outcomes:
 - Mixed table/body pages can now use `mixed-table-column-flow-v1`: repeated short-cell table islands remain row-major, while surrounding non-table text still contributes to body-column detection.
 - Formula fragments are guarded by rejecting table-candidate rows that reuse the same repeated x slot, preserving Transformer-XL page-3 semantic order while keeping real table islands active.
 - Running page headers/footers near the page margins are tagged as `page-artifact` and removed from body-column inference while staying editable/visible in the IR and HTML.
+- Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `table-island-row-major`, `page-edge-artifact`, and `external-structure-order`.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
-- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, and detailed reading-order risk diagnostics.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order confidence/evidence counts, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
@@ -47,6 +48,15 @@ Current benchmark coverage:
 | Hacker News print PDF | 0 | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
 | PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 20 | 0 | no | n/a | 0.9795117 |
 | JD homepage screenshot PDF | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
+
+Current reading-order evidence coverage:
+
+| Sample | RO confidence | Low-confidence RO elements | Evidence highlights |
+|---|---:|---:|---|
+| Built-in fixtures | 0.77396226 | 0 | 33 `single-column-visual-order`, 20 `recursive-xy-cut`, 20 horizontal/vertical whitespace cuts |
+| ACL Transformer-XL first 3 pages | 0.95962617 | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 1 `footer-margin` |
+| PUMA 2024 Annual Report, first 12 pages | 0.83316123 | 0 | 64 `table-island-row-major`, 20 `page-edge-artifact`, 177 `column-flow`, 271 `single-column-visual-order` |
+| JD homepage screenshot PDF | 0.83 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
 
 Current `--font-profile auto` sweep:
 
@@ -115,7 +125,7 @@ Current reading-order risk diagnostics example:
 | ACL Transformer-XL first 3 pages, formula-slot guard | 0.21573209 | medium | 3 | 0 | 3 | 2 | 1 | 0 | 277 |
 | PUMA Annual Report, first 12 pages | 0.3875 | high | 5 | 1 | 5 | 3 | 4 | 1 | 521 |
 
-The extra repeated-anchor/table-like counters make the risk score actionable: PUMA improved after table-aware subregion segmentation, but remains high because it has no semantic sidecar and still has 521 unlabeled text nodes. The next work should focus on complex-document semantic labels, confidence scoring, and external structure evidence rather than only stronger global column detection.
+The extra repeated-anchor/table-like counters and evidence counts make the risk score actionable: PUMA improved after table-aware subregion segmentation, but remains high because it has no semantic sidecar and still has 521 unlabeled text nodes. The next work should focus on complex-document semantic labels, confidence calibration, and external structure evidence rather than only stronger global column detection.
 
 ## Next Optimization Options
 
@@ -125,7 +135,7 @@ The extra repeated-anchor/table-like counters make the risk score actionable: PU
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, and can split mixed table/body pages with local table islands. Next refinements should add footer/header suppression, figure/caption proximity, table-island confidence scoring, and transparent `auto` selection evidence so recursive cuts, mixed table flow, and fallback order can be compared more safely.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, and emits confidence/evidence metadata. Next refinements should add figure/caption proximity, sidebar/marginal-note classification, and confidence calibration against real semantic sidecars so recursive cuts, mixed table flow, and fallback order can be compared more safely.
 
 3. Vector renderer refinement
 

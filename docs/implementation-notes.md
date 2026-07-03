@@ -37,6 +37,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `semantic_order`, `visual_order`, `column_index`, `column_count`, `column_span`, and `flow_segment_index`
    - `reading_order_strategy` and `reading_order_region_path`
    - `reading_order_scope` and `reading_order_artifact_type` for page-level running headers/footers
+   - `reading_order_confidence`, `reading_order_evidence`, and `reading_order_evidence_summary` for explaining the geometry/model evidence behind each ordering decision
    - `editable` and `edit_target`: whether the node maps to editable text
    - `bbox_pdf` and `bbox_px`: original coordinate evidence
    - external structure labels from Paddle/PP-Structure evidence, mapped to roles such as `formula`, `running-header`, `footer`, `caption`, and `table-cell-text`
@@ -61,6 +62,10 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `data-scriptorium-flow-segment`
    - `data-scriptorium-reading-order-strategy`
    - `data-scriptorium-reading-order-region`
+   - `data-scriptorium-reading-order-scope`
+   - `data-scriptorium-reading-order-artifact`
+   - `data-scriptorium-reading-order-confidence`
+   - `data-scriptorium-reading-order-evidence`
    - `data-scriptorium-editable`
    - `data-scriptorium-edit-target`
    - `data-bbox-pdf`
@@ -111,6 +116,7 @@ PaddleOCR-VL and PP-StructureV3 are best treated as optional evidence providers 
 - `apply_structure_evidence(document, payload)` aligns model regions to native elements by element bbox coverage and text similarity.
 - Matched text elements receive `structure_evidence`, `external_structure_label`, and `external_structure_order` metadata.
 - When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`.
+- Reordered elements also append `external-structure-order` to `reading_order_evidence` and preserve the model confidence under `reading_order_confidence` when it is stronger than the native heuristic confidence.
 - The annotation pass maps external labels into roles, so labels such as `formula`, `header`, `footer`, `table_caption`, and `table` can affect the structured HTML metadata.
 
 This gives the project an A/B path:
@@ -133,6 +139,8 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated two- or three-column text flows, keeps tables row-major, and orders each flow segment by column then vertical position.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
+- `reading_order_confidence`: a bounded, conservative heuristic confidence for the assigned ordering path. It is not a semantic accuracy score; it summarizes evidence strength so later editors/translators can route low-confidence nodes to review or model assistance.
+- `reading_order_evidence`: a machine-readable evidence list such as `single-column-visual-order`, `recursive-xy-cut`, `horizontal-whitespace-cut`, `column-flow`, `repeated-left-edge`, `table-island-row-major`, `page-edge-artifact`, or `external-structure-order`.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It now evaluates up to three repeated anchor columns, requires enough anchors per column and at least 45-48% coverage of candidate body lines, so sparse author grids do not become false column pages while formula/noise boxes between columns do not force fallback.
 - Marginal page artifacts are detected with a conservative geometry gate at the top/bottom page edge. They remain editable/visible elements, but get `reading_order_scope = page-artifact`, `reading_order_artifact_type = header|footer`, `artifact-header` / `artifact-footer` column spans, and annotation roles such as `running-header` or `footer`.
 - Visual row ordering uses a small row bucket to absorb tiny PDF extraction offsets while keeping dense list rows separate, which matters for web-to-PDF ranked lists.
@@ -243,6 +251,10 @@ Metrics:
 - `reading_order_artifact_element_count`: editable text nodes identified as page-level artifacts such as running headers or footers.
 - `reading_order_artifact_counts`: per-artifact-type counts in the JSON summary and case reports.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
+- `reading_order_confidence_element_count`: editable text nodes carrying reading-order confidence metadata.
+- `reading_order_mean_confidence`: average per-element reading-order confidence for a case or weighted benchmark summary.
+- `reading_order_low_confidence_element_count`: editable text nodes below the current confidence review threshold.
+- `reading_order_evidence_counts`: per-evidence count in the JSON summary and per case, useful for seeing whether a sample is driven by visual order, XY-Cut, column-flow, table-islands, page artifacts, or external model order.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -278,3 +290,12 @@ Metrics:
 Benchmark PDF export normalizes page boxes to source dimensions when the `DocumentIR` page sizes are available, so a browser print-unit mismatch is reported as visual content difference only if pixels still differ after the page dimensions match.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
+
+Latest reading-order evidence v2 validation:
+
+| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Low-Confidence RO | Key Evidence |
+|---|---|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-reading-order-evidence-v2` | 0.9906702 | 1.0 | 0.77396226 | 0 | `single-column-visual-order`, `recursive-xy-cut`, whitespace cuts |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-reading-order-evidence-v2` | 0.98160664 | 1.0 | 0.95962617 | 0 | `column-flow`, `repeated-left-edge`, `footer-margin` |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-reading-order-evidence-v2` | 0.9795117 | n/a | 0.83316123 | 0 | `table-island-row-major`, `page-edge-artifact`, `column-flow` |
+| JD homepage screenshot PDF | `outputs/external/jd-home-reading-order-evidence-v2` | 0.99576887 | n/a | 0.83 | 0 | `recursive-xy-cut`, OCR anchors |
