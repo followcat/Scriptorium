@@ -100,9 +100,10 @@ This gives the project an A/B path:
 ```bash
 scriptorium convert input.pdf --out-dir outputs/native
 scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
+scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/benchmark-native-plus-structure
 ```
 
-The next quality step is to run real PaddleOCR-VL 1.6 or PP-StructureV3 payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
+The benchmark command accepts one or more `--structure-json` files, matched by argument order or by names such as `<pdf-stem>.structure.json` and `<parent-dir>.<pdf-stem>.structure.json`. The next quality step is to run real PaddleOCR-VL 1.6 or PP-StructureV3 payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
 
 ## Reading Order Layer
 
@@ -197,6 +198,10 @@ Metrics:
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
+- `structure_evidence_source`: optional JSON evidence source used by the case.
+- `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure style JSON.
+- `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.
+- `structure_evidence_reordered_page_count`: pages whose text order was reassigned from external block order.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from scriptorium.benchmark import run_benchmark
@@ -41,3 +42,43 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(case["element_count"] > 0 for case in report["cases"])
     assert (tmp_path / "benchmark" / "benchmark_report.json").exists()
     assert (tmp_path / "benchmark" / "benchmark_summary.csv").exists()
+
+
+def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    structure_json = tmp_path / f"{pdfs[0].stem}.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "unit-pp-structure",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "parsing_res_list": [
+                            {
+                                "block_label": "text",
+                                "block_bbox": [0, 0, 10000, 10000],
+                                "block_order": 1,
+                                "block_content": "",
+                                "confidence": 0.9,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_benchmark(pdfs, tmp_path / "benchmark-structure", dpi=96, structure_jsons=[structure_json])
+    case = report["cases"][0]
+    csv_text = (tmp_path / "benchmark-structure" / "benchmark_summary.csv").read_text(encoding="utf-8")
+
+    assert case["structure_evidence_source"] == f"structure-json:{structure_json.name}"
+    assert case["structure_evidence_region_count"] == 1
+    assert case["structure_evidence_matched_element_count"] > 0
+    assert report["summary"]["total_structure_evidence_regions"] == 1
+    assert report["summary"]["total_structure_evidence_matched_elements"] == case[
+        "structure_evidence_matched_element_count"
+    ]
+    assert "structure_evidence_matched_element_count" in csv_text

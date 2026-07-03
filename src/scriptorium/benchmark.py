@@ -17,20 +17,30 @@ from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
 from .semantic_quality import compare_semantic_reading_order
+from .structure_evidence import apply_structure_evidence, load_structure_json
 
 
 def run_benchmark(
     pdfs: list[str | Path] | None,
     out_dir: str | Path,
     dpi: int = 192,
+    structure_jsons: list[str | Path] | None = None,
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
     input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
+    structure_json_by_pdf = _structure_json_by_pdf(input_pdfs, structure_jsons or [])
 
     cases: list[dict[str, Any]] = []
     for pdf_path in input_pdfs:
-        cases.append(_run_case(pdf_path, target / "cases" / pdf_path.stem, dpi=dpi))
+        cases.append(
+            _run_case(
+                pdf_path,
+                target / "cases" / pdf_path.stem,
+                dpi=dpi,
+                structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+            )
+        )
 
     summary = _summarize(cases)
     report = {
@@ -45,7 +55,7 @@ def run_benchmark(
     return report
 
 
-def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
+def _run_case(pdf_path: Path, out_dir: Path, dpi: int, structure_json: Path | None = None) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
 
@@ -54,7 +64,10 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
     timings["render_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    document = annotate_document(extract_native_pdf_to_ir(rendered))
+    document = extract_native_pdf_to_ir(rendered)
+    if structure_json is not None:
+        apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
+    annotate_document(document)
     ir_path = out_dir / "document.ir.json"
     document.save(ir_path)
     timings["extract_annotate_seconds"] = _elapsed(start)
@@ -100,6 +113,10 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
         "column_flow_element_count": stats["column_flow_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
+        "structure_evidence_source": stats["structure_evidence_source"],
+        "structure_evidence_region_count": stats["structure_evidence_region_count"],
+        "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
+        "structure_evidence_reordered_page_count": stats["structure_evidence_reordered_page_count"],
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
         "p95_diff_ratio": p95_diff_ratio,
@@ -121,6 +138,9 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     reading_order_strategy_counts = Counter(
         str(element.metadata.get("reading_order_strategy") or "unknown") for element in text_elements
     )
+    structure_evidence = document.metadata.get("structure_evidence")
+    if not isinstance(structure_evidence, dict):
+        structure_evidence = {}
     return {
         "page_count": document.page_count,
         "element_count": len(elements),
@@ -145,6 +165,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             if element.metadata.get("reading_order_strategy") == "recursive-xy-cut-v1"
         ),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
+        "structure_evidence_source": structure_evidence.get("source"),
+        "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
+        "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
+        "structure_evidence_reordered_page_count": int(structure_evidence.get("reordered_page_count") or 0),
     }
 
 
@@ -187,6 +211,13 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_column_flow_elements": sum(int(case["column_flow_element_count"]) for case in cases),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
+        "total_structure_evidence_regions": sum(int(case["structure_evidence_region_count"]) for case in cases),
+        "total_structure_evidence_matched_elements": sum(
+            int(case["structure_evidence_matched_element_count"]) for case in cases
+        ),
+        "total_structure_evidence_reordered_pages": sum(
+            int(case["structure_evidence_reordered_page_count"]) for case in cases
+        ),
         **_summarize_semantic_cases(semantic_cases),
     }
 
@@ -204,6 +235,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "multi_column_element_count",
         "column_flow_element_count",
         "recursive_xy_cut_element_count",
+        "structure_evidence_source",
+        "structure_evidence_region_count",
+        "structure_evidence_matched_element_count",
+        "structure_evidence_reordered_page_count",
         "visual_similarity",
         "semantic_ground_truth_available",
         "semantic_order_pair_accuracy",
@@ -237,6 +272,56 @@ def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
     for case in cases:
         counts.update(case.get("reading_order_strategy_counts") or {})
     return dict(sorted(counts.items()))
+
+
+def _structure_json_by_pdf(input_pdfs: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:
+    if not structure_jsons:
+        return {}
+
+    pdfs = [pdf.resolve() for pdf in input_pdfs]
+    paths = [Path(path).resolve() for path in structure_jsons]
+    if len(paths) == 1 and len(pdfs) == 1:
+        return {pdfs[0]: paths[0]}
+    if len(paths) == len(pdfs):
+        return dict(zip(pdfs, paths))
+
+    pdf_keys: dict[str, Path] = {}
+    for pdf in pdfs:
+        pdf_keys[pdf.stem] = pdf
+        if pdf.parent.name:
+            pdf_keys[f"{pdf.parent.name}.{pdf.stem}"] = pdf
+
+    mapping: dict[Path, Path] = {}
+    unmatched: list[Path] = []
+    for path in paths:
+        pdf = pdf_keys.get(_structure_match_key(path))
+        if pdf is None:
+            unmatched.append(path)
+            continue
+        mapping[pdf] = path
+
+    if unmatched or len(mapping) != len(paths):
+        names = ", ".join(str(path) for path in unmatched or paths)
+        raise ValueError(
+            "Could not match structure JSON files to PDFs. "
+            "Pass one JSON for one PDF, pass the same number of PDFs and JSON files, "
+            f"or use matching names such as <pdf-stem>.structure.json. Unmatched: {names}"
+        )
+    return mapping
+
+
+def _structure_match_key(path: Path) -> str:
+    name = path.name
+    if name.endswith(".json"):
+        name = name[:-5]
+    for suffix in (".structure", ".ppstructure", ".paddleocr", ".paddle", ".ocr"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _structure_source_name(path: Path) -> str:
+    return f"structure-json:{path.name}"
 
 
 def _elapsed(start: float) -> float:

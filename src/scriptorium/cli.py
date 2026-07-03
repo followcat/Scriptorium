@@ -41,8 +41,18 @@ def benchmark_command(
     pdf: Optional[list[Path]] = typer.Argument(None, help="Optional PDF files. If omitted, built-in fixtures are generated."),
     out_dir: Path = typer.Option(Path("outputs/benchmark"), help="Benchmark output directory."),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    structure_json: Optional[list[Path]] = typer.Option(
+        None,
+        "--structure-json",
+        exists=True,
+        readable=True,
+        help=(
+            "Optional PaddleOCR-VL/PP-StructureV3 style JSON evidence. "
+            "For multiple PDFs, pass files in PDF order or use matching names."
+        ),
+    ),
 ) -> None:
-    report = run_benchmark(pdf, out_dir, dpi=dpi)
+    report = run_benchmark(pdf, out_dir, dpi=dpi, structure_jsons=structure_json)
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
     typer.echo(f"Cases: {report['case_count']}")
@@ -52,6 +62,8 @@ def benchmark_command(
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
+    typer.echo(f"Structure evidence regions: {report['summary'].get('total_structure_evidence_regions')}")
+    typer.echo(f"Structure evidence matched elements: {report['summary'].get('total_structure_evidence_matched_elements')}")
 
 
 @app.command("capture-pdf")

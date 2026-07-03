@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-30%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-32%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -232,6 +232,19 @@ Run benchmark on your own PDFs:
 scriptorium benchmark path/to/file1.pdf path/to/file2.pdf --out-dir outputs/my-benchmark --dpi 144
 ```
 
+Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 style evidence:
+
+```bash
+scriptorium benchmark \
+  path/to/file1.pdf path/to/file2.pdf \
+  --structure-json path/to/file1.structure.json \
+  --structure-json path/to/file2.structure.json \
+  --out-dir outputs/native-plus-structure \
+  --dpi 144
+```
+
+For a single PDF, pass one `--structure-json`. For multiple PDFs, pass JSON files in PDF order or name them like `<pdf-stem>.structure.json` / `<parent-dir>.<pdf-stem>.structure.json` so the benchmark can match them.
+
 Outputs:
 
 - `benchmark_report.json`: full metrics, per-stage timings, artifact paths
@@ -252,6 +265,7 @@ Tracked metrics:
 - column-flow element count
 - recursive XY-Cut element count
 - reading-order strategy counts
+- structure evidence source, region count, matched element count, and reordered page count
 - semantic ground-truth case count
 - semantic order pair accuracy
 - semantic sequence similarity
@@ -326,6 +340,7 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
 - matched elements can receive external role/order metadata and `external-structure-fusion-v1` reading-order strategy
+- `scriptorium benchmark --structure-json ...` reports whether those regions matched elements or changed page order, enabling native-only versus native-plus-structure A/B runs
 - `requirements-ocr.txt` keeps heavyweight OCR dependencies optional
 
 ## Development
@@ -339,7 +354,7 @@ pytest
 Current local test baseline:
 
 ```text
-30 passed
+32 passed
 ```
 
 ## Project Status
