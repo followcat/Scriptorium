@@ -56,7 +56,7 @@ def benchmark_command(
         "structured",
         help=(
             "HTML mode to score. structured redraws editable PDF elements; "
-            "fidelity keeps the page raster as the visible layer and overlays editable coordinates; "
+            "fidelity keeps a source page background as the visible layer and overlays editable coordinates; "
             "auto benchmarks both and keeps the higher visual-similarity result."
         ),
     ),
