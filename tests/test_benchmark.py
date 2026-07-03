@@ -89,6 +89,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_mean_confidence" in case for case in report["cases"])
     assert all("reading_order_low_confidence_element_count" in case for case in report["cases"])
     assert all("reading_order_evidence_counts" in case for case in report["cases"])
+    assert all("reading_order_box_flow_pair_count" in case for case in report["cases"])
+    assert all("reading_order_box_flow_disagreement_pair_count" in case for case in report["cases"])
+    assert all("reading_order_box_flow_disagreement_ratio" in case for case in report["cases"])
+    assert all("reading_order_box_flow_disagreement_page_count" in case for case in report["cases"])
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
@@ -126,6 +130,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_reading_order_confidence" in report["summary"]
     assert "total_reading_order_low_confidence_elements" in report["summary"]
     assert "reading_order_evidence_counts" in report["summary"]
+    assert "total_reading_order_box_flow_pairs" in report["summary"]
+    assert "total_reading_order_box_flow_disagreement_pairs" in report["summary"]
+    assert "mean_reading_order_box_flow_disagreement_ratio" in report["summary"]
+    assert "total_reading_order_box_flow_disagreement_pages" in report["summary"]
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
@@ -240,6 +248,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_mean_confidence" in csv_text
     assert "reading_order_low_confidence_element_count" in csv_text
     assert "reading_order_evidence_counts" in csv_text
+    assert "reading_order_box_flow_disagreement_ratio" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text
     assert "reading_order_table_like_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text

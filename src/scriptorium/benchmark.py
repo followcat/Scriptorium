@@ -18,6 +18,7 @@ from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_p
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
+from .reading_order import infer_box_flow_order, pairwise_order_disagreement
 from .semantic_quality import compare_semantic_reading_order
 from .structure_evidence import apply_structure_evidence, load_structure_json
 
@@ -246,6 +247,10 @@ def _run_case(
         "reading_order_mean_confidence": stats["reading_order_mean_confidence"],
         "reading_order_low_confidence_element_count": stats["reading_order_low_confidence_element_count"],
         "reading_order_evidence_counts": stats["reading_order_evidence_counts"],
+        "reading_order_box_flow_pair_count": stats["reading_order_box_flow_pair_count"],
+        "reading_order_box_flow_disagreement_pair_count": stats["reading_order_box_flow_disagreement_pair_count"],
+        "reading_order_box_flow_disagreement_ratio": stats["reading_order_box_flow_disagreement_ratio"],
+        "reading_order_box_flow_disagreement_page_count": stats["reading_order_box_flow_disagreement_page_count"],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
         "figure_region_count": stats["figure_region_count"],
@@ -415,6 +420,7 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         for element in text_elements
         for evidence in _reading_order_evidence(element)
     )
+    box_flow_diagnostics = _reading_order_box_flow_diagnostics(document)
     structure_evidence = document.metadata.get("structure_evidence")
     if not isinstance(structure_evidence, dict):
         structure_evidence = {}
@@ -511,6 +517,7 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             1 for confidence in reading_order_confidences if confidence < 0.65
         ),
         "reading_order_evidence_counts": dict(sorted(reading_order_evidence_counts.items())),
+        **box_flow_diagnostics,
         "layout_region_counts": layout_region_counts,
         "table_region_count": int(layout_region_counts.get("table", 0)),
         "figure_region_count": int(layout_region_counts.get("figure", 0)),
@@ -555,6 +562,46 @@ def _reading_order_evidence(element: Any) -> list[str]:
     if not isinstance(evidence, list):
         return []
     return [str(item) for item in evidence if str(item).strip()]
+
+
+def _reading_order_box_flow_diagnostics(document: DocumentIR) -> dict[str, Any]:
+    pair_count = 0
+    disagreement_pair_count = 0
+    disagreement_page_count = 0
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        if len(text_elements) < 2:
+            continue
+        reference_order = [
+            index
+            for index, _element in sorted(
+                enumerate(text_elements),
+                key=lambda item: (
+                    item[1].reading_order,
+                    item[1].bbox_pdf.y0,
+                    item[1].bbox_pdf.x0,
+                ),
+            )
+        ]
+        candidate_order = infer_box_flow_order(
+            [element.bbox_pdf for element in text_elements],
+            page_width=page.width_pt,
+            page_height=page.height_pt,
+            boxes_flow=-0.5,
+        )
+        disagreement = pairwise_order_disagreement(reference_order, candidate_order)
+        pair_count += disagreement.pair_count
+        disagreement_pair_count += disagreement.disagreement_count
+        if disagreement.disagreement_count:
+            disagreement_page_count += 1
+    return {
+        "reading_order_box_flow_pair_count": pair_count,
+        "reading_order_box_flow_disagreement_pair_count": disagreement_pair_count,
+        "reading_order_box_flow_disagreement_ratio": round(disagreement_pair_count / pair_count, 8)
+        if pair_count
+        else 0.0,
+        "reading_order_box_flow_disagreement_page_count": disagreement_page_count,
+    }
 
 
 def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str, Any]) -> dict[str, Any]:
@@ -824,6 +871,18 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             int(case["reading_order_low_confidence_element_count"]) for case in cases
         ),
         "reading_order_evidence_counts": _sum_case_count_dicts(cases, "reading_order_evidence_counts"),
+        "total_reading_order_box_flow_pairs": sum(int(case["reading_order_box_flow_pair_count"]) for case in cases),
+        "total_reading_order_box_flow_disagreement_pairs": sum(
+            int(case["reading_order_box_flow_disagreement_pair_count"]) for case in cases
+        ),
+        "mean_reading_order_box_flow_disagreement_ratio": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_box_flow_disagreement_pair_count",
+            denominator_key="reading_order_box_flow_pair_count",
+        ),
+        "total_reading_order_box_flow_disagreement_pages": sum(
+            int(case["reading_order_box_flow_disagreement_page_count"]) for case in cases
+        ),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -904,6 +963,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_mean_confidence",
         "reading_order_low_confidence_element_count",
         "reading_order_evidence_counts",
+        "reading_order_box_flow_pair_count",
+        "reading_order_box_flow_disagreement_pair_count",
+        "reading_order_box_flow_disagreement_ratio",
+        "reading_order_box_flow_disagreement_page_count",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",
@@ -980,6 +1043,16 @@ def _weighted_case_mean(cases: list[dict[str, Any]], value_key: str, weight_key:
     weighted_sum = sum(float(case[value_key]) * int(case[weight_key]) for case in cases)
     weight = sum(int(case[weight_key]) for case in cases)
     return round(weighted_sum / max(weight, 1), 8)
+
+
+def _ratio_from_case_sums(
+    cases: list[dict[str, Any]],
+    numerator_key: str,
+    denominator_key: str,
+) -> float:
+    numerator = sum(int(case[numerator_key]) for case in cases)
+    denominator = sum(int(case[denominator_key]) for case in cases)
+    return round(numerator / max(denominator, 1), 8)
 
 
 def _calibration_candidates(

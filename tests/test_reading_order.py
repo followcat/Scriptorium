@@ -6,7 +6,7 @@ from scriptorium.html_export import export_html
 from scriptorium.models import BBox
 from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
-from scriptorium.reading_order import infer_semantic_reading_order
+from scriptorium.reading_order import infer_box_flow_order, infer_semantic_reading_order, pairwise_order_disagreement
 from scriptorium.semantic_quality import compare_semantic_reading_order
 
 
@@ -213,6 +213,28 @@ def test_spatial_graph_orders_overlapping_weak_columns() -> None:
     assert {by_item[index].column_index for index in right_indices} == {1}
     assert all("spatial-graph" in by_item[index].evidence for index in left_indices + right_indices)
     assert all("horizontal-overlap-chain" in by_item[index].evidence for index in left_indices + right_indices)
+
+
+def test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(6):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=60, y0=70 + row * 18, x1=240, y1=80 + row * 18))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=70 + row * 18, x1=500, y1=80 + row * 18))
+
+    vertical_order = infer_box_flow_order(bboxes, page_width=612, page_height=792, boxes_flow=0.75)
+    column_biased_order = infer_box_flow_order(bboxes, page_width=612, page_height=792, boxes_flow=-0.75)
+    disagreement = pairwise_order_disagreement(vertical_order, column_biased_order)
+
+    assert vertical_order == list(range(len(bboxes)))
+    assert column_biased_order == [*left_indices, *right_indices]
+    assert disagreement.pair_count == 66
+    assert disagreement.disagreement_count > 0
+    assert disagreement.disagreement_ratio > 0.2
 
 
 def test_sidebar_notes_do_not_become_body_columns() -> None:

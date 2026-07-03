@@ -91,6 +91,13 @@ class _SpatialGraphResult:
     evidence: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PairwiseOrderDisagreement:
+    pair_count: int
+    disagreement_count: int
+    disagreement_ratio: float
+
+
 def infer_semantic_reading_order(
     bboxes: list[BBox],
     page_width: float,
@@ -143,6 +150,69 @@ def infer_semantic_reading_order(
         )
 
     return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank)
+
+
+def infer_box_flow_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    boxes_flow: float = -0.5,
+) -> list[int]:
+    """Return a pdfminer-style continuous box-flow candidate order.
+
+    ``boxes_flow`` follows the same intuition as pdfminer.six LAParams:
+    negative values prefer horizontal position and positive values prefer
+    vertical position. This is intentionally a candidate/diagnostic primitive,
+    not a replacement for the higher-confidence structural strategies above.
+    """
+
+    if not bboxes:
+        return []
+    flow = max(-1.0, min(1.0, boxes_flow))
+    horizontal_weight = (1.0 - flow) / 2.0
+    vertical_weight = (1.0 + flow) / 2.0
+    width = max(page_width, 1.0)
+    height = max(page_height, 1.0)
+    heights = [bbox.height for bbox in bboxes if bbox.height > 0]
+    median_height = median(heights) if heights else 10.0
+    row_tolerance = max(4.0, median_height * 0.7)
+
+    def sort_key(index: int) -> tuple[float, int, float, float, float]:
+        bbox = bboxes[index]
+        normalized_x = bbox.x0 / width
+        normalized_y = bbox.y0 / height
+        score = horizontal_weight * normalized_x + vertical_weight * normalized_y
+        row_bucket = round(_center_y(bbox) / row_tolerance)
+        if vertical_weight >= horizontal_weight:
+            return (row_bucket, score, bbox.x0, bbox.y0, index)
+        return (score, row_bucket, bbox.x0, bbox.y0, index)
+
+    return sorted(range(len(bboxes)), key=sort_key)
+
+
+def pairwise_order_disagreement(
+    reference_order: list[int],
+    candidate_order: list[int],
+) -> PairwiseOrderDisagreement:
+    candidate_items = set(candidate_order)
+    shared = [item for item in reference_order if item in candidate_items]
+    pair_count = len(shared) * (len(shared) - 1) // 2
+    if pair_count == 0:
+        return PairwiseOrderDisagreement(pair_count=0, disagreement_count=0, disagreement_ratio=0.0)
+
+    reference_rank = {item: rank for rank, item in enumerate(reference_order)}
+    candidate_rank = {item: rank for rank, item in enumerate(candidate_order)}
+    disagreement_count = 0
+    for first, second in combinations(shared, 2):
+        reference_before = reference_rank[first] < reference_rank[second]
+        candidate_before = candidate_rank[first] < candidate_rank[second]
+        if reference_before != candidate_before:
+            disagreement_count += 1
+    return PairwiseOrderDisagreement(
+        pair_count=pair_count,
+        disagreement_count=disagreement_count,
+        disagreement_ratio=round(disagreement_count / pair_count, 8),
+    )
 
 
 def _visual_assignments(
