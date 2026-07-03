@@ -41,11 +41,21 @@ def test_two_column_fixture_uses_recursive_xy_cut_semantic_order(tmp_path: Path)
         text_by_value[text].metadata["reading_order_strategy"] == "recursive-xy-cut-v1"
         for text in left_lines + right_lines
     )
+    assert all(
+        text_by_value[text].metadata["reading_order_confidence"] >= 0.8
+        for text in left_lines + right_lines
+    )
+    assert all(
+        "recursive-xy-cut" in text_by_value[text].metadata["reading_order_evidence"]
+        for text in left_lines + right_lines
+    )
 
     html_path = export_html(document, tmp_path / "html", display_mode="structured")
     html = html_path.read_text(encoding="utf-8")
     assert 'data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"' in html
     assert 'data-scriptorium-reading-order-region="root/' in html
+    assert 'data-scriptorium-reading-order-confidence="0.83"' in html
+    assert 'data-scriptorium-reading-order-evidence="recursive-xy-cut' in html
     assert 'data-scriptorium-column-count="2"' in html
     assert 'data-scriptorium-semantic-order="' in html
 
@@ -116,6 +126,9 @@ def test_column_flow_detects_academic_columns_from_repeated_left_edges() -> None
         by_item[index].semantic_order for index in right_indices
     )
     assert all(by_item[index].strategy == "column-flow-v1" for index in left_indices + right_indices)
+    assert all(by_item[index].confidence >= 0.75 for index in left_indices + right_indices)
+    assert all("column-flow" in by_item[index].evidence for index in left_indices + right_indices)
+    assert all("repeated-left-edge" in by_item[index].evidence for index in left_indices + right_indices)
 
 
 def test_column_flow_tolerates_formula_noise_between_academic_columns() -> None:
@@ -194,8 +207,13 @@ def test_column_flow_keeps_running_margins_outside_body_columns() -> None:
 
     assert by_item[header_index].artifact_type == "header"
     assert by_item[header_index].column_span == "artifact-header"
+    assert by_item[header_index].confidence == 0.84
+    assert "page-edge-artifact" in by_item[header_index].evidence
+    assert "header-margin" in by_item[header_index].evidence
     assert by_item[footer_index].artifact_type == "footer"
     assert by_item[footer_index].column_span == "artifact-footer"
+    assert by_item[footer_index].confidence == 0.84
+    assert "footer-margin" in by_item[footer_index].evidence
     assert by_item[header_index].semantic_order < by_item[title_index].semantic_order
     assert max(by_item[index].semantic_order for index in left_indices) < min(
         by_item[index].semantic_order for index in right_indices
@@ -267,6 +285,9 @@ def test_mixed_table_island_keeps_body_columns_and_table_rows() -> None:
 
     assert {by_item[index].strategy for index in table_indices} == {"mixed-table-column-flow-v1"}
     assert {by_item[index].column_span for index in table_indices} == {"table-full"}
+    assert all(by_item[index].confidence >= 0.8 for index in table_indices)
+    assert all("table-island-row-major" in by_item[index].evidence for index in table_indices)
+    assert all("table-grid-slots" in by_item[index].evidence for index in table_indices)
     assert all(by_item[index].region_path == "root/table-island-001" for index in table_indices)
     assert max(by_item[index].semantic_order for index in upper_left) < min(
         by_item[index].semantic_order for index in upper_right

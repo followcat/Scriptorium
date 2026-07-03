@@ -237,6 +237,10 @@ def _run_case(
         "reading_order_artifact_element_count": stats["reading_order_artifact_element_count"],
         "reading_order_artifact_counts": stats["reading_order_artifact_counts"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
+        "reading_order_confidence_element_count": stats["reading_order_confidence_element_count"],
+        "reading_order_mean_confidence": stats["reading_order_mean_confidence"],
+        "reading_order_low_confidence_element_count": stats["reading_order_low_confidence_element_count"],
+        "reading_order_evidence_counts": stats["reading_order_evidence_counts"],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
         "figure_region_count": stats["figure_region_count"],
@@ -395,6 +399,12 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         for element in text_elements
         if element.metadata.get("reading_order_artifact_type")
     )
+    reading_order_confidences = _reading_order_confidences(text_elements)
+    reading_order_evidence_counts = Counter(
+        evidence
+        for element in text_elements
+        for evidence in _reading_order_evidence(element)
+    )
     structure_evidence = document.metadata.get("structure_evidence")
     if not isinstance(structure_evidence, dict):
         structure_evidence = {}
@@ -436,6 +446,17 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         ),
         "reading_order_artifact_counts": dict(sorted(reading_order_artifact_counts.items())),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
+        "reading_order_confidence_element_count": len(reading_order_confidences),
+        "reading_order_mean_confidence": round(
+            sum(reading_order_confidences) / len(reading_order_confidences),
+            8,
+        )
+        if reading_order_confidences
+        else 0.0,
+        "reading_order_low_confidence_element_count": sum(
+            1 for confidence in reading_order_confidences if confidence < 0.65
+        ),
+        "reading_order_evidence_counts": dict(sorted(reading_order_evidence_counts.items())),
         "layout_region_counts": layout_region_counts,
         "table_region_count": int(layout_region_counts.get("table", 0)),
         "figure_region_count": int(layout_region_counts.get("figure", 0)),
@@ -463,6 +484,23 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
         "structure_evidence_reordered_page_count": int(structure_evidence.get("reordered_page_count") or 0),
     }
+
+
+def _reading_order_confidences(elements: list[Any]) -> list[float]:
+    confidences: list[float] = []
+    for element in elements:
+        try:
+            confidences.append(float(element.metadata.get("reading_order_confidence") or 0.0))
+        except (TypeError, ValueError):
+            confidences.append(0.0)
+    return confidences
+
+
+def _reading_order_evidence(element: Any) -> list[str]:
+    evidence = element.metadata.get("reading_order_evidence")
+    if not isinstance(evidence, list):
+        return []
+    return [str(item) for item in evidence if str(item).strip()]
 
 
 def _reading_order_risk_metrics(document: DocumentIR, semantic_quality: dict[str, Any]) -> dict[str, Any]:
@@ -718,6 +756,15 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_artifact_elements": sum(int(case["reading_order_artifact_element_count"]) for case in cases),
         "reading_order_artifact_counts": _sum_case_count_dicts(cases, "reading_order_artifact_counts"),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
+        "mean_reading_order_confidence": _weighted_case_mean(
+            cases,
+            value_key="reading_order_mean_confidence",
+            weight_key="reading_order_confidence_element_count",
+        ),
+        "total_reading_order_low_confidence_elements": sum(
+            int(case["reading_order_low_confidence_element_count"]) for case in cases
+        ),
+        "reading_order_evidence_counts": _sum_case_count_dicts(cases, "reading_order_evidence_counts"),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -789,6 +836,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "mixed_table_column_flow_element_count",
         "recursive_xy_cut_element_count",
         "reading_order_artifact_element_count",
+        "reading_order_confidence_element_count",
+        "reading_order_mean_confidence",
+        "reading_order_low_confidence_element_count",
+        "reading_order_evidence_counts",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",
@@ -859,6 +910,12 @@ def _sum_strategy_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
 def _sum_case_values(cases: list[dict[str, Any]], key: str) -> dict[str, int]:
     counts: Counter[str] = Counter(str(case.get(key) or "unknown") for case in cases)
     return dict(sorted(counts.items()))
+
+
+def _weighted_case_mean(cases: list[dict[str, Any]], value_key: str, weight_key: str) -> float:
+    weighted_sum = sum(float(case[value_key]) * int(case[weight_key]) for case in cases)
+    weight = sum(int(case[weight_key]) for case in cases)
+    return round(weighted_sum / max(weight, 1), 8)
 
 
 def _calibration_candidates(

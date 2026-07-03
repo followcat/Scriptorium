@@ -23,6 +23,8 @@ class ReadingOrderAssignment:
     strategy: str
     region_path: str | None = None
     artifact_type: str | None = None
+    confidence: float = 0.5
+    evidence: tuple[str, ...] = ()
 
     def as_metadata(self) -> dict[str, object]:
         return {
@@ -36,6 +38,9 @@ class ReadingOrderAssignment:
             "reading_order_region_path": self.region_path,
             "reading_order_scope": "page-artifact" if self.artifact_type else "body",
             "reading_order_artifact_type": self.artifact_type,
+            "reading_order_confidence": _bounded_confidence(self.confidence),
+            "reading_order_evidence": list(self.evidence),
+            "reading_order_evidence_summary": ",".join(self.evidence),
         }
 
 
@@ -66,6 +71,8 @@ class _OrderToken:
     column_index: int | None
     full_width: bool
     region_path: str | None = None
+    confidence: float = 0.5
+    evidence: tuple[str, ...] = ()
 
 
 def infer_semantic_reading_order(
@@ -115,6 +122,8 @@ def infer_semantic_reading_order(
             visual_rank,
             strategy="recursive-xy-cut-v1",
             region_path_by_item=xy_result.region_path_by_item,
+            default_confidence=_xy_cut_confidence(xy_result),
+            default_evidence=_xy_cut_evidence(xy_result),
         )
 
     return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank)
@@ -124,24 +133,32 @@ def _visual_assignments(
     visual_indices: list[int],
     visual_rank: dict[int, int],
     artifact_type_by_item: dict[int, str] | None = None,
+    base_confidence: float = 0.62,
+    base_evidence: tuple[str, ...] = ("visual-yx",),
 ) -> list[ReadingOrderAssignment]:
     artifact_type_by_item = artifact_type_by_item or {}
-    return [
-        ReadingOrderAssignment(
-            item_index=item_index,
-            semantic_order=order,
-            visual_order=visual_rank[item_index],
-            column_index=None if item_index in artifact_type_by_item else 0,
-            column_count=1,
-            column_span=_artifact_column_span(artifact_type_by_item[item_index])
-            if item_index in artifact_type_by_item
-            else "single",
-            flow_segment_index=1,
-            strategy="visual-yx",
-            artifact_type=artifact_type_by_item.get(item_index),
+    assignments: list[ReadingOrderAssignment] = []
+    for order, item_index in enumerate(visual_indices, start=1):
+        artifact_type = artifact_type_by_item.get(item_index)
+        assignments.append(
+            ReadingOrderAssignment(
+                item_index=item_index,
+                semantic_order=order,
+                visual_order=visual_rank[item_index],
+                column_index=None if artifact_type else 0,
+                column_count=1,
+                column_span=_artifact_column_span(artifact_type) if artifact_type else "single",
+                flow_segment_index=1,
+                strategy="visual-yx",
+                artifact_type=artifact_type,
+                confidence=_artifact_confidence(artifact_type) if artifact_type else base_confidence,
+                evidence=_merge_evidence(
+                    base_evidence,
+                    _artifact_evidence(artifact_type) if artifact_type else (),
+                ),
+            )
         )
-        for order, item_index in enumerate(visual_indices, start=1)
-    ]
+    return assignments
 
 
 def _column_flow_assignments(
@@ -156,9 +173,16 @@ def _column_flow_assignments(
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=body_indices)
     column_count = len(columns)
     if column_count < 2:
-        return _visual_assignments(visual_indices, visual_rank, artifact_type_by_item=artifact_type_by_item)
+        return _visual_assignments(
+            visual_indices,
+            visual_rank,
+            artifact_type_by_item=artifact_type_by_item,
+            base_confidence=0.74,
+            base_evidence=("single-column-visual-order",),
+        )
 
     column_by_item = _assign_columns(bboxes, columns)
+    column_confidence, column_evidence = _column_flow_profile(columns, bboxes, body_indices, page_width)
     full_width = {
         item_index
         for item_index, bbox in enumerate(bboxes)
@@ -208,6 +232,20 @@ def _column_flow_assignments(
         artifact_type_by_item=artifact_type_by_item,
         column_span_by_item=column_span_by_item,
         columns=columns,
+        confidence_by_item={
+            item_index: _artifact_confidence(artifact_type_by_item[item_index])
+            if item_index in artifact_type_by_item
+            else column_confidence
+            for item_index in range(len(bboxes))
+        },
+        evidence_by_item={
+            item_index: _merge_evidence(
+                column_evidence,
+                ("full-width-flow-break",) if item_index in full_width and item_index not in artifact_type_by_item else (),
+                _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
+            )
+            for item_index in range(len(bboxes))
+        },
     )
 
 
@@ -235,6 +273,7 @@ def _mixed_table_column_flow_assignments(
     ]
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=non_table_indices)
     column_by_item = _assign_columns(bboxes, columns)
+    column_confidence, column_evidence = _column_flow_profile(columns, bboxes, non_table_indices, page_width)
     full_width_items = {
         item_index
         for item_index in range(len(bboxes))
@@ -249,6 +288,8 @@ def _mixed_table_column_flow_assignments(
     column_index_by_item: dict[int, int | None] = {}
     column_span_by_item: dict[int, str] = {}
     region_path_by_item: dict[int, str] = {}
+    confidence_by_item: dict[int, float] = {}
+    evidence_by_item: dict[int, tuple[str, ...]] = {}
     segment_index = 0
 
     def emit_token(token: _OrderToken) -> None:
@@ -257,6 +298,8 @@ def _mixed_table_column_flow_assignments(
             flow_segment_by_item[item_index] = segment_index
             column_index_by_item[item_index] = token.column_index
             column_span_by_item[item_index] = _column_span_for_token(token, len(columns))
+            confidence_by_item[item_index] = token.confidence
+            evidence_by_item[item_index] = token.evidence
             if token.region_path:
                 region_path_by_item[item_index] = token.region_path
 
@@ -283,6 +326,11 @@ def _mixed_table_column_flow_assignments(
                 column_index=None if table_full_width else column_by_item[item_index],
                 full_width=table_full_width,
                 region_path=island.region_path,
+                confidence=_table_island_confidence(island, bboxes, page_width),
+                evidence=_merge_evidence(
+                    ("table-island-row-major", "table-grid-slots"),
+                    ("full-width-table-island",) if table_full_width else ("column-table-island",),
+                ),
             )
             if token.full_width:
                 flush_column_segment()
@@ -293,12 +341,19 @@ def _mixed_table_column_flow_assignments(
             continue
 
         item_full_width = item_index in full_width_items
+        artifact_type = artifact_type_by_item.get(item_index)
         token = _OrderToken(
             kind="item",
             bbox=bboxes[item_index],
             indices=(item_index,),
             column_index=None if item_full_width else column_by_item[item_index],
             full_width=item_full_width,
+            confidence=_artifact_confidence(artifact_type) if artifact_type else column_confidence,
+            evidence=_merge_evidence(
+                column_evidence,
+                ("full-width-flow-break",) if item_full_width and not artifact_type else (),
+                _artifact_evidence(artifact_type) if artifact_type else (),
+            ),
         )
         if token.full_width:
             flush_column_segment()
@@ -324,6 +379,8 @@ def _mixed_table_column_flow_assignments(
             else "mixed-table-column-flow-v1",
             region_path=region_path_by_item.get(item_index),
             artifact_type=artifact_type_by_item.get(item_index),
+            confidence=confidence_by_item[item_index],
+            evidence=evidence_by_item[item_index],
         )
         for semantic_order, item_index in enumerate(ordered_indices, start=1)
     ]
@@ -355,9 +412,15 @@ def _assign_order_metadata(
     artifact_type_by_item: dict[int, str] | None = None,
     column_span_by_item: dict[int, str] | None = None,
     columns: list[list[int]] | None = None,
+    confidence_by_item: dict[int, float] | None = None,
+    evidence_by_item: dict[int, tuple[str, ...]] | None = None,
+    default_confidence: float = 0.62,
+    default_evidence: tuple[str, ...] = ("visual-yx",),
 ) -> list[ReadingOrderAssignment]:
     artifact_type_by_item = artifact_type_by_item or {}
     column_span_by_item = column_span_by_item or {}
+    confidence_by_item = confidence_by_item or {}
+    evidence_by_item = evidence_by_item or {}
     columns = columns or _infer_column_clusters(bboxes, page_width, page_height)
     column_count = len(columns)
     column_by_item = _assign_columns(bboxes, columns)
@@ -387,6 +450,17 @@ def _assign_order_metadata(
                 strategy=strategy,
                 region_path=(region_path_by_item or {}).get(item_index),
                 artifact_type=artifact_type_by_item.get(item_index),
+                confidence=confidence_by_item.get(
+                    item_index,
+                    _artifact_confidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else default_confidence,
+                ),
+                evidence=_merge_evidence(
+                    evidence_by_item.get(item_index, default_evidence),
+                    ("full-width-flow-break",) if is_full_width and item_index not in artifact_type_by_item else (),
+                    _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
+                ),
             )
         )
     return assignments
@@ -565,6 +639,119 @@ def _looks_like_running_margin_line(bbox: BBox, page_width: float) -> bool:
 
 def _artifact_column_span(artifact_type: str) -> str:
     return f"artifact-{artifact_type}"
+
+
+def _artifact_confidence(artifact_type: str | None) -> float:
+    return 0.84 if artifact_type else 0.62
+
+
+def _artifact_evidence(artifact_type: str | None) -> tuple[str, ...]:
+    if not artifact_type:
+        return ()
+    return ("page-edge-artifact", f"{artifact_type}-margin")
+
+
+def _column_flow_profile(
+    columns: list[list[int]],
+    bboxes: list[BBox],
+    source_indices: list[int],
+    page_width: float,
+) -> tuple[float, tuple[str, ...]]:
+    if len(columns) < 2:
+        return 0.74, ("single-column-visual-order",)
+
+    coverage = sum(len(column) for column in columns) / max(len(source_indices), 1)
+    balance = min(len(column) for column in columns) / max(max(len(column) for column in columns), 1)
+    overlap = _min_column_vertical_overlap(columns, bboxes)
+    separation = _min_column_center_separation(columns, bboxes) / max(page_width, 1.0)
+    anchor_strength = min(_column_left_edge_anchor_ratio(column, bboxes, page_width) for column in columns)
+    separation_target = 0.16 if len(columns) >= 3 else 0.25
+
+    confidence = (
+        0.45
+        + 0.16 * min(coverage, 1.0)
+        + 0.14 * balance
+        + 0.14 * min(overlap, 1.0)
+        + 0.14 * anchor_strength
+        + 0.12 * min(separation / separation_target, 1.0)
+    )
+
+    evidence: list[str] = ["column-flow"]
+    if anchor_strength >= 0.35:
+        evidence.append("repeated-left-edge")
+    else:
+        evidence.append("x-cluster-columns")
+    if overlap >= 0.2:
+        evidence.append("vertical-overlap")
+    if balance >= 0.45:
+        evidence.append("balanced-columns")
+    if separation >= separation_target:
+        evidence.append("wide-gutter")
+    return _bounded_confidence(min(confidence, 0.96)), tuple(evidence)
+
+
+def _min_column_vertical_overlap(columns: list[list[int]], bboxes: list[BBox]) -> float:
+    if len(columns) < 2:
+        return 0.0
+    return min(
+        _vertical_overlap_ratio(columns[index], columns[index + 1], bboxes)
+        for index in range(len(columns) - 1)
+    )
+
+
+def _min_column_center_separation(columns: list[list[int]], bboxes: list[BBox]) -> float:
+    if len(columns) < 2:
+        return 0.0
+    centers = [_cluster_x_center(column, bboxes) for column in columns]
+    return min(centers[index + 1] - centers[index] for index in range(len(centers) - 1))
+
+
+def _column_left_edge_anchor_ratio(column: list[int], bboxes: list[BBox], page_width: float) -> float:
+    if not column:
+        return 0.0
+    clusters = _cluster_positions([bboxes[index].x0 for index in column], tolerance=max(8.0, page_width * 0.02))
+    return max((len(cluster) for cluster in clusters), default=0) / len(column)
+
+
+def _table_island_confidence(island: _TableIsland, bboxes: list[BBox], page_width: float) -> float:
+    island_indices = list(island.indices)
+    heights = [bboxes[index].height for index in island_indices if bboxes[index].height > 0]
+    rows = _cluster_index_rows(island_indices, bboxes, tolerance=max(4.0, (median(heights) if heights else 8.0) * 0.8))
+    cells_per_row = [len(row) for row in rows]
+    row_score = min(len(rows) / 6.0, 1.0)
+    cell_score = min((median(cells_per_row) if cells_per_row else 0.0) / 5.0, 1.0)
+    width_score = min(island.bbox.width / max(page_width * 0.42, 1.0), 1.0)
+    return _bounded_confidence(0.72 + 0.08 * row_score + 0.08 * cell_score + 0.05 * width_score)
+
+
+def _xy_cut_confidence(result: _XyCutResult) -> float:
+    if result.has_horizontal_split and result.has_vertical_split:
+        return 0.83
+    if result.has_horizontal_split or result.has_vertical_split:
+        return 0.7
+    return 0.58
+
+
+def _xy_cut_evidence(result: _XyCutResult) -> tuple[str, ...]:
+    evidence: list[str] = ["recursive-xy-cut"]
+    if result.has_horizontal_split:
+        evidence.append("horizontal-whitespace-cut")
+    if result.has_vertical_split:
+        evidence.append("vertical-whitespace-cut")
+    return tuple(evidence)
+
+
+def _merge_evidence(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    evidence: list[str] = []
+    for group in groups:
+        for item in group:
+            if item and item not in evidence:
+                evidence.append(item)
+    return tuple(evidence)
+
+
+def _bounded_confidence(value: float) -> float:
+    return round(max(0.0, min(1.0, float(value))), 4)
 
 
 def _infer_column_clusters(

@@ -326,6 +326,8 @@ def _apply_page_regions(
             "text_similarity": round(text_similarity, 6),
         }
         element.metadata["external_structure_label"] = region.label
+        if region.confidence is not None:
+            element.metadata["external_structure_confidence"] = region.confidence
         if region.order is not None:
             element.metadata["external_structure_order"] = region.order
         matched_count += 1
@@ -391,5 +393,21 @@ def _reorder_page_from_regions(page: PageIR) -> bool:
                 element.metadata.get("reading_order_strategy", "unknown"),
             )
             element.metadata["reading_order_strategy"] = "external-structure-fusion-v1"
+            evidence = _reading_order_evidence(element)
+            if "external-structure-order" not in evidence:
+                evidence.append("external-structure-order")
+            element.metadata["reading_order_evidence"] = evidence
+            element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+            element.metadata["reading_order_confidence"] = max(
+                float(element.metadata.get("reading_order_confidence") or 0.0),
+                float(element.metadata.get("external_structure_confidence") or 0.0),
+            )
         element.reading_order = new_order
     return True
+
+
+def _reading_order_evidence(element: ElementIR) -> list[str]:
+    evidence = element.metadata.get("reading_order_evidence")
+    if not isinstance(evidence, list):
+        return []
+    return [str(item) for item in evidence if str(item).strip()]

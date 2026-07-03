@@ -126,6 +126,9 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "reading_order_region_path": element.metadata.get("reading_order_region_path"),
             "reading_order_scope": element.metadata.get("reading_order_scope", "body"),
             "reading_order_artifact_type": element.metadata.get("reading_order_artifact_type"),
+            "reading_order_confidence": float(element.metadata.get("reading_order_confidence") or 0.0),
+            "reading_order_evidence": _reading_order_evidence(element),
+            "reading_order_evidence_summary": element.metadata.get("reading_order_evidence_summary", ""),
             "editable": bool(element.source_text.strip()),
             "edit_target": "edited_text" if element.source_text.strip() else None,
             "bbox_pdf": element.bbox_pdf.as_list(),
@@ -236,6 +239,13 @@ def _reading_order_artifact_role(element: ElementIR) -> str | None:
     if artifact_type == "footer":
         return "footer"
     return None
+
+
+def _reading_order_evidence(element: ElementIR) -> list[str]:
+    evidence = element.metadata.get("reading_order_evidence")
+    if not isinstance(evidence, list):
+        return []
+    return [str(item) for item in evidence if str(item).strip()]
 
 
 def _external_structure_role(element: ElementIR) -> str | None:
