@@ -77,10 +77,11 @@ def compare_pdf_renderings(
     actual_pdf: str | Path,
     out_dir: str | Path,
     dpi: int = 192,
+    max_pages: int | None = None,
 ) -> dict[str, Any]:
     target = Path(out_dir)
-    expected_render = render_pdf(expected_pdf, target / "expected_pages", dpi=dpi)
-    actual_render = render_pdf(actual_pdf, target / "actual_pages", dpi=dpi)
+    expected_render = render_pdf(expected_pdf, target / "expected_pages", dpi=dpi, max_pages=max_pages)
+    actual_render = render_pdf(actual_pdf, target / "actual_pages", dpi=dpi, max_pages=max_pages)
     expected_page_count = len(expected_render.pages)
     actual_page_count = len(actual_render.pages)
     compared_page_count = min(expected_page_count, actual_page_count)
@@ -122,6 +123,7 @@ def compare_pdf_renderings(
     report = {
         "expected_pdf": str(expected_pdf),
         "actual_pdf": str(actual_pdf),
+        "max_pages": max_pages,
         "expected_page_count": expected_page_count,
         "actual_page_count": actual_page_count,
         "compared_page_count": compared_page_count,

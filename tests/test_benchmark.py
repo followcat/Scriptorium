@@ -82,6 +82,25 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert (tmp_path / "benchmark" / "benchmark_summary.csv").exists()
 
 
+def test_benchmark_can_limit_large_documents_to_first_pages(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
+    multipage_pdf = next(pdf for pdf in pdfs if pdf.name == "multipage_mixed.pdf")
+    report = run_benchmark([multipage_pdf], tmp_path / "benchmark-max-pages", dpi=96, max_pages=1)
+    case = report["cases"][0]
+    csv_text = (tmp_path / "benchmark-max-pages" / "benchmark_summary.csv").read_text(encoding="utf-8")
+    quality = json.loads(Path(case["quality_report"]).read_text(encoding="utf-8"))
+
+    assert report["max_pages"] == 1
+    assert case["max_pages"] == 1
+    assert case["page_count"] == 1
+    assert quality["max_pages"] == 1
+    assert quality["expected_page_count"] == 1
+    assert quality["actual_page_count"] == 1
+    assert case["semantic_ground_truth_available"] is True
+    assert case["semantic_expected_text_count"] == 4
+    assert "max_pages" in csv_text
+
+
 def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
     report = run_benchmark(

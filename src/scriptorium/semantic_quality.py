@@ -62,7 +62,7 @@ def compare_semantic_reading_order(
     page_reports = [
         _compare_page(document, page_truth)
         for page_truth in ground_truth.get("pages", [])
-        if isinstance(page_truth, dict)
+        if isinstance(page_truth, dict) and _page_truth_in_document(document, page_truth)
     ]
     report = {
         "ground_truth_available": True,
@@ -73,6 +73,14 @@ def compare_semantic_reading_order(
     report.update(_summarize_pages(page_reports))
     (target / "semantic_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
+
+
+def _page_truth_in_document(document: DocumentIR, page_truth: dict[str, Any]) -> bool:
+    try:
+        page_index = int(page_truth.get("page_index", 0))
+    except (TypeError, ValueError):
+        return False
+    return 0 <= page_index < len(document.pages)
 
 
 def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str, Any]:

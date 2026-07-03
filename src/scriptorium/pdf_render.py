@@ -32,14 +32,19 @@ def render_pdf(
     out_dir: str | Path,
     dpi: int = 192,
     include_svg_background: bool = False,
+    max_pages: int | None = None,
 ) -> RenderedDocument:
     source = Path(pdf_path).resolve()
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+    if max_pages is not None and max_pages <= 0:
+        raise ValueError(f"max_pages must be positive, got {max_pages}")
 
     pages: list[RenderedPage] = []
     with fitz.open(source) as doc:
         for page_index, page in enumerate(doc):
+            if max_pages is not None and len(pages) >= max_pages:
+                break
             pixmap = page.get_pixmap(dpi=dpi, alpha=False)
             image_path = target_dir / f"page_{page_index + 1:04d}.png"
             pixmap.save(image_path)

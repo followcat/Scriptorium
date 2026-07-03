@@ -37,6 +37,7 @@ def run_benchmark(
     pdfs: list[str | Path] | None,
     out_dir: str | Path,
     dpi: int = 192,
+    max_pages: int | None = None,
     structure_jsons: list[str | Path] | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
@@ -47,6 +48,7 @@ def run_benchmark(
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
+    max_pages_request = _max_pages_request(max_pages)
     html_mode_request = _html_mode_request(html_mode)
     font_size_scale_request = _font_size_scale_request(font_size_scale)
     text_fit_request = _text_fit_request(text_fit)
@@ -68,6 +70,7 @@ def run_benchmark(
                     pdf_path,
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
+                    max_pages=max_pages_request,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     raster_policy=raster_policy,
                     html_mode=html_mode_request,
@@ -84,6 +87,7 @@ def run_benchmark(
                     pdf_path,
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
+                    max_pages=max_pages_request,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
@@ -98,6 +102,7 @@ def run_benchmark(
     report = {
         "version": 1,
         "dpi": dpi,
+        "max_pages": max_pages_request,
         "font_profile": font_profile,
         "raster_policy": raster_policy,
         "html_mode": html_mode_request,
@@ -117,6 +122,7 @@ def _run_case(
     pdf_path: Path,
     out_dir: Path,
     dpi: int,
+    max_pages: int | None = None,
     structure_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
@@ -134,6 +140,7 @@ def _run_case(
         out_dir / "pages",
         dpi=dpi,
         include_svg_background=html_mode == "fidelity" and fidelity_background == "svg",
+        max_pages=max_pages,
     )
     timings["render_seconds"] = _elapsed(start)
 
@@ -171,7 +178,7 @@ def _run_case(
     timings["print_pdf_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    quality = compare_pdf_renderings(pdf_path, exported_pdf, out_dir / "quality", dpi=dpi)
+    quality = compare_pdf_renderings(pdf_path, exported_pdf, out_dir / "quality", dpi=dpi, max_pages=max_pages)
     timings["compare_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
@@ -188,6 +195,7 @@ def _run_case(
     return {
         "name": pdf_path.stem,
         "source_pdf": str(pdf_path),
+        "max_pages": max_pages,
         "ir": str(ir_path),
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
@@ -244,6 +252,7 @@ def _run_calibrated_case(
     pdf_path: Path,
     out_dir: Path,
     dpi: int,
+    max_pages: int | None,
     structure_json: Path | None,
     raster_policy: RasterPolicy,
     html_mode: BenchmarkHtmlMode,
@@ -258,6 +267,7 @@ def _run_calibrated_case(
             pdf_path,
             out_dir / _candidate_slug(mode, background, profile, scale, fit),
             dpi=dpi,
+            max_pages=max_pages,
             structure_json=structure_json,
             font_profile=profile,
             raster_policy=raster_policy,
@@ -581,6 +591,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
 def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
     fieldnames = [
         "name",
+        "max_pages",
         "page_count",
         "element_count",
         "editable_element_count",
@@ -774,6 +785,15 @@ def _html_mode_request(html_mode: BenchmarkHtmlMode) -> BenchmarkHtmlMode:
     if html_mode == "auto":
         return "auto"
     return _html_mode_candidates(html_mode)[0]
+
+
+def _max_pages_request(max_pages: int | None) -> int | None:
+    if max_pages is None:
+        return None
+    value = int(max_pages)
+    if value <= 0:
+        raise ValueError(f"max_pages must be positive, got {max_pages}")
+    return value
 
 
 def _fidelity_background_request(

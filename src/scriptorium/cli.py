@@ -41,6 +41,11 @@ def benchmark_command(
     pdf: Optional[list[Path]] = typer.Argument(None, help="Optional PDF files. If omitted, built-in fixtures are generated."),
     out_dir: Path = typer.Option(Path("outputs/benchmark"), help="Benchmark output directory."),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    max_pages: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Limit each benchmark PDF to the first N pages for large external documents.",
+    ),
     font_profile: BenchmarkFontProfile = typer.Option(
         "browser-default",
         help=(
@@ -90,6 +95,7 @@ def benchmark_command(
         pdf,
         out_dir,
         dpi=dpi,
+        max_pages=max_pages,
         structure_jsons=structure_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
@@ -104,6 +110,7 @@ def benchmark_command(
     typer.echo(f"Mean visual similarity: {report['summary'].get('mean_visual_similarity')}")
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
+    typer.echo(f"Max pages: {report.get('max_pages')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
     typer.echo(f"HTML mode: {report.get('html_mode')}")

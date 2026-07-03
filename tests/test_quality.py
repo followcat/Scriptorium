@@ -3,6 +3,7 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
+from scriptorium.pdf_render import render_pdf
 from scriptorium.quality import compare_images, compare_pdf_renderings
 
 
@@ -43,6 +44,21 @@ def test_compare_pdf_renderings_penalizes_page_count_mismatch(tmp_path: Path) ->
     assert report["max_diff_ratio"] == 1
     assert report["pages"][1]["page_match"] is False
     assert report["pages"][1]["mismatch_type"] == "extra_actual_page"
+
+
+def test_pdf_rendering_can_limit_pages(tmp_path: Path) -> None:
+    pdf = tmp_path / "two-page.pdf"
+    _make_blank_pdf(pdf, page_count=2)
+
+    rendered = render_pdf(pdf, tmp_path / "pages", dpi=72, max_pages=1)
+    report = compare_pdf_renderings(pdf, pdf, tmp_path / "quality", dpi=72, max_pages=1)
+
+    assert len(rendered.pages) == 1
+    assert rendered.pages[0].page_index == 0
+    assert report["max_pages"] == 1
+    assert report["expected_page_count"] == 1
+    assert report["actual_page_count"] == 1
+    assert report["page_count_match"] is True
 
 
 def _make_blank_pdf(path: Path, page_count: int) -> None:
