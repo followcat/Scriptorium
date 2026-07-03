@@ -111,6 +111,13 @@ class PairwiseOrderDisagreement:
     disagreement_ratio: float
 
 
+@dataclass(frozen=True)
+class SuccessorOrderDisagreement:
+    edge_count: int
+    disagreement_count: int
+    disagreement_ratio: float
+
+
 def infer_semantic_reading_order(
     bboxes: list[BBox],
     page_width: float,
@@ -228,6 +235,35 @@ def pairwise_order_disagreement(
         pair_count=pair_count,
         disagreement_count=disagreement_count,
         disagreement_ratio=round(disagreement_count / pair_count, 8),
+    )
+
+
+def successor_order_disagreement(
+    reference_order: list[int],
+    candidate_order: list[int],
+) -> SuccessorOrderDisagreement:
+    candidate_items = set(candidate_order)
+    shared_reference = [item for item in reference_order if item in candidate_items]
+    edge_count = max(0, len(shared_reference) - 1)
+    if edge_count == 0:
+        return SuccessorOrderDisagreement(edge_count=0, disagreement_count=0, disagreement_ratio=0.0)
+
+    reference_items = set(reference_order)
+    shared_candidate = [item for item in candidate_order if item in reference_items]
+    candidate_successor_by_item = {
+        item: shared_candidate[index + 1]
+        for index, item in enumerate(shared_candidate[:-1])
+    }
+    correct = sum(
+        1
+        for index, item in enumerate(shared_reference[:-1])
+        if candidate_successor_by_item.get(item) == shared_reference[index + 1]
+    )
+    disagreement_count = edge_count - correct
+    return SuccessorOrderDisagreement(
+        edge_count=edge_count,
+        disagreement_count=disagreement_count,
+        disagreement_ratio=round(disagreement_count / edge_count, 8),
     )
 
 

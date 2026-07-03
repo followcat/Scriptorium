@@ -6,7 +6,12 @@ from scriptorium.html_export import export_html
 from scriptorium.models import BBox
 from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
-from scriptorium.reading_order import infer_box_flow_order, infer_semantic_reading_order, pairwise_order_disagreement
+from scriptorium.reading_order import (
+    infer_box_flow_order,
+    infer_semantic_reading_order,
+    pairwise_order_disagreement,
+    successor_order_disagreement,
+)
 from scriptorium.semantic_quality import compare_semantic_reading_order
 
 
@@ -235,6 +240,27 @@ def test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering() -> None:
     assert disagreement.pair_count == 66
     assert disagreement.disagreement_count > 0
     assert disagreement.disagreement_ratio > 0.2
+
+
+def test_successor_disagreement_counts_adjacent_candidate_edges() -> None:
+    reference_order = [0, 1, 2, 3, 4]
+    candidate_order = [0, 2, 1, 3, 4]
+
+    disagreement = successor_order_disagreement(reference_order, candidate_order)
+
+    assert disagreement.edge_count == 4
+    assert disagreement.disagreement_count == 3
+    assert disagreement.disagreement_ratio == 0.75
+
+
+def test_successor_disagreement_ignores_non_shared_items() -> None:
+    reference_order = [10, 11, 12]
+    candidate_order = [10, 99, 11, 12]
+
+    disagreement = successor_order_disagreement(reference_order, candidate_order)
+
+    assert disagreement.edge_count == 2
+    assert disagreement.disagreement_count == 0
 
 
 def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:

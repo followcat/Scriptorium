@@ -18,7 +18,7 @@ from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_p
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
-from .reading_order import infer_box_flow_order, pairwise_order_disagreement
+from .reading_order import infer_box_flow_order, pairwise_order_disagreement, successor_order_disagreement
 from .semantic_quality import compare_semantic_reading_order
 from .structure_evidence import apply_structure_evidence, load_structure_json
 
@@ -254,6 +254,16 @@ def _run_case(
         "reading_order_box_flow_disagreement_pair_count": stats["reading_order_box_flow_disagreement_pair_count"],
         "reading_order_box_flow_disagreement_ratio": stats["reading_order_box_flow_disagreement_ratio"],
         "reading_order_box_flow_disagreement_page_count": stats["reading_order_box_flow_disagreement_page_count"],
+        "reading_order_box_flow_successor_edge_count": stats["reading_order_box_flow_successor_edge_count"],
+        "reading_order_box_flow_successor_disagreement_count": stats[
+            "reading_order_box_flow_successor_disagreement_count"
+        ],
+        "reading_order_box_flow_successor_disagreement_ratio": stats[
+            "reading_order_box_flow_successor_disagreement_ratio"
+        ],
+        "reading_order_box_flow_successor_disagreement_page_count": stats[
+            "reading_order_box_flow_successor_disagreement_page_count"
+        ],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
         "figure_region_count": stats["figure_region_count"],
@@ -589,6 +599,9 @@ def _reading_order_box_flow_diagnostics(document: DocumentIR) -> dict[str, Any]:
     pair_count = 0
     disagreement_pair_count = 0
     disagreement_page_count = 0
+    successor_edge_count = 0
+    successor_disagreement_count = 0
+    successor_disagreement_page_count = 0
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
         if len(text_elements) < 2:
@@ -611,10 +624,15 @@ def _reading_order_box_flow_diagnostics(document: DocumentIR) -> dict[str, Any]:
             boxes_flow=-0.5,
         )
         disagreement = pairwise_order_disagreement(reference_order, candidate_order)
+        successor_disagreement = successor_order_disagreement(reference_order, candidate_order)
         pair_count += disagreement.pair_count
         disagreement_pair_count += disagreement.disagreement_count
+        successor_edge_count += successor_disagreement.edge_count
+        successor_disagreement_count += successor_disagreement.disagreement_count
         if disagreement.disagreement_count:
             disagreement_page_count += 1
+        if successor_disagreement.disagreement_count:
+            successor_disagreement_page_count += 1
     return {
         "reading_order_box_flow_pair_count": pair_count,
         "reading_order_box_flow_disagreement_pair_count": disagreement_pair_count,
@@ -622,6 +640,15 @@ def _reading_order_box_flow_diagnostics(document: DocumentIR) -> dict[str, Any]:
         if pair_count
         else 0.0,
         "reading_order_box_flow_disagreement_page_count": disagreement_page_count,
+        "reading_order_box_flow_successor_edge_count": successor_edge_count,
+        "reading_order_box_flow_successor_disagreement_count": successor_disagreement_count,
+        "reading_order_box_flow_successor_disagreement_ratio": round(
+            successor_disagreement_count / successor_edge_count,
+            8,
+        )
+        if successor_edge_count
+        else 0.0,
+        "reading_order_box_flow_successor_disagreement_page_count": successor_disagreement_page_count,
     }
 
 
@@ -907,6 +934,20 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_box_flow_disagreement_pages": sum(
             int(case["reading_order_box_flow_disagreement_page_count"]) for case in cases
         ),
+        "total_reading_order_box_flow_successor_edges": sum(
+            int(case["reading_order_box_flow_successor_edge_count"]) for case in cases
+        ),
+        "total_reading_order_box_flow_successor_disagreements": sum(
+            int(case["reading_order_box_flow_successor_disagreement_count"]) for case in cases
+        ),
+        "mean_reading_order_box_flow_successor_disagreement_ratio": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_box_flow_successor_disagreement_count",
+            denominator_key="reading_order_box_flow_successor_edge_count",
+        ),
+        "total_reading_order_box_flow_successor_disagreement_pages": sum(
+            int(case["reading_order_box_flow_successor_disagreement_page_count"]) for case in cases
+        ),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -994,6 +1035,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_box_flow_disagreement_pair_count",
         "reading_order_box_flow_disagreement_ratio",
         "reading_order_box_flow_disagreement_page_count",
+        "reading_order_box_flow_successor_edge_count",
+        "reading_order_box_flow_successor_disagreement_count",
+        "reading_order_box_flow_successor_disagreement_ratio",
+        "reading_order_box_flow_successor_disagreement_page_count",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",
