@@ -344,6 +344,10 @@ Metrics:
 - `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, `relation_graph`, and `external_structure`.
 - `semantic_best_candidate_by_successor`: candidate name with the highest labelled successor-edge accuracy, using pairwise accuracy as the tie-breaker.
 - `semantic_best_candidate_successor_accuracy`: successor-edge accuracy of that best candidate.
+- `semantic_candidate_arbitration_recommendation`: sidecar-scored benchmark recommendation, currently `keep-selected`, `consider-<candidate>`, or `unavailable`.
+- `semantic_candidate_arbitration_candidate`: best scored candidate used for the recommendation.
+- `semantic_candidate_successor_delta`: best candidate successor accuracy minus selected-order successor accuracy.
+- `semantic_candidate_pairwise_delta`: best candidate pairwise accuracy minus selected-order pairwise accuracy.
 - `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
@@ -393,6 +397,7 @@ Latest semantic candidate scoring validation:
 - `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure style evidence has at least two distinct block orders on a page.
 - Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
+- Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
 - Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth` and benchmark field assertions in `tests/test_benchmark.py`.
 
 Built-in semantic candidate baseline:
@@ -402,6 +407,14 @@ Built-in semantic candidate baseline:
 | `outputs/benchmark-semantic-candidate-metrics-v1` | 47/47 | 34/47 | 28/47 | 44/47 | `relation_graph: 2`, `visual_yx: 3` |
 
 This validates the metric and the candidate generation path. It does not promote relation graph to the selected order because selected semantic order already scores 47/47 on these fixtures, and complex external samples still need sidecars or model evidence for correctness scoring.
+
+Built-in arbitration baseline:
+
+| Command Output | Recommendation Counts | Candidate Counts | Mean Successor Delta | Mean Pairwise Delta |
+|---|---|---|---:|---:|
+| `outputs/benchmark-semantic-arbitration-v1` | `keep-selected: 5` | `relation_graph: 2`, `visual_yx: 3` | -0.06 | -0.02181818 |
+
+This validates that the benchmark can keep a strong selected order even when another candidate is close. A future runtime selector should only switch when independent evidence predicts a positive delta before sidecar labels are known.
 
 Latest caption-flow validation:
 
