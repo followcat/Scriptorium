@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-48%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-50%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -96,6 +96,13 @@ Transformer-XL 这类 A4 变体页面曾受 Chromium 打印 1px 宽度量化影�
 | ACL paper: Transformer-XL | 0.95679576 | 0.97636829 | 0.98096887 | 0.98096887 | `fidelity/raster` |
 | Hacker News live page printed by Playwright | 0.9800288 | 0.99490923 | 1.0 | 1.0 | `fidelity/raster` |
 | Three-sample mean | 0.96840901 | 0.98645759 | 0.99365629 | 0.99365629 | mixed |
+
+Additional complex baselines now cover a public company annual report and an image-only ecommerce homepage screenshot:
+
+| Sample | Source | Pages Scored | Selected Path | Visual Similarity | Elements | Editable | Images | Shapes | Semantic GT |
+|---|---|---:|---|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | public annual report PDF | 12 / 345 | `fidelity/raster` | 0.9795117 | 815 | 521 | 15 | 279 | no |
+| JD homepage full screenshot PDF | Playwright full-page screenshot | 1 / 1 | `fidelity/raster` | 0.99576887 | 1 | 0 | 1 | 0 | no |
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -241,6 +248,17 @@ Run benchmark on your own PDFs:
 scriptorium benchmark path/to/file1.pdf path/to/file2.pdf --out-dir outputs/my-benchmark --dpi 144
 ```
 
+For very large external documents, score a stable front-matter sample:
+
+```bash
+scriptorium benchmark path/to/annual-report.pdf \
+  --max-pages 12 \
+  --html-mode auto \
+  --fidelity-background auto \
+  --out-dir outputs/annual-report-benchmark \
+  --dpi 144
+```
+
 Try the local URW/DejaVu font fallback profile as an A/B experiment:
 
 ```bash
@@ -348,6 +366,7 @@ Tracked metrics:
 - `worst_page`
 - page count match
 - page dimension match
+- max pages limit when `--max-pages` is used
 - image count
 - multi-column element count
 - column-flow element count
@@ -410,6 +429,7 @@ Core files:
 - `src/scriptorium/xml_edit.py`: XML node edit round trip
 - `src/scriptorium/benchmark.py`: reproducible quality benchmark
 - `docs/optimization-roadmap.md`: reading-order and complex-page optimization plan
+- `docs/external-benchmarks.md`: reproducible external source list and current sample scores
 
 ## Data Model
 
@@ -444,6 +464,7 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 - `scriptorium benchmark --text-fit auto` compares normal editable HTML text against an SVG fitted text layer plus editable proxy, then records the selected candidate
 - `scriptorium benchmark --html-mode fidelity` benchmarks the editable overlay path for source-preservation quality and supports SVG/raster page backgrounds plus edited/translated replacement overlays
 - `scriptorium benchmark --html-mode auto --fidelity-background auto` compares structured redraw, SVG fidelity, and raster fidelity candidates, then records the selected visual path
+- `scriptorium benchmark --max-pages N` limits each input to the first N pages, useful for large annual reports and manuals while keeping the source PDF intact
 - `--raster-policy dense` is the stable native fallback; `--raster-policy tables` is available as an explicit experiment, but current real-paper/web A/B results did not justify making table-region rasterization the default
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
@@ -462,9 +483,9 @@ pytest
 Current local test baseline:
 
 ```text
-48 passed
+50 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, recursive XY-Cut semantic order for sectioned multi-column pages, reading-order risk diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, reading-order risk diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.

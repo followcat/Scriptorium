@@ -196,8 +196,20 @@ The benchmark command is the baseline for future optimization:
 scriptorium benchmark --out-dir outputs/benchmark-baseline --dpi 192
 ```
 
+Large external documents can be scored with a stable front-matter sample:
+
+```bash
+scriptorium benchmark data/external/puma-2024-annual-report.pdf \
+  --max-pages 12 \
+  --html-mode auto \
+  --fidelity-background auto \
+  --out-dir outputs/external/puma-2024-annual-report-benchmark \
+  --dpi 144
+```
+
 Metrics:
 
+- `max_pages`: optional first-N-pages benchmark limit. The source PDF remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.
 - `max_diff_ratio`: maximum normalized page difference between original PDF render and structured HTML-to-PDF render. Missing/extra pages are scored as `1.0`; page dimension mismatches add a size penalty instead of silently resizing away the mismatch.
 - `mean_diff_ratio`: average page difference across all matched and unmatched pages.
 - `p95_diff_ratio`: 95th percentile diff ratio for the compared page set.
@@ -244,4 +256,4 @@ Metrics:
 
 Benchmark PDF export normalizes page boxes to source dimensions when the `DocumentIR` page sizes are available, so a browser print-unit mismatch is reported as visual content difference only if pixels still differ after the page dimensions match.
 
-Current baseline artifacts live under `outputs/benchmark-baseline/`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
+Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.

@@ -39,6 +39,8 @@ Current benchmark coverage:
 | arXiv Attention paper | 163 | partial | 1.0 | 0.96840246 |
 | ACL Transformer-XL paper | 1213 | partial | 1.0 | 0.95679576 |
 | Hacker News print PDF | 0 | partial | 1.0 | 0.9800288 |
+| PUMA 2024 Annual Report, first 12 pages | 337 | no | n/a | 0.9795117 |
+| JD homepage screenshot PDF | 0 | no | n/a | 0.99576887 |
 
 Current `--font-profile auto` sweep:
 
@@ -89,6 +91,13 @@ Current `--html-mode auto --fidelity-background auto` sweep:
 
 The fidelity path now has a minimal edit-print path: edited or translated nodes print as local white-background replacement overlays. Raster backgrounds pushed two current real samples to perfect visual parity and raised Transformer-XL from `0.97636829` to `0.98096887`, but SVG backgrounds remain important for vector inspection and future non-raster editing strategies. The remaining Transformer-XL difference is no longer reading-order driven: semantic order is `1.0`, risk is `0.08879982 / low`, and the worst raster diff is page 7 with `0.01903113`.
 
+Current additional complex-source baselines:
+
+| Sample | Scope | Structured visual | SVG fidelity | Raster fidelity | Selected path | Notes |
+|---|---:|---:|---:|---:|---|---|
+| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, high semantic-risk without sidecar |
+| JD homepage screenshot PDF | 1 / 1 page | 0.99536129 | 0.99536129 | 0.99576887 | `fidelity/raster` | image-only screenshot PDF, visual benchmark only |
+
 Current reading-order risk diagnostics example:
 
 | Sample | Risk score | Risk level | Column-geometry pages | Visual-yx column pages | Unlabeled risk text |
@@ -101,7 +110,7 @@ Current reading-order risk diagnostics example:
 
 1. Expand real semantic ground truth for complex PDFs
 
-   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. Expand this to more pages and more document families, especially equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
+   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. The PUMA annual report first-12-pages benchmark now adds a high-risk non-paper sample with 337 multi-column elements and no semantic sidecar. Expand this to more pages and more document families, especially annual reports, equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
 
 2. Recursive XY-Cut refinement
 
@@ -156,3 +165,4 @@ Current reading-order risk diagnostics example:
 - MuPDF/SVG plus transparent text-layer PDF-to-HTML pattern: https://github.com/OskarLebuda/rs-pdf
 - BuildVu discussion of SVG/HTML5 hybrid PDF-to-HTML layout preservation and text modes: https://blog.idrsolutions.com/convert-pdf-to-html5-preserving-layout/
 - Render-and-compare visual evaluation dataset pattern for OCR/HTML reconstruction: https://huggingface.co/datasets/gt-free-ocr-metrics/omnidocbench-render-compare
+- External benchmark sample manifest: docs/external-benchmarks.md
