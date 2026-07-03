@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
-from scriptorium.semantic_quality import compare_semantic_reading_order
+from scriptorium.semantic_quality import compare_semantic_reading_order, semantic_ground_truth_candidates
 
 
 def test_ordered_subsequence_ground_truth_ignores_unlabeled_text(tmp_path: Path, monkeypatch) -> None:
@@ -47,26 +47,80 @@ def test_ordered_subsequence_ground_truth_ignores_unlabeled_text(tmp_path: Path,
     assert page["match_mode"] == "ordered-subsequence"
     assert page["matched_text_count"] == 3
     assert page["ignored_text_count"] == 3
+    assert [item["text"] for item in page["ignored_texts"]] == [
+        "Running header",
+        "Unlabeled paragraph line",
+        "Footer",
+    ]
+    assert page["ignored_text_zone_counts"] == {"body": 1, "footer": 1, "header": 1}
+    assert page["ignored_text_role_counts"] == {"footer": 1, "paragraph": 1, "running-header": 1}
+    assert page["ignored_text_source_counts"] == {"unit-test": 3}
     assert page["extra_text_count"] == 0
     assert page["sequence_similarity"] == 1
     assert page["pairwise_order_accuracy"] == 1
     assert report["semantic_ignored_text_count"] == 3
+    assert report["semantic_ignored_text_zone_counts"] == {"body": 1, "footer": 1, "header": 1}
+    assert report["semantic_ignored_text_role_counts"] == {"footer": 1, "paragraph": 1, "running-header": 1}
+    assert report["semantic_ignored_text_source_counts"] == {"unit-test": 3}
+    assert report["semantic_order_pair_accuracy"] == 1
+
+
+def test_repo_ground_truth_can_be_scoped_by_parent_directory(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    sidecar_dir = tmp_path / "benchmarks" / "semantic-ground-truth"
+    sidecar_dir.mkdir(parents=True)
+    source_pdf = tmp_path / "external" / "web-hn" / "input.pdf"
+    source_pdf.parent.mkdir(parents=True)
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    (sidecar_dir / "web-hn.input.semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["Front page", "First item"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["Front page", "First item", "Ignored footer"])
+
+    candidates = semantic_ground_truth_candidates(source_pdf)
+    report = compare_semantic_reading_order(document, source_pdf, tmp_path / "semantic")
+
+    assert any(path.name == "web-hn.input.semantic-order.json" for path in candidates)
+    assert report["ground_truth"].endswith("benchmarks/semantic-ground-truth/web-hn.input.semantic-order.json")
     assert report["semantic_order_pair_accuracy"] == 1
 
 
 def _document_with_texts(texts: list[str]) -> DocumentIR:
-    elements = [
-        ElementIR(
-            id=f"e{index}",
-            page_index=0,
-            type="text",
-            bbox_pdf=BBox(x0=10, y0=10 + index * 12, x1=120, y1=20 + index * 12),
-            bbox_px=BBox(x0=10, y0=10 + index * 12, x1=120, y1=20 + index * 12),
-            source_text=text,
-            reading_order=index + 1,
+    elements = []
+    for index, text in enumerate(texts):
+        if text == "Running header":
+            y0 = 8
+            role = "running-header"
+        elif text in {"Footer", "Ignored footer"}:
+            y0 = 282
+            role = "footer"
+        else:
+            y0 = 70 + index * 12
+            role = "paragraph"
+        elements.append(
+            ElementIR(
+                id=f"e{index}",
+                page_index=0,
+                type="text",
+                bbox_pdf=BBox(x0=10, y0=y0, x1=120, y1=y0 + 10),
+                bbox_px=BBox(x0=10, y0=y0, x1=120, y1=y0 + 10),
+                source_text=text,
+                reading_order=index + 1,
+                metadata={"annotation": {"role": role, "source_kind": "unit-test"}},
+            )
         )
-        for index, text in enumerate(texts)
-    ]
     page = PageIR(
         page_index=0,
         width_pt=200,

@@ -256,6 +256,9 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_pairwise_correct_count": report.get("semantic_pairwise_correct_count") if available else 0,
         "semantic_pairwise_total_count": report.get("semantic_pairwise_total_count") if available else 0,
         "semantic_ignored_text_count": report.get("semantic_ignored_text_count") if available else 0,
+        "semantic_ignored_text_zone_counts": report.get("semantic_ignored_text_zone_counts") if available else {},
+        "semantic_ignored_text_role_counts": report.get("semantic_ignored_text_role_counts") if available else {},
+        "semantic_ignored_text_source_counts": report.get("semantic_ignored_text_source_counts") if available else {},
         "semantic_missing_text_count": report.get("semantic_missing_text_count") if available else 0,
         "semantic_extra_text_count": report.get("semantic_extra_text_count") if available else 0,
     }
@@ -270,6 +273,9 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_semantic_exact_page_match_rate": None,
             "total_semantic_expected_text_count": 0,
             "total_semantic_ignored_text_count": 0,
+            "total_semantic_ignored_text_zone_counts": {},
+            "total_semantic_ignored_text_role_counts": {},
+            "total_semantic_ignored_text_source_counts": {},
             "total_semantic_missing_text_count": 0,
             "total_semantic_extra_text_count": 0,
         }
@@ -292,9 +298,21 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "total_semantic_expected_text_count": expected_count,
         "total_semantic_ignored_text_count": sum(int(case["semantic_ignored_text_count"]) for case in cases),
+        "total_semantic_ignored_text_zone_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_zone_counts"),
+        "total_semantic_ignored_text_role_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_role_counts"),
+        "total_semantic_ignored_text_source_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_source_counts"),
         "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
         "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
     }
+
+
+def _sum_case_count_dicts(cases: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for case in cases:
+        value = case.get(key)
+        if isinstance(value, dict):
+            counts.update({str(item_key): int(item_value) for item_key, item_value in value.items()})
+    return dict(sorted(counts.items()))
 
 
 def _percentile(values: list[float], percentile: float) -> float:

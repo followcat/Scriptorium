@@ -39,4 +39,4 @@ def bbox_intersects_page(bbox: BBox, width: float, height: float) -> bool:
 
 def reading_order_key(bbox: BBox) -> tuple[float, float]:
     # Group lines loosely by top edge, then scan left to right.
-    return (round(bbox.y0 / 12.0) * 12.0, bbox.x0)
+    return (round(bbox.y0 / 6.0) * 6.0, bbox.x0)

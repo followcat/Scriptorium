@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any
 
@@ -13,14 +13,29 @@ def semantic_ground_truth_path(pdf_path: str | Path) -> Path:
 
 
 def semantic_ground_truth_candidates(pdf_path: str | Path) -> list[Path]:
-    adjacent = semantic_ground_truth_path(pdf_path)
-    cwd_sidecar = Path.cwd() / "benchmarks" / "semantic-ground-truth" / adjacent.name
-    source_sidecar = Path(__file__).resolve().parents[2] / "benchmarks" / "semantic-ground-truth" / adjacent.name
+    source_pdf = Path(pdf_path)
+    adjacent = semantic_ground_truth_path(source_pdf)
+    repo_sidecar_names = _repo_sidecar_names(source_pdf)
+    cwd_sidecar_dir = Path.cwd() / "benchmarks" / "semantic-ground-truth"
+    source_sidecar_dir = Path(__file__).resolve().parents[2] / "benchmarks" / "semantic-ground-truth"
     candidates: list[Path] = []
-    for path in (adjacent, cwd_sidecar, source_sidecar):
+    for path in (
+        adjacent,
+        *(cwd_sidecar_dir / name for name in repo_sidecar_names),
+        *(source_sidecar_dir / name for name in repo_sidecar_names),
+    ):
         if path not in candidates:
             candidates.append(path)
     return candidates
+
+
+def _repo_sidecar_names(pdf_path: Path) -> list[str]:
+    base_name = semantic_ground_truth_path(pdf_path).name
+    parent_name = pdf_path.parent.name.strip()
+    names = [base_name]
+    if parent_name:
+        names.append(f"{parent_name}.{base_name}")
+    return names
 
 
 def compare_semantic_reading_order(
@@ -65,16 +80,21 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
     match_mode = str(page_truth.get("match_mode", "full-sequence"))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
     page = document.pages[page_index]
-    actual = [
-        element.source_text.strip()
+    actual_elements = [
+        element
         for element in sorted(page.elements, key=lambda item: (item.reading_order, item.bbox_pdf.y0, item.bbox_pdf.x0))
         if element.source_text.strip()
     ]
+    actual = [element.source_text.strip() for element in actual_elements]
 
     matched_positions = _matched_positions(expected, actual)
     matched_count = sum(1 for position in matched_positions if position is not None)
     missing_texts = [text for text, position in zip(expected, matched_positions) if position is None]
     extra_texts = [] if match_mode == "ordered-subsequence" else _extra_texts(expected, actual)
+    ignored_texts = _ignored_text_entries(actual_elements, matched_positions, page.height_pt) if match_mode == "ordered-subsequence" else []
+    ignored_zone_counts = Counter(str(item["zone"]) for item in ignored_texts)
+    ignored_role_counts = Counter(str(item["role"]) for item in ignored_texts)
+    ignored_source_counts = Counter(str(item["source"]) for item in ignored_texts)
 
     correct_pairs, total_pairs = _pairwise_order_counts(matched_positions)
     if match_mode == "ordered-subsequence":
@@ -92,6 +112,10 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         "actual_text_count": len(actual),
         "matched_text_count": matched_count,
         "ignored_text_count": max(0, len(actual) - matched_count) if match_mode == "ordered-subsequence" else 0,
+        "ignored_texts": ignored_texts,
+        "ignored_text_zone_counts": dict(sorted(ignored_zone_counts.items())),
+        "ignored_text_role_counts": dict(sorted(ignored_role_counts.items())),
+        "ignored_text_source_counts": dict(sorted(ignored_source_counts.items())),
         "missing_text_count": len(missing_texts),
         "extra_text_count": len(extra_texts),
         "missing_texts": missing_texts,
@@ -105,6 +129,60 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         "expected_sequence": expected,
         "actual_sequence": actual,
     }
+
+
+def _ignored_text_entries(
+    actual_elements: list[Any],
+    matched_positions: list[int | None],
+    page_height: float,
+) -> list[dict[str, Any]]:
+    matched_actual_positions = {position for position in matched_positions if position is not None}
+    ignored: list[dict[str, Any]] = []
+    for actual_index, element in enumerate(actual_elements):
+        if actual_index in matched_actual_positions:
+            continue
+        ignored.append(
+            {
+                "text": element.source_text.strip(),
+                "reading_order": element.reading_order,
+                "bbox_pdf": element.bbox_pdf.as_list(),
+                "zone": _page_zone(element.bbox_pdf, page_height),
+                "role": _element_role(element),
+                "source": _element_source(element),
+            }
+        )
+    return ignored
+
+
+def _page_zone(bbox: Any, page_height: float) -> str:
+    height = max(float(page_height), 1.0)
+    y0_ratio = float(bbox.y0) / height
+    y1_ratio = float(bbox.y1) / height
+    if y1_ratio <= 0.1:
+        return "header"
+    if y0_ratio >= 0.92:
+        return "footer"
+    if y0_ratio >= 0.72:
+        return "bottom"
+    return "body"
+
+
+def _element_role(element: Any) -> str:
+    annotation = element.metadata.get("annotation")
+    if isinstance(annotation, dict) and annotation.get("role"):
+        return str(annotation["role"])
+    if element.metadata.get("role"):
+        return str(element.metadata["role"])
+    return str(element.type or "unknown")
+
+
+def _element_source(element: Any) -> str:
+    annotation = element.metadata.get("annotation")
+    if isinstance(annotation, dict) and annotation.get("source_kind"):
+        return str(annotation["source_kind"])
+    if element.metadata.get("source"):
+        return str(element.metadata["source"])
+    return "unknown"
 
 
 def _matched_positions(expected: list[str], actual: list[str]) -> list[int | None]:
@@ -180,6 +258,9 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_actual_text_count": actual_count,
         "semantic_matched_text_count": matched_count,
         "semantic_ignored_text_count": sum(int(page["ignored_text_count"]) for page in pages),
+        "semantic_ignored_text_zone_counts": _sum_page_count_dicts(pages, "ignored_text_zone_counts"),
+        "semantic_ignored_text_role_counts": _sum_page_count_dicts(pages, "ignored_text_role_counts"),
+        "semantic_ignored_text_source_counts": _sum_page_count_dicts(pages, "ignored_text_source_counts"),
         "semantic_missing_text_count": sum(int(page["missing_text_count"]) for page in pages),
         "semantic_extra_text_count": sum(int(page["extra_text_count"]) for page in pages),
         "semantic_sequence_edit_distance": edit_distance,
@@ -191,6 +272,15 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),
     }
+
+
+def _sum_page_count_dicts(pages: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for page in pages:
+        value = page.get(key)
+        if isinstance(value, dict):
+            counts.update({str(item_key): int(item_value) for item_key, item_value in value.items()})
+    return dict(sorted(counts.items()))
 
 
 def _round_ratio(value: float) -> float:

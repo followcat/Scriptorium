@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "Partial semantic reading-order anchors for a Hacker News front page printed to PDF by Playwright. The labels focus on the navigation, dense ranked-story list, and footer/search flow.",
+  "source": "https://news.ycombinator.com/",
+  "source_pdf": "outputs/external/web-hn/input.pdf",
+  "pages": [
+    {
+      "page_index": 0,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Hacker News new | past | comments | ask | show | jobs | submit",
+        "login",
+        "1.",
+        "Vite+ Beta (voidzero.dev)",
+        "92 points by Erenay09 2 hours ago | hide | 48 comments",
+        "2.",
+        "This blog is written in en-GB (shkspr.mobi)",
+        "198 points by mritzmann 1 hour ago | hide | 115 comments",
+        "9.",
+        "The fall of the theorem economy (davidbessis.substack.com)",
+        "131 points by varjag 5 hours ago | hide | 46 comments",
+        "10.",
+        "An AI board that pre-registers its bets – bet #1 just graded wrong (github.com/danilushin)",
+        "3 points by dilushin 11 minutes ago | hide | discuss",
+        "17.",
+        "Why I'm Forced to Say Farewell: Google Management Has Lost Its Moral Compass (docs.google.com)",
+        "147 points by vrganj 3 hours ago | hide | 80 comments",
+        "18.",
+        "Bring back crappy forums (tedium.co)",
+        "384 points by pentagrama 11 hours ago | hide | 249 comments",
+        "30.",
+        "The Underhanded C Contest (underhanded-c.org)",
+        "110 points by ccabraldev 14 hours ago | hide | 12 comments"
+      ]
+    },
+    {
+      "page_index": 1,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "More",
+        "Guidelines | FAQ | Lists | API | Security | Legal | Apply to YC | Contact",
+        "Search:"
+      ]
+    }
+  ]
+}
