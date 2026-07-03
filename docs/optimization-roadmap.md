@@ -10,7 +10,7 @@ This project optimizes two different outcomes:
 - `recursive-xy-cut-v1` recursively segments pages with horizontal and vertical whitespace cuts, so section headings can stay between independent column regions.
 - `column-flow-v1` detects common two-column text regions and orders text left-column first, then right-column.
 - Table-like grids stay row-major so table cells are not read as document columns.
-- Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings as SVG, and uses local raster fallback for dense vector figures.
+- Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
@@ -22,10 +22,10 @@ Current benchmark coverage:
 
 | Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
 |---|---:|---:|---:|---:|
-| Built-in fixtures | 20 | yes | 1.0 | 0.98966212 |
+| Built-in fixtures | 20 | yes | 1.0 | 0.99036719 |
 | arXiv Attention paper | 163 | partial | 1.0 | 0.93202666 |
 | ACL Transformer-XL paper | 880 | partial | 1.0 | 0.93358709 |
-| Hacker News print PDF | 0 | no | n/a | 0.97970864 |
+| Hacker News print PDF | 0 | no | n/a | 0.9800288 |
 
 ## Next Optimization Options
 
@@ -39,7 +39,7 @@ Current benchmark coverage:
 
 3. Vector renderer refinement
 
-   Local raster fallback improved dense figures, but it sacrifices editability inside diagrams. The next step is preserving PDF clipping, opacity, blend modes, and grouped SVG paths so more complex drawings can remain structured.
+   SVG path output now handles supported PyMuPDF drawing items (`l`, `c`, `re`, `qu`) without using rectangular approximations. Dense local raster fallback still sacrifices editability inside diagrams. The next step is preserving PDF clipping, blend modes, masks, and grouped draw ordering so more complex drawings can remain structured.
 
 4. Box-flow scoring backend
 

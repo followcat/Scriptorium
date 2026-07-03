@@ -22,7 +22,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - native PDF lines become editable text elements with font size, font family, weight, color, bbox, and source metadata
    - native PDF spans are preserved under `element.metadata.text_runs` with run text, bbox, font, weight, style, color, script, and source coordinates
    - native PDF image blocks become local `image` elements with `source_crop`, bbox, dimensions, and `native-image` source metadata
-   - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`; simple lines keep `line_points_pdf` and render as SVG lines
+   - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`; simple lines keep `line_points_pdf`, and supported multi-item drawing paths keep `svg_path_pdf`
    - dense vector regions can become local raster fallback image elements with `native-raster-region` source metadata
    - OCR fallback elements keep bbox, type, confidence, crop, and style hints
 2. `annotate_document()` assigns recognized marks:
@@ -70,14 +70,15 @@ Text runs are a source-fidelity layer, not the edit storage model. When `edited_
 
 Complex scientific PDFs often lose visual score for reasons unrelated to reading order: embedded figures are image blocks, LaTeX fonts are not named like browser fonts, and dense vector graphics may depend on transparency, clipping, and draw ordering that a simple rectangle exporter cannot reproduce.
 
-The native PDF path now handles three cases:
+The native PDF path now handles these cases:
 
 - `native-image`: PyMuPDF `get_text("dict")` image blocks are written as local image assets and exported as positioned image elements. These are source PDF image blocks, not whole-page screenshots.
 - Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
 - Structured text lines keep `white-space: pre` and add `text-align-last: justify` in `structured` mode. Each line still uses its extracted PDF bbox, but the browser can expand word spacing to match justified PDF lines more closely.
+- `native-drawing`: simple lines render as SVG `<line>`. Supported non-rectangular drawing items (`l`, `c`, `re`, `qu`) render as positioned SVG `<path>` with fill/stroke opacity, avoiding the previous rectangular approximation for polygons and rounded paths.
 - `native-raster-region`: when a page has a dense vector cluster with many line drawings, Scriptorium clips just that local region from the source PDF and exports it as one image node. Text and shape nodes whose centers fall inside that region are hidden to avoid duplicate rendering. Captions and surrounding body text remain editable.
 
-This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, and simple drawings stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required transparency and clipping semantics.
+This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, simple drawings, and supported SVG paths stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required clipping, grouping, and blend-mode semantics.
 
 ## Reading Order Layer
 
