@@ -19,6 +19,7 @@ This project optimizes two different outcomes:
 - Structured HTML text lines use PDF bbox-width alignment (`text-align-last: justify`) to better reproduce justified PDF word spacing while keeping editable source text.
 - Short superscript/subscript text runs can be positioned by source span bbox, with guards that avoid long baseline-only body lines.
 - `column-flow-v1` can detect real academic two-column pages from repeated left-edge anchors, with coverage checks that avoid sparse author grids.
+- Mixed academic pages can now bypass the table-grid guard when repeated left-edge anchors strongly cover the body text, so formula/table noise no longer forces the whole page back to visual order.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
@@ -33,7 +34,7 @@ Current benchmark coverage:
 |---|---:|---:|---:|---:|
 | Built-in fixtures | 20 | yes | 1.0 | 0.99036719 |
 | arXiv Attention paper | 163 | partial | 1.0 | 0.96840246 |
-| ACL Transformer-XL paper | 880 | partial | 1.0 | 0.95658128 |
+| ACL Transformer-XL paper | 1213 | partial | 1.0 | 0.95658128 |
 | Hacker News print PDF | 0 | partial | 1.0 | 0.9800288 |
 
 Current `--font-profile auto` sweep:
@@ -81,6 +82,8 @@ Current reading-order risk diagnostics example:
 | Sample | Risk score | Risk level | Column-geometry pages | Visual-yx column pages | Unlabeled risk text |
 |---|---:|---|---:|---:|---:|
 | arXiv Attention paper with partial sidecar | 0.07829172 | low | 3 | 1 | 147 |
+| ACL Transformer-XL before mixed-layout guard refinement | 0.17061801 | medium | 10 | 3 | 277 |
+| ACL Transformer-XL after mixed-layout guard refinement | 0.08879982 | low | 10 | 1 | 277 |
 
 ## Next Optimization Options
 
@@ -90,7 +93,7 @@ Current reading-order risk diagnostics example:
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Next refinements should add table-aware two-column table handling, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated two-column anchors and can split mixed table/body pages when anchors cover enough body text. Next refinements should add table-aware two-column table handling, footer/header suppression, figure/caption proximity, and confidence scoring so `auto` can choose between recursive cuts and fallback order more transparently.
 
 3. Vector renderer refinement
 

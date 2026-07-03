@@ -118,6 +118,57 @@ def test_column_flow_detects_academic_columns_from_repeated_left_edges() -> None
     assert all(by_item[index].strategy == "column-flow-v1" for index in left_indices + right_indices)
 
 
+def test_column_flow_tolerates_formula_noise_between_academic_columns() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(20):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=64 + row * 13.5, x1=290, y1=74 + row * 13.5))
+        right_x0 = 307 if row % 3 else 318
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=right_x0, y0=64 + row * 13.5, x1=526, y1=74 + row * 13.5))
+
+    for row in range(18):
+        bboxes.append(BBox(x0=180 + (row % 5) * 23, y0=74 + row * 12.5, x1=203 + (row % 5) * 23, y1=84 + row * 12.5))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+
+
+def test_table_grid_guard_allows_strong_mixed_layout_columns() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(14):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=70 + row * 11, x1=218, y1=79 + row * 11))
+        bboxes.append(BBox(x0=244, y0=70 + row * 11, x1=264, y1=79 + row * 11))
+        bboxes.append(BBox(x0=276, y0=70 + row * 11, x1=292, y1=79 + row * 11))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=307, y0=70 + row * 11, x1=526, y1=79 + row * 11))
+    for row in range(14, 22):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=70 + row * 11, x1=290, y1=79 + row * 11))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=307, y0=70 + row * 11, x1=526, y1=79 + row * 11))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+
+
 def test_column_flow_does_not_treat_sparse_author_grid_as_body_columns() -> None:
     bboxes = [
         BBox(x0=124, y0=72, x1=488, y1=84),

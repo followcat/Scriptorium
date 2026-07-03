@@ -123,12 +123,14 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `semantic_order`: reading order used by XML/DOM/export consumers.
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
-- Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It requires enough repeated anchors per column and at least 55% coverage of candidate body lines, so sparse author grids do not become false two-column pages.
+- Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It requires enough repeated anchors per column and at least 45% coverage of candidate body lines, so sparse author grids do not become false two-column pages while formula/noise boxes between columns do not force fallback.
 - Visual row ordering uses a small row bucket to absorb tiny PDF extraction offsets while keeping dense list rows separate, which matters for web-to-PDF ranked lists.
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
-The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
+The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated two-column anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text. This lets pages with a table/formula area plus normal two-column prose keep human reading order without breaking pure tables.
+
+The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
 
 - A pdfminer.six-style box-flow scorer for pages that need a continuous horizontal-vs-vertical ordering tradeoff.
 - Optional model/layout backends such as Docling, LayoutParser, PaddleOCR-VL, or PP-Structure outputs when available.

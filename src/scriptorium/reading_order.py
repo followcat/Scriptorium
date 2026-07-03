@@ -347,10 +347,12 @@ def _infer_column_clusters(bboxes: list[BBox], page_width: float, page_height: f
     if len(candidate_indices) < 6:
         return [list(range(len(bboxes)))]
 
+    anchored_columns = _infer_repeated_start_columns(candidate_indices, bboxes, page_width)
     if _looks_like_table_grid([bboxes[index] for index in candidate_indices], page_width):
+        if len(anchored_columns) >= 2 and _anchor_coverage(anchored_columns, candidate_indices) >= 0.6:
+            return anchored_columns
         return [list(range(len(bboxes)))]
 
-    anchored_columns = _infer_repeated_start_columns(candidate_indices, bboxes, page_width)
     if len(anchored_columns) >= 2:
         return anchored_columns
 
@@ -404,9 +406,13 @@ def _infer_repeated_start_columns(
         return []
     columns = sorted([best_pair[1], best_pair[2]], key=lambda cluster: _cluster_x_center(cluster, bboxes))
     anchor_coverage = sum(len(cluster) for cluster in columns) / max(len(indices), 1)
-    if anchor_coverage < 0.55:
+    if anchor_coverage < 0.45:
         return []
     return columns
+
+
+def _anchor_coverage(columns: list[list[int]], indices: list[int]) -> float:
+    return sum(len(column) for column in columns) / max(len(indices), 1)
 
 
 def _split_column_cluster(
