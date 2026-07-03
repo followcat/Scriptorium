@@ -71,7 +71,7 @@ PUMA annual report, first 12 pages:
 
 ```bash
 ./.venv/bin/scriptorium benchmark data/external/puma-2024-annual-report.pdf \
-  --out-dir outputs/external/puma-2024-annual-report-spatial-graph-v1 \
+  --out-dir outputs/external/puma-2024-annual-report-box-flow-diagnostics \
   --dpi 144 \
   --max-pages 12 \
   --html-mode auto \
@@ -82,7 +82,7 @@ JD screenshot PDF:
 
 ```bash
 ./.venv/bin/scriptorium benchmark outputs/external/jd-home/input.pdf \
-  --out-dir outputs/external/jd-home-spatial-graph-v1 \
+  --out-dir outputs/external/jd-home-box-flow-diagnostics \
   --dpi 144 \
   --html-mode auto \
   --fidelity-background auto
@@ -90,13 +90,15 @@ JD screenshot PDF:
 
 ## Current Results
 
-| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Box-Flow Disagreement | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0.17460108 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0.42778588 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 
 PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 0 table-like visual-yx pages. The current mixed-table/artifact/sidebar/footnote pass reports 99 direct column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, 36 right-side sidebar/marginalia elements, and 2 footnote elements, keeping detected local table islands row-major while surrounding body text can still use column flow.
 
-Spatial-graph v1 keeps the same PUMA/JD external scores while adding a guarded weak-column fallback and explicit `spatial_graph_element_count` diagnostics. Both current external cases report 0 spatial-graph nodes because stronger existing paths win first. PUMA has no pure `table-row-major-v1` nodes in the sampled pages because table-like regions are handled as mixed table islands; it still reports 36 `sidebar-secondary-flow` / `right-sidebar` evidence hits, 2 `footnote-secondary-flow` / `bottom-note-zone` evidence hits, 46 `table-island-row-major` hits, 20 `page-edge-artifact` hits, 163 `column-flow` hits, and 271 `single-column-visual-order` hits. JD reports 134 `recursive-xy-cut` OCR anchors with horizontal/vertical whitespace-cut evidence.
+Box-flow diagnostics keep the same PUMA/JD external scores while adding a candidate-order disagreement signal. Both current external cases report 0 spatial-graph nodes because stronger existing paths win first. PUMA has no pure `table-row-major-v1` nodes in the sampled pages because table-like regions are handled as mixed table islands; it still reports 36 `sidebar-secondary-flow` / `right-sidebar` evidence hits, 2 `footnote-secondary-flow` / `bottom-note-zone` evidence hits, 46 `table-island-row-major` hits, 20 `page-edge-artifact` hits, 163 `column-flow` hits, and 271 `single-column-visual-order` hits. JD reports 134 `recursive-xy-cut` OCR anchors with horizontal/vertical whitespace-cut evidence.
+
+The box-flow disagreement ratio is not a correctness score. PUMA's `0.17460108` indicates moderate candidate disagreement across 11 sampled pages; JD's `0.42778588` is high and expected for dense screenshot/OCR anchors. These values are useful for selecting pages that need semantic sidecars or external Paddle/PP-Structure/Docling evidence before changing ordering rules.
 
 JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its OCR text now stays out of the mixed-table strategy after the duplicate-slot formula/table guard and is handled by recursive XY-Cut. Its reading risk is high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
