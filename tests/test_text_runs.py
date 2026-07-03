@@ -4,7 +4,7 @@ import fitz
 
 from scriptorium.annotations import annotate_document
 from scriptorium.html_export import export_html
-from scriptorium.native_pdf import extract_native_pdf_to_ir
+from scriptorium.native_pdf import _css_font_family, extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
 
 
@@ -55,6 +55,14 @@ def test_structured_html_renders_inline_runs_until_element_is_edited(tmp_path: P
 
     assert 'class="text-run"' not in edited_html
     assert "Edited plain text" in edited_html
+
+
+def test_common_pdf_fonts_map_to_closer_browser_families() -> None:
+    assert _css_font_family("AECCXO+NimbusRomNo9L-Regu").startswith("Nimbus Roman")
+    assert _css_font_family("RCUMTF+NimbusRomNo9L-Medi").startswith("Nimbus Roman")
+    assert _css_font_family("XEXHSJ+SFTT1000").startswith("Nimbus Mono")
+    assert _css_font_family("FUIULY+CMR10").startswith("DejaVu Math TeX Gyre")
+    assert _css_font_family("LICAEO+CMMI10").startswith("DejaVu Math TeX Gyre")
 
 
 def _create_mixed_inline_pdf(path: Path) -> Path:

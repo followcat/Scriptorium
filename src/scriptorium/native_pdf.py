@@ -637,23 +637,20 @@ def _has_mixed_run_styles(runs: list[dict[str, Any]]) -> bool:
 def _css_font_family(pdf_font: str) -> str:
     normalized = pdf_font.lower()
     if "arial" in normalized or "helvetica" in normalized or "liberationsans" in normalized or "nimbussan" in normalized:
-        return "Arial, sans-serif"
+        return "Arial, Nimbus Sans, Liberation Sans, sans-serif"
     if "courier" in normalized or "mono" in normalized or "nimbusmono" in normalized or "sftt" in normalized:
-        return "Courier New, monospace"
-    if any(name in normalized for name in ("cmmi", "cmsy", "cmex", "msbm")):
-        return "Cambria Math, Times New Roman, serif"
+        return "Nimbus Mono PS, Nimbus Mono L, Courier New, monospace"
+    if any(name in normalized for name in ("cmmi", "cmsy", "cmex", "msbm", "cmr", "cmbx", "cmbsy", "cmmib", "cmuserif")):
+        return "DejaVu Math TeX Gyre, Nimbus Roman, Times New Roman, serif"
+    if "nimbusrom" in normalized or "times" in normalized:
+        return "Nimbus Roman, Nimbus Roman No9 L, Times New Roman, serif"
     if any(
         name in normalized
         for name in (
-            "times",
             "serif",
-            "nimbusrom",
-            "nimbusroman",
-            "cmr",
-            "cmbx",
         )
     ):
-        return "Times New Roman, serif"
+        return "Nimbus Roman, Times New Roman, serif"
     return "Arial, sans-serif"
 
 
