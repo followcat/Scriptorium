@@ -89,6 +89,84 @@ def test_paddle_nested_structure_label_feeds_annotation_role() -> None:
     assert document.metadata["structure_evidence"]["source"] == "paddleocr-vl"
 
 
+def test_docling_body_tree_order_can_reorder_native_lines() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {"self_ref": "#/body", "children": [{"$ref": "#/groups/0"}]},
+        "groups": [
+            {
+                "self_ref": "#/groups/0",
+                "label": "section",
+                "children": [
+                    {"$ref": "#/texts/0"},
+                    {"$ref": "#/texts/2"},
+                    {"$ref": "#/texts/1"},
+                    {"$ref": "#/texts/3"},
+                ],
+            }
+        ],
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "label": "text",
+                "text": "Left column one.",
+                "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 10, "r": 70, "b": 20, "coord_origin": "TOPLEFT"}}],
+            },
+            {
+                "self_ref": "#/texts/1",
+                "label": "text",
+                "text": "Right column one.",
+                "prov": [{"page_no": 1, "bbox": {"l": 110, "t": 10, "r": 170, "b": 20, "coord_origin": "TOPLEFT"}}],
+            },
+            {
+                "self_ref": "#/texts/2",
+                "label": "text",
+                "text": "Left column two.",
+                "prov": [
+                    {"page_no": 1, "bbox": {"l": 10, "t": 170, "r": 70, "b": 160, "coord_origin": "BOTTOMLEFT"}}
+                ],
+            },
+            {
+                "self_ref": "#/texts/3",
+                "label": "text",
+                "text": "Right column two.",
+                "prov": [{"page_no": 1, "bbox": {"l": 110, "t": 30, "r": 170, "b": 40, "coord_origin": "TOPLEFT"}}],
+            },
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert [region.order for region in regions] == [1, 2, 3, 4]
+    assert regions[1].bbox_pdf.as_list() == [10.0, 30.0, 70.0, 40.0]
+    assert {region.source for region in regions} == {"docling"}
+    ordered_text = [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+    assert ordered_text == [
+        "Left column one.",
+        "Left column two.",
+        "Right column one.",
+        "Right column two.",
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.pages[0].elements[2].metadata["external_structure_order"] == 2
+    assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
+
+
 def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> DocumentIR:
     elements = [
         ElementIR(

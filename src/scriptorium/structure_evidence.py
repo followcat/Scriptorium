@@ -49,10 +49,12 @@ def normalize_structure_evidence(
     The parser accepts the common PP-StructureV3/PaddleOCR-VL shapes produced by
     `save_to_json`: nested `res` objects, `raw_results`, `pages`, and
     `parsing_res_list` blocks with `block_bbox`, `block_label`,
-    `block_content`, and `block_order`.
+    `block_content`, and `block_order`. It also accepts DoclingDocument JSON and
+    derives region order from the `body.children` tree.
     """
 
     regions: list[StructureRegion] = []
+    regions.extend(_normalize_docling_evidence(payload, document, source=source))
     for fallback_page_index, page_payload in enumerate(_collect_page_payloads(payload)):
         page_index = _extract_page_index(page_payload, fallback_page_index)
         if page_index < 0 or page_index >= len(document.pages):
@@ -80,6 +82,292 @@ def normalize_structure_evidence(
                 )
             )
     return regions
+
+
+def _normalize_docling_evidence(
+    payload: Any,
+    document: DocumentIR,
+    *,
+    source: str | None,
+) -> list[StructureRegion]:
+    regions: list[StructureRegion] = []
+    for doc in _collect_docling_documents(payload):
+        regions.extend(_normalize_docling_document(doc, document, source=source))
+    return regions
+
+
+def _collect_docling_documents(payload: Any) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+        if id(value) in seen:
+            return
+        seen.add(id(value))
+
+        if _is_docling_document(value):
+            documents.append(value)
+            return
+
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                visit(child)
+
+    visit(payload)
+    return documents
+
+
+def _is_docling_document(value: dict[str, Any]) -> bool:
+    if value.get("schema_name") == "DoclingDocument":
+        return True
+    if not isinstance(value.get("body"), dict):
+        return False
+    return any(isinstance(value.get(key), list) for key in ("texts", "tables", "pictures", "groups", "key_value_items"))
+
+
+def _normalize_docling_document(
+    doc: dict[str, Any],
+    document: DocumentIR,
+    *,
+    source: str | None,
+) -> list[StructureRegion]:
+    body = doc.get("body")
+    if not isinstance(body, dict):
+        return []
+
+    ref_index = _build_docling_ref_index(doc)
+    regions: list[StructureRegion] = []
+    emitted: set[tuple[str, int, tuple[float, float, float, float]]] = set()
+    order_counter = 0
+
+    def traverse(node: Any, current_ref: str | None = None) -> None:
+        nonlocal order_counter
+        item, ref = _resolve_docling_node(node, doc, ref_index, current_ref)
+        if not isinstance(item, dict):
+            return
+
+        ref_kind = _docling_ref_kind(ref or item.get("self_ref"))
+        if ref_kind != "groups":
+            item_regions = _docling_item_regions(
+                item,
+                document,
+                order=order_counter + 1,
+                source=source or "docling",
+                ref=ref or item.get("self_ref"),
+            )
+            new_regions: list[StructureRegion] = []
+            for region in item_regions:
+                key = (
+                    str(ref or item.get("self_ref") or id(item)),
+                    region.page_index,
+                    tuple(round(value, 4) for value in region.bbox_pdf.as_list()),
+                )
+                if key in emitted:
+                    continue
+                emitted.add(key)
+                new_regions.append(region)
+            if new_regions:
+                regions.extend(new_regions)
+                order_counter += 1
+
+        children = item.get("children")
+        if isinstance(children, list):
+            for child in children:
+                traverse(child)
+
+    traverse(body, "#/body")
+    return regions
+
+
+def _build_docling_ref_index(doc: dict[str, Any]) -> dict[str, Any]:
+    index: dict[str, Any] = {"#/body": doc.get("body")}
+    for key, value in doc.items():
+        if not isinstance(value, list):
+            continue
+        for item_index, item in enumerate(value):
+            if not isinstance(item, dict):
+                continue
+            pointer = f"#/{key}/{item_index}"
+            index[pointer] = item
+            self_ref = item.get("self_ref")
+            if isinstance(self_ref, str) and self_ref:
+                index[self_ref] = item
+    return index
+
+
+def _resolve_docling_node(
+    node: Any,
+    doc: dict[str, Any],
+    ref_index: dict[str, Any],
+    current_ref: str | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if isinstance(node, str):
+        resolved = ref_index.get(node) or _resolve_json_pointer(doc, node)
+        return (resolved, node) if isinstance(resolved, dict) else (None, node)
+    if isinstance(node, dict):
+        ref = node.get("$ref") or node.get("ref")
+        if isinstance(ref, str):
+            resolved = ref_index.get(ref) or _resolve_json_pointer(doc, ref)
+            return (resolved, ref) if isinstance(resolved, dict) else (None, ref)
+        self_ref = node.get("self_ref")
+        return node, str(self_ref) if self_ref else current_ref
+    return None, current_ref
+
+
+def _resolve_json_pointer(doc: dict[str, Any], ref: str) -> Any:
+    if not ref.startswith("#/"):
+        return None
+    current: Any = doc
+    for raw_part in ref[2:].split("/"):
+        part = raw_part.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, list):
+            try:
+                current = current[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return current
+
+
+def _docling_ref_kind(ref: Any) -> str | None:
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return None
+    parts = ref[2:].split("/")
+    return parts[0] if parts else None
+
+
+def _docling_item_regions(
+    item: dict[str, Any],
+    document: DocumentIR,
+    *,
+    order: int,
+    source: str,
+    ref: Any,
+) -> list[StructureRegion]:
+    prov_items = item.get("prov")
+    if not isinstance(prov_items, list):
+        return []
+
+    regions: list[StructureRegion] = []
+    for prov in prov_items:
+        if not isinstance(prov, dict):
+            continue
+        page_index = _docling_page_index(prov)
+        if page_index < 0 or page_index >= len(document.pages):
+            continue
+        page = document.pages[page_index]
+        bbox_pdf = _docling_bbox_from_prov(prov, page)
+        if bbox_pdf is None:
+            continue
+        bbox_px, normalized_bbox_pdf = _normalize_region_bbox(bbox_pdf, "pdf", page)
+        if bbox_px.width <= 0 or bbox_px.height <= 0:
+            continue
+        raw = dict(item)
+        raw["docling_ref"] = ref
+        raw["docling_prov"] = dict(prov)
+        regions.append(
+            StructureRegion(
+                page_index=page_index,
+                label=_extract_label(item),
+                bbox_px=bbox_px,
+                bbox_pdf=normalized_bbox_pdf,
+                order=order,
+                text=_extract_docling_text(item),
+                confidence=_extract_confidence(item) or _extract_confidence(prov),
+                source=source,
+                raw=raw,
+            )
+        )
+    return regions
+
+
+def _docling_page_index(prov: dict[str, Any]) -> int:
+    for key in ("page_no", "page", "page_num"):
+        value = prov.get(key)
+        if value is None:
+            continue
+        try:
+            return max(int(value) - 1, 0)
+        except (TypeError, ValueError):
+            continue
+    value = prov.get("page_index")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _docling_bbox_from_prov(prov: dict[str, Any], page: PageIR) -> BBox | None:
+    raw_bbox = prov.get("bbox")
+    bbox = _docling_bbox_from_any(raw_bbox)
+    if bbox is None:
+        return None
+
+    origin = ""
+    if isinstance(raw_bbox, dict):
+        origin = str(raw_bbox.get("coord_origin") or "").upper()
+    if not origin:
+        origin = str(prov.get("coord_origin") or "").upper()
+    if origin == "BOTTOMLEFT" or (not origin and bbox.y0 > bbox.y1):
+        return BBox(
+            x0=bbox.x0,
+            y0=page.height_pt - bbox.y0,
+            x1=bbox.x1,
+            y1=page.height_pt - bbox.y1,
+        )
+    return bbox
+
+
+def _docling_bbox_from_any(value: Any) -> BBox | None:
+    if isinstance(value, dict) and {"l", "t", "r", "b"}.issubset(value):
+        try:
+            return BBox(
+                x0=float(value["l"]),
+                y0=float(value["t"]),
+                x1=float(value["r"]),
+                y1=float(value["b"]),
+            )
+        except (TypeError, ValueError):
+            return None
+    return _bbox_from_any(value)
+
+
+def _extract_docling_text(item: dict[str, Any]) -> str:
+    text = _extract_text(item)
+    if text:
+        return text
+
+    data = item.get("data")
+    if not isinstance(data, dict):
+        return ""
+    cell_texts: list[str] = []
+    for key in ("table_cells", "cells", "grid"):
+        value = data.get(key)
+        if isinstance(value, list):
+            _collect_docling_cell_texts(value, cell_texts)
+    return " ".join(text for text in cell_texts if text).strip()
+
+
+def _collect_docling_cell_texts(value: Any, texts: list[str]) -> None:
+    if isinstance(value, dict):
+        text = value.get("text") or value.get("content")
+        if text:
+            texts.append(str(text).strip())
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                _collect_docling_cell_texts(child, texts)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_docling_cell_texts(child, texts)
 
 
 def apply_structure_evidence(
