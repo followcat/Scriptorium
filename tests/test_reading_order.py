@@ -220,6 +220,43 @@ def test_sidebar_notes_do_not_become_body_columns() -> None:
     assert all("marginalia-outside-print-space" in by_item[index].evidence for index in sidebar_indices)
 
 
+def test_footnotes_do_not_interrupt_multicolumn_body_flow() -> None:
+    bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=540, y1=60)]
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+    footnote_indices: list[int] = []
+
+    for row in range(10):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=92 + row * 14, x1=286, y1=103 + row * 14))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=92 + row * 14, x1=532, y1=103 + row * 14))
+
+    for row in range(2):
+        footnote_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=672 + row * 10, x1=274, y1=679 + row * 10))
+
+    footer_index = len(bboxes)
+    bboxes.append(BBox(x0=298, y0=758, x1=314, y1=768))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert max(by_item[index].semantic_order for index in right_indices) < min(
+        by_item[index].semantic_order for index in footnote_indices
+    )
+    assert max(by_item[index].semantic_order for index in footnote_indices) < by_item[footer_index].semantic_order
+    assert {by_item[index].scope for index in footnote_indices} == {"footnote"}
+    assert {by_item[index].column_span for index in footnote_indices} == {"footnote"}
+    assert {by_item[index].column_index for index in footnote_indices} == {None}
+    assert {by_item[index].strategy for index in footnote_indices} == {"marginal-footnote-aware-column-flow-v1"}
+    assert all("footnote-secondary-flow" in by_item[index].evidence for index in footnote_indices)
+    assert all("bottom-note-zone" in by_item[index].evidence for index in footnote_indices)
+
+
 def test_column_flow_keeps_running_margins_outside_body_columns() -> None:
     bboxes: list[BBox] = [
         BBox(x0=248, y0=16, x1=364, y1=27),

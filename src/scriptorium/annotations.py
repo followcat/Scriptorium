@@ -223,6 +223,9 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     artifact_role = _reading_order_artifact_role(element)
     if artifact_role:
         return artifact_role
+    footnote_role = _reading_order_footnote_role(element)
+    if footnote_role:
+        return footnote_role
     sidebar_role = _reading_order_sidebar_role(element)
     if sidebar_role:
         return sidebar_role
@@ -250,6 +253,12 @@ def _reading_order_sidebar_role(element: ElementIR) -> str | None:
         return "sidebar-text"
     if str(element.metadata.get("reading_order_sidebar_type") or "").strip():
         return "sidebar-text"
+    return None
+
+
+def _reading_order_footnote_role(element: ElementIR) -> str | None:
+    if str(element.metadata.get("reading_order_scope") or "").strip() == "footnote":
+        return "footnote"
     return None
 
 

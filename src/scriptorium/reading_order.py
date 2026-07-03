@@ -179,12 +179,18 @@ def _column_flow_assignments(
     artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
     non_artifact_indices = [index for index in range(len(bboxes)) if index not in artifact_type_by_item]
     sidebar_type_by_item = _infer_sidebar_items(bboxes, page_width, page_height, indices=non_artifact_indices)
+    non_sidebar_indices = [index for index in non_artifact_indices if index not in sidebar_type_by_item]
+    footnote_indices = _infer_footnote_items(bboxes, page_width, page_height, indices=non_sidebar_indices)
     body_indices = [
-        index for index in range(len(bboxes)) if index not in artifact_type_by_item and index not in sidebar_type_by_item
+        index
+        for index in range(len(bboxes))
+        if index not in artifact_type_by_item
+        and index not in sidebar_type_by_item
+        and index not in footnote_indices
     ]
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=body_indices)
     column_count = len(columns)
-    if column_count < 2 and not sidebar_type_by_item:
+    if column_count < 2 and not sidebar_type_by_item and not footnote_indices:
         return _visual_assignments(
             visual_indices,
             visual_rank,
@@ -200,6 +206,7 @@ def _column_flow_assignments(
         for item_index, bbox in enumerate(bboxes)
         if item_index in artifact_type_by_item
         or item_index in sidebar_type_by_item
+        or item_index in footnote_indices
         or _is_full_width_box(bbox, columns, bboxes, page_width)
     }
     column_span_by_item = {
@@ -212,6 +219,7 @@ def _column_flow_assignments(
             for item_index, sidebar_type in sidebar_type_by_item.items()
         }
     )
+    column_span_by_item.update({item_index: "footnote" for item_index in footnote_indices})
 
     ordered_indices: list[int] = []
     flow_segment_by_item: dict[int, int] = {}
@@ -234,7 +242,7 @@ def _column_flow_assignments(
         pending_column_items.clear()
 
     for item_index in visual_indices:
-        if item_index in footer_indices or item_index in sidebar_indices:
+        if item_index in footer_indices or item_index in sidebar_indices or item_index in footnote_indices:
             continue
         if item_index in full_width:
             flush_column_segment()
@@ -244,7 +252,7 @@ def _column_flow_assignments(
         else:
             pending_column_items.append(item_index)
     flush_column_segment()
-    for secondary_indices in (sidebar_indices, footer_indices):
+    for secondary_indices in (footnote_indices, sidebar_indices, footer_indices):
         for item_index in sorted(secondary_indices, key=lambda index: reading_order_key(bboxes[index])):
             segment_index += 1
             ordered_indices.append(item_index)
@@ -256,12 +264,13 @@ def _column_flow_assignments(
         page_width,
         page_height,
         visual_rank,
-        strategy=_column_flow_strategy(artifact_type_by_item, sidebar_type_by_item),
+        strategy=_column_flow_strategy(artifact_type_by_item, sidebar_type_by_item, footnote_indices),
         flow_segment_by_item=flow_segment_by_item,
         artifact_type_by_item=artifact_type_by_item,
         scope_by_item={
             **{item_index: "page-artifact" for item_index in artifact_type_by_item},
             **{item_index: "sidebar" for item_index in sidebar_type_by_item},
+            **{item_index: "footnote" for item_index in footnote_indices},
         },
         sidebar_type_by_item=sidebar_type_by_item,
         column_span_by_item=column_span_by_item,
@@ -271,6 +280,8 @@ def _column_flow_assignments(
             if item_index in artifact_type_by_item
             else _sidebar_confidence(sidebar_type_by_item[item_index])
             if item_index in sidebar_type_by_item
+            else _footnote_confidence()
+            if item_index in footnote_indices
             else column_confidence
             for item_index in range(len(bboxes))
         },
@@ -284,6 +295,7 @@ def _column_flow_assignments(
                 else (),
                 _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
                 _sidebar_evidence(sidebar_type_by_item[item_index]) if item_index in sidebar_type_by_item else (),
+                _footnote_evidence() if item_index in footnote_indices else (),
             )
             for item_index in range(len(bboxes))
         },
@@ -309,10 +321,15 @@ def _mixed_table_column_flow_assignments(
     artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
     non_artifact_indices = [index for index in range(len(bboxes)) if index not in artifact_type_by_item]
     sidebar_type_by_item = _infer_sidebar_items(bboxes, page_width, page_height, indices=non_artifact_indices)
+    non_sidebar_indices = [index for index in non_artifact_indices if index not in sidebar_type_by_item]
+    footnote_indices = _infer_footnote_items(bboxes, page_width, page_height, indices=non_sidebar_indices)
     non_table_indices = [
         index
         for index in range(len(bboxes))
-        if index not in table_by_item and index not in artifact_type_by_item and index not in sidebar_type_by_item
+        if index not in table_by_item
+        and index not in artifact_type_by_item
+        and index not in sidebar_type_by_item
+        and index not in footnote_indices
     ]
     columns = _infer_column_clusters(bboxes, page_width, page_height, indices=non_table_indices)
     column_by_item = _assign_columns(bboxes, columns)
@@ -322,6 +339,7 @@ def _mixed_table_column_flow_assignments(
         for item_index in range(len(bboxes))
         if item_index in artifact_type_by_item
         or item_index in sidebar_type_by_item
+        or item_index in footnote_indices
         or (item_index in non_table_indices and _is_full_width_box(bboxes[item_index], columns, bboxes, page_width))
     }
 
@@ -359,7 +377,7 @@ def _mixed_table_column_flow_assignments(
         pending_tokens.clear()
 
     for item_index in visual_indices:
-        if item_index in footer_indices or item_index in sidebar_indices:
+        if item_index in footer_indices or item_index in sidebar_indices or item_index in footnote_indices:
             continue
         island = table_by_item.get(item_index)
         if island is not None:
@@ -391,6 +409,7 @@ def _mixed_table_column_flow_assignments(
         item_full_width = item_index in full_width_items
         artifact_type = artifact_type_by_item.get(item_index)
         sidebar_type = sidebar_type_by_item.get(item_index)
+        is_footnote = item_index in footnote_indices
         token = _OrderToken(
             kind="item",
             bbox=bboxes[item_index],
@@ -401,12 +420,17 @@ def _mixed_table_column_flow_assignments(
             if artifact_type
             else _sidebar_confidence(sidebar_type)
             if sidebar_type
+            else _footnote_confidence()
+            if is_footnote
             else column_confidence,
             evidence=_merge_evidence(
                 column_evidence,
-                ("full-width-flow-break",) if item_full_width and not artifact_type and not sidebar_type else (),
+                ("full-width-flow-break",)
+                if item_full_width and not artifact_type and not sidebar_type and not is_footnote
+                else (),
                 _artifact_evidence(artifact_type) if artifact_type else (),
                 _sidebar_evidence(sidebar_type) if sidebar_type else (),
+                _footnote_evidence() if is_footnote else (),
             ),
         )
         if token.full_width:
@@ -416,7 +440,7 @@ def _mixed_table_column_flow_assignments(
         else:
             pending_tokens.append(token)
     flush_column_segment()
-    for secondary_indices in (sidebar_indices, footer_indices):
+    for secondary_indices in (footnote_indices, sidebar_indices, footer_indices):
         for item_index in sorted(secondary_indices, key=lambda index: reading_order_key(bboxes[index])):
             segment_index += 1
             token = _OrderToken(
@@ -427,10 +451,14 @@ def _mixed_table_column_flow_assignments(
                 full_width=True,
                 confidence=_artifact_confidence(artifact_type_by_item[item_index])
                 if item_index in artifact_type_by_item
-                else _sidebar_confidence(sidebar_type_by_item[item_index]),
+                else _sidebar_confidence(sidebar_type_by_item[item_index])
+                if item_index in sidebar_type_by_item
+                else _footnote_confidence(),
                 evidence=_artifact_evidence(artifact_type_by_item[item_index])
                 if item_index in artifact_type_by_item
-                else _sidebar_evidence(sidebar_type_by_item[item_index]),
+                else _sidebar_evidence(sidebar_type_by_item[item_index])
+                if item_index in sidebar_type_by_item
+                else _footnote_evidence(),
             )
             emit_token(token)
 
@@ -440,22 +468,26 @@ def _mixed_table_column_flow_assignments(
             semantic_order=semantic_order,
             visual_order=visual_rank[item_index],
             column_index=None
-            if item_index in artifact_type_by_item or item_index in sidebar_type_by_item
+            if item_index in artifact_type_by_item or item_index in sidebar_type_by_item or item_index in footnote_indices
             else column_index_by_item[item_index],
             column_count=len(columns),
             column_span=_artifact_column_span(artifact_type_by_item[item_index])
             if item_index in artifact_type_by_item
             else _sidebar_column_span(sidebar_type_by_item[item_index])
             if item_index in sidebar_type_by_item
+            else "footnote"
+            if item_index in footnote_indices
             else column_span_by_item[item_index],
             flow_segment_index=flow_segment_by_item[item_index],
-            strategy=_mixed_table_flow_strategy(artifact_type_by_item, sidebar_type_by_item),
+            strategy=_mixed_table_flow_strategy(artifact_type_by_item, sidebar_type_by_item, footnote_indices),
             region_path=region_path_by_item.get(item_index),
             artifact_type=artifact_type_by_item.get(item_index),
             scope="page-artifact"
             if item_index in artifact_type_by_item
             else "sidebar"
             if item_index in sidebar_type_by_item
+            else "footnote"
+            if item_index in footnote_indices
             else "body",
             sidebar_type=sidebar_type_by_item.get(item_index),
             confidence=confidence_by_item[item_index],
@@ -512,6 +544,7 @@ def _assign_order_metadata(
         for item_index, bbox in enumerate(bboxes)
         if item_index in artifact_type_by_item or _is_full_width_box(bbox, columns, bboxes, page_width)
         or item_index in sidebar_type_by_item
+        or scope_by_item.get(item_index) == "footnote"
     }
     if flow_segment_by_item is None:
         flow_segment_by_item = _flow_segments_for_order(ordered_indices, bboxes)
@@ -524,7 +557,9 @@ def _assign_order_metadata(
                 item_index=item_index,
                 semantic_order=semantic_order,
                 visual_order=visual_rank[item_index],
-                column_index=None if is_full_width or item_index in sidebar_type_by_item else column_by_item[item_index],
+                column_index=None
+                if is_full_width or item_index in sidebar_type_by_item or scope_by_item.get(item_index) == "footnote"
+                else column_by_item[item_index],
                 column_count=column_count,
                 column_span=column_span_by_item.get(
                     item_index,
@@ -542,6 +577,8 @@ def _assign_order_metadata(
                     if item_index in artifact_type_by_item
                     else _sidebar_confidence(sidebar_type_by_item[item_index])
                     if item_index in sidebar_type_by_item
+                    else _footnote_confidence()
+                    if scope_by_item.get(item_index) == "footnote"
                     else default_confidence,
                 ),
                 evidence=_merge_evidence(
@@ -550,9 +587,11 @@ def _assign_order_metadata(
                     if is_full_width
                     and item_index not in artifact_type_by_item
                     and item_index not in sidebar_type_by_item
+                    and scope_by_item.get(item_index) != "footnote"
                     else (),
                     _artifact_evidence(artifact_type_by_item[item_index]) if item_index in artifact_type_by_item else (),
                     _sidebar_evidence(sidebar_type_by_item[item_index]) if item_index in sidebar_type_by_item else (),
+                    _footnote_evidence() if scope_by_item.get(item_index) == "footnote" else (),
                 ),
             )
         )
@@ -758,30 +797,54 @@ def _sidebar_evidence(sidebar_type: str | None) -> tuple[str, ...]:
     return ("sidebar-secondary-flow", "marginalia-outside-print-space", f"{sidebar_type}-sidebar")
 
 
+def _footnote_confidence() -> float:
+    return 0.76
+
+
+def _footnote_evidence() -> tuple[str, ...]:
+    return ("footnote-secondary-flow", "bottom-note-zone")
+
+
 def _column_flow_strategy(
     artifact_type_by_item: dict[int, str],
     sidebar_type_by_item: dict[int, str],
+    footnote_indices: set[int],
 ) -> str:
-    if artifact_type_by_item and sidebar_type_by_item:
-        return "marginal-sidebar-aware-column-flow-v1"
-    if artifact_type_by_item:
-        return "marginal-aware-column-flow-v1"
-    if sidebar_type_by_item:
-        return "sidebar-aware-column-flow-v1"
-    return "column-flow-v1"
+    return _qualified_strategy(
+        "column-flow-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item=sidebar_type_by_item,
+        footnote_indices=footnote_indices,
+    )
 
 
 def _mixed_table_flow_strategy(
     artifact_type_by_item: dict[int, str],
     sidebar_type_by_item: dict[int, str],
+    footnote_indices: set[int],
 ) -> str:
-    if artifact_type_by_item and sidebar_type_by_item:
-        return "marginal-sidebar-aware-mixed-table-column-flow-v1"
+    return _qualified_strategy(
+        "mixed-table-column-flow-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item=sidebar_type_by_item,
+        footnote_indices=footnote_indices,
+    )
+
+
+def _qualified_strategy(
+    base_strategy: str,
+    artifact_type_by_item: dict[int, str],
+    sidebar_type_by_item: dict[int, str],
+    footnote_indices: set[int],
+) -> str:
+    qualifiers: list[str] = []
     if artifact_type_by_item:
-        return "marginal-aware-mixed-table-column-flow-v1"
+        qualifiers.append("marginal")
     if sidebar_type_by_item:
-        return "sidebar-aware-mixed-table-column-flow-v1"
-    return "mixed-table-column-flow-v1"
+        qualifiers.append("sidebar")
+    if footnote_indices:
+        qualifiers.append("footnote")
+    return f"{'-'.join(qualifiers)}-aware-{base_strategy}" if qualifiers else base_strategy
 
 
 def _column_flow_profile(
@@ -885,6 +948,79 @@ def _merge_evidence(*groups: tuple[str, ...]) -> tuple[str, ...]:
 
 def _bounded_confidence(value: float) -> float:
     return round(max(0.0, min(1.0, float(value))), 4)
+
+
+def _infer_footnote_items(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    indices: list[int] | None = None,
+) -> set[int]:
+    source_indices = list(range(len(bboxes))) if indices is None else list(indices)
+    if len(source_indices) < 8:
+        return set()
+
+    body_like_heights = [
+        bboxes[index].height
+        for index in source_indices
+        if bboxes[index].height > 0
+        and bboxes[index].width >= page_width * 0.18
+        and _center_y(bboxes[index]) < page_height * 0.82
+    ]
+    if len(body_like_heights) < 4:
+        return set()
+
+    body_height = median(body_like_heights)
+    bottom_start = max(page_height * 0.72, page_height - 220.0)
+    bottom_end = max(page_height * 0.92, page_height - 42.0)
+    max_note_height = max(5.0, body_height * 0.9)
+    max_note_width = page_width * 0.62
+    candidates = [
+        index
+        for index in source_indices
+        if bottom_start <= bboxes[index].y0 < bottom_end
+        and 2.5 <= bboxes[index].height <= max_note_height
+        and 4 <= bboxes[index].width <= max_note_width
+    ]
+    if not candidates:
+        return set()
+
+    rows = _cluster_index_rows(candidates, bboxes, tolerance=max(3.0, body_height * 0.55))
+    rows = sorted(rows, key=lambda row: min(bboxes[index].y0 for index in row))
+    for row_position, row in enumerate(rows):
+        row_top = min(bboxes[index].y0 for index in row)
+        previous_bottom = max(
+            (bboxes[index].y1 for index in source_indices if index not in candidates and bboxes[index].y1 <= row_top),
+            default=0.0,
+        )
+        if row_top - previous_bottom < max(6.0, body_height * 0.65) and row_top < page_height * 0.82:
+            continue
+        note_rows = rows[row_position:]
+        note_indices = {index for note_row in note_rows for index in note_row}
+        if _looks_like_footnote_cluster(note_indices, bboxes, page_width, page_height, body_height):
+            return note_indices
+    return set()
+
+
+def _looks_like_footnote_cluster(
+    indices: set[int],
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    body_height: float,
+) -> bool:
+    if not indices:
+        return False
+    y0, y1 = _cluster_y_extent(list(indices), bboxes)
+    if y0 < max(page_height * 0.72, page_height - 220.0):
+        return False
+    if y1 - y0 > page_height * 0.18:
+        return False
+    widths = [bboxes[index].width for index in indices if bboxes[index].width > 0]
+    heights = [bboxes[index].height for index in indices if bboxes[index].height > 0]
+    if not widths or not heights:
+        return False
+    return median(heights) <= body_height * 0.9 and median(widths) <= page_width * 0.5
 
 
 def _infer_sidebar_items(

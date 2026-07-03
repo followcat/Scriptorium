@@ -236,6 +236,7 @@ def _run_case(
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_artifact_element_count": stats["reading_order_artifact_element_count"],
         "reading_order_artifact_counts": stats["reading_order_artifact_counts"],
+        "reading_order_footnote_element_count": stats["reading_order_footnote_element_count"],
         "reading_order_sidebar_element_count": stats["reading_order_sidebar_element_count"],
         "reading_order_sidebar_counts": stats["reading_order_sidebar_counts"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
@@ -441,6 +442,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
                 "marginal-aware-column-flow-v1",
                 "sidebar-aware-column-flow-v1",
                 "marginal-sidebar-aware-column-flow-v1",
+                "footnote-aware-column-flow-v1",
+                "marginal-footnote-aware-column-flow-v1",
+                "sidebar-footnote-aware-column-flow-v1",
+                "marginal-sidebar-footnote-aware-column-flow-v1",
             }
         ),
         "mixed_table_column_flow_element_count": sum(
@@ -452,6 +457,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
                 "marginal-aware-mixed-table-column-flow-v1",
                 "sidebar-aware-mixed-table-column-flow-v1",
                 "marginal-sidebar-aware-mixed-table-column-flow-v1",
+                "footnote-aware-mixed-table-column-flow-v1",
+                "marginal-footnote-aware-mixed-table-column-flow-v1",
+                "sidebar-footnote-aware-mixed-table-column-flow-v1",
+                "marginal-sidebar-footnote-aware-mixed-table-column-flow-v1",
             }
         ),
         "recursive_xy_cut_element_count": sum(
@@ -463,6 +472,9 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             1 for element in text_elements if element.metadata.get("reading_order_scope") == "page-artifact"
         ),
         "reading_order_artifact_counts": dict(sorted(reading_order_artifact_counts.items())),
+        "reading_order_footnote_element_count": sum(
+            1 for element in text_elements if element.metadata.get("reading_order_scope") == "footnote"
+        ),
         "reading_order_sidebar_element_count": sum(
             1 for element in text_elements if element.metadata.get("reading_order_scope") == "sidebar"
         ),
@@ -777,6 +789,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "total_reading_order_artifact_elements": sum(int(case["reading_order_artifact_element_count"]) for case in cases),
         "reading_order_artifact_counts": _sum_case_count_dicts(cases, "reading_order_artifact_counts"),
+        "total_reading_order_footnote_elements": sum(int(case["reading_order_footnote_element_count"]) for case in cases),
         "total_reading_order_sidebar_elements": sum(int(case["reading_order_sidebar_element_count"]) for case in cases),
         "reading_order_sidebar_counts": _sum_case_count_dicts(cases, "reading_order_sidebar_counts"),
         "reading_order_strategy_counts": _sum_strategy_counts(cases),
@@ -860,6 +873,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "mixed_table_column_flow_element_count",
         "recursive_xy_cut_element_count",
         "reading_order_artifact_element_count",
+        "reading_order_footnote_element_count",
         "reading_order_sidebar_element_count",
         "reading_order_sidebar_counts",
         "reading_order_confidence_element_count",
