@@ -121,6 +121,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_risk_level" in case for case in report["cases"])
     assert all("reading_order_column_geometry_page_count" in case for case in report["cases"])
     assert all("reading_order_unlabeled_text_risk_count" in case for case in report["cases"])
+    assert all("semantic_candidate_order_metrics" in case for case in report["cases"])
+    assert all("semantic_best_candidate_by_successor" in case for case in report["cases"])
+    assert all("semantic_best_candidate_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
     assert all(case["html_mode"] == "structured" for case in report["cases"])
@@ -187,6 +193,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
     assert "total_semantic_successor_correct_count" in report["summary"]
     assert "total_semantic_successor_count" in report["summary"]
+    assert "semantic_best_candidate_by_successor_counts" in report["summary"]
+    assert "mean_semantic_visual_yx_successor_accuracy" in report["summary"]
+    assert "mean_semantic_box_flow_successor_accuracy" in report["summary"]
+    assert "mean_semantic_relation_graph_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
     assert all(case["semantic_ground_truth_available"] for case in report["cases"])
     assert all("semantic_successor_accuracy" in case for case in report["cases"])
@@ -290,6 +300,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_box_flow_disagreement_ratio" in csv_text
     assert "reading_order_box_flow_successor_disagreement_ratio" in csv_text
     assert "reading_order_relation_graph_successor_disagreement_ratio" in csv_text
+    assert "semantic_candidate_order_metrics" in csv_text
+    assert "semantic_relation_graph_successor_accuracy" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text
     assert "reading_order_table_like_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text

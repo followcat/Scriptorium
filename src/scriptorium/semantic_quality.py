@@ -42,6 +42,7 @@ def compare_semantic_reading_order(
     document: DocumentIR,
     source_pdf: str | Path,
     out_dir: str | Path,
+    candidate_orders: dict[str, dict[int, list[str]]] | None = None,
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -60,7 +61,7 @@ def compare_semantic_reading_order(
 
     ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
     page_reports = [
-        _compare_page(document, page_truth)
+        _compare_page(document, page_truth, candidate_orders or {})
         for page_truth in ground_truth.get("pages", [])
         if isinstance(page_truth, dict) and _page_truth_in_document(document, page_truth)
     ]
@@ -71,6 +72,7 @@ def compare_semantic_reading_order(
         "pages": page_reports,
     }
     report.update(_summarize_pages(page_reports))
+    report.update(_summarize_candidate_orders(page_reports))
     (target / "semantic_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
@@ -83,7 +85,11 @@ def _page_truth_in_document(document: DocumentIR, page_truth: dict[str, Any]) ->
     return 0 <= page_index < len(document.pages)
 
 
-def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str, Any]:
+def _compare_page(
+    document: DocumentIR,
+    page_truth: dict[str, Any],
+    candidate_orders: dict[str, dict[int, list[str]]],
+) -> dict[str, Any]:
     page_index = int(page_truth.get("page_index", 0))
     match_mode = str(page_truth.get("match_mode", "full-sequence"))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
@@ -93,13 +99,61 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         for element in sorted(page.elements, key=lambda item: (item.reading_order, item.bbox_pdf.y0, item.bbox_pdf.x0))
         if element.source_text.strip()
     ]
-    actual = [element.source_text.strip() for element in actual_elements]
 
+    page_report = {
+        "page_index": page_index,
+        "match_mode": match_mode,
+    }
+    page_report.update(
+        _sequence_quality(
+            expected,
+            actual_elements,
+            match_mode,
+            page.height_pt,
+            include_sequences=True,
+            include_ignored_texts=True,
+        )
+    )
+
+    candidate_reports: dict[str, Any] = {}
+    for candidate_name, page_orders in sorted(candidate_orders.items()):
+        ordered_ids = page_orders.get(page_index)
+        if not ordered_ids:
+            continue
+        candidate_elements = _candidate_ordered_elements(actual_elements, ordered_ids)
+        candidate_reports[candidate_name] = _sequence_quality(
+            expected,
+            candidate_elements,
+            match_mode,
+            page.height_pt,
+            include_sequences=False,
+            include_ignored_texts=False,
+        )
+    if candidate_reports:
+        page_report["candidate_orders"] = candidate_reports
+
+    return page_report
+
+
+def _sequence_quality(
+    expected: list[str],
+    actual_elements: list[Any],
+    match_mode: str,
+    page_height: float,
+    *,
+    include_sequences: bool,
+    include_ignored_texts: bool,
+) -> dict[str, Any]:
+    actual = [element.source_text.strip() for element in actual_elements]
     matched_positions = _matched_positions(expected, actual)
     matched_count = sum(1 for position in matched_positions if position is not None)
     missing_texts = [text for text, position in zip(expected, matched_positions) if position is None]
     extra_texts = [] if match_mode == "ordered-subsequence" else _extra_texts(expected, actual)
-    ignored_texts = _ignored_text_entries(actual_elements, matched_positions, page.height_pt) if match_mode == "ordered-subsequence" else []
+    ignored_texts = (
+        _ignored_text_entries(actual_elements, matched_positions, page_height)
+        if match_mode == "ordered-subsequence"
+        else []
+    )
     ignored_zone_counts = Counter(str(item["zone"]) for item in ignored_texts)
     ignored_role_counts = Counter(str(item["role"]) for item in ignored_texts)
     ignored_source_counts = Counter(str(item["source"]) for item in ignored_texts)
@@ -114,21 +168,17 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         edit_distance = _levenshtein_distance(expected, actual)
         denominator = max(len(expected), len(actual), 1)
         exact_match = expected == actual
-    return {
-        "page_index": page_index,
-        "match_mode": match_mode,
+
+    report = {
         "expected_text_count": len(expected),
         "actual_text_count": len(actual),
         "matched_text_count": matched_count,
         "ignored_text_count": max(0, len(actual) - matched_count) if match_mode == "ordered-subsequence" else 0,
-        "ignored_texts": ignored_texts,
         "ignored_text_zone_counts": dict(sorted(ignored_zone_counts.items())),
         "ignored_text_role_counts": dict(sorted(ignored_role_counts.items())),
         "ignored_text_source_counts": dict(sorted(ignored_source_counts.items())),
         "missing_text_count": len(missing_texts),
         "extra_text_count": len(extra_texts),
-        "missing_texts": missing_texts,
-        "extra_texts": extra_texts,
         "exact_match": exact_match,
         "sequence_edit_distance": edit_distance,
         "sequence_similarity": _round_ratio(1.0 - edit_distance / denominator),
@@ -137,12 +187,31 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         "pairwise_order_accuracy": _round_ratio(correct_pairs / total_pairs if total_pairs else 1.0),
         "successor_correct_count": successor_correct,
         "successor_total_count": successor_total,
-        "successor_order_accuracy": _round_ratio(
-            successor_correct / successor_total if successor_total else 1.0
-        ),
-        "expected_sequence": expected,
-        "actual_sequence": actual,
+        "successor_order_accuracy": _round_ratio(successor_correct / successor_total if successor_total else 1.0),
     }
+    if include_ignored_texts:
+        report["ignored_texts"] = ignored_texts
+        report["missing_texts"] = missing_texts
+        report["extra_texts"] = extra_texts
+    if include_sequences:
+        report["expected_sequence"] = expected
+        report["actual_sequence"] = actual
+    return report
+
+
+def _candidate_ordered_elements(actual_elements: list[Any], ordered_ids: list[str]) -> list[Any]:
+    by_id = {str(element.id): element for element in actual_elements}
+    ordered: list[Any] = []
+    seen: set[str] = set()
+    for element_id in ordered_ids:
+        normalized_id = str(element_id)
+        element = by_id.get(normalized_id)
+        if element is None or normalized_id in seen:
+            continue
+        ordered.append(element)
+        seen.add(normalized_id)
+    ordered.extend(element for element in actual_elements if str(element.id) not in seen)
+    return ordered
 
 
 def _ignored_text_entries(
@@ -311,6 +380,71 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_exact_page_match_rate": _round_ratio(
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),
+    }
+
+
+def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
+    names = sorted(
+        {
+            str(candidate_name)
+            for page in pages
+            for candidate_name in (page.get("candidate_orders") or {})
+        }
+    )
+    metrics: dict[str, dict[str, Any]] = {}
+    for name in names:
+        page_metrics = [
+            page["candidate_orders"][name]
+            for page in pages
+            if isinstance(page.get("candidate_orders"), dict) and name in page["candidate_orders"]
+        ]
+        if not page_metrics:
+            continue
+        expected_count = sum(int(page["expected_text_count"]) for page in page_metrics)
+        actual_count = sum(int(page["actual_text_count"]) for page in page_metrics)
+        edit_distance = sum(int(page["sequence_edit_distance"]) for page in page_metrics)
+        pairwise_correct = sum(int(page["pairwise_correct_count"]) for page in page_metrics)
+        pairwise_total = sum(int(page["pairwise_total_count"]) for page in page_metrics)
+        successor_correct = sum(int(page["successor_correct_count"]) for page in page_metrics)
+        successor_total = sum(int(page["successor_total_count"]) for page in page_metrics)
+        metrics[name] = {
+            "semantic_page_count": len(page_metrics),
+            "semantic_expected_text_count": expected_count,
+            "semantic_actual_text_count": actual_count,
+            "semantic_matched_text_count": sum(int(page["matched_text_count"]) for page in page_metrics),
+            "semantic_sequence_edit_distance": edit_distance,
+            "semantic_sequence_similarity": _round_ratio(
+                1.0 - edit_distance / max(expected_count, actual_count, 1)
+            ),
+            "semantic_pairwise_correct_count": pairwise_correct,
+            "semantic_pairwise_total_count": pairwise_total,
+            "semantic_order_pair_accuracy": _round_ratio(
+                pairwise_correct / pairwise_total if pairwise_total else 1.0
+            ),
+            "semantic_successor_correct_count": successor_correct,
+            "semantic_successor_total_count": successor_total,
+            "semantic_successor_accuracy": _round_ratio(
+                successor_correct / successor_total if successor_total else 1.0
+            ),
+            "semantic_exact_page_match_rate": _round_ratio(
+                sum(1 for page in page_metrics if bool(page["exact_match"])) / len(page_metrics)
+            ),
+        }
+    if not metrics:
+        return {"semantic_candidate_order_metrics": {}}
+
+    best_name, best_metrics = max(
+        metrics.items(),
+        key=lambda item: (
+            float(item[1]["semantic_successor_accuracy"]),
+            float(item[1]["semantic_order_pair_accuracy"]),
+            str(item[0]),
+        ),
+    )
+    return {
+        "semantic_candidate_order_metrics": metrics,
+        "semantic_best_candidate_by_successor": best_name,
+        "semantic_best_candidate_successor_accuracy": best_metrics["semantic_successor_accuracy"],
     }
 
 

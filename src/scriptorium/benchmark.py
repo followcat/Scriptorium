@@ -208,7 +208,12 @@ def _run_case(
     timings["compare_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    semantic_quality = compare_semantic_reading_order(document, pdf_path, out_dir / "semantic")
+    semantic_quality = compare_semantic_reading_order(
+        document,
+        pdf_path,
+        out_dir / "semantic",
+        candidate_orders=_semantic_candidate_orders(document),
+    )
     timings["semantic_compare_seconds"] = _elapsed(start)
 
     stats = _document_stats(document)
@@ -647,6 +652,39 @@ def _reading_order_relation_graph_diagnostics(document: DocumentIR) -> dict[str,
             page_height=page.height_pt,
         ),
     )
+
+
+def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
+    orders: dict[str, dict[int, list[str]]] = {
+        "visual_yx": {},
+        "box_flow": {},
+        "relation_graph": {},
+    }
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        if len(text_elements) < 2:
+            continue
+        bboxes = [element.bbox_pdf for element in text_elements]
+        candidates = {
+            "visual_yx": sorted(
+                range(len(text_elements)),
+                key=lambda index: (bboxes[index].y0, bboxes[index].x0, index),
+            ),
+            "box_flow": infer_box_flow_order(
+                bboxes,
+                page_width=page.width_pt,
+                page_height=page.height_pt,
+                boxes_flow=-0.5,
+            ),
+            "relation_graph": infer_relation_graph_order(
+                bboxes,
+                page_width=page.width_pt,
+                page_height=page.height_pt,
+            ),
+        }
+        for candidate_name, candidate_order in candidates.items():
+            orders[candidate_name][page.page_index] = [str(text_elements[index].id) for index in candidate_order]
+    return orders
 
 
 def _reading_order_candidate_diagnostics(
@@ -1171,6 +1209,15 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_successor_accuracy",
         "semantic_successor_correct_count",
         "semantic_successor_total_count",
+        "semantic_candidate_order_metrics",
+        "semantic_best_candidate_by_successor",
+        "semantic_best_candidate_successor_accuracy",
+        "semantic_visual_yx_order_pair_accuracy",
+        "semantic_visual_yx_successor_accuracy",
+        "semantic_box_flow_order_pair_accuracy",
+        "semantic_box_flow_successor_accuracy",
+        "semantic_relation_graph_order_pair_accuracy",
+        "semantic_relation_graph_successor_accuracy",
         "semantic_ignored_text_count",
         "semantic_missing_text_count",
         "semantic_extra_text_count",
@@ -1479,6 +1526,9 @@ def _elapsed(start: float) -> float:
 
 def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
     available = bool(report.get("ground_truth_available"))
+    candidate_metrics = report.get("semantic_candidate_order_metrics") if available else {}
+    if not isinstance(candidate_metrics, dict):
+        candidate_metrics = {}
     return {
         "semantic_ground_truth_available": available,
         "semantic_order_pair_accuracy": report.get("semantic_order_pair_accuracy") if available else None,
@@ -1498,12 +1548,45 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_ignored_text_source_counts": report.get("semantic_ignored_text_source_counts") if available else {},
         "semantic_missing_text_count": report.get("semantic_missing_text_count") if available else 0,
         "semantic_extra_text_count": report.get("semantic_extra_text_count") if available else 0,
+        "semantic_candidate_order_metrics": candidate_metrics,
+        "semantic_best_candidate_by_successor": report.get("semantic_best_candidate_by_successor") if available else None,
+        "semantic_best_candidate_successor_accuracy": report.get("semantic_best_candidate_successor_accuracy")
+        if available
+        else None,
+        **_semantic_candidate_case_metrics(candidate_metrics),
     }
+
+
+def _semantic_candidate_case_metrics(candidate_metrics: dict[str, Any]) -> dict[str, Any]:
+    metrics: dict[str, Any] = {}
+    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+        candidate = candidate_metrics.get(candidate_name)
+        if not isinstance(candidate, dict):
+            candidate = {}
+        metrics.update(
+            {
+                f"semantic_{candidate_name}_order_pair_accuracy": candidate.get("semantic_order_pair_accuracy"),
+                f"semantic_{candidate_name}_pairwise_correct_count": int(
+                    candidate.get("semantic_pairwise_correct_count") or 0
+                ),
+                f"semantic_{candidate_name}_pairwise_total_count": int(
+                    candidate.get("semantic_pairwise_total_count") or 0
+                ),
+                f"semantic_{candidate_name}_successor_accuracy": candidate.get("semantic_successor_accuracy"),
+                f"semantic_{candidate_name}_successor_correct_count": int(
+                    candidate.get("semantic_successor_correct_count") or 0
+                ),
+                f"semantic_{candidate_name}_successor_total_count": int(
+                    candidate.get("semantic_successor_total_count") or 0
+                ),
+            }
+        )
+    return metrics
 
 
 def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
     if not cases:
-        return {
+        summary = {
             "semantic_case_count": 0,
             "mean_semantic_order_pair_accuracy": None,
             "mean_semantic_sequence_similarity": None,
@@ -1518,7 +1601,10 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "total_semantic_ignored_text_source_counts": {},
             "total_semantic_missing_text_count": 0,
             "total_semantic_extra_text_count": 0,
+            "semantic_best_candidate_by_successor_counts": {},
         }
+        summary.update(_empty_semantic_candidate_summary())
+        return summary
 
     expected_count = sum(int(case["semantic_expected_text_count"]) for case in cases)
     actual_count = sum(int(case["semantic_actual_text_count"]) for case in cases)
@@ -1527,7 +1613,7 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
     pairwise_total = sum(int(case["semantic_pairwise_total_count"]) for case in cases)
     successor_correct = sum(int(case["semantic_successor_correct_count"]) for case in cases)
     successor_total = sum(int(case["semantic_successor_total_count"]) for case in cases)
-    return {
+    summary = {
         "semantic_case_count": len(cases),
         "mean_semantic_order_pair_accuracy": round(pairwise_correct / pairwise_total if pairwise_total else 1.0, 8),
         "mean_semantic_successor_accuracy": round(
@@ -1551,7 +1637,40 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_semantic_ignored_text_source_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_source_counts"),
         "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
         "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
+        "semantic_best_candidate_by_successor_counts": _sum_case_values(cases, "semantic_best_candidate_by_successor"),
     }
+    summary.update(_semantic_candidate_summary(cases))
+    return summary
+
+
+def _empty_semantic_candidate_summary() -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+        summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = None
+        summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = None
+        summary[f"total_semantic_{candidate_name}_successor_correct_count"] = 0
+        summary[f"total_semantic_{candidate_name}_successor_count"] = 0
+    return summary
+
+
+def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for candidate_name in ("visual_yx", "box_flow", "relation_graph"):
+        pairwise_correct = sum(int(case[f"semantic_{candidate_name}_pairwise_correct_count"]) for case in cases)
+        pairwise_total = sum(int(case[f"semantic_{candidate_name}_pairwise_total_count"]) for case in cases)
+        successor_correct = sum(int(case[f"semantic_{candidate_name}_successor_correct_count"]) for case in cases)
+        successor_total = sum(int(case[f"semantic_{candidate_name}_successor_total_count"]) for case in cases)
+        summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = round(
+            pairwise_correct / pairwise_total if pairwise_total else 1.0,
+            8,
+        )
+        summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = round(
+            successor_correct / successor_total if successor_total else 1.0,
+            8,
+        )
+        summary[f"total_semantic_{candidate_name}_successor_correct_count"] = successor_correct
+        summary[f"total_semantic_{candidate_name}_successor_count"] = successor_total
+    return summary
 
 
 def _sum_case_count_dicts(cases: list[dict[str, Any]], key: str) -> dict[str, int]:

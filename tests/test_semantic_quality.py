@@ -162,6 +162,45 @@ def test_successor_accuracy_counts_missing_adjacent_text(tmp_path: Path) -> None
     assert report["semantic_successor_accuracy"] == 0
 
 
+def test_candidate_orders_are_scored_against_semantic_ground_truth(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    semantic_ground_truth = source_pdf.with_suffix(".semantic-order.json")
+    semantic_ground_truth.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "text_sequence": ["A", "B", "C", "D"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "C", "B", "D"])
+
+    report = compare_semantic_reading_order(
+        document,
+        source_pdf,
+        tmp_path / "semantic",
+        candidate_orders={
+            "selected_like": {0: ["e0", "e1", "e2", "e3"]},
+            "fixed": {0: ["e0", "e2", "e1", "e3"]},
+        },
+    )
+    page_candidates = report["pages"][0]["candidate_orders"]
+
+    assert report["semantic_successor_accuracy"] == 0
+    assert page_candidates["selected_like"]["successor_order_accuracy"] == 0
+    assert page_candidates["fixed"]["successor_order_accuracy"] == 1
+    assert report["semantic_candidate_order_metrics"]["fixed"]["semantic_successor_accuracy"] == 1
+    assert report["semantic_best_candidate_by_successor"] == "fixed"
+    assert report["semantic_best_candidate_successor_accuracy"] == 1
+
+
 def _document_with_texts(texts: list[str]) -> DocumentIR:
     elements = []
     for index, text in enumerate(texts):
