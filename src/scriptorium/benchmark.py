@@ -1260,6 +1260,11 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_candidate_order_metrics",
         "semantic_best_candidate_by_successor",
         "semantic_best_candidate_successor_accuracy",
+        "semantic_candidate_arbitration_recommendation",
+        "semantic_candidate_arbitration_candidate",
+        "semantic_candidate_arbitration_reason",
+        "semantic_candidate_successor_delta",
+        "semantic_candidate_pairwise_delta",
         "semantic_visual_yx_order_pair_accuracy",
         "semantic_visual_yx_successor_accuracy",
         "semantic_box_flow_order_pair_accuracy",
@@ -1579,9 +1584,11 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
     candidate_metrics = report.get("semantic_candidate_order_metrics") if available else {}
     if not isinstance(candidate_metrics, dict):
         candidate_metrics = {}
+    selected_pairwise = report.get("semantic_order_pair_accuracy") if available else None
+    selected_successor = report.get("semantic_successor_accuracy") if available else None
     return {
         "semantic_ground_truth_available": available,
-        "semantic_order_pair_accuracy": report.get("semantic_order_pair_accuracy") if available else None,
+        "semantic_order_pair_accuracy": selected_pairwise,
         "semantic_sequence_similarity": report.get("semantic_sequence_similarity") if available else None,
         "semantic_exact_page_match_rate": report.get("semantic_exact_page_match_rate") if available else None,
         "semantic_expected_text_count": report.get("semantic_expected_text_count") if available else 0,
@@ -1589,7 +1596,7 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_sequence_edit_distance": report.get("semantic_sequence_edit_distance") if available else 0,
         "semantic_pairwise_correct_count": report.get("semantic_pairwise_correct_count") if available else 0,
         "semantic_pairwise_total_count": report.get("semantic_pairwise_total_count") if available else 0,
-        "semantic_successor_accuracy": report.get("semantic_successor_accuracy") if available else None,
+        "semantic_successor_accuracy": selected_successor,
         "semantic_successor_correct_count": report.get("semantic_successor_correct_count") if available else 0,
         "semantic_successor_total_count": report.get("semantic_successor_total_count") if available else 0,
         "semantic_ignored_text_count": report.get("semantic_ignored_text_count") if available else 0,
@@ -1603,7 +1610,64 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_best_candidate_successor_accuracy": report.get("semantic_best_candidate_successor_accuracy")
         if available
         else None,
+        **_semantic_candidate_arbitration_metrics(
+            selected_pairwise=selected_pairwise,
+            selected_successor=selected_successor,
+            candidate_metrics=candidate_metrics,
+        ),
         **_semantic_candidate_case_metrics(candidate_metrics),
+    }
+
+
+def _semantic_candidate_arbitration_metrics(
+    *,
+    selected_pairwise: Any,
+    selected_successor: Any,
+    candidate_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    default = {
+        "semantic_candidate_arbitration_recommendation": "unavailable",
+        "semantic_candidate_arbitration_candidate": None,
+        "semantic_candidate_arbitration_reason": "no semantic candidate scores",
+        "semantic_candidate_successor_delta": None,
+        "semantic_candidate_pairwise_delta": None,
+    }
+    if selected_pairwise is None or selected_successor is None or not candidate_metrics:
+        return default
+
+    valid_candidates: list[tuple[str, float, float]] = []
+    for candidate_name, metrics in candidate_metrics.items():
+        if not isinstance(metrics, dict):
+            continue
+        try:
+            successor_accuracy = float(metrics["semantic_successor_accuracy"])
+            pairwise_accuracy = float(metrics["semantic_order_pair_accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        valid_candidates.append((str(candidate_name), successor_accuracy, pairwise_accuracy))
+    if not valid_candidates:
+        return default
+
+    selected_successor_value = float(selected_successor)
+    selected_pairwise_value = float(selected_pairwise)
+    best_name, best_successor, best_pairwise = max(
+        valid_candidates,
+        key=lambda item: (item[1], item[2], item[0]),
+    )
+    successor_delta = round(best_successor - selected_successor_value, 8)
+    pairwise_delta = round(best_pairwise - selected_pairwise_value, 8)
+    if successor_delta > 0 or (successor_delta == 0 and pairwise_delta > 0):
+        recommendation = f"consider-{best_name}"
+        reason = "best candidate improves labelled semantic order"
+    else:
+        recommendation = "keep-selected"
+        reason = "selected order is at least as good as scored candidates"
+    return {
+        "semantic_candidate_arbitration_recommendation": recommendation,
+        "semantic_candidate_arbitration_candidate": best_name,
+        "semantic_candidate_arbitration_reason": reason,
+        "semantic_candidate_successor_delta": successor_delta,
+        "semantic_candidate_pairwise_delta": pairwise_delta,
     }
 
 
@@ -1652,6 +1716,10 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "total_semantic_missing_text_count": 0,
             "total_semantic_extra_text_count": 0,
             "semantic_best_candidate_by_successor_counts": {},
+            "semantic_candidate_arbitration_recommendation_counts": {},
+            "semantic_candidate_arbitration_candidate_counts": {},
+            "mean_semantic_candidate_successor_delta": None,
+            "mean_semantic_candidate_pairwise_delta": None,
         }
         summary.update(_empty_semantic_candidate_summary())
         return summary
@@ -1688,6 +1756,22 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
         "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
         "semantic_best_candidate_by_successor_counts": _sum_case_values(cases, "semantic_best_candidate_by_successor"),
+        "semantic_candidate_arbitration_recommendation_counts": _sum_case_values(
+            cases,
+            "semantic_candidate_arbitration_recommendation",
+        ),
+        "semantic_candidate_arbitration_candidate_counts": _sum_case_values(
+            cases,
+            "semantic_candidate_arbitration_candidate",
+        ),
+        "mean_semantic_candidate_successor_delta": _mean_optional_case_float(
+            cases,
+            "semantic_candidate_successor_delta",
+        ),
+        "mean_semantic_candidate_pairwise_delta": _mean_optional_case_float(
+            cases,
+            "semantic_candidate_pairwise_delta",
+        ),
     }
     summary.update(_semantic_candidate_summary(cases))
     return summary
@@ -1730,6 +1814,21 @@ def _sum_case_count_dicts(cases: list[dict[str, Any]], key: str) -> dict[str, in
         if isinstance(value, dict):
             counts.update({str(item_key): int(item_value) for item_key, item_value in value.items()})
     return dict(sorted(counts.items()))
+
+
+def _mean_optional_case_float(cases: list[dict[str, Any]], key: str) -> float | None:
+    values: list[float] = []
+    for case in cases:
+        value = case.get(key)
+        if value is None:
+            continue
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return round(sum(values) / len(values), 8)
 
 
 def _percentile(values: list[float], percentile: float) -> float:
