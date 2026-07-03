@@ -140,8 +140,9 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated two- or three-column text flows, keeps tables row-major, and orders each flow segment by column then vertical position.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
+- `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
 - `reading_order_confidence`: a bounded, conservative heuristic confidence for the assigned ordering path. It is not a semantic accuracy score; it summarizes evidence strength so later editors/translators can route low-confidence nodes to review or model assistance.
-- `reading_order_evidence`: a machine-readable evidence list such as `single-column-visual-order`, `recursive-xy-cut`, `horizontal-whitespace-cut`, `column-flow`, `repeated-left-edge`, `table-island-row-major`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, or `external-structure-order`.
+- `reading_order_evidence`: a machine-readable evidence list such as `single-column-visual-order`, `recursive-xy-cut`, `horizontal-whitespace-cut`, `column-flow`, `repeated-left-edge`, `table-row-major`, `table-island-row-major`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, or `external-structure-order`.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It now evaluates up to three repeated anchor columns, requires enough anchors per column and at least 45-48% coverage of candidate body lines, so sparse author grids do not become false column pages while formula/noise boxes between columns do not force fallback.
 - Marginal page artifacts are detected with a conservative geometry gate at the top/bottom page edge. They remain editable/visible elements, but get `reading_order_scope = page-artifact`, `reading_order_artifact_type = header|footer`, `artifact-header` / `artifact-footer` column spans, and annotation roles such as `running-header` or `footer`.
 - Sidebar and marginalia detection estimates the main print space from wider body lines, then identifies narrow grouped text outside that space at the left or right edge. These nodes remain editable, receive `reading_order_scope = sidebar`, `reading_order_sidebar_type = left|right`, `sidebar-left` / `sidebar-right` spans, and are ordered after the primary body flow instead of becoming an extra body column.
@@ -150,7 +151,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
-The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. Local table islands are detected only when there are at least three consecutive aligned rows, repeated x slots, a majority of short cells, and no duplicate repeated slot within a row; this last guard prevents formula/math fragments from being treated as table cells. Pages where table-like rows dominate the text still fall back to the older whole-table visual behavior. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
+The table guard intentionally preserves obvious three-or-more-column grids as row-major order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. Local table islands are detected only when there are at least three consecutive aligned rows, repeated x slots, a majority of short cells, and no duplicate repeated slot within a row; this last guard prevents formula/math fragments from being treated as table cells. Pages where table-like rows dominate the text now use `table-row-major-v1`, which keeps the same semantic order while making the intent auditable through `table-row-major` evidence. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
 
 The sidebar and footnote rules follow the same principle as page artifacts: secondary material should stay addressable but should not distort the primary narrative flow. They are deliberately geometry-only and conservative, so regular three-column papers still keep three body columns while annual-report marginal notes and bottom-zone note clusters can be routed as secondary content.
 
@@ -255,6 +256,7 @@ Metrics:
 - `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 - `mixed_table_column_flow_element_count`: editable text nodes ordered by `mixed-table-column-flow-v1`.
+- `table_row_major_element_count`: editable text nodes ordered by `table-row-major-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_artifact_element_count`: editable text nodes identified as page-level artifacts such as running headers or footers.
 - `reading_order_artifact_counts`: per-artifact-type counts in the JSON summary and case reports.
@@ -265,7 +267,7 @@ Metrics:
 - `reading_order_confidence_element_count`: editable text nodes carrying reading-order confidence metadata.
 - `reading_order_mean_confidence`: average per-element reading-order confidence for a case or weighted benchmark summary.
 - `reading_order_low_confidence_element_count`: editable text nodes below the current confidence review threshold.
-- `reading_order_evidence_counts`: per-evidence count in the JSON summary and per case, useful for seeing whether a sample is driven by visual order, XY-Cut, column-flow, table-islands, page artifacts, footnotes, sidebars, or external model order.
+- `reading_order_evidence_counts`: per-evidence count in the JSON summary and per case, useful for seeing whether a sample is driven by visual order, XY-Cut, column-flow, pure table row-major, table-islands, page artifacts, footnotes, sidebars, or external model order.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -273,7 +275,7 @@ Metrics:
 - `reading_order_repeated_anchor_page_count`: pages with repeated left-edge anchors and overlapping vertical extent, before table-vs-text-flow filtering.
 - `reading_order_max_repeated_anchor_columns`: maximum repeated-anchor column count detected in a case.
 - `reading_order_table_like_page_count`: pages whose text boxes look like a three-or-more-column grid.
-- `reading_order_table_like_visual_yx_page_count`: table-like pages that stay mostly row-major visual order; useful for distinguishing intentional table protection from missed text-flow columns.
+- `reading_order_table_like_visual_yx_page_count`: table-like pages that still stay mostly unqualified `visual-yx`; intentional table protection should now appear as `table-row-major-v1` or `mixed-table-column-flow-v1`.
 - `reading_order_unlabeled_text_risk_count`: ignored text count for partial sidecars, or all text when no semantic ground truth is available.
 - `font_profile`: CSS font fallback profile used by native extraction, useful for comparing default browser fallback with local URW/DejaVu paper-font experiments. With benchmark `--font-profile auto`, each case also records `font_profile_candidates`, `font_profile_request`, and `font_profile_selected`.
 - `font_size_scale`: CSS font-size multiplier used by native extraction. With benchmark `--font-size-scale auto`, each case also records `font_size_scale_candidates`, `font_size_scale_request`, and `font_size_scale_selected`.
@@ -302,11 +304,11 @@ Benchmark PDF export normalizes page boxes to source dimensions when the `Docume
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
 
-Latest footnote-flow v1 validation:
+Latest table-row-major v1 validation:
 
-| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Footnote Elements | Sidebar Elements | Low-Confidence RO | Key Evidence |
-|---|---|---:|---:|---:|---:|---:|---:|---|
-| Built-in fixtures | `outputs/benchmark-footnote-flow-v1` | 0.9906702 | 1.0 | 0.77396226 | 0 | 0 | 0 | `single-column-visual-order`, `recursive-xy-cut`, whitespace cuts |
-| Transformer-XL first 3 pages | `outputs/external/transformer-xl-footnote-flow-v1` | 0.98160664 | 1.0 | 0.9552648 | 7 | 0 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
-| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-footnote-flow-v1` | 0.9795117 | n/a | 0.82476488 | 2 | 36 right | 0 | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
-| JD homepage screenshot PDF | `outputs/external/jd-home-footnote-flow-v1` | 0.99576887 | n/a | 0.83 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
+| Sample | Command Output | Visual Similarity | Semantic Order | RO Confidence | Table Row-Major | Footnote Elements | Sidebar Elements | Low-Confidence RO | Key Evidence |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Built-in fixtures | `outputs/benchmark-table-row-major-v1` | 0.9906702 | 1.0 | 0.80113208 | 18 | 0 | 0 | 0 | `table-row-major`, `recursive-xy-cut`, whitespace cuts |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-table-row-major-v1` | 0.98160664 | 1.0 | 0.9552648 | 0 | 7 | 0 | 0 | `column-flow`, `repeated-left-edge`, `footnote-secondary-flow` |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-table-row-major-v1` | 0.9795117 | n/a | 0.82476488 | 0 | 2 | 36 right | 0 | `sidebar-secondary-flow`, `footnote-secondary-flow`, `table-island-row-major` |
+| JD homepage screenshot PDF | `outputs/external/jd-home-table-row-major-v1` | 0.99576887 | n/a | 0.83 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
