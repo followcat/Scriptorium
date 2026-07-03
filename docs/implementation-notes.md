@@ -74,6 +74,7 @@ The native PDF path now handles three cases:
 
 - `native-image`: PyMuPDF `get_text("dict")` image blocks are written as local image assets and exported as positioned image elements. These are source PDF image blocks, not whole-page screenshots.
 - Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
+- Structured text lines keep `white-space: pre` and add `text-align-last: justify` in `structured` mode. Each line still uses its extracted PDF bbox, but the browser can expand word spacing to match justified PDF lines more closely.
 - `native-raster-region`: when a page has a dense vector cluster with many line drawings, Scriptorium clips just that local region from the source PDF and exports it as one image node. Text and shape nodes whose centers fall inside that region are hidden to avoid duplicate rendering. Captions and surrounding body text remain editable.
 
 This is an explicit fidelity/editability tradeoff: ordinary text, tables, separators, and simple drawings stay structured; very dense diagrams become local raster nodes until the vector renderer supports the required transparency and clipping semantics.
@@ -86,6 +87,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `semantic_order`: reading order used by XML/DOM/export consumers.
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated left/right text columns, keeps tables row-major, and orders each flow segment by column then vertical position.
+- Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It requires enough repeated anchors per column and at least 55% coverage of candidate body lines, so sparse author grids do not become false two-column pages.
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
@@ -128,7 +130,7 @@ Metrics:
 - `semantic_missing_text_count`: expected text nodes not found in extraction.
 - `semantic_extra_text_count`: extracted text nodes not present in the ground truth.
 
-For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes.
+For external PDFs without a sidecar in either location, semantic metrics are reported as unavailable while visual metrics still run normally. The tracked arXiv Attention sidecar currently covers 5 representative pages and 38 labeled text nodes. The tracked Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes.
 
 ## Useful References
 

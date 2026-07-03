@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-23%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-25%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -75,15 +75,18 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 
 | Sample | Pages | Elements | Editable | Images | Shapes | Multi-Col | Visual Similarity | Max Diff | Mean Diff | Page/Size Match |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hacker News live page printed by Playwright | 2 | 162 | 95 | 30 | 37 | 0 | 0.9792518 | 0.0207482 | 0.01067874 | yes / yes |
-| arXiv paper: Attention Is All You Need | 15 | 876 | 761 | 6 | 109 | 163 | 0.92601817 | 0.07398183 | 0.04607194 | yes / yes |
-| Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 0 | 19 | 20 | 0.98939049 | 0.01198732 | 0.01057728 | yes / yes |
+| Hacker News live page printed by Playwright | 2 | 162 | 95 | 30 | 37 | 0 | 0.97970864 | 0.02029136 | 0.01045032 | yes / yes |
+| arXiv paper: Attention Is All You Need | 15 | 876 | 761 | 6 | 109 | 163 | 0.93202666 | 0.06797334 | 0.04207162 | yes / yes |
+| ACL paper: Transformer-XL | 11 | 1558 | 1446 | 2 | 110 | 880 | 0.93358709 | 0.06641291 | 0.05013926 | yes / no |
+| Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 0 | 19 | 20 | 0.98966212 | 0.01183004 | 0.01030565 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
-内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文现在有 repo 内的部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`；网页样本暂未附带人工顺序标注。
+Transformer-XL 的 `dimension_match = false` 来自 Chromium 打印 A4 页面时产生的 1px 宽度量化差异；页数匹配，diff 仍按未拉伸画布严格比较。
 
-最新复杂页优化把 arXiv Attention 论文从 `0.88813653` 提升到 `0.92601817`。主要变化是 native image block 输出、Nimbus/Computer Modern 字体映射，以及对高密度矢量图的局部 raster fallback；第 15 页 attention 图的 diff 从最差页降到 `0.01067919`。
+内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，`semantic_order_pair_accuracy = 1.0`。网页样本暂未附带人工顺序标注。
+
+最新复杂页优化把 arXiv Attention 论文从 `0.92601817` 继续提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`。主要变化是 structured 文本行按 PDF bbox 做末行对齐以补偿 PDF word spacing，并为真实 ACL 双栏论文加入重复左边界锚点分栏；锚点分栏带覆盖率约束，避免把标题页作者网格误判成正文双栏。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -319,9 +322,9 @@ pytest
 Current local test baseline:
 
 ```text
-23 passed
+25 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, partial real-paper semantic ground truth, and strategy coverage metrics. The next useful work is broader real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, native image extraction, local raster fallback for dense vector regions, recursive XY-Cut semantic order for sectioned multi-column pages, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is broader real-document semantic ground truth, model-backed ordering adapters, richer OCR adapter mapping, and edit-aware reflow while keeping benchmark scores comparable.
