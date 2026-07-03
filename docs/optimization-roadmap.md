@@ -28,35 +28,36 @@ This project optimizes two different outcomes:
 - Mixed table/body pages can now use `mixed-table-column-flow-v1`: repeated short-cell table islands remain row-major, while surrounding non-table text still contributes to body-column detection.
 - Formula fragments are guarded by rejecting table-candidate rows that reuse the same repeated x slot, preserving Transformer-XL page-3 semantic order while keeping real table islands active.
 - Running page headers/footers near the page margins are tagged as `page-artifact` and removed from body-column inference while staying editable/visible in the IR and HTML.
-- Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `table-island-row-major`, `page-edge-artifact`, and `external-structure-order`.
+- Sidebar/marginalia detection estimates the main print space from wider body lines, routes narrow grouped text outside that space as `reading_order_scope = sidebar`, and orders it after the primary body flow instead of treating it as an extra body column.
+- Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `table-island-row-major`, `page-edge-artifact`, `sidebar-secondary-flow`, and `external-structure-order`.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
-- Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
+- Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
-- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order confidence/evidence counts, and detailed reading-order risk diagnostics.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
-| Sample | Multi-column elements | Mixed table-flow elements | Page artifacts | OCR text | Semantic GT | Order accuracy | Visual similarity |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Built-in fixtures | 20 | 0 | 0 | 0 | yes | 1.0 | 0.9906702 |
-| arXiv Attention paper | 163 | n/a | n/a | 0 | partial | 1.0 | 0.96840246 |
-| ACL Transformer-XL paper | 1213 | n/a | n/a | 0 | partial | 1.0 | 0.95679576 |
-| ACL Transformer-XL first 3 pages, current guard | 321 | 0 | 1 | 0 | partial | 1.0 | 0.98160664 |
-| Hacker News print PDF | 0 | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
-| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 20 | 0 | no | n/a | 0.9795117 |
-| JD homepage screenshot PDF | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
+| Sample | Multi-column elements | Mixed table-flow elements | Page artifacts | Sidebars | OCR text | Semantic GT | Order accuracy | Visual similarity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Built-in fixtures | 20 | 0 | 0 | 0 | 0 | yes | 1.0 | 0.9906702 |
+| arXiv Attention paper | 163 | n/a | n/a | n/a | 0 | partial | 1.0 | 0.96840246 |
+| ACL Transformer-XL paper | 1213 | n/a | n/a | n/a | 0 | partial | 1.0 | 0.95679576 |
+| ACL Transformer-XL first 3 pages, current guard | 321 | 0 | 1 | 0 | 0 | partial | 1.0 | 0.98160664 |
+| Hacker News print PDF | 0 | n/a | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
+| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 20 | 36 | 0 | no | n/a | 0.9795117 |
+| JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
 
 Current reading-order evidence coverage:
 
-| Sample | RO confidence | Low-confidence RO elements | Evidence highlights |
-|---|---:|---:|---|
-| Built-in fixtures | 0.77396226 | 0 | 33 `single-column-visual-order`, 20 `recursive-xy-cut`, 20 horizontal/vertical whitespace cuts |
-| ACL Transformer-XL first 3 pages | 0.95962617 | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 1 `footer-margin` |
-| PUMA 2024 Annual Report, first 12 pages | 0.83316123 | 0 | 64 `table-island-row-major`, 20 `page-edge-artifact`, 177 `column-flow`, 271 `single-column-visual-order` |
-| JD homepage screenshot PDF | 0.83 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
+| Sample | RO confidence | Sidebar elements | Low-confidence RO elements | Evidence highlights |
+|---|---:|---:|---:|---|
+| Built-in fixtures | 0.77396226 | 0 | 0 | 33 `single-column-visual-order`, 20 `recursive-xy-cut`, 20 horizontal/vertical whitespace cuts |
+| ACL Transformer-XL first 3 pages | 0.95962617 | 0 | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 1 `footer-margin` |
+| PUMA 2024 Annual Report, first 12 pages | 0.8246881 | 36 right | 0 | 36 `sidebar-secondary-flow`, 20 `page-edge-artifact`, 46 `table-island-row-major`, 163 `column-flow` |
+| JD homepage screenshot PDF | 0.83 | 0 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
 
 Current `--font-profile auto` sweep:
 
@@ -111,10 +112,10 @@ Current additional complex-source baselines:
 
 | Sample | Scope | Structured visual | SVG fidelity | Raster fidelity | Selected path | Notes |
 |---|---:|---:|---:|---:|---|---|
-| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, 47 column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, high semantic-risk without sidecar |
+| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, 47 column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, 36 right sidebar elements, high semantic-risk without sidecar |
 | JD homepage screenshot PDF | 1 / 1 page | 0.99536129 | 0.99536129 | 0.99576887 | `fidelity/raster` | image-only screenshot PDF, 134 transparent OCR edit anchors, now handled by recursive XY-Cut rather than false table-flow |
 
-The JD gain is not a visual-score gain; it is a structural/editability gain. The image-only PDF previously reported 1 image element and 0 editable text nodes. With generic OCR fallback it reports 135 elements, 134 editable `native-ocr` nodes, and keeps the same selected visual score. PUMA remains unchanged on OCR counts because its sampled pages expose native PDF text. Its latest mixed-table/artifact pass keeps the pixel score unchanged, marks 20 repeated header candidates, and keeps table-like pages dominated by visual order at 1, with reading-order risk `0.3875 / high`.
+The JD gain is not a visual-score gain; it is a structural/editability gain. The image-only PDF previously reported 1 image element and 0 editable text nodes. With generic OCR fallback it reports 135 elements, 134 editable `native-ocr` nodes, and keeps the same selected visual score. PUMA remains unchanged on OCR counts because its sampled pages expose native PDF text. Its latest mixed-table/artifact/sidebar pass keeps the pixel score unchanged, marks 20 repeated header candidates, routes 36 right-side marginal/sidebar text nodes as secondary flow, and keeps table-like pages dominated by visual order at 1, with reading-order risk `0.3875 / high`.
 
 Current reading-order risk diagnostics example:
 
@@ -125,7 +126,7 @@ Current reading-order risk diagnostics example:
 | ACL Transformer-XL first 3 pages, formula-slot guard | 0.21573209 | medium | 3 | 0 | 3 | 2 | 1 | 0 | 277 |
 | PUMA Annual Report, first 12 pages | 0.3875 | high | 5 | 1 | 5 | 3 | 4 | 1 | 521 |
 
-The extra repeated-anchor/table-like counters and evidence counts make the risk score actionable: PUMA improved after table-aware subregion segmentation, but remains high because it has no semantic sidecar and still has 521 unlabeled text nodes. The next work should focus on complex-document semantic labels, confidence calibration, and external structure evidence rather than only stronger global column detection.
+The extra repeated-anchor/table-like/sidebar counters and evidence counts make the risk score actionable: PUMA improved after table-aware subregion segmentation and now identifies 36 right-side secondary-flow nodes, but remains high because it has no semantic sidecar and still has 521 unlabeled text nodes. The next work should focus on complex-document semantic labels, confidence calibration, and external structure evidence rather than only stronger global column detection.
 
 ## Next Optimization Options
 
@@ -135,7 +136,7 @@ The extra repeated-anchor/table-like counters and evidence counts make the risk 
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, and emits confidence/evidence metadata. Next refinements should add figure/caption proximity, sidebar/marginal-note classification, and confidence calibration against real semantic sidecars so recursive cuts, mixed table flow, and fallback order can be compared more safely.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, routes print-space-external sidebars as secondary flow, and emits confidence/evidence metadata. Next refinements should add figure/caption proximity and confidence calibration against real semantic sidecars so recursive cuts, mixed table flow, sidebar flow, and fallback order can be compared more safely.
 
 3. Vector renderer refinement
 
@@ -181,6 +182,8 @@ The extra repeated-anchor/table-like counters and evidence counts make the risk 
 - W3C PDF reading-order technique PDF3: https://www.w3.org/TR/WCAG-TECHS/PDF3.html
 - W3C PDF14 running headers and footers as pagination artifacts: https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF14
 - W3C PDF4 artifact examples including page headers/footers: https://www.w3.org/TR/WCAG20-TECHS/PDF4.html
+- OCR-D PAGE reading-order guidelines for print-space-external marginalia: https://ocr-d.de/en/gt-guidelines/trans/lyLeserichtung.html
+- EPUB accessibility logical reading order and `aside` semantics for secondary content: https://idpf.github.io/a11y-guidelines/content/semantics/order.html
 - PRImA reading-order representation/evaluation for complex layouts: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 - pdfminer.six `LAParams.boxes_flow`: https://pdfminersix.readthedocs.io/en/latest/reference/composable.html
 - Kendall tau for information ordering evaluation: https://aclanthology.org/J06-4002.pdf
