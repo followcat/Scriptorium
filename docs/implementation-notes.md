@@ -142,10 +142,12 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `spatial-graph-v1`: a conservative weak-column fallback that builds vertical predecessor/successor chains from horizontal overlap and center proximity when repeated left-edge anchors are too unstable.
 - `box-flow-v1`: a guarded weak-column fallback that uses a pdfminer-style column-biased candidate only after table, repeated-anchor column flow, and spatial graph decline the page.
 - `infer_box_flow_order()`: a reusable pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the same primitive for pairwise disagreement diagnostics even when `box-flow-v1` is not selected.
+- `reading_order_caption_type`: shallow caption evidence inferred from native/OCR text labels such as `Figure 1`, `Fig. 2`, `Table 3`, or `Algorithm 1`. Column-local captions stay in their column; captions that cross the column gutter become local flow breaks and carry `caption-label`, `figure-caption`/`table-caption`, and `cross-column-caption` evidence.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
 - `reading_order_confidence`: a bounded, conservative heuristic confidence for the assigned ordering path. It is not a semantic accuracy score; it summarizes evidence strength so later editors/translators can route low-confidence nodes to review or model assistance.
 - `reading_order_evidence`: a machine-readable evidence list such as `single-column-visual-order`, `recursive-xy-cut`, `horizontal-whitespace-cut`, `column-flow`, `repeated-left-edge`, `spatial-graph`, `horizontal-overlap-chain`, `multi-head-flow`, `table-row-major`, `table-island-row-major`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, or `external-structure-order`.
+- Caption detection is deliberately lexical and conservative: it requires a leading figure/table/algorithm label plus a plausible text-line geometry, then optionally absorbs up to two tightly adjacent continuation lines with strong horizontal overlap. Mixed table-flow only runs caption detection on non-table-island text so table cells are not re-labeled as captions.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It now evaluates up to three repeated anchor columns, requires enough anchors per column and at least 45-48% coverage of candidate body lines, so sparse author grids do not become false column pages while formula/noise boxes between columns do not force fallback.
 - Marginal page artifacts are detected with a conservative geometry gate at the top/bottom page edge. They remain editable/visible elements, but get `reading_order_scope = page-artifact`, `reading_order_artifact_type = header|footer`, `artifact-header` / `artifact-footer` column spans, and annotation roles such as `running-header` or `footer`.
 - Sidebar and marginalia detection estimates the main print space from wider body lines, then identifies narrow grouped text outside that space at the left or right edge. These nodes remain editable, receive `reading_order_scope = sidebar`, `reading_order_sidebar_type = left|right`, `sidebar-left` / `sidebar-right` spans, and are ordered after the primary body flow instead of becoming an extra body column.
@@ -274,6 +276,7 @@ Metrics:
 - `box_flow_element_count`: editable text nodes ordered by `box-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_artifact_element_count`: editable text nodes identified as page-level artifacts such as running headers or footers.
+- `reading_order_caption_element_count`: editable text nodes with `reading_order_caption_type`, plus per-type `reading_order_caption_counts`.
 - `reading_order_artifact_counts`: per-artifact-type counts in the JSON summary and case reports.
 - `reading_order_footnote_element_count`: editable text nodes identified as bottom-zone footnotes ordered after the body flow.
 - `reading_order_sidebar_element_count`: editable text nodes identified as secondary sidebar or marginalia content.
@@ -333,3 +336,14 @@ Latest box-flow fallback validation:
 | JD homepage screenshot PDF | `outputs/external/jd-home-box-flow-fallback-v1` | 0.99576887 | n/a | 0.83 | 0 | 0.42778588 | 0 | 0 | 0 | 0 | `recursive-xy-cut`, OCR anchors |
 
 The external and built-in samples above currently report `spatial_graph_element_count = 0` and `box_flow_element_count = 0`. That is expected for this pass: existing stronger paths already cover those pages, and both new weak-column backends are guarded so they do not inflate scores by taking over unrelated benchmark cases. The box-flow disagreement ratio remains a triage signal for samples where a column-biased candidate substantially disagrees with the selected order. The spatial trigger is covered by `tests/test_reading_order.py::test_spatial_graph_orders_overlapping_weak_columns`; the selected box-flow fallback is covered by `tests/test_reading_order.py::test_box_flow_fallback_orders_relaxed_irregular_columns`; the reusable candidate sorter is covered by `tests/test_reading_order.py::test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering`.
+
+Latest caption-flow validation:
+
+| Sample | Command Output | Visual Similarity | Semantic Order | Caption Elements | Caption Counts | Cross-Column Captions | Key Evidence |
+|---|---|---:|---:|---:|---|---:|---|
+| Built-in fixtures | `outputs/benchmark-caption-flow-v1` | 0.9906702 | 1.0 | 0 | `{}` | 0 | no caption labels in fixtures |
+| Transformer-XL first 3 pages | `outputs/external/transformer-xl-caption-flow-v1` | 0.98160664 | 1.0 | 3 | `figure: 3` | 1 | `caption-label`, `figure-caption`, `cross-column-caption` |
+| PUMA 2024 Annual Report first 12 pages | `outputs/external/puma-2024-annual-report-caption-flow-v1` | 0.9795117 | n/a | 0 | `{}` | 0 | no leading figure/table labels in sampled text |
+| JD homepage screenshot PDF | `outputs/external/jd-home-caption-flow-v1` | 0.99576887 | n/a | 0 | `{}` | 0 | OCR anchors remain `recursive-xy-cut-v1` |
+
+The caption-flow path is covered by `tests/test_reading_order.py::test_cross_column_caption_creates_local_flow_break` and by the native PDF image fixture, which verifies that `Figure 1:` becomes annotation role `caption` and HTML `data-scriptorium-reading-order-caption="figure"`.

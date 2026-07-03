@@ -11,6 +11,7 @@ This project optimizes two different outcomes:
 - `column-flow-v1` detects common two- and three-column text regions and orders text by column before moving to the next column.
 - `spatial-graph-v1` handles weak irregular columns by linking vertically adjacent text boxes through horizontal overlap and center proximity, but only after stronger table and repeated-anchor paths decline the page.
 - `box-flow-v1` handles weak irregular columns with a pdfminer-style column-biased candidate order, but only after stronger table, repeated-anchor, and spatial-graph paths decline the page.
+- Caption-flow uses native/OCR text labels to identify `Figure/Fig./Table/Algorithm + number` captions, keeps column-local captions in-column, and turns cross-gutter captions into local flow breaks.
 - Column-biased box-flow candidate diagnostics still compare the selected semantic order against a horizontal-flow order and report pairwise disagreement for all benchmarked pages.
 - Pure table-like grids use `table-row-major-v1`, so table cells stay row-major without being reported as an unknown visual-order fallback.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
@@ -37,37 +38,37 @@ This project optimizes two different outcomes:
 - Running page headers/footers near the page margins are tagged as `page-artifact` and removed from body-column inference while staying editable/visible in the IR and HTML.
 - Sidebar/marginalia detection estimates the main print space from wider body lines, routes narrow grouped text outside that space as `reading_order_scope = sidebar`, and orders it after the primary body flow instead of treating it as an extra body column.
 - Footnote detection routes compact bottom-zone notes as `reading_order_scope = footnote`, keeping them after body columns but before sidebars and footer artifacts.
-- Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `spatial-graph`, `horizontal-overlap-chain`, `multi-head-flow`, `table-row-major`, `table-island-row-major`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, and `external-structure-order`.
+- Reading-order assignments now expose bounded heuristic confidence plus evidence tags such as `recursive-xy-cut`, `column-flow`, `repeated-left-edge`, `spatial-graph`, `horizontal-overlap-chain`, `multi-head-flow`, `table-row-major`, `table-island-row-major`, `caption-label`, `cross-column-caption`, `page-edge-artifact`, `footnote-secondary-flow`, `bottom-note-zone`, `sidebar-secondary-flow`, and `external-structure-order`.
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 style JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
-- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, box-flow disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
+- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `recursive_xy_cut_element_count`, caption counts, box-flow disagreement metrics, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
 - Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order footnote/sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
-| Sample | Multi-column elements | Mixed table-flow elements | Table row-major | Spatial graph | Box-flow elements | Box-flow disagreement | Page artifacts | Footnotes | Sidebars | OCR text | Semantic GT | Order accuracy | Visual similarity |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Built-in fixtures | 20 | 0 | 18 | 0 | 0 | 0.19494585 | 0 | 0 | 0 | 0 | yes | 1.0 | 0.9906702 |
-| arXiv Attention paper | 163 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.96840246 |
-| ACL Transformer-XL paper | 1213 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.95679576 |
-| ACL Transformer-XL first 3 pages, box-flow fallback | 321 | 0 | 0 | 0 | 0 | 0.0825672 | 1 | 7 | 0 | 0 | partial | 1.0 | 0.98160664 |
-| Hacker News print PDF | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
-| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 0 | 0 | 0 | 0.17460108 | 20 | 2 | 36 | 0 | no | n/a | 0.9795117 |
-| JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
+| Sample | Multi-column elements | Mixed table-flow elements | Table row-major | Spatial graph | Box-flow elements | Captions | Box-flow disagreement | Page artifacts | Footnotes | Sidebars | OCR text | Semantic GT | Order accuracy | Visual similarity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Built-in fixtures | 20 | 0 | 18 | 0 | 0 | 0 | 0.19494585 | 0 | 0 | 0 | 0 | yes | 1.0 | 0.9906702 |
+| arXiv Attention paper | 163 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.96840246 |
+| ACL Transformer-XL paper | 1213 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.95679576 |
+| ACL Transformer-XL first 3 pages, caption-flow | 321 | 0 | 0 | 0 | 0 | 3 figure | 0.0825672 | 1 | 7 | 0 | 0 | partial | 1.0 | 0.98160664 |
+| Hacker News print PDF | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 0.9800288 |
+| PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 20 | 2 | 36 | 0 | no | n/a | 0.9795117 |
+| JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 0 | 0 | 0 | 134 | no | n/a | 0.99576887 |
 
 Current reading-order evidence coverage:
 
-| Sample | RO confidence | Table row-major | Footnote elements | Sidebar elements | Low-confidence RO elements | Evidence highlights |
-|---|---:|---:|---:|---:|---:|---|
-| Built-in fixtures | 0.80113208 | 18 | 0 | 0 | 0 | 18 `table-row-major`, 20 `recursive-xy-cut`, 20 horizontal/vertical whitespace cuts |
-| ACL Transformer-XL first 3 pages | 0.9552648 | 0 | 7 | 0 | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 7 `footnote-secondary-flow` |
-| PUMA 2024 Annual Report, first 12 pages | 0.82476488 | 0 | 2 | 36 right | 0 | 36 `sidebar-secondary-flow`, 2 `footnote-secondary-flow`, 20 `page-edge-artifact`, 46 `table-island-row-major` |
-| JD homepage screenshot PDF | 0.83 | 0 | 0 | 0 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
+| Sample | RO confidence | Table row-major | Footnote elements | Sidebar elements | Caption elements | Low-confidence RO elements | Evidence highlights |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Built-in fixtures | 0.80113208 | 18 | 0 | 0 | 0 | 0 | 18 `table-row-major`, 20 `recursive-xy-cut`, 20 horizontal/vertical whitespace cuts |
+| ACL Transformer-XL first 3 pages | 0.9552648 | 0 | 7 | 0 | 3 figure | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 3 `caption-label`, 1 `cross-column-caption` |
+| PUMA 2024 Annual Report, first 12 pages | 0.82476488 | 0 | 2 | 36 right | 0 | 0 | 36 `sidebar-secondary-flow`, 2 `footnote-secondary-flow`, 20 `page-edge-artifact`, 46 `table-island-row-major` |
+| JD homepage screenshot PDF | 0.83 | 0 | 0 | 0 | 0 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
 
-The current built-in and external benchmark set reports 0 `spatial-graph-v1` and 0 `box-flow-v1` elements. That is intentional for this capability pass: both fallbacks are covered by weak-column unit tests and are guarded so they do not replace stronger repeated-anchor, table, sidebar, footnote, or XY-Cut evidence on existing samples.
+The current built-in and external benchmark set reports 0 `spatial-graph-v1` and 0 `box-flow-v1` elements. That is intentional for this capability pass: both fallbacks are covered by weak-column unit tests and are guarded so they do not replace stronger repeated-anchor, table, sidebar, caption, footnote, or XY-Cut evidence on existing samples.
 
 Box-flow disagreement is a triage metric, not a semantic score. Transformer-XL's low ratio (`0.0825672`) is consistent with its labeled semantic order staying at `1.0`; JD's high ratio (`0.42778588`) flags dense OCR/web layout where more semantic labels or model structure evidence are needed before changing ordering rules.
 
@@ -138,7 +139,7 @@ Current reading-order risk diagnostics example:
 | ACL Transformer-XL first 3 pages, formula-slot guard | 0.21573209 | medium | 3 | 0 | 3 | 2 | 1 | 0 | 277 |
 | PUMA Annual Report, first 12 pages | 0.35 | high | 5 | 0 | 5 | 3 | 4 | 0 | 521 |
 
-The extra repeated-anchor/table-like/sidebar/footnote/spatial-graph/box-flow counters and evidence counts make the risk score actionable: built-in pure tables no longer produce a high-risk visual-yx false positive, PUMA identifies 36 right-side secondary-flow nodes plus 2 footnote-flow nodes, current samples show the weak-column fallbacks have not taken over unrelated pages, and JD's high box-flow disagreement identifies it as a priority for semantic labeling or external structure evidence. The next work should focus on complex-document semantic labels, confidence calibration, candidate-order selection, and external structure evidence rather than only stronger global column detection.
+The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-flow counters and evidence counts make the risk score actionable: built-in pure tables no longer produce a high-risk visual-yx false positive, Transformer-XL now identifies 3 figure captions including 1 cross-column caption without changing its `1.0` semantic sidecar score, PUMA identifies 36 right-side secondary-flow nodes plus 2 footnote-flow nodes, current samples show the weak-column fallbacks have not taken over unrelated pages, and JD's high box-flow disagreement identifies it as a priority for semantic labeling or external structure evidence. The next work should focus on complex-document semantic labels, confidence calibration, candidate-order selection, and external structure evidence rather than only stronger global column detection.
 
 ## Next Optimization Options
 
@@ -148,7 +149,7 @@ The extra repeated-anchor/table-like/sidebar/footnote/spatial-graph/box-flow cou
 
 2. Recursive XY-Cut refinement
 
-   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, routes print-space-external sidebars and bottom-zone footnotes as secondary flow, and emits confidence/evidence metadata. Spatial graph and guarded box-flow now cover weak-column fallback paths when repeated anchors are unstable, and box-flow diagnostics expose candidate-order disagreement on all benchmarked pages. Next refinements should add figure/caption proximity, confidence calibration against real semantic sidecars, and explicit candidate-order arbitration between native heuristics, model structure evidence, and relation-graph predictions.
+   The first backend is implemented. Column-flow now tolerates formula noise between repeated anchors, supports up to three repeated text-flow columns, can split mixed table/body pages with local table islands, routes print-space-external sidebars and bottom-zone footnotes as secondary flow, identifies shallow figure/table/algorithm caption labels, and emits confidence/evidence metadata. Spatial graph and guarded box-flow now cover weak-column fallback paths when repeated anchors are unstable, and box-flow diagnostics expose candidate-order disagreement on all benchmarked pages. Next refinements should expand caption-to-figure/table proximity, confidence calibration against real semantic sidecars, and explicit candidate-order arbitration between native heuristics, model structure evidence, and relation-graph predictions.
 
 3. Vector renderer refinement
 
@@ -162,9 +163,9 @@ The extra repeated-anchor/table-like/sidebar/footnote/spatial-graph/box-flow cou
 
    Benchmark-time `--font-profile auto`, `--font-size-scale auto`, and `--text-fit auto` now select between global candidates per PDF. The next step is to move from whole-document selection to per-page or per-font-cluster selection, without requiring a full multi-candidate print/compare pass for normal conversion. Current research found that most paper fonts are embedded Type1/PFA, which browsers cannot directly consume; usable TTF extraction is therefore only a partial solution. SVG text-fit also needs edit-state switching and line-height/baseline refinements so long translated replacements can reuse the same fitted layer safely.
 
-6. Box-flow scoring backend
+6. Relation-graph ordering backend
 
-   Add a continuous score similar to pdfminer.six `boxes_flow`, where horizontal and vertical proximity jointly decide text box order. This is useful for pages that are not cleanly separable into columns.
+   The geometric box-flow candidate is implemented. The next step is a relation graph that scores local successor edges from geometry, role, caption/figure/table proximity, and optional model evidence, then selects an acyclic order or path cover. This follows recent work that treats reading order as relations rather than a single fragile permutation and should be evaluated with edge accuracy in addition to pairwise sequence accuracy.
 
 7. Real model evidence A/B
 
@@ -202,6 +203,8 @@ The extra repeated-anchor/table-like/sidebar/footnote/spatial-graph/box-flow cou
 - Modeling reading order as relations for visually-rich documents: https://aclanthology.org/2024.emnlp-main.540/
 - LayoutReader / ReadingBank reading-order benchmark: https://aclanthology.org/2021.emnlp-main.389/
 - XY-Cut++ reading-order recovery: https://arxiv.org/html/2504.10258v1
+- Reading order inference for complex document layouts with graph/path-cover ordering: https://arxiv.org/html/2607.01018
+- Graph-based document structure analysis with reading-order and logical relations: https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf
 - Docling technical report: https://arxiv.org/html/2408.09869v5
 - LayoutParser paper: https://arxiv.org/abs/2103.15348
 - PP-StructureV3 pipeline usage and multi-column reading-order recovery: https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html
