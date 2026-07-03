@@ -126,6 +126,7 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "reading_order_region_path": element.metadata.get("reading_order_region_path"),
             "reading_order_scope": element.metadata.get("reading_order_scope", "body"),
             "reading_order_artifact_type": element.metadata.get("reading_order_artifact_type"),
+            "reading_order_sidebar_type": element.metadata.get("reading_order_sidebar_type"),
             "reading_order_confidence": float(element.metadata.get("reading_order_confidence") or 0.0),
             "reading_order_evidence": _reading_order_evidence(element),
             "reading_order_evidence_summary": element.metadata.get("reading_order_evidence_summary", ""),
@@ -222,6 +223,9 @@ def _infer_role(element: ElementIR, median_font: float, layout_region: LayoutReg
     artifact_role = _reading_order_artifact_role(element)
     if artifact_role:
         return artifact_role
+    sidebar_role = _reading_order_sidebar_role(element)
+    if sidebar_role:
+        return sidebar_role
 
     font_size = float(element.style_hint.get("font_size_px", 0))
     font_weight = int(element.style_hint.get("font_weight", 400) or 400)
@@ -238,6 +242,14 @@ def _reading_order_artifact_role(element: ElementIR) -> str | None:
         return "running-header"
     if artifact_type == "footer":
         return "footer"
+    return None
+
+
+def _reading_order_sidebar_role(element: ElementIR) -> str | None:
+    if str(element.metadata.get("reading_order_scope") or "").strip() == "sidebar":
+        return "sidebar-text"
+    if str(element.metadata.get("reading_order_sidebar_type") or "").strip():
+        return "sidebar-text"
     return None
 
 

@@ -182,6 +182,42 @@ def test_column_flow_detects_three_repeated_anchor_columns() -> None:
     assert {by_item[index].column_index for index in first_column} == {0}
     assert {by_item[index].column_index for index in second_column} == {1}
     assert {by_item[index].column_index for index in third_column} == {2}
+    assert all(by_item[index].scope == "body" for index in first_column + second_column + third_column)
+
+
+def test_sidebar_notes_do_not_become_body_columns() -> None:
+    bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=526, y1=60)]
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+    sidebar_indices: list[int] = []
+
+    for row in range(10):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=72, y0=92 + row * 14, x1=286, y1=103 + row * 14))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=318, y0=92 + row * 14, x1=526, y1=103 + row * 14))
+
+    for row in range(4):
+        sidebar_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=588, y0=112 + row * 18, x1=660, y1=124 + row * 18))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=720, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert max(by_item[index].semantic_order for index in right_indices) < min(
+        by_item[index].semantic_order for index in sidebar_indices
+    )
+    assert {by_item[index].scope for index in sidebar_indices} == {"sidebar"}
+    assert {by_item[index].sidebar_type for index in sidebar_indices} == {"right"}
+    assert {by_item[index].column_span for index in sidebar_indices} == {"sidebar-right"}
+    assert {by_item[index].column_index for index in sidebar_indices} == {None}
+    assert {by_item[index].strategy for index in sidebar_indices} == {"sidebar-aware-column-flow-v1"}
+    assert all("sidebar-secondary-flow" in by_item[index].evidence for index in sidebar_indices)
+    assert all("marginalia-outside-print-space" in by_item[index].evidence for index in sidebar_indices)
 
 
 def test_column_flow_keeps_running_margins_outside_body_columns() -> None:
