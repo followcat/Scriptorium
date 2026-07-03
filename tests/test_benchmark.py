@@ -159,9 +159,15 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_unlabeled_text_risk_count" in report["summary"]
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
+    assert report["summary"]["mean_semantic_successor_accuracy"] == 1
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
+    assert "total_semantic_successor_correct_count" in report["summary"]
+    assert "total_semantic_successor_count" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
     assert all(case["semantic_ground_truth_available"] for case in report["cases"])
+    assert all("semantic_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_successor_correct_count" in case for case in report["cases"])
+    assert all("semantic_successor_total_count" in case for case in report["cases"])
     assert all("semantic_ignored_text_count" in case for case in report["cases"])
     assert all(case["element_count"] > 0 for case in report["cases"])
     assert (tmp_path / "benchmark" / "benchmark_report.json").exists()

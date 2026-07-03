@@ -105,6 +105,7 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
     ignored_source_counts = Counter(str(item["source"]) for item in ignored_texts)
 
     correct_pairs, total_pairs = _pairwise_order_counts(matched_positions)
+    successor_correct, successor_total = _successor_order_counts(matched_positions)
     if match_mode == "ordered-subsequence":
         edit_distance = len(expected) - matched_count
         denominator = max(len(expected), 1)
@@ -134,6 +135,11 @@ def _compare_page(document: DocumentIR, page_truth: dict[str, Any]) -> dict[str,
         "pairwise_correct_count": correct_pairs,
         "pairwise_total_count": total_pairs,
         "pairwise_order_accuracy": _round_ratio(correct_pairs / total_pairs if total_pairs else 1.0),
+        "successor_correct_count": successor_correct,
+        "successor_total_count": successor_total,
+        "successor_order_accuracy": _round_ratio(
+            successor_correct / successor_total if successor_total else 1.0
+        ),
         "expected_sequence": expected,
         "actual_sequence": actual,
     }
@@ -230,6 +236,25 @@ def _pairwise_order_counts(positions: list[int | None]) -> tuple[int, int]:
     return correct, total
 
 
+def _successor_order_counts(positions: list[int | None]) -> tuple[int, int]:
+    total = max(0, len(positions) - 1)
+    correct = 0
+    for left in range(total):
+        right = left + 1
+        left_position = positions[left]
+        right_position = positions[right]
+        if left_position is None or right_position is None or left_position >= right_position:
+            continue
+        if any(
+            other_position is not None and left_position < other_position < right_position
+            for index, other_position in enumerate(positions)
+            if index not in {left, right}
+        ):
+            continue
+        correct += 1
+    return correct, total
+
+
 def _levenshtein_distance(expected: list[str], actual: list[str]) -> int:
     if not expected:
         return len(actual)
@@ -260,6 +285,8 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     edit_denominator = max(expected_count, actual_count, 1)
     pairwise_correct = sum(int(page["pairwise_correct_count"]) for page in pages)
     pairwise_total = sum(int(page["pairwise_total_count"]) for page in pages)
+    successor_correct = sum(int(page["successor_correct_count"]) for page in pages)
+    successor_total = sum(int(page["successor_total_count"]) for page in pages)
     return {
         "semantic_page_count": len(pages),
         "semantic_expected_text_count": expected_count,
@@ -276,6 +303,11 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_pairwise_correct_count": pairwise_correct,
         "semantic_pairwise_total_count": pairwise_total,
         "semantic_order_pair_accuracy": _round_ratio(pairwise_correct / pairwise_total if pairwise_total else 1.0),
+        "semantic_successor_correct_count": successor_correct,
+        "semantic_successor_total_count": successor_total,
+        "semantic_successor_accuracy": _round_ratio(
+            successor_correct / successor_total if successor_total else 1.0
+        ),
         "semantic_exact_page_match_rate": _round_ratio(
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),

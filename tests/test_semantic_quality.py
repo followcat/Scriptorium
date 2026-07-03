@@ -58,11 +58,15 @@ def test_ordered_subsequence_ground_truth_ignores_unlabeled_text(tmp_path: Path,
     assert page["extra_text_count"] == 0
     assert page["sequence_similarity"] == 1
     assert page["pairwise_order_accuracy"] == 1
+    assert page["successor_order_accuracy"] == 1
     assert report["semantic_ignored_text_count"] == 3
     assert report["semantic_ignored_text_zone_counts"] == {"body": 1, "footer": 1, "header": 1}
     assert report["semantic_ignored_text_role_counts"] == {"footer": 1, "paragraph": 1, "running-header": 1}
     assert report["semantic_ignored_text_source_counts"] == {"unit-test": 3}
     assert report["semantic_order_pair_accuracy"] == 1
+    assert report["semantic_successor_accuracy"] == 1
+    assert report["semantic_successor_correct_count"] == 2
+    assert report["semantic_successor_total_count"] == 2
 
 
 def test_repo_ground_truth_can_be_scoped_by_parent_directory(tmp_path: Path, monkeypatch) -> None:
@@ -95,6 +99,67 @@ def test_repo_ground_truth_can_be_scoped_by_parent_directory(tmp_path: Path, mon
     assert any(path.name == "web-hn.input.semantic-order.json" for path in candidates)
     assert report["ground_truth"].endswith("benchmarks/semantic-ground-truth/web-hn.input.semantic-order.json")
     assert report["semantic_order_pair_accuracy"] == 1
+
+
+def test_successor_accuracy_catches_adjacent_order_regression(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    semantic_ground_truth = source_pdf.with_suffix(".semantic-order.json")
+    semantic_ground_truth.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "text_sequence": ["A", "B", "C", "D"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "C", "B", "D"])
+
+    report = compare_semantic_reading_order(document, source_pdf, tmp_path / "semantic")
+    page = report["pages"][0]
+
+    assert page["pairwise_order_accuracy"] == 0.83333333
+    assert page["successor_correct_count"] == 0
+    assert page["successor_total_count"] == 3
+    assert page["successor_order_accuracy"] == 0
+    assert report["semantic_successor_accuracy"] == 0
+
+
+def test_successor_accuracy_counts_missing_adjacent_text(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    semantic_ground_truth = source_pdf.with_suffix(".semantic-order.json")
+    semantic_ground_truth.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "text_sequence": ["A", "B", "C"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "C"])
+
+    report = compare_semantic_reading_order(document, source_pdf, tmp_path / "semantic")
+    page = report["pages"][0]
+
+    assert page["missing_texts"] == ["B"]
+    assert page["successor_correct_count"] == 0
+    assert page["successor_total_count"] == 2
+    assert report["semantic_successor_correct_count"] == 0
+    assert report["semantic_successor_total_count"] == 2
+    assert report["semantic_successor_accuracy"] == 0
 
 
 def _document_with_texts(texts: list[str]) -> DocumentIR:

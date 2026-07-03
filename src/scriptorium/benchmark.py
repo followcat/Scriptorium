@@ -1034,6 +1034,9 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_sequence_edit_distance",
         "semantic_pairwise_correct_count",
         "semantic_pairwise_total_count",
+        "semantic_successor_accuracy",
+        "semantic_successor_correct_count",
+        "semantic_successor_total_count",
         "semantic_ignored_text_count",
         "semantic_missing_text_count",
         "semantic_extra_text_count",
@@ -1352,6 +1355,9 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_sequence_edit_distance": report.get("semantic_sequence_edit_distance") if available else 0,
         "semantic_pairwise_correct_count": report.get("semantic_pairwise_correct_count") if available else 0,
         "semantic_pairwise_total_count": report.get("semantic_pairwise_total_count") if available else 0,
+        "semantic_successor_accuracy": report.get("semantic_successor_accuracy") if available else None,
+        "semantic_successor_correct_count": report.get("semantic_successor_correct_count") if available else 0,
+        "semantic_successor_total_count": report.get("semantic_successor_total_count") if available else 0,
         "semantic_ignored_text_count": report.get("semantic_ignored_text_count") if available else 0,
         "semantic_ignored_text_zone_counts": report.get("semantic_ignored_text_zone_counts") if available else {},
         "semantic_ignored_text_role_counts": report.get("semantic_ignored_text_role_counts") if available else {},
@@ -1368,7 +1374,10 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_semantic_order_pair_accuracy": None,
             "mean_semantic_sequence_similarity": None,
             "mean_semantic_exact_page_match_rate": None,
+            "mean_semantic_successor_accuracy": None,
             "total_semantic_expected_text_count": 0,
+            "total_semantic_successor_correct_count": 0,
+            "total_semantic_successor_count": 0,
             "total_semantic_ignored_text_count": 0,
             "total_semantic_ignored_text_zone_counts": {},
             "total_semantic_ignored_text_role_counts": {},
@@ -1382,9 +1391,15 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
     edit_distance = sum(int(case["semantic_sequence_edit_distance"]) for case in cases)
     pairwise_correct = sum(int(case["semantic_pairwise_correct_count"]) for case in cases)
     pairwise_total = sum(int(case["semantic_pairwise_total_count"]) for case in cases)
+    successor_correct = sum(int(case["semantic_successor_correct_count"]) for case in cases)
+    successor_total = sum(int(case["semantic_successor_total_count"]) for case in cases)
     return {
         "semantic_case_count": len(cases),
         "mean_semantic_order_pair_accuracy": round(pairwise_correct / pairwise_total if pairwise_total else 1.0, 8),
+        "mean_semantic_successor_accuracy": round(
+            successor_correct / successor_total if successor_total else 1.0,
+            8,
+        ),
         "mean_semantic_sequence_similarity": round(
             1.0 - edit_distance / max(expected_count, actual_count, 1),
             8,
@@ -1394,6 +1409,8 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             8,
         ),
         "total_semantic_expected_text_count": expected_count,
+        "total_semantic_successor_correct_count": successor_correct,
+        "total_semantic_successor_count": successor_total,
         "total_semantic_ignored_text_count": sum(int(case["semantic_ignored_text_count"]) for case in cases),
         "total_semantic_ignored_text_zone_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_zone_counts"),
         "total_semantic_ignored_text_role_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_role_counts"),
