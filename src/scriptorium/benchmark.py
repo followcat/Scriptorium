@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
-from .html_export import HtmlTextFit, export_html
+from .html_export import FidelityBackground, HtmlTextFit, export_html
 from .models import DocumentIR
 from .native_pdf import FontProfile, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
@@ -24,10 +24,13 @@ HtmlMode = Literal["structured", "fidelity"]
 BenchmarkHtmlMode = Literal["structured", "fidelity", "auto"]
 BenchmarkFontSizeScale = float | Literal["auto"]
 BenchmarkTextFit = Literal["none", "svg", "auto"]
+BenchmarkFidelityBackground = Literal["svg", "raster", "auto"]
+FidelityBackgroundChoice = Literal["none", "svg", "raster"]
 FONT_PROFILE_CANDIDATES: tuple[FontProfile, ...] = ("browser-default", "local-urw")
 HTML_MODE_CANDIDATES: tuple[HtmlMode, ...] = ("structured", "fidelity")
 FONT_SIZE_SCALE_CANDIDATES: tuple[float, ...] = (0.99, 1.0)
 TEXT_FIT_CANDIDATES: tuple[HtmlTextFit, ...] = ("none", "svg")
+FIDELITY_BACKGROUND_CANDIDATES: tuple[FidelityBackground, ...] = ("svg", "raster")
 
 
 def run_benchmark(
@@ -40,12 +43,14 @@ def run_benchmark(
     html_mode: BenchmarkHtmlMode = "structured",
     font_size_scale: BenchmarkFontSizeScale = 1.0,
     text_fit: BenchmarkTextFit = "none",
+    fidelity_background: BenchmarkFidelityBackground = "auto",
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
     html_mode_request = _html_mode_request(html_mode)
     font_size_scale_request = _font_size_scale_request(font_size_scale)
     text_fit_request = _text_fit_request(text_fit)
+    fidelity_background_request = _fidelity_background_request(fidelity_background)
     input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
     structure_json_by_pdf = _structure_json_by_pdf(input_pdfs, structure_jsons or [])
 
@@ -56,6 +61,7 @@ def run_benchmark(
             or html_mode_request == "auto"
             or font_size_scale_request == "auto"
             or text_fit_request == "auto"
+            or _fidelity_background_needs_calibration(html_mode_request, fidelity_background_request)
         ):
             cases.append(
                 _run_calibrated_case(
@@ -68,9 +74,11 @@ def run_benchmark(
                     font_size_scale=font_size_scale_request,
                     font_profile=font_profile,
                     text_fit=text_fit_request,
+                    fidelity_background=fidelity_background_request,
                 )
             )
         else:
+            case_fidelity_background = _single_fidelity_background(html_mode_request, fidelity_background_request)
             cases.append(
                 _run_case(
                     pdf_path,
@@ -82,6 +90,7 @@ def run_benchmark(
                     html_mode=html_mode_request,
                     font_size_scale=float(font_size_scale_request),
                     text_fit=text_fit_request,
+                    fidelity_background=case_fidelity_background,
                 )
             )
 
@@ -94,6 +103,7 @@ def run_benchmark(
         "html_mode": html_mode_request,
         "font_size_scale": font_size_scale_request,
         "text_fit": text_fit_request,
+        "fidelity_background": fidelity_background_request,
         "case_count": len(cases),
         "summary": summary,
         "cases": cases,
@@ -113,12 +123,18 @@ def _run_case(
     html_mode: HtmlMode = "structured",
     font_size_scale: float = 1.0,
     text_fit: HtmlTextFit = "none",
+    fidelity_background: FidelityBackground = "svg",
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
 
     start = time.perf_counter()
-    rendered = render_pdf(pdf_path, out_dir / "pages", dpi=dpi, include_svg_background=html_mode == "fidelity")
+    rendered = render_pdf(
+        pdf_path,
+        out_dir / "pages",
+        dpi=dpi,
+        include_svg_background=html_mode == "fidelity" and fidelity_background == "svg",
+    )
     timings["render_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
@@ -136,13 +152,20 @@ def _run_case(
     timings["extract_annotate_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    html_path = export_html(document, out_dir / "html", display_mode=html_mode, text_fit=text_fit)
+    html_path = export_html(
+        document,
+        out_dir / "html",
+        display_mode=html_mode,
+        text_fit=text_fit,
+        fidelity_background=fidelity_background,
+    )
     timings["export_html_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
+    export_name = f"{html_mode}-{fidelity_background}-export.pdf" if html_mode == "fidelity" else f"{html_mode}-export.pdf"
     exported_pdf = print_html_to_pdf(
         html_path,
-        out_dir / f"{html_mode}-export.pdf",
+        out_dir / export_name,
         page_sizes_pt=[(page.width_pt, page.height_pt) for page in document.pages],
     )
     timings["print_pdf_seconds"] = _elapsed(start)
@@ -196,6 +219,7 @@ def _run_case(
         "html_mode": html_mode,
         "font_size_scale": stats["font_size_scale"],
         "text_fit": text_fit,
+        "fidelity_background": fidelity_background if html_mode == "fidelity" else "none",
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
@@ -226,12 +250,13 @@ def _run_calibrated_case(
     font_size_scale: BenchmarkFontSizeScale,
     font_profile: BenchmarkFontProfile,
     text_fit: BenchmarkTextFit,
+    fidelity_background: BenchmarkFidelityBackground,
 ) -> dict[str, Any]:
     start = time.perf_counter()
     candidates = [
         _run_case(
             pdf_path,
-            out_dir / f"{mode}-{profile}-scale-{_font_size_scale_slug(scale)}-text-fit-{fit}",
+            out_dir / _candidate_slug(mode, background, profile, scale, fit),
             dpi=dpi,
             structure_json=structure_json,
             font_profile=profile,
@@ -239,12 +264,14 @@ def _run_calibrated_case(
             html_mode=mode,
             font_size_scale=scale,
             text_fit=fit,
+            fidelity_background=_case_fidelity_background(background),
         )
-        for mode, profile, scale, fit in _calibration_candidates(
+        for mode, background, profile, scale, fit in _calibration_candidates(
             font_profile=font_profile,
             html_mode=html_mode,
             font_size_scale=font_size_scale,
             text_fit=text_fit,
+            fidelity_background=fidelity_background,
         )
     ]
     calibration_total_seconds = _elapsed(start)
@@ -263,6 +290,7 @@ def _run_calibrated_case(
             "html_mode": candidate["html_mode"],
             "font_size_scale": candidate["font_size_scale"],
             "text_fit": candidate["text_fit"],
+            "fidelity_background": candidate["fidelity_background"],
             "visual_similarity": candidate["visual_similarity"],
             "max_diff_ratio": candidate["max_diff_ratio"],
             "mean_diff_ratio": candidate["mean_diff_ratio"],
@@ -282,6 +310,8 @@ def _run_calibrated_case(
     selected["font_size_scale_selected"] = selected["font_size_scale"]
     selected["text_fit_request"] = text_fit
     selected["text_fit_selected"] = selected["text_fit"]
+    selected["fidelity_background_request"] = fidelity_background
+    selected["fidelity_background_selected"] = selected["fidelity_background"]
     selected["calibration_selected_total_seconds"] = selected_candidate_seconds
     selected["calibration_total_seconds"] = calibration_total_seconds
     selected["total_seconds"] = calibration_total_seconds
@@ -289,6 +319,7 @@ def _run_calibrated_case(
     selected["html_mode_candidates"] = candidate_summaries
     selected["font_size_scale_candidates"] = candidate_summaries
     selected["text_fit_candidates"] = candidate_summaries
+    selected["fidelity_background_candidates"] = candidate_summaries
     if font_profile == "auto":
         selected["font_profile_auto_total_seconds"] = calibration_total_seconds
         selected["font_profile_selected_total_seconds"] = selected_candidate_seconds
@@ -301,6 +332,9 @@ def _run_calibrated_case(
     if text_fit == "auto":
         selected["text_fit_auto_total_seconds"] = calibration_total_seconds
         selected["text_fit_selected_total_seconds"] = selected_candidate_seconds
+    if _fidelity_background_needs_calibration(html_mode, fidelity_background):
+        selected["fidelity_background_auto_total_seconds"] = calibration_total_seconds
+        selected["fidelity_background_selected_total_seconds"] = selected_candidate_seconds
     return selected
 
 
@@ -510,6 +544,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "html_mode_counts": _sum_case_values(cases, "html_mode"),
         "font_size_scale_counts": _sum_case_values(cases, "font_size_scale"),
         "text_fit_counts": _sum_case_values(cases, "text_fit"),
+        "fidelity_background_counts": _sum_case_values(cases, "fidelity_background"),
         "layout_region_counts": _sum_case_count_dicts(cases, "layout_region_counts"),
         "total_table_regions": sum(int(case["table_region_count"]) for case in cases),
         "total_figure_regions": sum(int(case["figure_region_count"]) for case in cases),
@@ -570,6 +605,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "html_mode",
         "font_size_scale",
         "text_fit",
+        "fidelity_background",
         "structure_evidence_source",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
@@ -626,14 +662,30 @@ def _calibration_candidates(
     html_mode: BenchmarkHtmlMode,
     font_size_scale: BenchmarkFontSizeScale,
     text_fit: BenchmarkTextFit,
-) -> list[tuple[HtmlMode, FontProfile, float, HtmlTextFit]]:
-    candidates: list[tuple[HtmlMode, FontProfile, float, HtmlTextFit]] = []
+    fidelity_background: BenchmarkFidelityBackground,
+) -> list[tuple[HtmlMode, FidelityBackgroundChoice, FontProfile, float, HtmlTextFit]]:
+    candidates: list[tuple[HtmlMode, FidelityBackgroundChoice, FontProfile, float, HtmlTextFit]] = []
     for mode in _html_mode_candidates(html_mode):
-        for profile in _font_profile_candidates_for_mode(font_profile, mode):
-            for scale in _font_size_scale_candidates_for_mode(font_size_scale, mode):
-                for fit in _text_fit_candidates_for_mode(text_fit, mode):
-                    candidates.append((mode, profile, scale, fit))
+        for background in _fidelity_background_candidates_for_mode(fidelity_background, mode):
+            for profile in _font_profile_candidates_for_mode(font_profile, mode):
+                for scale in _font_size_scale_candidates_for_mode(font_size_scale, mode):
+                    for fit in _text_fit_candidates_for_mode(text_fit, mode):
+                        candidates.append((mode, background, profile, scale, fit))
     return candidates
+
+
+def _candidate_slug(
+    html_mode: HtmlMode,
+    fidelity_background: FidelityBackgroundChoice,
+    font_profile: FontProfile,
+    font_size_scale: float,
+    text_fit: HtmlTextFit,
+) -> str:
+    background_part = f"-bg-{fidelity_background}" if html_mode == "fidelity" else ""
+    return (
+        f"{html_mode}{background_part}-{font_profile}"
+        f"-scale-{_font_size_scale_slug(font_size_scale)}-text-fit-{text_fit}"
+    )
 
 
 def _font_profile_candidates_for_mode(
@@ -665,6 +717,51 @@ def _text_fit_candidates_for_mode(
     return _text_fit_candidates(text_fit)
 
 
+def _fidelity_background_candidates_for_mode(
+    fidelity_background: BenchmarkFidelityBackground,
+    html_mode: HtmlMode,
+) -> tuple[FidelityBackgroundChoice, ...]:
+    if html_mode != "fidelity":
+        return ("none",)
+    if fidelity_background == "auto":
+        return FIDELITY_BACKGROUND_CANDIDATES
+    if fidelity_background not in FIDELITY_BACKGROUND_CANDIDATES:
+        raise ValueError(
+            "fidelity_background must be one of svg, raster, or auto, "
+            f"got {fidelity_background}"
+        )
+    return (fidelity_background,)
+
+
+def _case_fidelity_background(fidelity_background: FidelityBackgroundChoice) -> FidelityBackground:
+    if fidelity_background == "none":
+        return "svg"
+    return fidelity_background
+
+
+def _single_fidelity_background(
+    html_mode: BenchmarkHtmlMode,
+    fidelity_background: BenchmarkFidelityBackground,
+) -> FidelityBackground:
+    if html_mode != "fidelity":
+        return "svg"
+    if fidelity_background == "auto":
+        return "svg"
+    if fidelity_background not in FIDELITY_BACKGROUND_CANDIDATES:
+        raise ValueError(
+            "fidelity_background must be one of svg, raster, or auto, "
+            f"got {fidelity_background}"
+        )
+    return fidelity_background
+
+
+def _fidelity_background_needs_calibration(
+    html_mode: BenchmarkHtmlMode,
+    fidelity_background: BenchmarkFidelityBackground,
+) -> bool:
+    return html_mode in {"fidelity", "auto"} and fidelity_background == "auto"
+
+
 def _html_mode_candidates(html_mode: BenchmarkHtmlMode) -> tuple[HtmlMode, ...]:
     if html_mode == "auto":
         return HTML_MODE_CANDIDATES
@@ -677,6 +774,19 @@ def _html_mode_request(html_mode: BenchmarkHtmlMode) -> BenchmarkHtmlMode:
     if html_mode == "auto":
         return "auto"
     return _html_mode_candidates(html_mode)[0]
+
+
+def _fidelity_background_request(
+    fidelity_background: BenchmarkFidelityBackground,
+) -> BenchmarkFidelityBackground:
+    if fidelity_background == "auto":
+        return "auto"
+    if fidelity_background not in FIDELITY_BACKGROUND_CANDIDATES:
+        raise ValueError(
+            "fidelity_background must be one of svg, raster, or auto, "
+            f"got {fidelity_background}"
+        )
+    return fidelity_background
 
 
 def _font_size_scale_candidates(font_size_scale: BenchmarkFontSizeScale) -> tuple[float, ...]:

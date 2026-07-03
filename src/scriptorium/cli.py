@@ -6,7 +6,7 @@ from typing import Literal, Optional
 import typer
 
 from .annotations import annotate_document
-from .benchmark import BenchmarkFontProfile, BenchmarkHtmlMode, BenchmarkTextFit, run_benchmark
+from .benchmark import BenchmarkFidelityBackground, BenchmarkFontProfile, BenchmarkHtmlMode, BenchmarkTextFit, run_benchmark
 from .fixture import create_fixture
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
@@ -68,6 +68,13 @@ def benchmark_command(
         "none",
         help="Structured text fitting strategy: none, svg, or auto to benchmark both and keep the better case.",
     ),
+    fidelity_background: BenchmarkFidelityBackground = typer.Option(
+        "auto",
+        help=(
+            "Fidelity background source: svg keeps vector PDF background when available; "
+            "raster uses the rendered page image; auto benchmarks both for fidelity mode."
+        ),
+    ),
     structure_json: Optional[list[Path]] = typer.Option(
         None,
         "--structure-json",
@@ -89,6 +96,7 @@ def benchmark_command(
         html_mode=html_mode,
         font_size_scale=font_size_scale,
         text_fit=text_fit,
+        fidelity_background=fidelity_background,
     )
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
@@ -101,6 +109,7 @@ def benchmark_command(
     typer.echo(f"HTML mode: {report.get('html_mode')}")
     typer.echo(f"Font size scale: {report.get('font_size_scale')}")
     typer.echo(f"Text fit: {report.get('text_fit')}")
+    typer.echo(f"Fidelity background: {report.get('fidelity_background')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")

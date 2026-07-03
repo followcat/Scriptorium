@@ -46,6 +46,25 @@ def test_fidelity_html_keeps_background_with_editable_overlay(tmp_path: Path) ->
     assert "color: transparent !important" in html
 
 
+def test_fidelity_html_can_use_raster_background(tmp_path: Path) -> None:
+    pdf_path, ocr_path = create_fixture(tmp_path / "fixture")
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144, include_svg_background=True)
+    document = normalize_ocr_to_ir(rendered, load_ocr_json(ocr_path), crop_dir=tmp_path / "crops")
+
+    html_path = export_html(
+        document,
+        tmp_path / "fidelity-raster-html",
+        display_mode="fidelity",
+        fidelity_background="raster",
+    )
+    html = html_path.read_text(encoding="utf-8")
+
+    assert "mode-fidelity" in html
+    assert "page_0001.png" in html
+    assert "page_0001.svg" not in html
+    assert 'data-scriptorium-editable="true"' in html
+
+
 def test_fidelity_prints_edited_replacement_overlay(tmp_path: Path) -> None:
     pdf_path, ocr_path = create_fixture(tmp_path / "fixture")
     rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144, include_svg_background=True)

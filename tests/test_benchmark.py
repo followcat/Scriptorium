@@ -23,6 +23,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["html_mode"] == "structured"
     assert report["font_size_scale"] == 1.0
     assert report["text_fit"] == "none"
+    assert report["fidelity_background"] == "auto"
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -49,6 +50,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all(case["html_mode"] == "structured" for case in report["cases"])
     assert all(case["font_size_scale"] == 1.0 for case in report["cases"])
     assert all(case["text_fit"] == "none" for case in report["cases"])
+    assert all(case["fidelity_background"] == "none" for case in report["cases"])
     assert all(case["vector_background_page_count"] == 0 for case in report["cases"])
     assert "total_text_runs" in report["summary"]
     assert "total_mixed_inline_style_elements" in report["summary"]
@@ -60,6 +62,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
     assert report["summary"]["text_fit_counts"] == {"none": 2}
+    assert report["summary"]["fidelity_background_counts"] == {"none": 2}
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
@@ -81,21 +84,56 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
 
 def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
-    report = run_benchmark(pdfs, tmp_path / "benchmark-fidelity", dpi=96, html_mode="fidelity")
+    report = run_benchmark(
+        pdfs,
+        tmp_path / "benchmark-fidelity",
+        dpi=96,
+        html_mode="fidelity",
+        fidelity_background="svg",
+    )
     case = report["cases"][0]
     csv_text = (tmp_path / "benchmark-fidelity" / "benchmark_summary.csv").read_text(encoding="utf-8")
 
     assert report["html_mode"] == "fidelity"
+    assert report["fidelity_background"] == "svg"
     assert case["html_mode"] == "fidelity"
+    assert case["fidelity_background"] == "svg"
     assert case["font_size_scale"] == 1.0
     assert case["vector_background_page_count"] == case["page_count"]
     assert "html_mode" in csv_text
     assert "font_size_scale" in csv_text
     assert "text_fit" in csv_text
+    assert "fidelity_background" in csv_text
     assert "vector_background_page_count" in csv_text
     assert "reading_order_risk_score" in csv_text
-    assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-export.pdf").exists()
+    assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-svg-export.pdf").exists()
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
+    assert report["summary"]["fidelity_background_counts"] == {"svg": 1}
+
+
+def test_benchmark_can_auto_select_fidelity_background(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(
+        pdfs,
+        tmp_path / "benchmark-auto-fidelity-background",
+        dpi=96,
+        html_mode="fidelity",
+        fidelity_background="auto",
+    )
+    case = report["cases"][0]
+
+    assert report["html_mode"] == "fidelity"
+    assert report["fidelity_background"] == "auto"
+    assert case["fidelity_background_request"] == "auto"
+    assert case["fidelity_background_selected"] == case["fidelity_background"]
+    assert case["fidelity_background_auto_total_seconds"] >= case["fidelity_background_selected_total_seconds"]
+    assert case["total_seconds"] == case["fidelity_background_auto_total_seconds"]
+    assert {candidate["fidelity_background"] for candidate in case["fidelity_background_candidates"]} == {
+        "svg",
+        "raster",
+    }
+    assert all("visual_similarity" in candidate for candidate in case["fidelity_background_candidates"])
+    assert report["summary"]["fidelity_background_counts"][case["fidelity_background"]] == 1
 
 
 def test_benchmark_can_auto_select_html_mode(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from .models import BBox, DisplayMode, DocumentIR, ElementIR, PageIR
 
 HtmlTextFit = Literal["none", "svg"]
+FidelityBackground = Literal["svg", "raster"]
 
 
 def export_html(
@@ -16,6 +17,7 @@ def export_html(
     out_dir: str | Path,
     display_mode: DisplayMode = "background",
     text_fit: HtmlTextFit = "none",
+    fidelity_background: FidelityBackground = "svg",
 ) -> Path:
     target = Path(out_dir)
     assets_dir = target / "assets"
@@ -23,7 +25,13 @@ def export_html(
 
     include_background = display_mode != "structured"
     pages = [
-        _prepare_page_assets(page, assets_dir, display_mode=display_mode, include_background=include_background)
+        _prepare_page_assets(
+            page,
+            assets_dir,
+            display_mode=display_mode,
+            include_background=include_background,
+            fidelity_background=fidelity_background,
+        )
         for page in document.pages
     ]
     env = Environment(
@@ -261,8 +269,9 @@ def _prepare_page_assets(
     assets_dir: Path,
     display_mode: DisplayMode,
     include_background: bool = True,
+    fidelity_background: FidelityBackground = "svg",
 ) -> dict[str, object]:
-    background_source = _background_source(page, display_mode)
+    background_source = _background_source(page, display_mode, fidelity_background=fidelity_background)
     page_asset_dir = assets_dir / f"page_{page.page_index + 1:04d}"
     page_asset_dir.mkdir(parents=True, exist_ok=True)
 
@@ -293,8 +302,12 @@ def _prepare_page_assets(
     }
 
 
-def _background_source(page: PageIR, display_mode: DisplayMode) -> Path:
-    if display_mode == "fidelity" and page.background_svg:
+def _background_source(
+    page: PageIR,
+    display_mode: DisplayMode,
+    fidelity_background: FidelityBackground = "svg",
+) -> Path:
+    if display_mode == "fidelity" and fidelity_background == "svg" and page.background_svg:
         svg_source = Path(page.background_svg)
         if svg_source.exists():
             return svg_source
