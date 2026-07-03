@@ -71,7 +71,7 @@ PUMA annual report, first 12 pages:
 
 ```bash
 ./.venv/bin/scriptorium benchmark data/external/puma-2024-annual-report.pdf \
-  --out-dir outputs/external/puma-2024-annual-report-benchmark \
+  --out-dir outputs/external/puma-2024-annual-report-ocr-benchmark \
   --dpi 144 \
   --max-pages 12 \
   --html-mode auto \
@@ -82,7 +82,7 @@ JD screenshot PDF:
 
 ```bash
 ./.venv/bin/scriptorium benchmark outputs/external/jd-home/input.pdf \
-  --out-dir outputs/external/jd-home-benchmark \
+  --out-dir outputs/external/jd-home-ocr-benchmark \
   --dpi 144 \
   --html-mode auto \
   --fidelity-background auto
@@ -90,9 +90,11 @@ JD screenshot PDF:
 
 ## Current Results
 
-| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | Images | Shapes | Reading Risk |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 15 | 279 | `0.35 / high` |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 1 | 0 | 1 | 0 | `0.0 / low` |
+| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Images | Shapes | Reading Risk |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 15 | 279 | `0.35 / high` |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 1 | 0 | `0.35 / high` |
 
-PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. JD is image-only by design; it is a visual source-preservation benchmark, not a semantic-order benchmark.
+PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text.
+
+JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its reading risk is now high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.

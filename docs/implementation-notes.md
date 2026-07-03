@@ -13,6 +13,7 @@ Current implementation status:
 - `--ocr-json` is the stable tested input for conversion quality work.
 - `PaddleOcrAdapter` is isolated in `scriptorium.ocr` and intentionally lazy-imports `paddleocr`.
 - `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and fuses region bbox, label, content, confidence, and block order back into `DocumentIR`.
+- Native extraction has an `image-only` OCR fallback for scanned or screenshot PDFs. It triggers only when a page has no native text and image blocks cover most of the page, then emits `native-ocr` text anchors without replacing the original image element.
 - `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. The next Paddle-specific step is running real `save_to_json` payloads through this bridge and tracking native-only versus native-plus-structure deltas.
 
 ## Annotation Layer
@@ -25,7 +26,7 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - native PDF image blocks become local `image` elements with `source_crop`, bbox, dimensions, and `native-image` source metadata
    - native PDF drawings become shape elements with fill/stroke/border metadata and `shape_geometry`; simple lines keep `line_points_pdf`, and supported multi-item drawing paths keep `svg_path_pdf`
    - dense vector regions can become local raster fallback image elements with `native-raster-region` source metadata
-   - OCR fallback elements keep bbox, type, confidence, crop, and style hints
+   - OCR fallback elements keep bbox, type, confidence, text runs, style hints, `native-ocr` source metadata, OCR language, and OCR DPI
 2. `annotate_document()` assigns recognized marks:
    - `role`: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
    - `source_kind`: `native-pdf`, `native-drawing`, `json-fallback`, etc.
@@ -66,6 +67,8 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
 
 In `structured` mode the exporter intentionally does not include the page background image. The result is made of editable text nodes, structural shape nodes, native image nodes, and local raster fallback nodes, all tied back to recognized evidence in the IR.
 
+For image-only pages, the native image node remains the visual layer in `structured` mode. `native-ocr` nodes are transparent by default and become visible only on hover/focus, preventing duplicated text while still exposing editable DOM anchors and XML/IR text.
+
 Text runs are a source-fidelity layer, not the edit storage model. When `edited_text` or `translated_text` is present, the exporter renders the replacement text as a plain editable node so stale source spans do not distort new content.
 
 ## Native Visual Fidelity Layer
@@ -75,6 +78,7 @@ Complex scientific PDFs often lose visual score for reasons unrelated to reading
 The native PDF path now handles these cases:
 
 - `native-image`: PyMuPDF `get_text("dict")` image blocks are written as local image assets and exported as positioned image elements. These are source PDF image blocks, not whole-page screenshots.
+- `native-ocr`: when a page has no native text and image area coverage is at least 60%, PyMuPDF/Tesseract OCR is attempted with the requested `--ocr-language` and `--ocr-dpi`. If OCR succeeds, the page keeps its native image element and gains transparent editable text anchors.
 - Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
 - Native extraction records a `font_profile`. `browser-default` is the stable default used for public benchmark numbers; `local-urw` is an explicit A/B profile that prefers locally installed Nimbus/DejaVu families for papers whose PDF fonts match those metrics better.
 - Current A/B evidence is mixed: `local-urw` improved Attention from `0.93202666` to `0.93871982`, but reduced Transformer-XL from `0.93358709` to `0.90096092`. Keep `browser-default` as the default until profile selection can be driven by page/font evidence rather than a global switch.
@@ -243,6 +247,11 @@ Metrics:
 - `fidelity_background`: background strategy for fidelity mode: `svg`, `raster`, or benchmark request `auto`. Auto cases record `fidelity_background_candidates`, `fidelity_background_request`, and `fidelity_background_selected`.
 - `vector_background_page_count`: pages with optional SVG page backgrounds available for fidelity overlay experiments.
 - `raster_policy`: native local-raster fallback policy.
+- `ocr_fallback`: native OCR fallback policy, currently `image-only` or `off`.
+- `ocr_fallback_applied_page_count`: pages where native text was absent, image coverage was high, and OCR produced text.
+- `ocr_text_count`: editable elements whose source is `native-ocr`.
+- `image_only_candidate_page_count`: pages that matched the no-native-text/high-image-coverage trigger, regardless of OCR success.
+- `textless_page_count`: pages that still have no editable text after native extraction and OCR fallback.
 - `layout_region_counts`: inferred table/figure/separator region counts.
 - `raster_fallback_count`, `rasterized_text_count`, `rasterized_image_count`, and `rasterized_shape_count`: editability cost of local raster fallback regions.
 - `structure_evidence_source`: optional JSON evidence source used by the case.

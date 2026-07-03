@@ -11,6 +11,7 @@ This project optimizes two different outcomes:
 - `column-flow-v1` detects common two-column text regions and orders text left-column first, then right-column.
 - Table-like grids stay row-major so table cells are not read as document columns.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
+- Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
 - Native PDF extraction exposes benchmarkable font profiles: `browser-default` for stable baseline numbers and `local-urw` for explicit local Nimbus/DejaVu experiments.
 - Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
 - Benchmark `--font-size-scale auto` runs a small CSS font-size sweep, records candidate artifacts, and selects the higher visual-similarity case per PDF.
@@ -28,19 +29,19 @@ This project optimizes two different outcomes:
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes both `data-scriptorium-reading-order-strategy` and `data-scriptorium-reading-order-region`.
 - Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `recursive_xy_cut_element_count`, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
-- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, auto font-profile candidate, and reading-order risk diagnostics.
+- Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, and reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy and normalized sequence similarity.
 
 Current benchmark coverage:
 
-| Sample | Multi-column elements | Semantic GT | Order accuracy | Visual similarity |
-|---|---:|---:|---:|---:|
-| Built-in fixtures | 20 | yes | 1.0 | 0.99036719 |
-| arXiv Attention paper | 163 | partial | 1.0 | 0.96840246 |
-| ACL Transformer-XL paper | 1213 | partial | 1.0 | 0.95679576 |
-| Hacker News print PDF | 0 | partial | 1.0 | 0.9800288 |
-| PUMA 2024 Annual Report, first 12 pages | 337 | no | n/a | 0.9795117 |
-| JD homepage screenshot PDF | 0 | no | n/a | 0.99576887 |
+| Sample | Multi-column elements | OCR text | Semantic GT | Order accuracy | Visual similarity |
+|---|---:|---:|---:|---:|---:|
+| Built-in fixtures | 20 | 0 | yes | 1.0 | 0.99036719 |
+| arXiv Attention paper | 163 | 0 | partial | 1.0 | 0.96840246 |
+| ACL Transformer-XL paper | 1213 | 0 | partial | 1.0 | 0.95679576 |
+| Hacker News print PDF | 0 | 0 | partial | 1.0 | 0.9800288 |
+| PUMA 2024 Annual Report, first 12 pages | 337 | 0 | no | n/a | 0.9795117 |
+| JD homepage screenshot PDF | 0 | 134 | no | n/a | 0.99576887 |
 
 Current `--font-profile auto` sweep:
 
@@ -95,8 +96,10 @@ Current additional complex-source baselines:
 
 | Sample | Scope | Structured visual | SVG fidelity | Raster fidelity | Selected path | Notes |
 |---|---:|---:|---:|---:|---|---|
-| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, high semantic-risk without sidecar |
-| JD homepage screenshot PDF | 1 / 1 page | 0.99536129 | 0.99536129 | 0.99576887 | `fidelity/raster` | image-only screenshot PDF, visual benchmark only |
+| PUMA 2024 Annual Report | first 12 / 345 pages | 0.73733248 | 0.97885835 | 0.9795117 | `fidelity/raster` | 815 elements, 521 editable, 0 OCR fallback pages, high semantic-risk without sidecar |
+| JD homepage screenshot PDF | 1 / 1 page | 0.99536129 | 0.99536129 | 0.99576887 | `fidelity/raster` | image-only screenshot PDF, 134 transparent OCR edit anchors |
+
+The JD gain is not a visual-score gain; it is a structural/editability gain. The image-only PDF previously reported 1 image element and 0 editable text nodes. With generic OCR fallback it reports 135 elements, 134 editable `native-ocr` nodes, and keeps the same selected visual score. PUMA remains unchanged on OCR counts because its sampled pages expose native PDF text.
 
 Current reading-order risk diagnostics example:
 
@@ -136,7 +139,11 @@ Current reading-order risk diagnostics example:
 
    The `structure_evidence.py` bridge and benchmark `--structure-json` input are now implemented. Run real PaddleOCR-VL 1.6 and PP-StructureV3 `save_to_json` outputs against the same PDFs and compare `native` versus `native-plus-structure`. For digital PDFs, use model output to improve role/order/table/formula metadata while preserving native text/style. For scanned PDFs, use model output as the primary text source.
 
-8. Semantic-order benchmark expansion
+8. OCR fallback refinement
+
+   The first image-only fallback uses page-level native-text absence plus image coverage as its trigger. Next refinements should add OCR confidence aggregation, per-region OCR for mixed native/scanned pages, language auto-detection, duplicated-text suppression when PDFs contain invisible OCR text, and optional Paddle/PP-Structure OCR evidence as a stronger replacement for the local Tesseract fallback.
+
+9. Semantic-order benchmark expansion
 
    The first sidecar-based benchmark is implemented. Expand it with real/hand-labeled documents and report:
 

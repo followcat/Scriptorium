@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-50%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-52%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -20,6 +20,7 @@
 Scriptorium PDF 是一个核心转换引擎，目标不是把 PDF 页面截图塞进 HTML，而是把 PDF 里的可识别结构转成可编辑节点：
 
 - 从 PDF 提取 native text、字体、颜色、粗细、坐标、image block 和 drawing/shape。
+- 对没有原生文字且页面主要由图像构成的扫描/截图 PDF，自动补 `native-ocr` 透明编辑锚点。
 - 从 OCR / PaddleOCR-VL / PP-Structure 输出归一化到同一个 `DocumentIR`。
 - 生成 `structured` HTML：文本节点可编辑，图形节点保留结构，DOM 上带识别标记。
 - 支持 XML 级局部节点编辑，再回写到 IR 并重新导出 HTML/PDF。
@@ -99,10 +100,12 @@ Transformer-XL 这类 A4 变体页面曾受 Chromium 打印 1px 宽度量化影�
 
 Additional complex baselines now cover a public company annual report and an image-only ecommerce homepage screenshot:
 
-| Sample | Source | Pages Scored | Selected Path | Visual Similarity | Elements | Editable | Images | Shapes | Semantic GT |
-|---|---|---:|---|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | public annual report PDF | 12 / 345 | `fidelity/raster` | 0.9795117 | 815 | 521 | 15 | 279 | no |
-| JD homepage full screenshot PDF | Playwright full-page screenshot | 1 / 1 | `fidelity/raster` | 0.99576887 | 1 | 0 | 1 | 0 | no |
+| Sample | Source | Pages Scored | Selected Path | Visual Similarity | Elements | Editable | OCR Text | Images | Shapes | Semantic GT |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | public annual report PDF | 12 / 345 | `fidelity/raster` | 0.9795117 | 815 | 521 | 0 | 15 | 279 | no |
+| JD homepage full screenshot PDF | Playwright full-page screenshot | 1 / 1 | `fidelity/raster` | 0.99576887 | 135 | 134 | 134 | 1 | 0 | no |
+
+JD is intentionally an image-only PDF. The visual score stayed effectively unchanged after OCR fallback, but the output now contains 134 editable `native-ocr` anchors while preserving the original screenshot as the visible layer. PUMA keeps 0 OCR fallback pages because its sampled pages already contain native PDF text.
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -124,6 +127,7 @@ Required:
 Optional:
 
 - PaddleOCR / PaddleOCR-VL for local OCR and document structure experiments
+- Tesseract OCR binary and language data for PyMuPDF image-only OCR fallback, for example `eng` and `chi_sim`
 
 Notes:
 
@@ -145,6 +149,8 @@ Optional OCR stack:
 ```bash
 pip install -r requirements-ocr.txt
 ```
+
+Image-only OCR fallback uses PyMuPDF's Tesseract bridge, so it also needs the system `tesseract` command and installed language data. If Tesseract is unavailable, `--ocr-fallback off` keeps conversion deterministic and benchmark reports still expose textless/image-only pages.
 
 ## Quick Start
 
@@ -338,6 +344,21 @@ scriptorium benchmark path/to/paper.pdf \
 
 This mode keeps editable coordinate nodes in the HTML but hides them during print, so the score measures source visual preservation. SVG backgrounds stay vector and zoom-friendly; raster backgrounds often produce stricter pixel parity for complex pages. Use this mode to track the future edit-mask/replacement architecture separately from the fully structured redraw path.
 
+Image-only OCR fallback is enabled by default for native extraction and only triggers when a page has no native text and high image coverage:
+
+```bash
+scriptorium benchmark path/to/scanned-or-screenshot.pdf \
+  --ocr-fallback image-only \
+  --ocr-language eng+chi_sim \
+  --ocr-dpi 144 \
+  --html-mode auto \
+  --fidelity-background auto \
+  --out-dir outputs/image-only-ocr \
+  --dpi 144
+```
+
+Use `--ocr-fallback off` to measure visual source preservation without adding OCR text anchors.
+
 Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 style evidence:
 
 ```bash
@@ -384,6 +405,7 @@ Tracked metrics:
 - mixed inline style element count
 - layout region counts
 - raster fallback count and rasterized text/image/shape counts
+- OCR fallback policy, applied page count, OCR text count, image-only candidate pages, and textless page count
 - structure evidence source, region count, matched element count, and reordered page count
 - semantic ground-truth case count
 - semantic order pair accuracy
@@ -405,9 +427,11 @@ Tracked metrics:
 flowchart LR
   A[PDF or Web Page] --> B[PyMuPDF Render]
   A --> C[Native PDF Extractor]
+  C --> L[Image-only OCR Fallback]
   A --> D[OCR JSON / Paddle Adapter]
   D --> K[Structure Evidence Fusion]
   C --> E[DocumentIR]
+  L --> E
   D --> E
   K --> E
   E --> F[Annotation Pass]
@@ -444,7 +468,7 @@ Core files:
 - native image/raster crops via `source_crop`
 - `semantic_order`, `visual_order`, `column_index`, `column_count`, `flow_segment_index`, and `reading_order_region_path`
 - optional external structure evidence such as `external_structure_label`, `external_structure_order`, and fused region metadata
-- source kind: `native-pdf`, `native-image`, `native-raster-region`, `native-drawing`, OCR fallback, etc.
+- source kind: `native-pdf`, `native-ocr`, `native-image`, `native-raster-region`, `native-drawing`, external OCR fallback, etc.
 - role: `heading`, `paragraph`, `table-cell-text`, `table-shape`, `figure-shape`, `separator-shape`, etc.
 - style bucket: `style-001`, `style-002`, ...
 - layout group: for example `table-001`, `figure-001`, `separator-001`
@@ -465,6 +489,8 @@ The default tested path uses native PDF extraction or JSON fallback. Heavy model
 - `scriptorium benchmark --html-mode fidelity` benchmarks the editable overlay path for source-preservation quality and supports SVG/raster page backgrounds plus edited/translated replacement overlays
 - `scriptorium benchmark --html-mode auto --fidelity-background auto` compares structured redraw, SVG fidelity, and raster fidelity candidates, then records the selected visual path
 - `scriptorium benchmark --max-pages N` limits each input to the first N pages, useful for large annual reports and manuals while keeping the source PDF intact
+- `--ocr-fallback image-only` is the default native fallback for scanned/screenshot PDFs: pages with no native text and high image coverage get transparent `native-ocr` edit anchors while the original image remains the visual layer
+- `--ocr-language` and `--ocr-dpi` control the local Tesseract/PyMuPDF OCR pass; benchmark reports include `ocr_fallback_applied_page_count`, `ocr_text_count`, `image_only_candidate_page_count`, and `textless_page_count`
 - `--raster-policy dense` is the stable native fallback; `--raster-policy tables` is available as an explicit experiment, but current real-paper/web A/B results did not justify making table-region rasterization the default
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
@@ -483,9 +509,9 @@ pytest
 Current local test baseline:
 
 ```text
-50 passed
+52 passed
 ```
 
 ## Project Status
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, reading-order risk diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, image-only OCR fallback, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, reading-order risk diagnostics, Paddle/PP-Structure style external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
