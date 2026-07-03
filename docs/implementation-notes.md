@@ -131,12 +131,13 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `semantic_order`: reading order used by XML/DOM/export consumers.
 - `recursive-xy-cut-v1`: a hierarchical backend that recursively cuts whitespace into top/bottom and left/right regions, then records the region path for downstream HTML/editing inspection.
 - `column-flow-v1`: a lightweight multi-column fallback that detects repeated two- or three-column text flows, keeps tables row-major, and orders each flow segment by column then vertical position.
+- `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - Repeated-left-edge detection catches real academic columns whose long text boxes have overlapping center-x clusters. It now evaluates up to three repeated anchor columns, requires enough anchors per column and at least 45-48% coverage of candidate body lines, so sparse author grids do not become false column pages while formula/noise boxes between columns do not force fallback.
 - Visual row ordering uses a small row bucket to absorb tiny PDF extraction offsets while keeping dense list rows separate, which matters for web-to-PDF ranked lists.
 - `auto`: uses recursive XY-Cut only when the page has both horizontal and vertical structure; otherwise it falls back to `column-flow-v1` or visual order.
 - `column_index` and `column_count`: column assignment for downstream translation/editing surfaces.
 
-The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
+The table guard intentionally preserves obvious three-or-more-column grids as row-major visual order, preventing spreadsheet-like rows from being read down columns. Mixed pages are handled conservatively: repeated anchors are computed before the table-grid guard, and a grid-looking page may still use `column-flow-v1` only when at least two anchored columns cover 60% or more of candidate text and each anchor looks like a text-flow column rather than short table cells. Local table islands are detected only when there are at least three consecutive aligned rows, repeated x slots, and a majority of short cells; pages where table-like rows dominate the text still fall back to the older whole-table visual behavior. This lets pages with a table/formula area plus normal two/three-column prose keep human reading order without breaking pure tables.
 
 The current heuristic is intentionally modular in `src/scriptorium/reading_order.py`. It can be replaced or augmented by:
 
@@ -233,6 +234,7 @@ Metrics:
 - `mixed_inline_style_element_count`: text elements containing multiple rendered run styles.
 - `multi_column_element_count`: editable text nodes assigned to a multi-column flow.
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
+- `mixed_table_column_flow_element_count`: editable text nodes ordered by `mixed-table-column-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.

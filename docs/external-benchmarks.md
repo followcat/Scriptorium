@@ -71,7 +71,7 @@ PUMA annual report, first 12 pages:
 
 ```bash
 ./.venv/bin/scriptorium benchmark data/external/puma-2024-annual-report.pdf \
-  --out-dir outputs/external/puma-2024-annual-report-ocr-benchmark \
+  --out-dir outputs/external/puma-2024-annual-report-mixed-table-benchmark \
   --dpi 144 \
   --max-pages 12 \
   --html-mode auto \
@@ -82,7 +82,7 @@ JD screenshot PDF:
 
 ```bash
 ./.venv/bin/scriptorium benchmark outputs/external/jd-home/input.pdf \
-  --out-dir outputs/external/jd-home-ocr-benchmark \
+  --out-dir outputs/external/jd-home-mixed-table-benchmark \
   --dpi 144 \
   --html-mode auto \
   --fidelity-background auto
@@ -90,11 +90,11 @@ JD screenshot PDF:
 
 ## Current Results
 
-| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Images | Shapes | Reading Risk |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 15 | 279 | `0.5 / high` |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 1 | 0 | `0.35 / high` |
+| Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Images | Shapes | Reading Risk |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 15 | 279 | `0.3875 / high` |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 134 | 1 | 0 | `0.35 / high` |
 
-PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 4 table-like visual-yx pages. The current three-column/table-guard pass reports 47 column-flow elements, keeping short table-like cells row-major unless they look like text-flow columns.
+PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 1 table-like visual-yx page. The current mixed-table pass reports 47 `column-flow-v1` elements and 238 `mixed-table-column-flow-v1` elements, keeping detected local table islands row-major while surrounding body text can still use column flow.
 
-JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its reading risk is now high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
+JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its OCR text layout also triggers the mixed-table strategy for 134 elements. Its reading risk is high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
