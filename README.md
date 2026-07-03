@@ -12,7 +12,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2b6cb0">
   <img alt="Status" src="https://img.shields.io/badge/status-core%20prototype-2f855a">
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-32%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-33%20passing-2f855a">
 </p>
 
 ## What It Does
@@ -86,7 +86,7 @@ Transformer-XL 的 `dimension_match = false` 来自 Chromium 打印 A4 页面时
 
 内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，`semantic_order_pair_accuracy = 1.0`。Hacker News 网页打印 PDF 覆盖 2 页、26 个关键文本点，`semantic_order_pair_accuracy = 1.0`。
 
-最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。报告还输出 partial labels 忽略文本的 zone/role/source 分布：Attention 当前忽略 147 个未标注节点，Transformer-XL 忽略 277 个，web-HN 忽略 69 个 table-cell 节点，用于决定下一批人工 ground truth。视觉侧保持上一轮收益：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。
+最新 semantic benchmark 改进为网页打印 PDF 增加 parent-scoped sidecar，并把密集列表行桶从 12pt 收紧到 6pt，避免下一条列表编号插到上一条 metadata 前面。报告还输出 partial labels 忽略文本的 zone/role/source 分布：Attention 当前忽略 147 个未标注节点，Transformer-XL 忽略 277 个，web-HN 忽略 69 个 table-cell 节点，用于决定下一批人工 ground truth。视觉侧保持上一轮收益：arXiv Attention 论文从 `0.92601817` 提升到 `0.93202666`，Transformer-XL 从 `0.91825764` 提升到 `0.93358709`，网页打印 PDF 从 `0.97970864` 提升到 `0.9800288`。字体 profile A/B 显示 `local-urw` 能把 Attention 提到 `0.93871982`，但会把 Transformer-XL 拉低到 `0.90096092`，因此默认仍使用稳定的 `browser-default`，本地字体 profile 只作为显式实验选项。
 
 <p align="center">
   <img src="docs/assets/readme-benchmark-score.png" alt="Paper and benchmark score overview" width="100%">
@@ -232,6 +232,15 @@ Run benchmark on your own PDFs:
 scriptorium benchmark path/to/file1.pdf path/to/file2.pdf --out-dir outputs/my-benchmark --dpi 144
 ```
 
+Try the local URW/DejaVu font fallback profile as an A/B experiment:
+
+```bash
+scriptorium benchmark path/to/paper.pdf \
+  --font-profile local-urw \
+  --out-dir outputs/font-profile-local-urw \
+  --dpi 144
+```
+
 Run the same benchmark with external PaddleOCR-VL / PP-StructureV3 style evidence:
 
 ```bash
@@ -265,6 +274,7 @@ Tracked metrics:
 - column-flow element count
 - recursive XY-Cut element count
 - reading-order strategy counts
+- font profile
 - structure evidence source, region count, matched element count, and reordered page count
 - semantic ground-truth case count
 - semantic order pair accuracy
@@ -319,6 +329,7 @@ Core files:
 - element bbox in PDF points and pixels
 - `source_text`, `edited_text`, `translated_text`
 - `text_runs` for native PDF inline spans: text, bbox, font, weight, style, color, script, and run style id
+- `font_profile`: the CSS font fallback profile used during native PDF extraction
 - native drawing SVG evidence: simple line points and non-rectangular path data
 - native image/raster crops via `source_crop`
 - `semantic_order`, `visual_order`, `column_index`, `column_count`, `flow_segment_index`, and `reading_order_region_path`
@@ -337,6 +348,7 @@ The original `source_text` is never overwritten. Inline runs are used when rende
 The default tested path uses native PDF extraction or JSON fallback. Heavy model runtimes remain optional, but their structured output can now assist the core pipeline:
 
 - conversion, annotation, HTML export, XML edit, and benchmark do not depend on the model runtime
+- `--font-profile browser-default` is the stable default; `--font-profile local-urw` can be benchmarked when local Nimbus/DejaVu fonts are available
 - `--structure-json` accepts PaddleOCR-VL / PP-StructureV3 style JSON with region bbox, label, content, and block order
 - `structure_evidence.py` aligns those regions back to native elements by bbox coverage/text similarity
 - matched elements can receive external role/order metadata and `external-structure-fusion-v1` reading-order strategy
@@ -354,7 +366,7 @@ pytest
 Current local test baseline:
 
 ```text
-32 passed
+33 passed
 ```
 
 ## Project Status

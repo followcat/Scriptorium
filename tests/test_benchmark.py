@@ -18,6 +18,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     report = run_benchmark(pdfs, tmp_path / "benchmark", dpi=96)
 
     assert report["case_count"] == 2
+    assert report["font_profile"] == "browser-default"
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -29,6 +30,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("multi_column_element_count" in case for case in report["cases"])
     assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
     assert all("reading_order_strategy_counts" in case for case in report["cases"])
+    assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert "total_multi_column_elements" in report["summary"]
     assert "total_image_elements" in report["summary"]
     assert "total_recursive_xy_cut_elements" in report["summary"]

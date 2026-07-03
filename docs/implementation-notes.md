@@ -76,6 +76,8 @@ The native PDF path now handles these cases:
 
 - `native-image`: PyMuPDF `get_text("dict")` image blocks are written as local image assets and exported as positioned image elements. These are source PDF image blocks, not whole-page screenshots.
 - Font family normalization maps common PDF names such as `NimbusRomNo9L`, `CMR`, `CMMI`, `CMSY`, `SFTT`, `LiberationSans`, and Nimbus/Courier variants to closer browser families.
+- Native extraction records a `font_profile`. `browser-default` is the stable default used for public benchmark numbers; `local-urw` is an explicit A/B profile that prefers locally installed Nimbus/DejaVu families for papers whose PDF fonts match those metrics better.
+- Current A/B evidence is mixed: `local-urw` improved Attention from `0.93202666` to `0.93871982`, but reduced Transformer-XL from `0.93358709` to `0.90096092`. Keep `browser-default` as the default until profile selection can be driven by page/font evidence rather than a global switch.
 - Structured text lines keep `white-space: pre` and add `text-align-last: justify` in `structured` mode. Each line still uses its extracted PDF bbox, but the browser can expand word spacing to match justified PDF lines more closely.
 - `native-drawing`: simple lines render as SVG `<line>`. Supported non-rectangular drawing items (`l`, `c`, `re`, `qu`) render as positioned SVG `<path>` with fill/stroke opacity, avoiding the previous rectangular approximation for polygons and rounded paths.
 - `native-raster-region`: when a page has a dense vector cluster with many line drawings, Scriptorium clips just that local region from the source PDF and exports it as one image node. Text and shape nodes whose centers fall inside that region are hidden to avoid duplicate rendering. Captions and surrounding body text remain editable.
@@ -101,6 +103,7 @@ This gives the project an A/B path:
 scriptorium convert input.pdf --out-dir outputs/native
 scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
 scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/benchmark-native-plus-structure
+scriptorium benchmark input.pdf --font-profile local-urw --out-dir outputs/benchmark-local-urw
 ```
 
 The benchmark command accepts one or more `--structure-json` files, matched by argument order or by names such as `<pdf-stem>.structure.json` and `<parent-dir>.<pdf-stem>.structure.json`. The next quality step is to run real PaddleOCR-VL 1.6 or PP-StructureV3 payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
@@ -198,6 +201,7 @@ Metrics:
 - `column_flow_element_count`: editable text nodes ordered by `column-flow-v1`.
 - `recursive_xy_cut_element_count`: editable text nodes ordered by `recursive-xy-cut-v1`.
 - `reading_order_strategy_counts`: per-strategy count of editable text nodes in the JSON report summary and per case.
+- `font_profile`: CSS font fallback profile used by native extraction, useful for comparing default browser fallback with local URW/DejaVu paper-font experiments.
 - `structure_evidence_source`: optional JSON evidence source used by the case.
 - `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure style JSON.
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.

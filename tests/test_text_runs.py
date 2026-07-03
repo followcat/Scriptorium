@@ -58,11 +58,23 @@ def test_structured_html_renders_inline_runs_until_element_is_edited(tmp_path: P
 
 
 def test_common_pdf_fonts_map_to_closer_browser_families() -> None:
-    assert _css_font_family("AECCXO+NimbusRomNo9L-Regu").startswith("Nimbus Roman")
-    assert _css_font_family("RCUMTF+NimbusRomNo9L-Medi").startswith("Nimbus Roman")
-    assert _css_font_family("XEXHSJ+SFTT1000").startswith("Nimbus Mono")
-    assert _css_font_family("FUIULY+CMR10").startswith("DejaVu Math TeX Gyre")
-    assert _css_font_family("LICAEO+CMMI10").startswith("DejaVu Math TeX Gyre")
+    assert _css_font_family("AECCXO+NimbusRomNo9L-Regu").startswith("Times New Roman")
+    assert _css_font_family("RCUMTF+NimbusRomNo9L-Medi").startswith("Times New Roman")
+    assert _css_font_family("XEXHSJ+SFTT1000").startswith("Courier New")
+    assert _css_font_family("FUIULY+CMR10").startswith("Times New Roman")
+    assert _css_font_family("LICAEO+CMMI10").startswith("Cambria Math")
+    assert _css_font_family("AECCXO+NimbusRomNo9L-Regu", font_profile="local-urw").startswith("Nimbus Roman")
+    assert _css_font_family("XEXHSJ+SFTT1000", font_profile="local-urw").startswith("Nimbus Mono")
+    assert _css_font_family("FUIULY+CMR10", font_profile="local-urw").startswith("DejaVu Math TeX Gyre")
+
+
+def test_native_pdf_records_font_profile(tmp_path: Path) -> None:
+    pdf_path = _create_mixed_inline_pdf(tmp_path / "font-profile.pdf")
+    rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144)
+    document = extract_native_pdf_to_ir(rendered, font_profile="local-urw")
+
+    assert document.metadata["font_profile"] == "local-urw"
+    assert document.revisions[-1].payload["font_profile"] == "local-urw"
 
 
 def _create_mixed_inline_pdf(path: Path) -> Path:

@@ -10,7 +10,7 @@ from .benchmark import run_benchmark
 from .fixture import create_fixture
 from .html_export import export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
-from .native_pdf import extract_native_pdf_to_ir
+from .native_pdf import FontProfile, extract_native_pdf_to_ir
 from .ocr import load_ocr_json, normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
@@ -41,6 +41,10 @@ def benchmark_command(
     pdf: Optional[list[Path]] = typer.Argument(None, help="Optional PDF files. If omitted, built-in fixtures are generated."),
     out_dir: Path = typer.Option(Path("outputs/benchmark"), help="Benchmark output directory."),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    font_profile: FontProfile = typer.Option(
+        "browser-default",
+        help="CSS font fallback profile for native PDF text. Use local-urw for local Nimbus/DejaVu experiments.",
+    ),
     structure_json: Optional[list[Path]] = typer.Option(
         None,
         "--structure-json",
@@ -52,13 +56,14 @@ def benchmark_command(
         ),
     ),
 ) -> None:
-    report = run_benchmark(pdf, out_dir, dpi=dpi, structure_jsons=structure_json)
+    report = run_benchmark(pdf, out_dir, dpi=dpi, structure_jsons=structure_json, font_profile=font_profile)
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
     typer.echo(f"Cases: {report['case_count']}")
     typer.echo(f"Mean visual similarity: {report['summary'].get('mean_visual_similarity')}")
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
+    typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
@@ -92,13 +97,17 @@ def convert(
         "auto",
         help="Extraction mode. auto uses OCR JSON when provided, otherwise native PDF text extraction.",
     ),
+    font_profile: FontProfile = typer.Option(
+        "browser-default",
+        help="CSS font fallback profile for native PDF text. Use local-urw for local Nimbus/DejaVu experiments.",
+    ),
     dpi: int = typer.Option(192, min=72, max=600, help="PDF render DPI."),
 ) -> None:
     pages_dir = out_dir / "pages"
     crops_dir = out_dir / "crops"
     rendered = render_pdf(pdf, pages_dir, dpi=dpi)
     if extract_mode == "native" or (extract_mode == "auto" and ocr_json is None):
-        document = extract_native_pdf_to_ir(rendered)
+        document = extract_native_pdf_to_ir(rendered, font_profile=font_profile)
     else:
         ocr_payload = load_ocr_json(ocr_json) if ocr_json else None
         document = normalize_ocr_to_ir(rendered, ocr_payload, crop_dir=crops_dir)

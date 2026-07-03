@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha1
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import fitz
 
@@ -11,13 +11,15 @@ from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
 from .pdf_render import RenderedDocument, RenderedPage
 from .reading_order import infer_semantic_reading_order
 
+FontProfile = Literal["browser-default", "local-urw"]
 
-def extract_native_pdf_to_ir(rendered: RenderedDocument) -> DocumentIR:
+
+def extract_native_pdf_to_ir(rendered: RenderedDocument, font_profile: FontProfile = "browser-default") -> DocumentIR:
     pages: list[PageIR] = []
     with fitz.open(rendered.source_pdf) as doc:
         for rendered_page in rendered.pages:
             page = doc[rendered_page.page_index]
-            elements = _extract_page_text_elements(page, rendered_page)
+            elements = _extract_page_text_elements(page, rendered_page, font_profile=font_profile)
             pages.append(
                 PageIR(
                     page_index=rendered_page.page_index,
@@ -38,12 +40,22 @@ def extract_native_pdf_to_ir(rendered: RenderedDocument) -> DocumentIR:
         render_dpi=rendered.render_dpi,
         page_count=len(rendered.pages),
         pages=pages,
-        revisions=[RevisionIR(reason="native-pdf-extraction", payload={"source": "pymupdf-text-dict"})],
-        metadata={"extraction_mode": "native"},
+        revisions=[
+            RevisionIR(
+                reason="native-pdf-extraction",
+                payload={"source": "pymupdf-text-dict", "font_profile": font_profile},
+            )
+        ],
+        metadata={"extraction_mode": "native", "font_profile": font_profile},
     )
 
 
-def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) -> list[ElementIR]:
+def _extract_page_text_elements(
+    page: fitz.Page,
+    rendered_page: RenderedPage,
+    *,
+    font_profile: FontProfile,
+) -> list[ElementIR]:
     text_dict = page.get_text("dict")
     raw_lines: list[dict[str, Any]] = []
     for block in text_dict.get("blocks", []):
@@ -73,8 +85,8 @@ def _extract_page_text_elements(page: fitz.Page, rendered_page: RenderedPage) ->
         order_assignment = reading_order_assignments[visual_index]
         bbox_pdf = clamp_bbox(raw["bbox"], rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
-        style = _style_from_spans(raw["spans"], bbox_pdf)
-        text_runs = _text_runs_from_spans(raw["spans"], rendered_page)
+        style = _style_from_spans(raw["spans"], bbox_pdf, font_profile=font_profile)
+        text_runs = _text_runs_from_spans(raw["spans"], rendered_page, font_profile=font_profile)
         metadata = {
             "source": "native-pdf",
             "span_count": len(raw["spans"]),
@@ -544,14 +556,18 @@ def _svg_number(value: float) -> str:
     return f"{rounded:g}"
 
 
-def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox) -> dict[str, Any]:
+def _style_from_spans(spans: list[dict[str, Any]], bbox: BBox, *, font_profile: FontProfile) -> dict[str, Any]:
     if not spans:
-        return {"font_size_px": round(max(7.0, bbox.height * 0.72), 2), "line_height": 1.15, "font_family": "serif"}
+        return {
+            "font_size_px": round(max(7.0, bbox.height * 0.72), 2),
+            "line_height": 1.15,
+            "font_family": _css_font_family("serif", font_profile=font_profile),
+        }
     first = next((span for span in spans if span.get("text", "").strip()), spans[0])
-    return _style_from_span(first, bbox)
+    return _style_from_span(first, bbox, font_profile=font_profile)
 
 
-def _style_from_span(span: dict[str, Any], bbox: BBox) -> dict[str, Any]:
+def _style_from_span(span: dict[str, Any], bbox: BBox, *, font_profile: FontProfile) -> dict[str, Any]:
     size = float(span.get("size", max(7.0, bbox.height * 0.72)))
     font = str(span.get("font", "serif"))
     flags = int(span.get("flags", 0))
@@ -560,7 +576,7 @@ def _style_from_span(span: dict[str, Any], bbox: BBox) -> dict[str, Any]:
         "font_size_px": round(size * 96.0 / 72.0, 2),
         "font_size_pt": round(size, 2),
         "line_height": 1.12,
-        "font_family": _css_font_family(font),
+        "font_family": _css_font_family(font, font_profile=font_profile),
         "font_weight": 700 if flags & 16 else 400,
         "font_style": "italic" if flags & 2 else "normal",
         "text_color": _int_color_to_css(span.get("color")) or "rgb(17, 32, 42)",
@@ -572,7 +588,12 @@ def _style_from_span(span: dict[str, Any], bbox: BBox) -> dict[str, Any]:
     }
 
 
-def _text_runs_from_spans(spans: list[dict[str, Any]], rendered_page: RenderedPage) -> list[dict[str, Any]]:
+def _text_runs_from_spans(
+    spans: list[dict[str, Any]],
+    rendered_page: RenderedPage,
+    *,
+    font_profile: FontProfile,
+) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     for index, span in enumerate(spans):
         text = str(span.get("text", ""))
@@ -580,7 +601,7 @@ def _text_runs_from_spans(spans: list[dict[str, Any]], rendered_page: RenderedPa
             continue
         bbox_pdf = clamp_bbox(BBox.from_any(span.get("bbox")), rendered_page.width_pt, rendered_page.height_pt)
         bbox_px = pdf_to_px_bbox(bbox_pdf, rendered_page.scale_x, rendered_page.scale_y)
-        style = _style_from_span(span, bbox_pdf)
+        style = _style_from_span(span, bbox_pdf, font_profile=font_profile)
         origin = span.get("origin")
         runs.append(
             {
@@ -634,8 +655,36 @@ def _has_mixed_run_styles(runs: list[dict[str, Any]]) -> bool:
     return len(signatures) > 1
 
 
-def _css_font_family(pdf_font: str) -> str:
+def _css_font_family(pdf_font: str, font_profile: FontProfile = "browser-default") -> str:
     normalized = pdf_font.lower()
+    if font_profile == "local-urw":
+        return _local_urw_font_family(normalized)
+    return _browser_default_font_family(normalized)
+
+
+def _browser_default_font_family(normalized: str) -> str:
+    if "arial" in normalized or "helvetica" in normalized or "liberationsans" in normalized or "nimbussan" in normalized:
+        return "Arial, sans-serif"
+    if "courier" in normalized or "mono" in normalized or "nimbusmono" in normalized or "sftt" in normalized:
+        return "Courier New, monospace"
+    if any(name in normalized for name in ("cmmi", "cmsy", "cmex", "msbm")):
+        return "Cambria Math, Times New Roman, serif"
+    if any(
+        name in normalized
+        for name in (
+            "times",
+            "serif",
+            "nimbusrom",
+            "nimbusroman",
+            "cmr",
+            "cmbx",
+        )
+    ):
+        return "Times New Roman, serif"
+    return "Arial, sans-serif"
+
+
+def _local_urw_font_family(normalized: str) -> str:
     if "arial" in normalized or "helvetica" in normalized or "liberationsans" in normalized or "nimbussan" in normalized:
         return "Arial, Nimbus Sans, Liberation Sans, sans-serif"
     if "courier" in normalized or "mono" in normalized or "nimbusmono" in normalized or "sftt" in normalized:

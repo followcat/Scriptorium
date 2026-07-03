@@ -12,7 +12,7 @@ from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import export_html
 from .models import DocumentIR
-from .native_pdf import extract_native_pdf_to_ir
+from .native_pdf import FontProfile, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
 from .quality import compare_pdf_renderings
@@ -25,6 +25,7 @@ def run_benchmark(
     out_dir: str | Path,
     dpi: int = 192,
     structure_jsons: list[str | Path] | None = None,
+    font_profile: FontProfile = "browser-default",
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -39,6 +40,7 @@ def run_benchmark(
                 target / "cases" / pdf_path.stem,
                 dpi=dpi,
                 structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+                font_profile=font_profile,
             )
         )
 
@@ -46,6 +48,7 @@ def run_benchmark(
     report = {
         "version": 1,
         "dpi": dpi,
+        "font_profile": font_profile,
         "case_count": len(cases),
         "summary": summary,
         "cases": cases,
@@ -55,7 +58,13 @@ def run_benchmark(
     return report
 
 
-def _run_case(pdf_path: Path, out_dir: Path, dpi: int, structure_json: Path | None = None) -> dict[str, Any]:
+def _run_case(
+    pdf_path: Path,
+    out_dir: Path,
+    dpi: int,
+    structure_json: Path | None = None,
+    font_profile: FontProfile = "browser-default",
+) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
 
@@ -64,7 +73,7 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int, structure_json: Path | No
     timings["render_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    document = extract_native_pdf_to_ir(rendered)
+    document = extract_native_pdf_to_ir(rendered, font_profile=font_profile)
     if structure_json is not None:
         apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
     annotate_document(document)
@@ -113,6 +122,7 @@ def _run_case(pdf_path: Path, out_dir: Path, dpi: int, structure_json: Path | No
         "column_flow_element_count": stats["column_flow_element_count"],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_strategy_counts": stats["reading_order_strategy_counts"],
+        "font_profile": stats["font_profile"],
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
@@ -165,6 +175,7 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             if element.metadata.get("reading_order_strategy") == "recursive-xy-cut-v1"
         ),
         "reading_order_strategy_counts": dict(sorted(reading_order_strategy_counts.items())),
+        "font_profile": str(document.metadata.get("font_profile") or "unknown"),
         "structure_evidence_source": structure_evidence.get("source"),
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
@@ -235,6 +246,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "multi_column_element_count",
         "column_flow_element_count",
         "recursive_xy_cut_element_count",
+        "font_profile",
         "structure_evidence_source",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
