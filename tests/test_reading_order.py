@@ -188,6 +188,33 @@ def test_column_flow_detects_three_repeated_anchor_columns() -> None:
     assert all(by_item[index].scope == "body" for index in first_column + second_column + third_column)
 
 
+def test_spatial_graph_orders_overlapping_weak_columns() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+
+    for row in range(8):
+        left_indices.append(len(bboxes))
+        left_x0 = 72 + (row % 4) * 24
+        bboxes.append(BBox(x0=left_x0, y0=90 + row * 15, x1=left_x0 + 288, y1=101 + row * 15))
+        right_indices.append(len(bboxes))
+        right_x0 = 252 + (row % 4) * 24
+        bboxes.append(BBox(x0=right_x0, y0=90 + row * 15, x1=right_x0 + 288, y1=101 + row * 15))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].strategy for index in left_indices + right_indices} == {"spatial-graph-v1"}
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert max(by_item[index].semantic_order for index in left_indices) < min(
+        by_item[index].semantic_order for index in right_indices
+    )
+    assert {by_item[index].column_index for index in left_indices} == {0}
+    assert {by_item[index].column_index for index in right_indices} == {1}
+    assert all("spatial-graph" in by_item[index].evidence for index in left_indices + right_indices)
+    assert all("horizontal-overlap-chain" in by_item[index].evidence for index in left_indices + right_indices)
+
+
 def test_sidebar_notes_do_not_become_body_columns() -> None:
     bboxes: list[BBox] = [BBox(x0=72, y0=44, x1=526, y1=60)]
     left_indices: list[int] = []

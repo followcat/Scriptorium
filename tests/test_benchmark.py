@@ -78,6 +78,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("recursive_xy_cut_element_count" in case for case in report["cases"])
     assert all("mixed_table_column_flow_element_count" in case for case in report["cases"])
     assert all("table_row_major_element_count" in case for case in report["cases"])
+    assert all("spatial_graph_element_count" in case for case in report["cases"])
     assert all("reading_order_artifact_element_count" in case for case in report["cases"])
     assert all("reading_order_artifact_counts" in case for case in report["cases"])
     assert all("reading_order_footnote_element_count" in case for case in report["cases"])
@@ -115,6 +116,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_recursive_xy_cut_elements" in report["summary"]
     assert "total_mixed_table_column_flow_elements" in report["summary"]
     assert "total_table_row_major_elements" in report["summary"]
+    assert "total_spatial_graph_elements" in report["summary"]
     assert "total_reading_order_artifact_elements" in report["summary"]
     assert "reading_order_artifact_counts" in report["summary"]
     assert "total_reading_order_footnote_elements" in report["summary"]
@@ -230,6 +232,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "ocr_text_count" in csv_text
     assert "mixed_table_column_flow_element_count" in csv_text
     assert "table_row_major_element_count" in csv_text
+    assert "spatial_graph_element_count" in csv_text
     assert "reading_order_artifact_element_count" in csv_text
     assert "reading_order_footnote_element_count" in csv_text
     assert "reading_order_sidebar_element_count" in csv_text

@@ -83,6 +83,14 @@ class _OrderToken:
     evidence: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class _SpatialGraphResult:
+    ordered_indices: list[int]
+    columns: list[list[int]]
+    confidence: float
+    evidence: tuple[str, ...]
+
+
 def infer_semantic_reading_order(
     bboxes: list[BBox],
     page_width: float,
@@ -200,6 +208,53 @@ def _column_flow_assignments(
                 strategy=_table_row_major_strategy(artifact_type_by_item),
                 base_confidence=0.82,
                 base_evidence=("table-row-major", "table-grid-slots"),
+            )
+        spatial_graph_result = _spatial_graph_order(bboxes, page_width, page_height, body_indices)
+        if spatial_graph_result is not None:
+            header_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "header"
+            }
+            footer_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "footer"
+            }
+            ordered_indices = [
+                *sorted(header_indices, key=lambda index: reading_order_key(bboxes[index])),
+                *spatial_graph_result.ordered_indices,
+                *sorted(footer_indices, key=lambda index: reading_order_key(bboxes[index])),
+            ]
+            return _assign_order_metadata(
+                ordered_indices,
+                bboxes,
+                page_width,
+                page_height,
+                visual_rank,
+                strategy=_spatial_graph_strategy(artifact_type_by_item),
+                flow_segment_by_item=_flow_segments_for_order(ordered_indices, bboxes),
+                artifact_type_by_item=artifact_type_by_item,
+                scope_by_item={item_index: "page-artifact" for item_index in artifact_type_by_item},
+                column_span_by_item={
+                    item_index: _artifact_column_span(artifact_type)
+                    for item_index, artifact_type in artifact_type_by_item.items()
+                },
+                columns=spatial_graph_result.columns,
+                full_width_by_item={
+                    item_index
+                    for item_index in body_indices
+                    if bboxes[item_index].width >= page_width * 0.62
+                }
+                | set(artifact_type_by_item),
+                confidence_by_item={
+                    item_index: _artifact_confidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else spatial_graph_result.confidence
+                    for item_index in range(len(bboxes))
+                },
+                evidence_by_item={
+                    item_index: _artifact_evidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else spatial_graph_result.evidence
+                    for item_index in range(len(bboxes))
+                },
             )
         return _visual_assignments(
             visual_indices,
@@ -537,6 +592,7 @@ def _assign_order_metadata(
     columns: list[list[int]] | None = None,
     confidence_by_item: dict[int, float] | None = None,
     evidence_by_item: dict[int, tuple[str, ...]] | None = None,
+    full_width_by_item: set[int] | None = None,
     default_confidence: float = 0.62,
     default_evidence: tuple[str, ...] = ("visual-yx",),
 ) -> list[ReadingOrderAssignment]:
@@ -549,13 +605,16 @@ def _assign_order_metadata(
     columns = columns or _infer_column_clusters(bboxes, page_width, page_height)
     column_count = len(columns)
     column_by_item = _assign_columns(bboxes, columns)
-    full_width = {
-        item_index
-        for item_index, bbox in enumerate(bboxes)
-        if item_index in artifact_type_by_item or _is_full_width_box(bbox, columns, bboxes, page_width)
-        or item_index in sidebar_type_by_item
-        or scope_by_item.get(item_index) == "footnote"
-    }
+    if full_width_by_item is None:
+        full_width = {
+            item_index
+            for item_index, bbox in enumerate(bboxes)
+            if item_index in artifact_type_by_item or _is_full_width_box(bbox, columns, bboxes, page_width)
+            or item_index in sidebar_type_by_item
+            or scope_by_item.get(item_index) == "footnote"
+        }
+    else:
+        full_width = set(full_width_by_item)
     if flow_segment_by_item is None:
         flow_segment_by_item = _flow_segments_for_order(ordered_indices, bboxes)
 
@@ -850,6 +909,15 @@ def _table_row_major_strategy(artifact_type_by_item: dict[int, str]) -> str:
     )
 
 
+def _spatial_graph_strategy(artifact_type_by_item: dict[int, str]) -> str:
+    return _qualified_strategy(
+        "spatial-graph-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item={},
+        footnote_indices=set(),
+    )
+
+
 def _qualified_strategy(
     base_strategy: str,
     artifact_type_by_item: dict[int, str],
@@ -954,6 +1022,129 @@ def _xy_cut_evidence(result: _XyCutResult) -> tuple[str, ...]:
     if result.has_vertical_split:
         evidence.append("vertical-whitespace-cut")
     return tuple(evidence)
+
+
+def _spatial_graph_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    indices: list[int],
+) -> _SpatialGraphResult | None:
+    source_indices = [
+        index
+        for index in indices
+        if bboxes[index].width >= 8 and bboxes[index].height >= 4
+    ]
+    if len(source_indices) < 8 or _looks_like_table_grid([bboxes[index] for index in source_indices], page_width):
+        return None
+
+    heights = [bboxes[index].height for index in source_indices if bboxes[index].height > 0]
+    median_height = median(heights) if heights else 10.0
+    max_vertical_gap = max(page_height * 0.08, median_height * 6.0)
+    predecessor_by_item: dict[int, int] = {}
+    successors_by_item: dict[int, list[int]] = {index: [] for index in source_indices}
+
+    for child_index in sorted(source_indices, key=lambda index: (bboxes[index].y0, bboxes[index].x0)):
+        candidates: list[tuple[float, float, float, int]] = []
+        child_box = bboxes[child_index]
+        for parent_index in source_indices:
+            if parent_index == child_index:
+                continue
+            parent_box = bboxes[parent_index]
+            vertical_gap = child_box.y0 - parent_box.y1
+            if vertical_gap < -median_height * 0.25 or vertical_gap > max_vertical_gap:
+                continue
+            if not _spatial_graph_horizontally_related(parent_box, child_box, page_width):
+                continue
+            overlap = _horizontal_overlap_ratio(parent_box, child_box)
+            center_delta = abs(_center_x(parent_box) - _center_x(child_box))
+            candidates.append((max(vertical_gap, 0.0), center_delta, -overlap, parent_index))
+        if not candidates:
+            continue
+        _gap, _center_delta, _overlap, parent_index = min(candidates)
+        predecessor_by_item[child_index] = parent_index
+        successors_by_item[parent_index].append(child_index)
+
+    full_width_indices = {index for index in source_indices if bboxes[index].width >= page_width * 0.62}
+    non_full_indices = [index for index in source_indices if index not in full_width_indices]
+    if len(non_full_indices) < 6:
+        return None
+
+    chain_groups: dict[int, list[int]] = {}
+    for item_index in non_full_indices:
+        root = item_index
+        while predecessor_by_item.get(root) is not None and predecessor_by_item[root] not in full_width_indices:
+            root = predecessor_by_item[root]
+        chain_groups.setdefault(root, []).append(item_index)
+
+    significant_chains = [
+        sorted(chain, key=lambda index: reading_order_key(bboxes[index]))
+        for chain in chain_groups.values()
+        if len(chain) >= 3
+    ]
+    if len(significant_chains) < 2:
+        return None
+    significant_chains = sorted(significant_chains, key=lambda chain: _cluster_x_center(chain, bboxes))
+
+    coverage = sum(len(chain) for chain in significant_chains) / max(len(non_full_indices), 1)
+    if coverage < 0.65:
+        return None
+    if _min_column_center_separation(significant_chains, bboxes) < page_width * 0.14:
+        return None
+    if _min_column_vertical_overlap(significant_chains, bboxes) < 0.2:
+        return None
+
+    row_tolerance = max(4.0, median_height * 0.8)
+    heads = [index for index in source_indices if index not in predecessor_by_item]
+    ordered_indices: list[int] = []
+    visited: set[int] = set()
+
+    def visit(item_index: int) -> None:
+        if item_index in visited:
+            return
+        visited.add(item_index)
+        ordered_indices.append(item_index)
+        for child_index in sorted(
+            successors_by_item.get(item_index, []),
+            key=lambda index: _spatial_graph_sort_key(bboxes[index], row_tolerance),
+        ):
+            visit(child_index)
+
+    for head_index in sorted(heads, key=lambda index: _spatial_graph_sort_key(bboxes[index], row_tolerance)):
+        visit(head_index)
+    for item_index in sorted(source_indices, key=lambda index: reading_order_key(bboxes[index])):
+        visit(item_index)
+
+    remaining_indices = [index for index in indices if index not in visited]
+    if remaining_indices:
+        ordered_indices.extend(sorted(remaining_indices, key=lambda index: reading_order_key(bboxes[index])))
+
+    confidence = _bounded_confidence(0.76 + 0.08 * min(coverage, 1.0) + 0.06 * min(len(significant_chains) / 3, 1.0))
+    evidence = ("spatial-graph", "horizontal-overlap-chain", "multi-head-flow")
+    return _SpatialGraphResult(
+        ordered_indices=ordered_indices,
+        columns=significant_chains,
+        confidence=confidence,
+        evidence=evidence,
+    )
+
+
+def _spatial_graph_horizontally_related(first: BBox, second: BBox, page_width: float) -> bool:
+    overlap = _horizontal_overlap_ratio(first, second)
+    center_delta = abs(_center_x(first) - _center_x(second))
+    max_width = max(first.width, second.width)
+    center_limit = max(24.0, min(max_width * 0.42, page_width * 0.12))
+    return center_delta <= center_limit or (overlap >= 0.65 and center_delta <= page_width * 0.16)
+
+
+def _horizontal_overlap_ratio(first: BBox, second: BBox) -> float:
+    overlap = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    denominator = max(1.0, min(first.width, second.width))
+    return overlap / denominator
+
+
+def _spatial_graph_sort_key(bbox: BBox, row_tolerance: float) -> tuple[int, float, float]:
+    return (round(_center_y(bbox) / max(row_tolerance, 1.0)), bbox.x0, bbox.y0)
 
 
 def _merge_evidence(*groups: tuple[str, ...]) -> tuple[str, ...]:
