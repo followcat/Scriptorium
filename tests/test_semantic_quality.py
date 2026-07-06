@@ -278,6 +278,61 @@ def test_relation_edges_report_missing_labels(tmp_path: Path) -> None:
     assert report["semantic_relation_precedence_accuracy"] == 0
 
 
+def test_reading_streams_score_local_successors_independently(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    source_pdf.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "reading_streams": [
+                            {
+                                "stream_id": "body-main",
+                                "stream_type": "body",
+                                "text_sequence": ["Body A", "Body B"],
+                            },
+                            {
+                                "stream_id": "sidebar-right",
+                                "stream_type": "sidebar-right",
+                                "text_sequence": ["Side A", "Side B"],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["Body A", "Side A", "Body B", "Side B"])
+
+    report = compare_semantic_reading_order(
+        document,
+        source_pdf,
+        tmp_path / "semantic",
+        candidate_orders={
+            "selected_like": {0: ["e0", "e1", "e2", "e3"]},
+            "sidebar_first": {0: ["e1", "e3", "e0", "e2"]},
+        },
+    )
+    page = report["pages"][0]
+
+    assert page["match_mode"] == "ordered-subsequence"
+    assert page["stream_count"] == 2
+    assert page["stream_successor_correct_count"] == 2
+    assert page["stream_successor_total_count"] == 2
+    assert page["stream_successor_accuracy"] == 1
+    assert page["stream_precedence_accuracy"] == 1
+    assert report["semantic_stream_successor_accuracy"] == 1
+    assert report["semantic_stream_precedence_accuracy"] == 1
+    assert report["semantic_relation_successor_accuracy"] is None
+    assert report["semantic_candidate_order_metrics"]["selected_like"]["semantic_stream_successor_accuracy"] == 1
+    assert report["semantic_candidate_order_metrics"]["sidebar_first"]["semantic_stream_successor_accuracy"] == 1
+    assert report["semantic_best_candidate_by_stream_successor"] in {"selected_like", "sidebar_first"}
+
+
 def _document_with_texts(texts: list[str]) -> DocumentIR:
     elements = []
     for index, text in enumerate(texts):

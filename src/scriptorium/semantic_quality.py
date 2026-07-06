@@ -93,11 +93,13 @@ def _compare_page(
     page_index = int(page_truth.get("page_index", 0))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
     relation_edges = _page_relation_edges(page_truth)
+    reading_streams = _page_reading_streams(page_truth)
     has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
+    has_stream_labels = bool(reading_streams)
     match_mode = str(
         page_truth.get(
             "match_mode",
-            "ordered-subsequence" if has_relation_edges and not expected else "full-sequence",
+            "ordered-subsequence" if (has_relation_edges or has_stream_labels) and not expected else "full-sequence",
         )
     )
     page = document.pages[page_index]
@@ -119,10 +121,11 @@ def _compare_page(
             page.height_pt,
             include_sequences=True,
             include_ignored_texts=True,
-            ignored_label_texts=_merged_label_texts(expected, relation_edges),
+            ignored_label_texts=_merged_label_texts(expected, relation_edges, reading_streams),
         )
     )
     page_report.update(_relation_quality(actual_elements, relation_edges))
+    page_report.update(_stream_quality(actual_elements, reading_streams))
 
     candidate_reports: dict[str, Any] = {}
     for candidate_name, page_orders in sorted(candidate_orders.items()):
@@ -139,6 +142,7 @@ def _compare_page(
             include_ignored_texts=False,
         )
         candidate_reports[candidate_name].update(_relation_quality(candidate_elements, relation_edges))
+        candidate_reports[candidate_name].update(_stream_quality(candidate_elements, reading_streams))
     if candidate_reports:
         page_report["candidate_orders"] = candidate_reports
 
@@ -162,12 +166,86 @@ def _page_relation_edges(page_truth: dict[str, Any]) -> dict[str, list[tuple[str
     }
 
 
+def _page_reading_streams(page_truth: dict[str, Any]) -> list[dict[str, Any]]:
+    streams: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_stream in _combined_relation_values(
+        page_truth.get("reading_streams"),
+        page_truth.get("streams"),
+    ):
+        if not isinstance(raw_stream, dict):
+            continue
+        stream_id = str(raw_stream.get("stream_id", raw_stream.get("id", "")) or "").strip()
+        stream_type = str(raw_stream.get("stream_type", raw_stream.get("type", "")) or "").strip()
+        if not stream_id:
+            stream_id = stream_type or f"stream-{len(streams) + 1}"
+        if not stream_type:
+            stream_type = "unknown"
+        key = (stream_id, stream_type)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        sequence = _texts_from_any(
+            raw_stream.get(
+                "text_sequence",
+                raw_stream.get("sequence", raw_stream.get("texts", [])),
+            )
+        )
+        successor_edges = _dedupe_edges(
+            [
+                *_adjacent_edges(sequence),
+                *_relation_edges_from_any(
+                    _combined_relation_values(
+                        raw_stream.get("successor_edges"),
+                        raw_stream.get("successor_relations"),
+                    )
+                ),
+            ]
+        )
+        precedence_edges = _dedupe_edges(
+            [
+                *_ordered_pairs(sequence),
+                *_relation_edges_from_any(
+                    _combined_relation_values(
+                        raw_stream.get("precedence_edges"),
+                        raw_stream.get("order_edges"),
+                    )
+                ),
+            ]
+        )
+        labels = _dedupe_texts(
+            [
+                *sequence,
+                *(text for edge in [*successor_edges, *precedence_edges] for text in edge),
+            ]
+        )
+        if not labels:
+            continue
+        streams.append(
+            {
+                "stream_id": stream_id,
+                "stream_type": stream_type,
+                "labels": labels,
+                "successor_edges": successor_edges,
+                "precedence_edges": precedence_edges,
+            }
+        )
+    return streams
+
+
 def _combined_relation_values(*values: Any) -> list[Any]:
     combined: list[Any] = []
     for value in values:
         if isinstance(value, list):
             combined.extend(value)
     return combined
+
+
+def _texts_from_any(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return _dedupe_texts([str(text).strip() for text in value if str(text).strip()])
 
 
 def _relation_edges_from_any(value: Any) -> list[tuple[str, str]]:
@@ -194,7 +272,47 @@ def _relation_edges_from_any(value: Any) -> list[tuple[str, str]]:
     return edges
 
 
-def _merged_label_texts(expected: list[str], relation_edges: dict[str, list[tuple[str, str]]]) -> list[str]:
+def _dedupe_edges(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    unique_edges: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for source, target in edges:
+        edge = (str(source).strip(), str(target).strip())
+        if not edge[0] or not edge[1] or edge[0] == edge[1] or edge in seen:
+            continue
+        unique_edges.append(edge)
+        seen.add(edge)
+    return unique_edges
+
+
+def _adjacent_edges(sequence: list[str]) -> list[tuple[str, str]]:
+    return [(sequence[index], sequence[index + 1]) for index in range(max(0, len(sequence) - 1))]
+
+
+def _ordered_pairs(sequence: list[str]) -> list[tuple[str, str]]:
+    return [
+        (sequence[left], sequence[right])
+        for left in range(len(sequence))
+        for right in range(left + 1, len(sequence))
+    ]
+
+
+def _dedupe_texts(texts: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        normalized = str(text).strip()
+        if not normalized or normalized in seen:
+            continue
+        unique.append(normalized)
+        seen.add(normalized)
+    return unique
+
+
+def _merged_label_texts(
+    expected: list[str],
+    relation_edges: dict[str, list[tuple[str, str]]],
+    reading_streams: list[dict[str, Any]],
+) -> list[str]:
     labels = list(expected)
     seen = set(labels)
     for edge in [*relation_edges["successor_edges"], *relation_edges["precedence_edges"]]:
@@ -202,6 +320,11 @@ def _merged_label_texts(expected: list[str], relation_edges: dict[str, list[tupl
             if text not in seen:
                 labels.append(text)
                 seen.add(text)
+    for stream in reading_streams:
+        for text in stream.get("labels", []):
+            if text not in seen:
+                labels.append(str(text))
+                seen.add(str(text))
     return labels
 
 
@@ -226,6 +349,93 @@ def _relation_quality(
         "relation_missing_text_count": len(missing_labels),
         "relation_missing_texts": sorted(missing_labels),
     }
+
+
+def _stream_quality(
+    actual_elements: list[Any],
+    reading_streams: list[dict[str, Any]],
+) -> dict[str, Any]:
+    positions = _first_text_positions([element.source_text.strip() for element in actual_elements])
+    stream_reports: list[dict[str, Any]] = []
+    successor_correct_total = 0
+    successor_edge_total = 0
+    precedence_correct_total = 0
+    precedence_edge_total = 0
+    missing_labels: set[str] = set()
+    for stream in reading_streams:
+        labels = [str(text).strip() for text in stream.get("labels", []) if str(text).strip()]
+        successor_edges = list(stream.get("successor_edges", []))
+        precedence_edges = list(stream.get("precedence_edges", []))
+        successor_correct, successor_missing = _stream_successor_counts(
+            successor_edges,
+            positions,
+            labels,
+        )
+        precedence_correct, precedence_missing = _relation_precedence_counts(precedence_edges, positions)
+        successor_correct_total += successor_correct
+        successor_edge_total += len(successor_edges)
+        precedence_correct_total += precedence_correct
+        precedence_edge_total += len(precedence_edges)
+        missing_labels.update(successor_missing)
+        missing_labels.update(precedence_missing)
+        missing_labels.update(text for text in labels if text not in positions)
+        stream_reports.append(
+            {
+                "stream_id": stream.get("stream_id"),
+                "stream_type": stream.get("stream_type"),
+                "label_count": len(labels),
+                "successor_correct_count": successor_correct,
+                "successor_total_count": len(successor_edges),
+                "successor_accuracy": _optional_ratio(successor_correct, len(successor_edges)),
+                "precedence_correct_count": precedence_correct,
+                "precedence_total_count": len(precedence_edges),
+                "precedence_accuracy": _optional_ratio(precedence_correct, len(precedence_edges)),
+                "missing_text_count": len(successor_missing | precedence_missing | {text for text in labels if text not in positions}),
+            }
+        )
+
+    return {
+        "stream_count": len(reading_streams),
+        "stream_successor_correct_count": successor_correct_total,
+        "stream_successor_total_count": successor_edge_total,
+        "stream_successor_accuracy": _optional_ratio(successor_correct_total, successor_edge_total),
+        "stream_precedence_correct_count": precedence_correct_total,
+        "stream_precedence_total_count": precedence_edge_total,
+        "stream_precedence_accuracy": _optional_ratio(precedence_correct_total, precedence_edge_total),
+        "stream_missing_text_count": len(missing_labels),
+        "stream_missing_texts": sorted(missing_labels),
+        "reading_streams": stream_reports,
+    }
+
+
+def _stream_successor_counts(
+    edges: list[tuple[str, str]],
+    positions: dict[str, int],
+    stream_labels: list[str],
+) -> tuple[int, set[str]]:
+    if not edges:
+        return 0, set()
+    stream_label_set = set(stream_labels)
+    labelled_positions = {
+        positions[text]
+        for text in stream_label_set
+        if text in positions
+    }
+    correct = 0
+    missing: set[str] = set()
+    for source, target in edges:
+        source_position = positions.get(source)
+        target_position = positions.get(target)
+        if source_position is None:
+            missing.add(source)
+        if target_position is None:
+            missing.add(target)
+        if source_position is None or target_position is None or source_position >= target_position:
+            continue
+        if any(source_position < other_position < target_position for other_position in labelled_positions):
+            continue
+        correct += 1
+    return correct, missing
 
 
 def _first_text_positions(actual: list[str]) -> dict[str, int]:
@@ -510,11 +720,22 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     relation_successor_total = sum(int(page["relation_successor_total_count"]) for page in pages)
     relation_precedence_correct = sum(int(page["relation_precedence_correct_count"]) for page in pages)
     relation_precedence_total = sum(int(page["relation_precedence_total_count"]) for page in pages)
+    stream_successor_correct = sum(int(page["stream_successor_correct_count"]) for page in pages)
+    stream_successor_total = sum(int(page["stream_successor_total_count"]) for page in pages)
+    stream_precedence_correct = sum(int(page["stream_precedence_correct_count"]) for page in pages)
+    stream_precedence_total = sum(int(page["stream_precedence_total_count"]) for page in pages)
     relation_missing_texts = sorted(
         {
             str(text)
             for page in pages
             for text in page.get("relation_missing_texts", [])
+        }
+    )
+    stream_missing_texts = sorted(
+        {
+            str(text)
+            for page in pages
+            for text in page.get("stream_missing_texts", [])
         }
     )
     return {
@@ -552,6 +773,15 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "semantic_relation_missing_text_count": len(relation_missing_texts),
         "semantic_relation_missing_texts": relation_missing_texts,
+        "semantic_stream_count": sum(int(page["stream_count"]) for page in pages),
+        "semantic_stream_successor_correct_count": stream_successor_correct,
+        "semantic_stream_successor_total_count": stream_successor_total,
+        "semantic_stream_successor_accuracy": _optional_ratio(stream_successor_correct, stream_successor_total),
+        "semantic_stream_precedence_correct_count": stream_precedence_correct,
+        "semantic_stream_precedence_total_count": stream_precedence_total,
+        "semantic_stream_precedence_accuracy": _optional_ratio(stream_precedence_correct, stream_precedence_total),
+        "semantic_stream_missing_text_count": len(stream_missing_texts),
+        "semantic_stream_missing_texts": stream_missing_texts,
         "semantic_exact_page_match_rate": _round_ratio(
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),
@@ -586,6 +816,10 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
         relation_successor_total = sum(int(page["relation_successor_total_count"]) for page in page_metrics)
         relation_precedence_correct = sum(int(page["relation_precedence_correct_count"]) for page in page_metrics)
         relation_precedence_total = sum(int(page["relation_precedence_total_count"]) for page in page_metrics)
+        stream_successor_correct = sum(int(page["stream_successor_correct_count"]) for page in page_metrics)
+        stream_successor_total = sum(int(page["stream_successor_total_count"]) for page in page_metrics)
+        stream_precedence_correct = sum(int(page["stream_precedence_correct_count"]) for page in page_metrics)
+        stream_precedence_total = sum(int(page["stream_precedence_total_count"]) for page in page_metrics)
         metrics[name] = {
             "semantic_page_count": len(page_metrics),
             "semantic_expected_text_count": expected_count,
@@ -617,6 +851,19 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
                 relation_precedence_correct,
                 relation_precedence_total,
             ),
+            "semantic_stream_count": sum(int(page["stream_count"]) for page in page_metrics),
+            "semantic_stream_successor_correct_count": stream_successor_correct,
+            "semantic_stream_successor_total_count": stream_successor_total,
+            "semantic_stream_successor_accuracy": _optional_ratio(
+                stream_successor_correct,
+                stream_successor_total,
+            ),
+            "semantic_stream_precedence_correct_count": stream_precedence_correct,
+            "semantic_stream_precedence_total_count": stream_precedence_total,
+            "semantic_stream_precedence_accuracy": _optional_ratio(
+                stream_precedence_correct,
+                stream_precedence_total,
+            ),
             "semantic_exact_page_match_rate": _round_ratio(
                 sum(1 for page in page_metrics if bool(page["exact_match"])) / len(page_metrics)
             ),
@@ -637,6 +884,7 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_best_candidate_by_successor": best_name,
         "semantic_best_candidate_successor_accuracy": best_metrics["semantic_successor_accuracy"],
         **_best_relation_candidate(metrics),
+        **_best_stream_candidate(metrics),
     }
 
 
@@ -670,6 +918,39 @@ def _best_relation_candidate(metrics: dict[str, dict[str, Any]]) -> dict[str, An
     return {
         "semantic_best_candidate_by_relation_successor": best_name,
         "semantic_best_candidate_relation_successor_accuracy": relation_successor,
+    }
+
+
+def _best_stream_candidate(metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    valid_candidates: list[tuple[str, float, float, float]] = []
+    for candidate_name, candidate_metrics in metrics.items():
+        if int(candidate_metrics.get("semantic_stream_successor_total_count") or 0) <= 0:
+            continue
+        stream_successor_accuracy = candidate_metrics.get("semantic_stream_successor_accuracy")
+        if stream_successor_accuracy is None:
+            continue
+        stream_precedence_accuracy = candidate_metrics.get("semantic_stream_precedence_accuracy")
+        valid_candidates.append(
+            (
+                str(candidate_name),
+                float(stream_successor_accuracy),
+                float(stream_precedence_accuracy if stream_precedence_accuracy is not None else 0.0),
+                float(candidate_metrics["semantic_successor_accuracy"]),
+            )
+        )
+    if not valid_candidates:
+        return {
+            "semantic_best_candidate_by_stream_successor": None,
+            "semantic_best_candidate_stream_successor_accuracy": None,
+        }
+
+    best_name, stream_successor, _stream_precedence, _sequence_successor = max(
+        valid_candidates,
+        key=lambda item: (item[1], item[2], item[3], item[0]),
+    )
+    return {
+        "semantic_best_candidate_by_stream_successor": best_name,
+        "semantic_best_candidate_stream_successor_accuracy": stream_successor,
     }
 
 
