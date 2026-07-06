@@ -20,7 +20,7 @@
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
   <img alt="Benchmark" src="https://img.shields.io/badge/benchmark-visual%20%2B%20semantic-805ad5">
   <img alt="OCR" src="https://img.shields.io/badge/OCR-optional%20Paddle%2FDocling-0f766e">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-79%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-2f855a">
 </p>
 
 <p align="center">
@@ -131,7 +131,7 @@ Relation-graph 候选排序现在也进入 benchmark 诊断。`infer_relation_gr
 
 Successor-consensus 候选现在把 visual-yx、box-flow、relation-graph 和 external-structure 的相邻后继边作为投票来源，用 acyclic path-cover 生成一个共识顺序。它同样只作为候选/诊断输出，用来观察多个独立候选是否支持同一局部阅读链。benchmark 还会记录 candidate count、selected-edge support、edge coverage、conflicted-edge ratio 和 high/medium/low agreement page counts，为后续 runtime arbitration 做基础。
 
-`successor-consensus-arbitration-v1` 现在是一个保守的 runtime 仲裁路径：只在页面原本会落回弱 `single-column-visual-order`、非 visual 候选（box-flow 与 relation-graph）高度一致、与 visual-yx 存在相邻后继分歧，并且共识顺序出现明确跨栏回跳时才接管。它用于少量行/稀疏两栏页面，不会替代表格、XY-Cut、column-flow、spatial-graph、box-flow、脚注、边栏或外部结构证据路径。
+`successor-consensus-arbitration-v1` 现在是一个保守的 runtime 仲裁路径：只在页面原本会落回弱 `single-column-visual-order`、非 visual 候选（box-flow 与 relation-graph）高度一致、与 visual-yx 存在相邻后继分歧，并且共识顺序出现明确跨栏回跳时才接管。它用于少量行/稀疏多栏页面，并会从多个 handoff 还原 `column_count` / `column_index` 元数据，不会替代表格、XY-Cut、column-flow、spatial-graph、box-flow、脚注、边栏或外部结构证据路径。
 
 页级候选仲裁诊断现在也会在没有 semantic sidecar 的 PDF 上工作。benchmark 会逐页比较 selected semantic order 与 successor-consensus 候选，输出 `reading_order_candidate_page_diagnostics`，并汇总 `reading_order_candidate_page_recommendation_counts`。推荐值包括 `keep-selected-supported`、`keep-selected-low-consensus`、`review-consensus`、`review-disagreement`、`needs-structure-evidence` 和 `unavailable`；它们用于安排复核/模型证据补充，不会自动改写转换结果。
 
@@ -605,7 +605,7 @@ pytest
 当前本地测试基线：
 
 ```text
-79 passed
+80 passed
 ```
 
 ## 项目状态
