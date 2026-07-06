@@ -266,6 +266,10 @@ def _run_case(
         "reading_order_footnote_element_count": stats["reading_order_footnote_element_count"],
         "reading_order_sidebar_element_count": stats["reading_order_sidebar_element_count"],
         "reading_order_sidebar_counts": stats["reading_order_sidebar_counts"],
+        "reading_order_stream_element_count": stats["reading_order_stream_element_count"],
+        "reading_order_stream_count": stats["reading_order_stream_count"],
+        "reading_order_stream_type_counts": stats["reading_order_stream_type_counts"],
+        "reading_order_stream_id_counts": stats["reading_order_stream_id_counts"],
         "reading_order_caption_element_count": stats["reading_order_caption_element_count"],
         "reading_order_caption_counts": stats["reading_order_caption_counts"],
         "reading_order_caption_targeted_element_count": stats[
@@ -558,6 +562,24 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         for element in text_elements
         if element.metadata.get("reading_order_caption_target_kind")
     )
+    reading_order_stream_element_count = 0
+    reading_order_stream_count = 0
+    reading_order_stream_type_counts: Counter[str] = Counter()
+    reading_order_stream_id_counts: Counter[str] = Counter()
+    for page in document.pages:
+        page_stream_types: dict[str, str] = {}
+        for element in page.elements:
+            if not element.source_text.strip():
+                continue
+            stream_id = str(element.metadata.get("reading_order_stream_id") or "").strip()
+            if not stream_id:
+                continue
+            stream_type = str(element.metadata.get("reading_order_stream_type") or "unknown").strip()
+            reading_order_stream_element_count += 1
+            page_stream_types.setdefault(stream_id, stream_type or "unknown")
+        reading_order_stream_count += len(page_stream_types)
+        reading_order_stream_type_counts.update(page_stream_types.values())
+        reading_order_stream_id_counts.update(page_stream_types.keys())
     reading_order_caption_element_count = sum(
         1 for element in text_elements if element.metadata.get("reading_order_caption_type")
     )
@@ -683,6 +705,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             1 for element in text_elements if element.metadata.get("reading_order_scope") == "sidebar"
         ),
         "reading_order_sidebar_counts": dict(sorted(reading_order_sidebar_counts.items())),
+        "reading_order_stream_element_count": reading_order_stream_element_count,
+        "reading_order_stream_count": reading_order_stream_count,
+        "reading_order_stream_type_counts": dict(sorted(reading_order_stream_type_counts.items())),
+        "reading_order_stream_id_counts": dict(sorted(reading_order_stream_id_counts.items())),
         "reading_order_caption_element_count": reading_order_caption_element_count,
         "reading_order_caption_counts": dict(sorted(reading_order_caption_counts.items())),
         "reading_order_caption_targeted_element_count": reading_order_caption_targeted_element_count,
@@ -1476,6 +1502,12 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_footnote_elements": sum(int(case["reading_order_footnote_element_count"]) for case in cases),
         "total_reading_order_sidebar_elements": sum(int(case["reading_order_sidebar_element_count"]) for case in cases),
         "reading_order_sidebar_counts": _sum_case_count_dicts(cases, "reading_order_sidebar_counts"),
+        "total_reading_order_stream_elements": sum(
+            int(case["reading_order_stream_element_count"]) for case in cases
+        ),
+        "total_reading_order_streams": sum(int(case["reading_order_stream_count"]) for case in cases),
+        "reading_order_stream_type_counts": _sum_case_count_dicts(cases, "reading_order_stream_type_counts"),
+        "reading_order_stream_id_counts": _sum_case_count_dicts(cases, "reading_order_stream_id_counts"),
         "total_reading_order_caption_elements": sum(int(case["reading_order_caption_element_count"]) for case in cases),
         "reading_order_caption_counts": _sum_case_count_dicts(cases, "reading_order_caption_counts"),
         "total_reading_order_caption_targeted_elements": sum(
@@ -1717,6 +1749,10 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_footnote_element_count",
         "reading_order_sidebar_element_count",
         "reading_order_sidebar_counts",
+        "reading_order_stream_element_count",
+        "reading_order_stream_count",
+        "reading_order_stream_type_counts",
+        "reading_order_stream_id_counts",
         "reading_order_caption_element_count",
         "reading_order_caption_counts",
         "reading_order_caption_targeted_element_count",

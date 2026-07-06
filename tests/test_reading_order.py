@@ -64,6 +64,9 @@ def test_two_column_fixture_uses_recursive_xy_cut_semantic_order(tmp_path: Path)
     assert 'data-scriptorium-reading-order-region="root/' in html
     assert 'data-scriptorium-reading-order-confidence="0.83"' in html
     assert 'data-scriptorium-reading-order-evidence="recursive-xy-cut' in html
+    assert 'data-scriptorium-reading-order-stream-id="body-main"' in html
+    assert 'data-scriptorium-reading-order-stream-type="body"' in html
+    assert 'data-scriptorium-reading-order-stream-index="' in html
     assert 'data-scriptorium-column-count="2"' in html
     assert 'data-scriptorium-semantic-order="' in html
 
@@ -465,6 +468,13 @@ def test_sidebar_notes_do_not_become_body_columns() -> None:
     )
     assert {by_item[index].scope for index in sidebar_indices} == {"sidebar"}
     assert {by_item[index].sidebar_type for index in sidebar_indices} == {"right"}
+    assert {by_item[index].reading_order_stream_type for index in left_indices + right_indices} == {"body"}
+    assert {by_item[index].reading_order_stream_id for index in left_indices + right_indices} == {"body-main"}
+    assert {by_item[index].reading_order_stream_type for index in sidebar_indices} == {"sidebar-right"}
+    assert {by_item[index].reading_order_stream_id for index in sidebar_indices} == {"sidebar-right"}
+    assert [by_item[index].reading_order_stream_index for index in sidebar_indices] == list(
+        range(1, len(sidebar_indices) + 1)
+    )
     assert {by_item[index].column_span for index in sidebar_indices} == {"sidebar-right"}
     assert {by_item[index].column_index for index in sidebar_indices} == {None}
     assert {by_item[index].strategy for index in sidebar_indices} == {"sidebar-aware-column-flow-v1"}
@@ -502,6 +512,9 @@ def test_footnotes_do_not_interrupt_multicolumn_body_flow() -> None:
     )
     assert max(by_item[index].semantic_order for index in footnote_indices) < by_item[footer_index].semantic_order
     assert {by_item[index].scope for index in footnote_indices} == {"footnote"}
+    assert {by_item[index].reading_order_stream_type for index in footnote_indices} == {"footnote"}
+    assert {by_item[index].reading_order_stream_id for index in footnote_indices} == {"footnote"}
+    assert [by_item[index].reading_order_stream_index for index in footnote_indices] == [1, 2]
     assert {by_item[index].column_span for index in footnote_indices} == {"footnote"}
     assert {by_item[index].column_index for index in footnote_indices} == {None}
     assert {by_item[index].strategy for index in footnote_indices} == {"marginal-footnote-aware-column-flow-v1"}
@@ -667,6 +680,8 @@ def test_mixed_table_island_keeps_body_columns_and_table_rows() -> None:
     assert all("table-island-row-major" in by_item[index].evidence for index in table_indices)
     assert all("table-grid-slots" in by_item[index].evidence for index in table_indices)
     assert all(by_item[index].region_path == "root/table-island-001" for index in table_indices)
+    assert {by_item[index].reading_order_stream_type for index in table_indices} == {"table-island"}
+    assert {by_item[index].reading_order_stream_id for index in table_indices} == {"table-island-001"}
     assert max(by_item[index].semantic_order for index in upper_left) < min(
         by_item[index].semantic_order for index in upper_right
     )

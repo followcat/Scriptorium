@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from statistics import median
 
 from .models import BBox, DocumentIR, ElementIR, PageIR
+from .reading_streams import assign_reading_streams_to_metadata
 
 
 STYLE_KEYS = (
@@ -114,6 +115,16 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
     shape_elements = [element for element in page.elements if element.type == "shape"]
     median_font = _median_font_size(text_elements)
     layout_regions = _infer_layout_regions(shape_elements)
+    for element in text_elements:
+        element.metadata.setdefault("semantic_order", element.reading_order)
+        element.metadata.setdefault("visual_order", element.reading_order)
+    assign_reading_streams_to_metadata(
+        (element.metadata for element in text_elements),
+        order_key=lambda metadata: (
+            int(metadata.get("semantic_order") or 1_000_000),
+            int(metadata.get("visual_order") or 1_000_000),
+        ),
+    )
 
     for element in page.elements:
         source_kind = str(element.metadata.get("source", "unknown"))
@@ -145,6 +156,9 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "reading_order_artifact_type": element.metadata.get("reading_order_artifact_type"),
             "reading_order_sidebar_type": element.metadata.get("reading_order_sidebar_type"),
             "reading_order_caption_type": element.metadata.get("reading_order_caption_type"),
+            "reading_order_stream_id": element.metadata.get("reading_order_stream_id"),
+            "reading_order_stream_type": element.metadata.get("reading_order_stream_type"),
+            "reading_order_stream_index": element.metadata.get("reading_order_stream_index"),
             "reading_order_confidence": float(element.metadata.get("reading_order_confidence") or 0.0),
             "reading_order_evidence": _reading_order_evidence(element),
             "reading_order_evidence_summary": element.metadata.get("reading_order_evidence_summary", ""),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 import re
 from typing import Literal
@@ -9,6 +9,7 @@ from statistics import median
 
 from .geometry import reading_order_key
 from .models import BBox
+from .reading_streams import assign_reading_streams_to_metadata
 
 ReadingOrderStrategy = Literal["auto", "visual-yx", "column-flow-v1", "recursive-xy-cut-v1"]
 
@@ -30,6 +31,9 @@ class ReadingOrderAssignment:
     caption_type: str | None = None
     confidence: float = 0.5
     evidence: tuple[str, ...] = ()
+    reading_order_stream_id: str | None = None
+    reading_order_stream_type: str | None = None
+    reading_order_stream_index: int | None = None
 
     def as_metadata(self) -> dict[str, object]:
         scope = self.scope
@@ -37,6 +41,7 @@ class ReadingOrderAssignment:
             scope = "page-artifact"
         elif self.sidebar_type and scope == "body":
             scope = "sidebar"
+        stream_metadata = _assignment_stream_metadata(self)
         return {
             "semantic_order": self.semantic_order,
             "visual_order": self.visual_order,
@@ -50,10 +55,75 @@ class ReadingOrderAssignment:
             "reading_order_artifact_type": self.artifact_type,
             "reading_order_sidebar_type": self.sidebar_type,
             "reading_order_caption_type": self.caption_type,
+            "reading_order_stream_id": self.reading_order_stream_id
+            or stream_metadata["reading_order_stream_id"],
+            "reading_order_stream_type": self.reading_order_stream_type
+            or stream_metadata["reading_order_stream_type"],
+            "reading_order_stream_index": self.reading_order_stream_index
+            or stream_metadata["reading_order_stream_index"],
             "reading_order_confidence": _bounded_confidence(self.confidence),
             "reading_order_evidence": list(self.evidence),
             "reading_order_evidence_summary": ",".join(self.evidence),
         }
+
+
+def _with_reading_streams(assignments: list[ReadingOrderAssignment]) -> list[ReadingOrderAssignment]:
+    if not assignments:
+        return []
+    metadata_by_assignment = [
+        (assignment, _assignment_stream_metadata(assignment, assign_index=False))
+        for assignment in assignments
+    ]
+    assign_reading_streams_to_metadata(
+        (metadata for _assignment, metadata in metadata_by_assignment),
+        order_key=lambda metadata: (
+            int(metadata.get("semantic_order") or 1_000_000),
+            int(metadata.get("visual_order") or 1_000_000),
+        ),
+    )
+    return [
+        replace(
+            assignment,
+            reading_order_stream_id=str(metadata["reading_order_stream_id"]),
+            reading_order_stream_type=str(metadata["reading_order_stream_type"]),
+            reading_order_stream_index=int(metadata["reading_order_stream_index"]),
+        )
+        for assignment, metadata in metadata_by_assignment
+    ]
+
+
+def _assignment_stream_metadata(
+    assignment: ReadingOrderAssignment,
+    *,
+    assign_index: bool = True,
+) -> dict[str, object]:
+    scope = assignment.scope
+    if assignment.artifact_type and scope == "body":
+        scope = "page-artifact"
+    elif assignment.sidebar_type and scope == "body":
+        scope = "sidebar"
+    metadata: dict[str, object] = {
+        "semantic_order": assignment.semantic_order,
+        "visual_order": assignment.visual_order,
+        "column_span": assignment.column_span,
+        "flow_segment_index": assignment.flow_segment_index,
+        "reading_order_strategy": assignment.strategy,
+        "reading_order_region_path": assignment.region_path,
+        "reading_order_scope": scope,
+        "reading_order_artifact_type": assignment.artifact_type,
+        "reading_order_sidebar_type": assignment.sidebar_type,
+        "reading_order_caption_type": assignment.caption_type,
+        "reading_order_evidence": list(assignment.evidence),
+    }
+    if assign_index:
+        assign_reading_streams_to_metadata(
+            [metadata],
+            order_key=lambda item: (
+                int(item.get("semantic_order") or 1_000_000),
+                int(item.get("visual_order") or 1_000_000),
+            ),
+        )
+    return metadata
 
 
 @dataclass(frozen=True)
@@ -173,7 +243,7 @@ def infer_semantic_reading_order(
     visual_indices = sorted(range(len(bboxes)), key=lambda index: reading_order_key(bboxes[index]))
     visual_rank = {item_index: rank for rank, item_index in enumerate(visual_indices, start=1)}
     if strategy == "visual-yx":
-        return _visual_assignments(visual_indices, visual_rank)
+        return _with_reading_streams(_visual_assignments(visual_indices, visual_rank))
 
     normalized_texts = _normalize_texts(texts, len(bboxes))
     table_islands = _infer_table_islands(bboxes, page_width, page_height)
@@ -188,25 +258,29 @@ def infer_semantic_reading_order(
             normalized_texts,
         )
         if mixed_table_assignments is not None:
-            return mixed_table_assignments
+            return _with_reading_streams(mixed_table_assignments)
 
     xy_result = _recursive_xy_cut_order(bboxes, page_width, page_height)
     if strategy == "recursive-xy-cut-v1" or (
         strategy == "auto" and xy_result.has_horizontal_split and xy_result.has_vertical_split
     ):
-        return _assign_order_metadata(
-            xy_result.ordered_indices,
-            bboxes,
-            page_width,
-            page_height,
-            visual_rank,
-            strategy="recursive-xy-cut-v1",
-            region_path_by_item=xy_result.region_path_by_item,
-            default_confidence=_xy_cut_confidence(xy_result),
-            default_evidence=_xy_cut_evidence(xy_result),
+        return _with_reading_streams(
+            _assign_order_metadata(
+                xy_result.ordered_indices,
+                bboxes,
+                page_width,
+                page_height,
+                visual_rank,
+                strategy="recursive-xy-cut-v1",
+                region_path_by_item=xy_result.region_path_by_item,
+                default_confidence=_xy_cut_confidence(xy_result),
+                default_evidence=_xy_cut_evidence(xy_result),
+            )
         )
 
-    return _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank, normalized_texts)
+    return _with_reading_streams(
+        _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank, normalized_texts)
+    )
 
 
 def infer_box_flow_order(
