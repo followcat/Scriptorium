@@ -618,8 +618,111 @@ def _apply_page_regions(
             element.metadata["external_structure_confidence"] = region.confidence
         if region.order is not None:
             element.metadata["external_structure_order"] = region.order
+        _apply_external_structure_reading_metadata(element, page, region)
         matched_count += 1
     return matched_count
+
+
+def _apply_external_structure_reading_metadata(
+    element: ElementIR,
+    page: PageIR,
+    region: StructureRegion,
+) -> None:
+    normalized_label = _normalize_structure_label(region.label)
+    if not normalized_label:
+        return
+
+    element.metadata.setdefault("reading_order_region_path", _external_region_path(page, region))
+    evidence = _reading_order_evidence(element)
+    for item in ("external-structure-label", f"external-structure-{normalized_label}"):
+        if item not in evidence:
+            evidence.append(item)
+    element.metadata["reading_order_evidence"] = evidence
+    element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+
+    artifact_type = _external_artifact_type(normalized_label, element.bbox_pdf, page)
+    if artifact_type:
+        element.metadata["reading_order_scope"] = "page-artifact"
+        element.metadata["reading_order_artifact_type"] = artifact_type
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = f"artifact-{artifact_type}"
+        return
+
+    if normalized_label in {"footnote", "footnotes"}:
+        element.metadata["reading_order_scope"] = "footnote"
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = "footnote"
+        return
+
+    if normalized_label in {"sidebar", "sidebar_text", "side_bar", "marginalia", "margin_note"}:
+        sidebar_type = "right" if _center_x(element.bbox_pdf) >= page.width_pt / 2 else "left"
+        element.metadata["reading_order_scope"] = "sidebar"
+        element.metadata["reading_order_sidebar_type"] = sidebar_type
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = f"sidebar-{sidebar_type}"
+        return
+
+    caption_type = _external_caption_type(normalized_label)
+    if caption_type:
+        element.metadata["reading_order_caption_type"] = caption_type
+        element.metadata["column_span"] = (
+            "caption-full" if element.bbox_pdf.width >= page.width_pt * 0.62 else "caption-column"
+        )
+        return
+
+    if normalized_label in {"table", "table_body", "table_cell", "table_content"}:
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = "table-external"
+        element.metadata["reading_order_region_path"] = _external_table_region_path(page, region)
+
+
+def _normalize_structure_label(label: str) -> str:
+    return str(label or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _external_artifact_type(label: str, bbox: BBox, page: PageIR) -> str | None:
+    if label in {"header", "running_header", "page_header", "header_text"}:
+        return "header"
+    if label in {"footer", "page_footer", "footer_text"}:
+        return "footer"
+    if label in {"page_number", "number"}:
+        return "header" if _center_y(bbox) <= page.height_pt * 0.18 else "footer"
+    return None
+
+
+def _external_caption_type(label: str) -> str | None:
+    if label in {"figure_caption", "figure_title", "figure_table_title", "image_caption"}:
+        return "figure"
+    if label in {"table_caption", "table_title"}:
+        return "table"
+    if label in {"chart_caption", "chart_title"}:
+        return "chart"
+    if label in {"algorithm_caption", "algorithm_title"}:
+        return "algorithm"
+    return None
+
+
+def _external_region_path(page: PageIR, region: StructureRegion) -> str:
+    return f"external-structure/page-{page.page_index + 1:03d}/region-{_external_region_suffix(region)}"
+
+
+def _external_table_region_path(page: PageIR, region: StructureRegion) -> str:
+    return f"external-structure/page-{page.page_index + 1:03d}/table-island-external-{_external_region_suffix(region)}"
+
+
+def _external_region_suffix(region: StructureRegion) -> str:
+    if region.order is not None:
+        return f"{region.order:03d}"
+    bbox_values = "-".join(str(round(value, 1)).replace(".", "_") for value in region.bbox_pdf.as_list())
+    return bbox_values or "unknown"
+
+
+def _center_x(bbox: BBox) -> float:
+    return (bbox.x0 + bbox.x1) / 2
+
+
+def _center_y(bbox: BBox) -> float:
+    return (bbox.y0 + bbox.y1) / 2
 
 
 def _best_region_match(element: ElementIR, regions: list[StructureRegion]) -> tuple[StructureRegion, float, float] | None:

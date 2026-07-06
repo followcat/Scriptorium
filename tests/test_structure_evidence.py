@@ -167,6 +167,68 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
 
 
+def test_external_structure_labels_feed_reading_stream_scopes() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("header", "Quarterly Report", BBox(x0=70, y0=8, x1=132, y1=18), 1),
+            ("body", "Main body line.", BBox(x0=28, y0=44, x1=118, y1=56), 2),
+            ("sidebar", "Side note", BBox(x0=154, y0=52, x1=190, y1=88), 3),
+            ("caption", "Figure 1. Revenue mix.", BBox(x0=42, y0=104, x1=146, y1=116), 4),
+            ("table", "Revenue 42", BBox(x0=28, y0=128, x1=142, y1=142), 5),
+            ("footnote", "1 Unaudited figures.", BBox(x0=28, y0=174, x1=126, y1=184), 6),
+            ("footer", "12", BBox(x0=96, y0=188, x1=104, y1=196), 7),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("header", "header", "Quarterly Report", 1, document),
+                _pp_region("body", "text", "Main body line.", 2, document),
+                _pp_region("sidebar", "sidebar_text", "Side note", 3, document),
+                _pp_region("caption", "figure_title", "Figure 1. Revenue mix.", 4, document),
+                _pp_region("table", "table", "Revenue 42", 5, document),
+                _pp_region("footnote", "footnote", "1 Unaudited figures.", 6, document),
+                _pp_region("footer", "page_number", "12", 7, document),
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["header"].metadata["reading_order_scope"] == "page-artifact"
+    assert by_id["header"].metadata["reading_order_artifact_type"] == "header"
+    assert by_id["header"].metadata["reading_order_stream_id"] == "page-artifact-header"
+    assert by_id["header"].metadata["role"] == "running-header"
+    assert "external-structure-header" in by_id["header"].metadata["reading_order_evidence"]
+
+    assert by_id["sidebar"].metadata["reading_order_scope"] == "sidebar"
+    assert by_id["sidebar"].metadata["reading_order_sidebar_type"] == "right"
+    assert by_id["sidebar"].metadata["reading_order_stream_id"] == "sidebar-right"
+    assert by_id["sidebar"].metadata["role"] == "sidebar-text"
+
+    assert by_id["caption"].metadata["reading_order_caption_type"] == "figure"
+    assert by_id["caption"].metadata["reading_order_stream_type"] == "caption-figure"
+    assert by_id["caption"].metadata["role"] == "caption"
+
+    assert by_id["table"].metadata["column_span"] == "table-external"
+    assert by_id["table"].metadata["reading_order_stream_type"] == "table-island"
+    assert by_id["table"].metadata["reading_order_stream_id"] == "table-island-external-005"
+    assert by_id["table"].metadata["role"] == "table-cell-text"
+
+    assert by_id["footnote"].metadata["reading_order_scope"] == "footnote"
+    assert by_id["footnote"].metadata["reading_order_stream_id"] == "footnote"
+    assert by_id["footnote"].metadata["role"] == "footnote"
+
+    assert by_id["footer"].metadata["reading_order_scope"] == "page-artifact"
+    assert by_id["footer"].metadata["reading_order_artifact_type"] == "footer"
+    assert by_id["footer"].metadata["reading_order_stream_id"] == "page-artifact-footer"
+    assert by_id["footer"].metadata["role"] == "page-number"
+
+
 def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> DocumentIR:
     elements = [
         ElementIR(
@@ -194,3 +256,20 @@ def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> Docume
         elements=elements,
     )
     return DocumentIR(source_pdf="paper.pdf", render_dpi=144, page_count=1, pages=[page])
+
+
+def _pp_region(
+    element_id: str,
+    label: str,
+    text: str,
+    order: int,
+    document: DocumentIR,
+) -> dict[str, object]:
+    element = next(item for item in document.pages[0].elements if item.id == element_id)
+    return {
+        "block_label": label,
+        "block_bbox": element.bbox_px.as_list(),
+        "block_order": order,
+        "block_content": text,
+        "confidence": 0.95,
+    }
