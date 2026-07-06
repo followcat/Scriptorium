@@ -126,6 +126,24 @@ class SuccessorOrderDisagreement:
     disagreement_ratio: float
 
 
+@dataclass(frozen=True)
+class SuccessorConsensusDiagnostics:
+    ordered_indices: list[int]
+    candidate_count: int
+    item_count: int
+    candidate_edge_count: int
+    unique_edge_count: int
+    selected_edge_count: int
+    selected_edge_vote_count: int
+    selected_edge_support_ratio: float
+    selected_edge_coverage_ratio: float
+    conflicted_source_count: int
+    conflicted_target_count: int
+    conflicted_edge_count: int
+    conflicted_edge_ratio: float
+    agreement_level: str
+
+
 def infer_semantic_reading_order(
     bboxes: list[BBox],
     page_width: float,
@@ -297,9 +315,22 @@ def infer_successor_consensus_order(
     guarantee that the consensus should replace the selected reading order.
     """
 
+    return successor_consensus_diagnostics(
+        candidate_orders,
+        item_count=item_count,
+        base_order=base_order,
+    ).ordered_indices
+
+
+def successor_consensus_diagnostics(
+    candidate_orders: dict[str, list[int]] | list[list[int]],
+    item_count: int | None = None,
+    base_order: list[int] | None = None,
+) -> SuccessorConsensusDiagnostics:
     raw_orders = candidate_orders.values() if isinstance(candidate_orders, dict) else candidate_orders
     normalized_orders = [_dedupe_order(order) for order in raw_orders]
     normalized_orders = [order for order in normalized_orders if len(order) >= 2]
+    candidate_count = len(normalized_orders)
 
     if base_order is None:
         base_order = []
@@ -320,9 +351,14 @@ def infer_successor_consensus_order(
             if item not in universe:
                 universe.append(item)
     if not universe:
-        return []
+        return _empty_successor_consensus_diagnostics()
     if not normalized_orders:
-        return universe
+        return _successor_consensus_diagnostics_from_edges(
+            universe,
+            edge_votes=Counter(),
+            selected_edges={},
+            candidate_count=0,
+        )
 
     edge_votes: Counter[tuple[int, int]] = Counter()
     for order in normalized_orders:
@@ -331,7 +367,12 @@ def infer_successor_consensus_order(
             if source != target:
                 edge_votes[(source, target)] += 1
     if not edge_votes:
-        return universe
+        return _successor_consensus_diagnostics_from_edges(
+            universe,
+            edge_votes=edge_votes,
+            selected_edges={},
+            candidate_count=candidate_count,
+        )
 
     base_rank = {item: rank for rank, item in enumerate(universe)}
     outgoing_votes: dict[int, list[int]] = {}
@@ -368,7 +409,14 @@ def infer_successor_consensus_order(
         successor_by_item[source] = target
         predecessor_by_item[target] = source
 
-    return _serialize_consensus_paths(universe, successor_by_item, predecessor_by_item, base_rank)
+    ordered_indices = _serialize_consensus_paths(universe, successor_by_item, predecessor_by_item, base_rank)
+    return _successor_consensus_diagnostics_from_edges(
+        universe,
+        edge_votes=edge_votes,
+        selected_edges=successor_by_item,
+        candidate_count=candidate_count,
+        ordered_indices=ordered_indices,
+    )
 
 
 def pairwise_order_disagreement(
@@ -434,6 +482,95 @@ def _dedupe_order(order: list[int]) -> list[int]:
         seen.add(item)
         deduped.append(item)
     return deduped
+
+
+def _empty_successor_consensus_diagnostics() -> SuccessorConsensusDiagnostics:
+    return SuccessorConsensusDiagnostics(
+        ordered_indices=[],
+        candidate_count=0,
+        item_count=0,
+        candidate_edge_count=0,
+        unique_edge_count=0,
+        selected_edge_count=0,
+        selected_edge_vote_count=0,
+        selected_edge_support_ratio=0.0,
+        selected_edge_coverage_ratio=0.0,
+        conflicted_source_count=0,
+        conflicted_target_count=0,
+        conflicted_edge_count=0,
+        conflicted_edge_ratio=0.0,
+        agreement_level="unavailable",
+    )
+
+
+def _successor_consensus_diagnostics_from_edges(
+    universe: list[int],
+    *,
+    edge_votes: Counter[tuple[int, int]],
+    selected_edges: dict[int, int],
+    candidate_count: int,
+    ordered_indices: list[int] | None = None,
+) -> SuccessorConsensusDiagnostics:
+    ordered_indices = list(universe) if ordered_indices is None else ordered_indices
+    candidate_edge_count = sum(edge_votes.values())
+    selected_edge_vote_count = sum(edge_votes.get(edge, 0) for edge in selected_edges.items())
+    selected_edge_count = len(selected_edges)
+    selected_support_ratio = round(
+        selected_edge_vote_count / max(selected_edge_count * candidate_count, 1),
+        8,
+    )
+    selected_coverage_ratio = round(selected_edge_count / max(len(universe) - 1, 1), 8)
+    outgoing_targets: dict[int, set[int]] = {}
+    incoming_sources: dict[int, set[int]] = {}
+    for source, target in edge_votes:
+        outgoing_targets.setdefault(source, set()).add(target)
+        incoming_sources.setdefault(target, set()).add(source)
+    conflicted_sources = {source for source, targets in outgoing_targets.items() if len(targets) > 1}
+    conflicted_targets = {target for target, sources in incoming_sources.items() if len(sources) > 1}
+    conflicted_edges = {
+        edge
+        for edge in edge_votes
+        if edge[0] in conflicted_sources or edge[1] in conflicted_targets
+    }
+    conflicted_edge_ratio = round(len(conflicted_edges) / max(len(edge_votes), 1), 8) if edge_votes else 0.0
+    return SuccessorConsensusDiagnostics(
+        ordered_indices=ordered_indices,
+        candidate_count=candidate_count,
+        item_count=len(universe),
+        candidate_edge_count=candidate_edge_count,
+        unique_edge_count=len(edge_votes),
+        selected_edge_count=selected_edge_count,
+        selected_edge_vote_count=selected_edge_vote_count,
+        selected_edge_support_ratio=selected_support_ratio,
+        selected_edge_coverage_ratio=selected_coverage_ratio,
+        conflicted_source_count=len(conflicted_sources),
+        conflicted_target_count=len(conflicted_targets),
+        conflicted_edge_count=len(conflicted_edges),
+        conflicted_edge_ratio=conflicted_edge_ratio,
+        agreement_level=_successor_consensus_agreement_level(
+            selected_support_ratio,
+            selected_coverage_ratio,
+            conflicted_edge_ratio,
+            candidate_count,
+            selected_edge_count,
+        ),
+    )
+
+
+def _successor_consensus_agreement_level(
+    support_ratio: float,
+    coverage_ratio: float,
+    conflict_ratio: float,
+    candidate_count: int,
+    selected_edge_count: int,
+) -> str:
+    if candidate_count < 2 or selected_edge_count == 0:
+        return "unavailable"
+    if support_ratio >= 0.75 and coverage_ratio >= 0.8 and conflict_ratio <= 0.25:
+        return "high"
+    if support_ratio >= 0.55 and coverage_ratio >= 0.55 and conflict_ratio <= 0.6:
+        return "medium"
+    return "low"
 
 
 def _consensus_alternative_vote(vote_count: int, votes: list[int]) -> int:

@@ -121,6 +121,14 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_successor_consensus_successor_disagreement_count" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_successor_disagreement_ratio" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_successor_disagreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_candidate_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_mean_candidate_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_selected_edge_support_ratio" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_selected_edge_coverage_ratio" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_conflicted_edge_ratio" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_high_agreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_medium_agreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_low_agreement_page_count" in case for case in report["cases"])
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
@@ -196,6 +204,16 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_successor_consensus_successor_disagreements" in report["summary"]
     assert "mean_reading_order_successor_consensus_successor_disagreement_ratio" in report["summary"]
     assert "total_reading_order_successor_consensus_successor_disagreement_pages" in report["summary"]
+    assert "total_reading_order_successor_consensus_candidate_pages" in report["summary"]
+    assert "mean_reading_order_successor_consensus_candidate_count" in report["summary"]
+    assert "total_reading_order_successor_consensus_candidate_edges" in report["summary"]
+    assert "total_reading_order_successor_consensus_selected_edges" in report["summary"]
+    assert "mean_reading_order_successor_consensus_selected_edge_support_ratio" in report["summary"]
+    assert "mean_reading_order_successor_consensus_selected_edge_coverage_ratio" in report["summary"]
+    assert "mean_reading_order_successor_consensus_conflicted_edge_ratio" in report["summary"]
+    assert "total_reading_order_successor_consensus_high_agreement_pages" in report["summary"]
+    assert "total_reading_order_successor_consensus_medium_agreement_pages" in report["summary"]
+    assert "total_reading_order_successor_consensus_low_agreement_pages" in report["summary"]
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
@@ -370,6 +388,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_box_flow_successor_disagreement_ratio" in csv_text
     assert "reading_order_relation_graph_successor_disagreement_ratio" in csv_text
     assert "reading_order_successor_consensus_successor_disagreement_ratio" in csv_text
+    assert "reading_order_successor_consensus_selected_edge_support_ratio" in csv_text
+    assert "reading_order_successor_consensus_conflicted_edge_ratio" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_candidate_arbitration_recommendation" in csv_text
     assert "semantic_candidate_successor_delta" in csv_text

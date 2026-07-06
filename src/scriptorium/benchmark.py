@@ -24,6 +24,7 @@ from .reading_order import (
     infer_successor_consensus_order,
     pairwise_order_disagreement,
     successor_order_disagreement,
+    successor_consensus_diagnostics,
 )
 from .semantic_quality import compare_semantic_reading_order
 from .structure_evidence import apply_structure_evidence, load_structure_json
@@ -325,6 +326,48 @@ def _run_case(
         ],
         "reading_order_successor_consensus_successor_disagreement_page_count": stats[
             "reading_order_successor_consensus_successor_disagreement_page_count"
+        ],
+        "reading_order_successor_consensus_candidate_page_count": stats[
+            "reading_order_successor_consensus_candidate_page_count"
+        ],
+        "reading_order_successor_consensus_mean_candidate_count": stats[
+            "reading_order_successor_consensus_mean_candidate_count"
+        ],
+        "reading_order_successor_consensus_candidate_edge_count": stats[
+            "reading_order_successor_consensus_candidate_edge_count"
+        ],
+        "reading_order_successor_consensus_unique_edge_count": stats[
+            "reading_order_successor_consensus_unique_edge_count"
+        ],
+        "reading_order_successor_consensus_selected_edge_count": stats[
+            "reading_order_successor_consensus_selected_edge_count"
+        ],
+        "reading_order_successor_consensus_selected_edge_vote_count": stats[
+            "reading_order_successor_consensus_selected_edge_vote_count"
+        ],
+        "reading_order_successor_consensus_selected_edge_support_ratio": stats[
+            "reading_order_successor_consensus_selected_edge_support_ratio"
+        ],
+        "reading_order_successor_consensus_selected_edge_coverage_ratio": stats[
+            "reading_order_successor_consensus_selected_edge_coverage_ratio"
+        ],
+        "reading_order_successor_consensus_conflicted_edge_count": stats[
+            "reading_order_successor_consensus_conflicted_edge_count"
+        ],
+        "reading_order_successor_consensus_conflicted_edge_ratio": stats[
+            "reading_order_successor_consensus_conflicted_edge_ratio"
+        ],
+        "reading_order_successor_consensus_high_agreement_page_count": stats[
+            "reading_order_successor_consensus_high_agreement_page_count"
+        ],
+        "reading_order_successor_consensus_medium_agreement_page_count": stats[
+            "reading_order_successor_consensus_medium_agreement_page_count"
+        ],
+        "reading_order_successor_consensus_low_agreement_page_count": stats[
+            "reading_order_successor_consensus_low_agreement_page_count"
+        ],
+        "reading_order_successor_consensus_unavailable_page_count": stats[
+            "reading_order_successor_consensus_unavailable_page_count"
         ],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
@@ -687,11 +730,88 @@ def _reading_order_relation_graph_diagnostics(document: DocumentIR) -> dict[str,
 
 
 def _reading_order_successor_consensus_diagnostics(document: DocumentIR) -> dict[str, Any]:
-    return _reading_order_candidate_diagnostics(
+    diagnostics = _reading_order_candidate_diagnostics(
         document,
         prefix="successor_consensus",
         candidate_order_fn=lambda text_elements, page: _successor_consensus_candidate_order(text_elements, page),
     )
+    diagnostics.update(_successor_consensus_support_diagnostics(document))
+    return diagnostics
+
+
+def _successor_consensus_support_diagnostics(document: DocumentIR) -> dict[str, Any]:
+    page_count = 0
+    candidate_count_total = 0
+    candidate_edge_count = 0
+    unique_edge_count = 0
+    selected_edge_count = 0
+    selected_edge_vote_count = 0
+    selected_edge_support_denominator = 0
+    selected_edge_coverage_denominator = 0
+    conflicted_edge_count = 0
+    high_agreement_pages = 0
+    medium_agreement_pages = 0
+    low_agreement_pages = 0
+    unavailable_pages = 0
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        if len(text_elements) < 2:
+            continue
+        source_candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=False)
+        page_diagnostics = successor_consensus_diagnostics(
+            source_candidates,
+            item_count=len(text_elements),
+            base_order=_selected_candidate_order(text_elements),
+        )
+        page_count += 1
+        candidate_count_total += page_diagnostics.candidate_count
+        candidate_edge_count += page_diagnostics.candidate_edge_count
+        unique_edge_count += page_diagnostics.unique_edge_count
+        selected_edge_count += page_diagnostics.selected_edge_count
+        selected_edge_vote_count += page_diagnostics.selected_edge_vote_count
+        selected_edge_support_denominator += page_diagnostics.selected_edge_count * page_diagnostics.candidate_count
+        selected_edge_coverage_denominator += max(page_diagnostics.item_count - 1, 1)
+        conflicted_edge_count += page_diagnostics.conflicted_edge_count
+        if page_diagnostics.agreement_level == "high":
+            high_agreement_pages += 1
+        elif page_diagnostics.agreement_level == "medium":
+            medium_agreement_pages += 1
+        elif page_diagnostics.agreement_level == "low":
+            low_agreement_pages += 1
+        else:
+            unavailable_pages += 1
+
+    return {
+        "reading_order_successor_consensus_candidate_page_count": page_count,
+        "reading_order_successor_consensus_mean_candidate_count": round(candidate_count_total / page_count, 8)
+        if page_count
+        else 0.0,
+        "reading_order_successor_consensus_candidate_edge_count": candidate_edge_count,
+        "reading_order_successor_consensus_unique_edge_count": unique_edge_count,
+        "reading_order_successor_consensus_selected_edge_count": selected_edge_count,
+        "reading_order_successor_consensus_selected_edge_vote_count": selected_edge_vote_count,
+        "reading_order_successor_consensus_selected_edge_support_ratio": round(
+            selected_edge_vote_count / max(selected_edge_support_denominator, 1),
+            8,
+        )
+        if selected_edge_count
+        else 0.0,
+        "reading_order_successor_consensus_selected_edge_coverage_ratio": round(
+            selected_edge_count / max(selected_edge_coverage_denominator, 1),
+            8,
+        ),
+        "reading_order_successor_consensus_conflicted_edge_count": conflicted_edge_count,
+        "reading_order_successor_consensus_conflicted_edge_ratio": round(
+            conflicted_edge_count / max(unique_edge_count, 1),
+            8,
+        )
+        if unique_edge_count
+        else 0.0,
+        "reading_order_successor_consensus_high_agreement_page_count": high_agreement_pages,
+        "reading_order_successor_consensus_medium_agreement_page_count": medium_agreement_pages,
+        "reading_order_successor_consensus_low_agreement_page_count": low_agreement_pages,
+        "reading_order_successor_consensus_unavailable_page_count": unavailable_pages,
+    }
 
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
@@ -1203,6 +1323,56 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_successor_consensus_successor_disagreement_pages": sum(
             int(case["reading_order_successor_consensus_successor_disagreement_page_count"]) for case in cases
         ),
+        "total_reading_order_successor_consensus_candidate_pages": sum(
+            int(case["reading_order_successor_consensus_candidate_page_count"]) for case in cases
+        ),
+        "mean_reading_order_successor_consensus_candidate_count": _weighted_case_mean(
+            cases,
+            value_key="reading_order_successor_consensus_mean_candidate_count",
+            weight_key="reading_order_successor_consensus_candidate_page_count",
+        ),
+        "total_reading_order_successor_consensus_candidate_edges": sum(
+            int(case["reading_order_successor_consensus_candidate_edge_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_unique_edges": sum(
+            int(case["reading_order_successor_consensus_unique_edge_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_selected_edges": sum(
+            int(case["reading_order_successor_consensus_selected_edge_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_selected_edge_votes": sum(
+            int(case["reading_order_successor_consensus_selected_edge_vote_count"]) for case in cases
+        ),
+        "mean_reading_order_successor_consensus_selected_edge_support_ratio": _weighted_case_mean(
+            cases,
+            value_key="reading_order_successor_consensus_selected_edge_support_ratio",
+            weight_key="reading_order_successor_consensus_selected_edge_count",
+        ),
+        "mean_reading_order_successor_consensus_selected_edge_coverage_ratio": _weighted_case_mean(
+            cases,
+            value_key="reading_order_successor_consensus_selected_edge_coverage_ratio",
+            weight_key="reading_order_successor_consensus_candidate_page_count",
+        ),
+        "total_reading_order_successor_consensus_conflicted_edges": sum(
+            int(case["reading_order_successor_consensus_conflicted_edge_count"]) for case in cases
+        ),
+        "mean_reading_order_successor_consensus_conflicted_edge_ratio": _weighted_case_mean(
+            cases,
+            value_key="reading_order_successor_consensus_conflicted_edge_ratio",
+            weight_key="reading_order_successor_consensus_unique_edge_count",
+        ),
+        "total_reading_order_successor_consensus_high_agreement_pages": sum(
+            int(case["reading_order_successor_consensus_high_agreement_page_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_medium_agreement_pages": sum(
+            int(case["reading_order_successor_consensus_medium_agreement_page_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_low_agreement_pages": sum(
+            int(case["reading_order_successor_consensus_low_agreement_page_count"]) for case in cases
+        ),
+        "total_reading_order_successor_consensus_unavailable_pages": sum(
+            int(case["reading_order_successor_consensus_unavailable_page_count"]) for case in cases
+        ),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -1310,6 +1480,20 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_successor_consensus_successor_disagreement_count",
         "reading_order_successor_consensus_successor_disagreement_ratio",
         "reading_order_successor_consensus_successor_disagreement_page_count",
+        "reading_order_successor_consensus_candidate_page_count",
+        "reading_order_successor_consensus_mean_candidate_count",
+        "reading_order_successor_consensus_candidate_edge_count",
+        "reading_order_successor_consensus_unique_edge_count",
+        "reading_order_successor_consensus_selected_edge_count",
+        "reading_order_successor_consensus_selected_edge_vote_count",
+        "reading_order_successor_consensus_selected_edge_support_ratio",
+        "reading_order_successor_consensus_selected_edge_coverage_ratio",
+        "reading_order_successor_consensus_conflicted_edge_count",
+        "reading_order_successor_consensus_conflicted_edge_ratio",
+        "reading_order_successor_consensus_high_agreement_page_count",
+        "reading_order_successor_consensus_medium_agreement_page_count",
+        "reading_order_successor_consensus_low_agreement_page_count",
+        "reading_order_successor_consensus_unavailable_page_count",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",

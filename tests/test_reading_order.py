@@ -13,6 +13,7 @@ from scriptorium.reading_order import (
     infer_successor_consensus_order,
     pairwise_order_disagreement,
     successor_order_disagreement,
+    successor_consensus_diagnostics,
 )
 from scriptorium.semantic_quality import compare_semantic_reading_order
 
@@ -319,6 +320,42 @@ def test_successor_consensus_order_keeps_all_items_and_avoids_cycles() -> None:
 
     assert sorted(candidate_order) == [0, 1, 2, 3]
     assert len(candidate_order) == 4
+
+
+def test_successor_consensus_diagnostics_report_support_and_conflict() -> None:
+    diagnostics = successor_consensus_diagnostics(
+        {
+            "box_flow": [0, 1, 2, 3],
+            "relation_graph": [0, 1, 2, 3],
+            "external_structure": [0, 1, 2, 3],
+        },
+        item_count=4,
+        base_order=[0, 1, 2, 3],
+    )
+
+    assert diagnostics.ordered_indices == [0, 1, 2, 3]
+    assert diagnostics.candidate_count == 3
+    assert diagnostics.selected_edge_count == 3
+    assert diagnostics.selected_edge_support_ratio == 1
+    assert diagnostics.selected_edge_coverage_ratio == 1
+    assert diagnostics.conflicted_edge_ratio == 0
+    assert diagnostics.agreement_level == "high"
+
+
+def test_successor_consensus_diagnostics_downgrades_cycle_conflict() -> None:
+    diagnostics = successor_consensus_diagnostics(
+        {
+            "first": [0, 1, 2],
+            "second": [1, 2, 0],
+            "third": [2, 0, 1],
+        },
+        item_count=4,
+        base_order=[0, 1, 2, 3],
+    )
+
+    assert sorted(diagnostics.ordered_indices) == [0, 1, 2, 3]
+    assert diagnostics.selected_edge_coverage_ratio < 1
+    assert diagnostics.agreement_level != "high"
 
 
 def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:
