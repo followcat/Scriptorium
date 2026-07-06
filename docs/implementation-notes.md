@@ -1,7 +1,7 @@
-<p align="right">
-  <a href="implementation-notes.zh-CN.md">简体中文</a>
-  |
-  <strong>English</strong>
+<p align="center">
+  <a href="../README.md"><img alt="Home" src="https://img.shields.io/badge/Home-README-2b6cb0"></a>
+  <a href="implementation-notes.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
+  <img alt="English" src="https://img.shields.io/badge/English-current-2f855a">
 </p>
 
 # Implementation Notes

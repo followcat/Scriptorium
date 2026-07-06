@@ -1,7 +1,7 @@
-<p align="right">
-  <strong>简体中文</strong>
-  |
-  <a href="optimization-roadmap.md">English</a>
+<p align="center">
+  <a href="../README.md"><img alt="返回首页" src="https://img.shields.io/badge/%E8%BF%94%E5%9B%9E%E9%A6%96%E9%A1%B5-README-2b6cb0"></a>
+  <img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E5%BD%93%E5%89%8D-blue">
+  <a href="optimization-roadmap.md"><img alt="English" src="https://img.shields.io/badge/English-Read-2f855a"></a>
 </p>
 
 # 优化路线
