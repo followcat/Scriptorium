@@ -35,7 +35,7 @@
 - `--html-mode auto --fidelity-background auto` 比较 structured redraw、SVG fidelity 和 raster fidelity，选择最高视觉相似度路径。
 - `fidelity` HTML 模式保留源 SVG/raster 背景，同时叠加透明可编辑坐标节点；编辑/翻译节点打印为局部白底 replacement overlay。
 - Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics 和外部结构证据匹配结果。
-- PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据。
+- PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据；匹配到的模型 label 也会驱动 page-artifact、footnote、sidebar、caption 和 table-island reading streams。
 - Structured HTML 现在暴露 reading-order strategy、region、scope、artifact、sidebar、stream id/type/index、confidence 和 evidence 属性。
 
 ## 当前基准覆盖

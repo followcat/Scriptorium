@@ -321,6 +321,8 @@ scriptorium convert \
   --out-dir outputs/with-structure
 ```
 
+匹配到的外部 label 现在不仅会影响 role/order，也会进入 reading stream：header/footer/page-number 会变成 page-artifact stream，footnote/sidebar 会变成局部 secondary stream，caption 会变成 caption stream，table 会变成 table-island stream。
+
 导出 HTML：
 
 ```bash
