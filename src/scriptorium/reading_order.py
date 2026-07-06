@@ -106,6 +106,14 @@ class _BoxFlowResult:
 
 
 @dataclass(frozen=True)
+class _SuccessorConsensusArbitrationResult:
+    ordered_indices: list[int]
+    columns: list[list[int]]
+    confidence: float
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class _RelationGraphEdge:
     source: int
     target: int
@@ -804,6 +812,75 @@ def _column_flow_assignments(
                     )
                     if item_index in caption_type_by_item
                     else box_flow_result.evidence
+                    for item_index in range(len(bboxes))
+                },
+            )
+        consensus_result = _successor_consensus_arbitration_order(
+            bboxes,
+            page_width,
+            page_height,
+            body_indices,
+            base_order=[index for index in visual_indices if index in body_indices],
+        )
+        if consensus_result is not None:
+            header_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "header"
+            }
+            footer_indices = {
+                index for index, artifact_type in artifact_type_by_item.items() if artifact_type == "footer"
+            }
+            ordered_indices = [
+                *sorted(header_indices, key=lambda index: reading_order_key(bboxes[index])),
+                *consensus_result.ordered_indices,
+                *sorted(footer_indices, key=lambda index: reading_order_key(bboxes[index])),
+            ]
+            return _assign_order_metadata(
+                ordered_indices,
+                bboxes,
+                page_width,
+                page_height,
+                visual_rank,
+                strategy=_successor_consensus_arbitration_strategy(artifact_type_by_item),
+                flow_segment_by_item=_flow_segments_for_order(ordered_indices, bboxes),
+                artifact_type_by_item=artifact_type_by_item,
+                scope_by_item={item_index: "page-artifact" for item_index in artifact_type_by_item},
+                column_span_by_item={
+                    **{
+                        item_index: _artifact_column_span(artifact_type)
+                        for item_index, artifact_type in artifact_type_by_item.items()
+                    },
+                    **{
+                        item_index: "caption-full"
+                        if bboxes[item_index].width >= page_width * 0.62
+                        else "caption-column"
+                        for item_index in caption_type_by_item
+                    },
+                },
+                caption_type_by_item=caption_type_by_item,
+                columns=consensus_result.columns,
+                full_width_by_item={
+                    item_index
+                    for item_index in body_indices
+                    if bboxes[item_index].width >= page_width * 0.62
+                }
+                | set(artifact_type_by_item),
+                confidence_by_item={
+                    item_index: _artifact_confidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else _caption_confidence(caption_type_by_item[item_index])
+                    if item_index in caption_type_by_item
+                    else consensus_result.confidence
+                    for item_index in range(len(bboxes))
+                },
+                evidence_by_item={
+                    item_index: _artifact_evidence(artifact_type_by_item[item_index])
+                    if item_index in artifact_type_by_item
+                    else _caption_evidence(
+                        caption_type_by_item[item_index],
+                        bboxes[item_index].width >= page_width * 0.62,
+                    )
+                    if item_index in caption_type_by_item
+                    else consensus_result.evidence
                     for item_index in range(len(bboxes))
                 },
             )
@@ -1660,6 +1737,15 @@ def _box_flow_strategy(artifact_type_by_item: dict[int, str]) -> str:
     )
 
 
+def _successor_consensus_arbitration_strategy(artifact_type_by_item: dict[int, str]) -> str:
+    return _qualified_strategy(
+        "successor-consensus-arbitration-v1",
+        artifact_type_by_item=artifact_type_by_item,
+        sidebar_type_by_item={},
+        footnote_indices=set(),
+    )
+
+
 def _qualified_strategy(
     base_strategy: str,
     artifact_type_by_item: dict[int, str],
@@ -1951,6 +2037,130 @@ def _serialize_relation_graph_paths(
         if item_index not in visited:
             ordered.append(item_index)
     return ordered
+
+
+def _successor_consensus_arbitration_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    indices: list[int],
+    base_order: list[int],
+) -> _SuccessorConsensusArbitrationResult | None:
+    source_indices = [
+        index
+        for index in sorted(indices, key=lambda item_index: reading_order_key(bboxes[item_index]))
+        if bboxes[index].width >= 8 and bboxes[index].height >= 4
+    ]
+    if len(source_indices) < 4 or _looks_like_table_grid([bboxes[index] for index in source_indices], page_width):
+        return None
+
+    source_set = set(source_indices)
+    candidate_orders = {
+        "box_flow": _box_flow_candidate_order_for_indices(
+            bboxes,
+            page_width=page_width,
+            page_height=page_height,
+            indices=source_indices,
+        ),
+        "relation_graph": [
+            index
+            for index in infer_relation_graph_order(bboxes, page_width=page_width, page_height=page_height)
+            if index in source_set
+        ],
+    }
+    candidate_orders = {
+        name: order
+        for name, order in candidate_orders.items()
+        if len(order) >= 2 and len(set(order)) == len(order)
+    }
+    if len(candidate_orders) < 2:
+        return None
+
+    reference_order = [index for index in base_order if index in source_set]
+    if len(reference_order) < 2:
+        reference_order = source_indices
+    diagnostics = successor_consensus_diagnostics(candidate_orders, base_order=reference_order)
+    if diagnostics.agreement_level != "high":
+        return None
+
+    successor_disagreement = successor_order_disagreement(reference_order, diagnostics.ordered_indices)
+    pairwise_disagreement = pairwise_order_disagreement(reference_order, diagnostics.ordered_indices)
+    if successor_disagreement.disagreement_ratio < 0.4 or pairwise_disagreement.disagreement_ratio < 0.12:
+        return None
+
+    columns = _columns_from_consensus_handoff(diagnostics.ordered_indices, bboxes, page_width)
+    if columns is None:
+        return None
+
+    confidence = _bounded_confidence(
+        0.74
+        + 0.1 * diagnostics.selected_edge_support_ratio
+        + 0.06 * diagnostics.selected_edge_coverage_ratio
+        + 0.04 * min(pairwise_disagreement.disagreement_ratio / 0.25, 1.0)
+    )
+    return _SuccessorConsensusArbitrationResult(
+        ordered_indices=diagnostics.ordered_indices,
+        columns=columns,
+        confidence=confidence,
+        evidence=(
+            "successor-consensus-arbitration",
+            "candidate-successor-consensus",
+            "box-flow",
+            "relation-graph",
+            "column-handoff",
+        ),
+    )
+
+
+def _box_flow_candidate_order_for_indices(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    indices: list[int],
+) -> list[int]:
+    local_order = infer_box_flow_order(
+        [bboxes[index] for index in indices],
+        page_width=page_width,
+        page_height=page_height,
+        boxes_flow=-0.75,
+    )
+    return [indices[index] for index in local_order]
+
+
+def _columns_from_consensus_handoff(
+    ordered_indices: list[int],
+    bboxes: list[BBox],
+    page_width: float,
+) -> list[list[int]] | None:
+    if len(ordered_indices) < 4:
+        return None
+    heights = [bboxes[index].height for index in ordered_indices if bboxes[index].height > 0]
+    median_height = median(heights) if heights else 10.0
+    best_split: tuple[float, int] | None = None
+    for position, (source, target) in enumerate(zip(ordered_indices, ordered_indices[1:]), start=1):
+        source_box = bboxes[source]
+        target_box = bboxes[target]
+        upward_jump = source_box.y0 - target_box.y0
+        horizontal_jump = _center_x(target_box) - _center_x(source_box)
+        if upward_jump < max(6.0, median_height * 0.75):
+            continue
+        if horizontal_jump < page_width * 0.14:
+            continue
+        score = upward_jump + horizontal_jump
+        if best_split is None or score > best_split[0]:
+            best_split = (score, position)
+
+    if best_split is None:
+        return None
+    split_position = best_split[1]
+    columns = [ordered_indices[:split_position], ordered_indices[split_position:]]
+    if any(len(column) < 2 for column in columns):
+        return None
+    if _cluster_x_center(columns[1], bboxes) - _cluster_x_center(columns[0], bboxes) < page_width * 0.16:
+        return None
+    if _min_column_vertical_overlap(columns, bboxes) < 0.2:
+        return None
+    return columns
 
 
 def _spatial_graph_order(

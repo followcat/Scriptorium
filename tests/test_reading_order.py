@@ -293,6 +293,31 @@ def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:
     assert candidate_order == list(range(len(bboxes)))
 
 
+def test_successor_consensus_arbitration_orders_sparse_two_column_page() -> None:
+    bboxes: list[BBox] = []
+    left_indices: list[int] = []
+    right_indices: list[int] = []
+    for row in range(2):
+        left_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=60, y0=70 + row * 18, x1=240, y1=80 + row * 18))
+        right_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=320, y0=70 + row * 18, x1=500, y1=80 + row * 18))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert [assignment.item_index for assignment in sorted(assignments, key=lambda item: item.semantic_order)] == [
+        *left_indices,
+        *right_indices,
+    ]
+    assert {by_item[index].strategy for index in left_indices + right_indices} == {
+        "successor-consensus-arbitration-v1"
+    }
+    assert {by_item[index].column_count for index in left_indices + right_indices} == {2}
+    assert all("successor-consensus-arbitration" in by_item[index].evidence for index in left_indices + right_indices)
+    assert all("column-handoff" in by_item[index].evidence for index in left_indices + right_indices)
+
+
 def test_successor_consensus_order_uses_majority_successor_edges() -> None:
     candidate_order = infer_successor_consensus_order(
         {

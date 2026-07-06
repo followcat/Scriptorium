@@ -86,6 +86,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("table_row_major_element_count" in case for case in report["cases"])
     assert all("spatial_graph_element_count" in case for case in report["cases"])
     assert all("box_flow_element_count" in case for case in report["cases"])
+    assert all("successor_consensus_arbitration_element_count" in case for case in report["cases"])
     assert all("reading_order_artifact_element_count" in case for case in report["cases"])
     assert all("reading_order_artifact_counts" in case for case in report["cases"])
     assert all("reading_order_footnote_element_count" in case for case in report["cases"])
@@ -172,6 +173,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_table_row_major_elements" in report["summary"]
     assert "total_spatial_graph_elements" in report["summary"]
     assert "total_box_flow_elements" in report["summary"]
+    assert "total_successor_consensus_arbitration_elements" in report["summary"]
     assert "total_reading_order_artifact_elements" in report["summary"]
     assert "reading_order_artifact_counts" in report["summary"]
     assert "total_reading_order_footnote_elements" in report["summary"]
@@ -412,6 +414,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_successor_consensus_successor_disagreement_ratio" in csv_text
     assert "reading_order_successor_consensus_selected_edge_support_ratio" in csv_text
     assert "reading_order_successor_consensus_conflicted_edge_ratio" in csv_text
+    assert "successor_consensus_arbitration_element_count" in csv_text
     assert "reading_order_candidate_page_recommendation_counts" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_candidate_arbitration_recommendation" in csv_text

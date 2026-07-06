@@ -256,6 +256,9 @@ def _run_case(
         "table_row_major_element_count": stats["table_row_major_element_count"],
         "spatial_graph_element_count": stats["spatial_graph_element_count"],
         "box_flow_element_count": stats["box_flow_element_count"],
+        "successor_consensus_arbitration_element_count": stats[
+            "successor_consensus_arbitration_element_count"
+        ],
         "recursive_xy_cut_element_count": stats["recursive_xy_cut_element_count"],
         "reading_order_artifact_element_count": stats["reading_order_artifact_element_count"],
         "reading_order_artifact_counts": stats["reading_order_artifact_counts"],
@@ -630,6 +633,15 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
             in {
                 "box-flow-v1",
                 "marginal-aware-box-flow-v1",
+            }
+        ),
+        "successor_consensus_arbitration_element_count": sum(
+            1
+            for element in text_elements
+            if element.metadata.get("reading_order_strategy")
+            in {
+                "successor-consensus-arbitration-v1",
+                "marginal-aware-successor-consensus-arbitration-v1",
             }
         ),
         "recursive_xy_cut_element_count": sum(
@@ -1292,6 +1304,9 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_table_row_major_elements": sum(int(case["table_row_major_element_count"]) for case in cases),
         "total_spatial_graph_elements": sum(int(case["spatial_graph_element_count"]) for case in cases),
         "total_box_flow_elements": sum(int(case["box_flow_element_count"]) for case in cases),
+        "total_successor_consensus_arbitration_elements": sum(
+            int(case["successor_consensus_arbitration_element_count"]) for case in cases
+        ),
         "total_recursive_xy_cut_elements": sum(int(case["recursive_xy_cut_element_count"]) for case in cases),
         "total_reading_order_artifact_elements": sum(int(case["reading_order_artifact_element_count"]) for case in cases),
         "reading_order_artifact_counts": _sum_case_count_dicts(cases, "reading_order_artifact_counts"),
@@ -1518,6 +1533,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "table_row_major_element_count",
         "spatial_graph_element_count",
         "box_flow_element_count",
+        "successor_consensus_arbitration_element_count",
         "recursive_xy_cut_element_count",
         "reading_order_artifact_element_count",
         "reading_order_footnote_element_count",
