@@ -1,3 +1,9 @@
+<p align="right">
+  <a href="implementation-notes.zh-CN.md">简体中文</a>
+  |
+  <strong>English</strong>
+</p>
+
 # Implementation Notes
 
 ## OCR Backend Boundary

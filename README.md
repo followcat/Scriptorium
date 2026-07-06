@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md"><strong>简体中文</strong></a>
+  <a href="README.md"><strong>简体中文</strong></a>
   |
   <a href="README.en.md">English</a>
 </p>
@@ -32,7 +32,7 @@
   ·
   <a href="#benchmark">Benchmark</a>
   ·
-  <a href="docs/optimization-roadmap.md">优化路线</a>
+  <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a>
 </p>
 
 <p align="center">
@@ -48,6 +48,25 @@
 | 视觉保真 | 支持 structured redraw、SVG/raster fidelity overlay、字体/字号/text-fit 自动基准比较。 |
 | 语义顺序 | 支持 XY-Cut、多栏 flow、表格岛、页眉页脚、脚注、边栏、caption、relation graph、successor consensus 诊断和保守 runtime 仲裁。 |
 | 质量指标 | 同时输出 `visual_similarity`、diff 分布、semantic order、successor accuracy、候选仲裁和风险指标。 |
+
+<table>
+  <tr>
+    <td width="50%">
+      <strong>中文文档</strong><br>
+      <a href="README.zh-CN.md">中文 README</a> ·
+      <a href="docs/implementation-notes.zh-CN.md">实现说明</a> ·
+      <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a> ·
+      <a href="docs/external-benchmarks.zh-CN.md">外部基准</a>
+    </td>
+    <td width="50%">
+      <strong>English documentation</strong><br>
+      <a href="README.en.md">English README</a> ·
+      <a href="docs/implementation-notes.md">Implementation notes</a> ·
+      <a href="docs/optimization-roadmap.md">Optimization roadmap</a> ·
+      <a href="docs/external-benchmarks.md">External benchmarks</a>
+    </td>
+  </tr>
+</table>
 
 ## 项目定位
 
@@ -547,8 +566,8 @@ flowchart LR
 - `src/scriptorium/html_export.py`: standalone HTML export
 - `src/scriptorium/xml_edit.py`: XML node edit round trip
 - `src/scriptorium/benchmark.py`: reproducible quality benchmark
-- `docs/optimization-roadmap.md`: reading-order and complex-page optimization plan
-- `docs/external-benchmarks.md`: reproducible external source list and current sample scores
+- `docs/optimization-roadmap.zh-CN.md`: 阅读顺序和复杂页面优化路线
+- `docs/external-benchmarks.zh-CN.md`: 可复现实外部样本来源和当前 benchmark 分数
 
 ## 数据模型
 

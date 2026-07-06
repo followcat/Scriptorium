@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">简体中文</a>
+  <a href="README.md">简体中文</a>
   |
   <a href="README.en.md"><strong>English</strong></a>
 </p>
@@ -39,6 +39,25 @@
   <strong>Scriptorium PDF is built for PDF editing, translation, layout reconstruction, OCR validation, and HTML-to-PDF quality research.</strong><br>
   It keeps source evidence intact, maps text/coordinates/styles/layout roles/reading order into one IR, and uses reproducible benchmarks to track whether each optimization actually improves output quality.
 </p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <strong>Chinese documentation</strong><br>
+      <a href="README.md">中文 README</a> ·
+      <a href="docs/implementation-notes.zh-CN.md">实现说明</a> ·
+      <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a> ·
+      <a href="docs/external-benchmarks.zh-CN.md">外部基准</a>
+    </td>
+    <td width="50%">
+      <strong>English documentation</strong><br>
+      <a href="README.en.md">English README</a> ·
+      <a href="docs/implementation-notes.md">Implementation notes</a> ·
+      <a href="docs/optimization-roadmap.md">Optimization roadmap</a> ·
+      <a href="docs/external-benchmarks.md">External benchmarks</a>
+    </td>
+  </tr>
+</table>
 
 | Capability | Current Status |
 |---|---|
@@ -224,7 +243,10 @@ Core modules:
 
 ## Documentation
 
-- [简体中文 README](README.zh-CN.md)
+- [简体中文 README](README.md)
+- [中文实现说明](docs/implementation-notes.zh-CN.md)
+- [中文优化路线](docs/optimization-roadmap.zh-CN.md)
+- [中文外部基准](docs/external-benchmarks.zh-CN.md)
 - [Implementation notes](docs/implementation-notes.md)
 - [Optimization roadmap](docs/optimization-roadmap.md)
 - [External benchmark samples](docs/external-benchmarks.md)

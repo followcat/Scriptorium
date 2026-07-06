@@ -1,3 +1,9 @@
+<p align="right">
+  <a href="external-benchmarks.zh-CN.md">简体中文</a>
+  |
+  <strong>English</strong>
+</p>
+
 # External Benchmark Samples
 
 These samples are intentionally kept out of git because `data/` and `outputs/` are ignored. The table records how to recreate the local PDFs and which benchmark reports currently hold the measured results.
