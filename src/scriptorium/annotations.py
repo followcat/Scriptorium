@@ -72,6 +72,23 @@ class LayoutRegion:
         }
 
 
+@dataclass(frozen=True)
+class _CaptionTarget:
+    id: str
+    kind: str
+    bbox: BBox
+    source: str
+    element: ElementIR | None = None
+
+
+@dataclass(frozen=True)
+class _CaptionTargetMatch:
+    target: _CaptionTarget
+    position: str
+    distance_pt: float
+    confidence: float
+
+
 def annotate_document(document: DocumentIR) -> DocumentIR:
     """Infer semantic/style annotations from extraction evidence."""
 
@@ -145,6 +162,7 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
         if layout_group_id:
             element.metadata["layout_group_id"] = layout_group_id
             element.metadata["layout_group_kind"] = layout_group_kind
+    _annotate_caption_targets(page, layout_regions)
     return layout_regions
 
 
@@ -277,6 +295,219 @@ def _reading_order_evidence(element: ElementIR) -> list[str]:
     if not isinstance(evidence, list):
         return []
     return [str(item) for item in evidence if str(item).strip()]
+
+
+def _annotate_caption_targets(page: PageIR, layout_regions: list[LayoutRegion]) -> None:
+    targets = _caption_targets_for_page(page, layout_regions)
+    if not targets:
+        return
+    captions = [
+        element
+        for element in page.elements
+        if element.source_text.strip() and str(element.metadata.get("reading_order_caption_type") or "").strip()
+    ]
+    for caption in captions:
+        match = _match_caption_target(
+            caption,
+            targets,
+            page_width=page.width_pt,
+            page_height=page.height_pt,
+        )
+        if match is None:
+            continue
+        target = match.target
+        caption.metadata.update(
+            {
+                "reading_order_caption_target_id": target.id,
+                "reading_order_caption_target_kind": target.kind,
+                "reading_order_caption_target_source": target.source,
+                "reading_order_caption_target_bbox_pdf": target.bbox.as_list(),
+                "reading_order_caption_target_distance_pt": round(match.distance_pt, 4),
+                "reading_order_caption_target_position": match.position,
+                "reading_order_caption_target_confidence": match.confidence,
+            }
+        )
+        _append_reading_order_evidence(
+            caption,
+            (
+                "caption-target-proximity",
+                f"{target.kind}-target",
+                match.position,
+            ),
+        )
+        annotation = caption.metadata.get("annotation")
+        if isinstance(annotation, dict):
+            annotation.update(
+                {
+                    "reading_order_caption_target_id": target.id,
+                    "reading_order_caption_target_kind": target.kind,
+                    "reading_order_caption_target_source": target.source,
+                    "reading_order_caption_target_bbox_pdf": target.bbox.as_list(),
+                    "reading_order_caption_target_distance_pt": round(match.distance_pt, 4),
+                    "reading_order_caption_target_position": match.position,
+                    "reading_order_caption_target_confidence": match.confidence,
+                    "reading_order_evidence": _reading_order_evidence(caption),
+                    "reading_order_evidence_summary": caption.metadata.get("reading_order_evidence_summary", ""),
+                }
+            )
+        if target.element is not None:
+            _append_target_caption(target.element, caption.id)
+
+
+def _caption_targets_for_page(page: PageIR, layout_regions: list[LayoutRegion]) -> list[_CaptionTarget]:
+    targets: list[_CaptionTarget] = []
+    page_area = max(page.width_pt * page.height_pt, 1.0)
+    for region in layout_regions:
+        if region.kind not in {"figure", "table"} or _too_large_for_caption_target(region.bbox, page_area):
+            continue
+        targets.append(
+            _CaptionTarget(
+                id=region.id,
+                kind=region.kind,
+                bbox=region.bbox,
+                source="layout-region",
+            )
+        )
+
+    for element in page.elements:
+        source_kind = str(element.metadata.get("source") or "")
+        target_kind: str | None = None
+        if element.type == "image" and source_kind == "native-image":
+            target_kind = "figure"
+        elif element.type == "image" and source_kind == "native-raster-region":
+            raster_kind = str(element.metadata.get("raster_region_kind") or "").strip().lower()
+            if raster_kind in {"figure", "table"}:
+                target_kind = raster_kind
+        if target_kind is None:
+            continue
+        if _too_large_for_caption_target(element.bbox_pdf, page_area):
+            continue
+        targets.append(
+            _CaptionTarget(
+                id=element.id,
+                kind=target_kind,
+                bbox=element.bbox_pdf,
+                source=source_kind,
+                element=element,
+            )
+        )
+    return targets
+
+
+def _match_caption_target(
+    caption: ElementIR,
+    targets: list[_CaptionTarget],
+    *,
+    page_width: float,
+    page_height: float,
+) -> _CaptionTargetMatch | None:
+    caption_type = str(caption.metadata.get("reading_order_caption_type") or "").strip().lower()
+    if not caption_type:
+        return None
+    candidate_matches: list[tuple[float, _CaptionTargetMatch]] = []
+    for target in targets:
+        if not _caption_target_kind_matches(caption_type, target.kind):
+            continue
+        scored = _score_caption_target(caption.bbox_pdf, target, caption_type, page_width, page_height)
+        if scored is not None:
+            candidate_matches.append(scored)
+    if not candidate_matches:
+        return None
+    candidate_matches.sort(key=lambda item: item[0])
+    return candidate_matches[0][1]
+
+
+def _caption_target_kind_matches(caption_type: str, target_kind: str) -> bool:
+    if caption_type == "figure":
+        return target_kind == "figure"
+    if caption_type == "table":
+        return target_kind == "table"
+    return False
+
+
+def _score_caption_target(
+    caption_box: BBox,
+    target: _CaptionTarget,
+    caption_type: str,
+    page_width: float,
+    page_height: float,
+) -> tuple[float, _CaptionTargetMatch] | None:
+    target_box = target.bbox
+    if caption_box.width <= 0 or caption_box.height <= 0 or target_box.width <= 0 or target_box.height <= 0:
+        return None
+    if target_box.y1 <= caption_box.y0:
+        vertical_gap = caption_box.y0 - target_box.y1
+        position = "caption-below-target"
+    elif caption_box.y1 <= target_box.y0:
+        vertical_gap = target_box.y0 - caption_box.y1
+        position = "caption-above-target"
+    else:
+        vertical_gap = 0.0
+        position = "caption-overlaps-target"
+    max_gap = max(24.0, min(76.0, page_height * 0.09))
+    if vertical_gap > max_gap:
+        return None
+
+    overlap_ratio = _horizontal_overlap_ratio(caption_box, target_box)
+    center_delta = abs(_center_x(caption_box) - _center_x(target_box))
+    center_limit = max(24.0, min(page_width * 0.22, max(caption_box.width, target_box.width) * 0.42))
+    if overlap_ratio < 0.25 and center_delta > center_limit:
+        return None
+
+    normalized_gap = vertical_gap / max(max_gap, 1.0)
+    normalized_center_delta = center_delta / max(page_width, 1.0)
+    type_penalty = 0.0
+    if caption_type == "figure" and position != "caption-below-target":
+        type_penalty = 0.08
+    elif caption_type == "table" and position != "caption-above-target":
+        type_penalty = 0.06
+    score = normalized_gap + normalized_center_delta * 0.65 - overlap_ratio * 0.22 + type_penalty
+    confidence = max(0.58, min(0.92, 0.9 - normalized_gap * 0.24 - normalized_center_delta * 0.28 - type_penalty))
+    return (
+        score,
+        _CaptionTargetMatch(
+            target=target,
+            position=position,
+            distance_pt=vertical_gap,
+            confidence=round(confidence, 4),
+        ),
+    )
+
+
+def _too_large_for_caption_target(bbox: BBox, page_area: float) -> bool:
+    if bbox.width <= 0 or bbox.height <= 0:
+        return True
+    return (bbox.width * bbox.height) / max(page_area, 1.0) >= 0.72
+
+
+def _horizontal_overlap_ratio(left: BBox, right: BBox) -> float:
+    overlap = max(0.0, min(left.x1, right.x1) - max(left.x0, right.x0))
+    denominator = max(1.0, min(left.width, right.width))
+    return min(1.0, overlap / denominator)
+
+
+def _center_x(bbox: BBox) -> float:
+    return (bbox.x0 + bbox.x1) / 2
+
+
+def _append_reading_order_evidence(element: ElementIR, evidence: tuple[str, ...]) -> None:
+    existing = _reading_order_evidence(element)
+    for item in evidence:
+        if item and item not in existing:
+            existing.append(item)
+    element.metadata["reading_order_evidence"] = existing
+    element.metadata["reading_order_evidence_summary"] = ",".join(existing)
+
+
+def _append_target_caption(element: ElementIR, caption_id: str) -> None:
+    existing = element.metadata.get("caption_ids")
+    caption_ids = [str(item) for item in existing] if isinstance(existing, list) else []
+    if caption_id not in caption_ids:
+        caption_ids.append(caption_id)
+    element.metadata["caption_ids"] = caption_ids
+    annotation = element.metadata.get("annotation")
+    if isinstance(annotation, dict):
+        annotation["caption_ids"] = caption_ids
 
 
 def _external_structure_role(element: ElementIR) -> str | None:

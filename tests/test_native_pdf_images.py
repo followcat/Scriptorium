@@ -55,6 +55,10 @@ def test_native_pdf_image_blocks_render_as_structured_html(tmp_path: Path) -> No
     assert Path(image_elements[0].source_crop).exists()
     assert len(caption_elements) == 1
     assert caption_elements[0].metadata["reading_order_caption_type"] == "figure"
+    assert caption_elements[0].metadata["reading_order_caption_target_id"] == image_elements[0].id
+    assert caption_elements[0].metadata["reading_order_caption_target_kind"] == "figure"
+    assert caption_elements[0].metadata["reading_order_caption_target_position"] == "caption-below-target"
+    assert "caption-target-proximity" in caption_elements[0].metadata["reading_order_evidence"]
     assert caption_elements[0].metadata["annotation"]["role"] == "caption"
 
     html_path = export_html(document, tmp_path / "html", display_mode="structured")
@@ -64,6 +68,8 @@ def test_native_pdf_image_blocks_render_as_structured_html(tmp_path: Path) -> No
     assert 'data-scriptorium-source="native-image"' in html
     assert 'data-scriptorium-role="caption"' in html
     assert 'data-scriptorium-reading-order-caption="figure"' in html
+    assert 'data-scriptorium-caption-target-kind="figure"' in html
+    assert f'data-scriptorium-caption-target-id="{image_elements[0].id}"' in html
     assert '<img class="embedded-image"' in html
 
 
