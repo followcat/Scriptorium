@@ -2092,6 +2092,15 @@ def _successor_consensus_arbitration_order(
     if columns is None:
         return None
 
+    multi_column_evidence = ("multi-column-handoff",) if len(columns) > 2 else ()
+    evidence = (
+        "successor-consensus-arbitration",
+        "candidate-successor-consensus",
+        "box-flow",
+        "relation-graph",
+        "column-handoff",
+        *multi_column_evidence,
+    )
     confidence = _bounded_confidence(
         0.74
         + 0.1 * diagnostics.selected_edge_support_ratio
@@ -2102,13 +2111,7 @@ def _successor_consensus_arbitration_order(
         ordered_indices=diagnostics.ordered_indices,
         columns=columns,
         confidence=confidence,
-        evidence=(
-            "successor-consensus-arbitration",
-            "candidate-successor-consensus",
-            "box-flow",
-            "relation-graph",
-            "column-handoff",
-        ),
+        evidence=evidence,
     )
 
 
@@ -2136,7 +2139,7 @@ def _columns_from_consensus_handoff(
         return None
     heights = [bboxes[index].height for index in ordered_indices if bboxes[index].height > 0]
     median_height = median(heights) if heights else 10.0
-    best_split: tuple[float, int] | None = None
+    split_positions: list[int] = []
     for position, (source, target) in enumerate(zip(ordered_indices, ordered_indices[1:]), start=1):
         source_box = bboxes[source]
         target_box = bboxes[target]
@@ -2146,17 +2149,22 @@ def _columns_from_consensus_handoff(
             continue
         if horizontal_jump < page_width * 0.14:
             continue
-        score = upward_jump + horizontal_jump
-        if best_split is None or score > best_split[0]:
-            best_split = (score, position)
+        split_positions.append(position)
 
-    if best_split is None:
+    if not split_positions or len(split_positions) > 3:
         return None
-    split_position = best_split[1]
-    columns = [ordered_indices[:split_position], ordered_indices[split_position:]]
+    boundaries = [0, *split_positions, len(ordered_indices)]
+    columns = [
+        ordered_indices[boundaries[index] : boundaries[index + 1]]
+        for index in range(len(boundaries) - 1)
+    ]
     if any(len(column) < 2 for column in columns):
         return None
-    if _cluster_x_center(columns[1], bboxes) - _cluster_x_center(columns[0], bboxes) < page_width * 0.16:
+    centers = [_cluster_x_center(column, bboxes) for column in columns]
+    if any(centers[index + 1] - centers[index] < page_width * 0.14 for index in range(len(centers) - 1)):
+        return None
+    balance = min(len(column) for column in columns) / max(len(column) for column in columns)
+    if balance < 0.35:
         return None
     if _min_column_vertical_overlap(columns, bboxes) < 0.2:
         return None
