@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
-  <a href="README.en.md"><img alt="English" src="https://img.shields.io/badge/English-Read-2f855a"></a>
+  <a href="README.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
+  <a href="README.en.md"><img alt="English" src="https://img.shields.io/badge/English-current-2f855a"></a>
 </p>
 
 <p align="center">
@@ -41,14 +41,32 @@
 
 <table>
   <tr>
-    <td width="50%">
+    <td width="34%" valign="top">
+      <strong>Goal</strong><br>
+      Convert PDFs, web-print PDFs, scanned/screenshot PDFs, and external OCR structure output into coordinate-aware HTML.
+    </td>
+    <td width="33%" valign="top">
+      <strong>Not This</strong><br>
+      Not a hand-written stylesheet for one sample, and not a full-page screenshot with a fragile hidden text layer.
+    </td>
+    <td width="33%" valign="top">
+      <strong>Output</strong><br>
+      Every node keeps bbox, role, style, source, reading order, edit fields, and translation fields for later PDF write-back.
+    </td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
       <strong>Chinese documentation</strong><br>
-      <a href="README.zh-CN.md">中文 README</a> ·
+      <a href="README.md">默认中文首页</a> ·
+      <a href="README.zh-CN.md">中文镜像</a> ·
       <a href="docs/implementation-notes.zh-CN.md">实现说明</a> ·
       <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a> ·
       <a href="docs/external-benchmarks.zh-CN.md">外部基准</a>
     </td>
-    <td width="50%">
+    <td width="50%" valign="top">
       <strong>English documentation</strong><br>
       <a href="README.en.md">English README</a> ·
       <a href="docs/implementation-notes.md">Implementation notes</a> ·

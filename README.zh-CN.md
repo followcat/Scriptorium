@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
-  <a href="README.en.md"><img alt="English" src="https://img.shields.io/badge/English-Read-2f855a"></a>
+  <a href="README.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E5%BD%93%E5%89%8D-blue"></a>
+  <a href="README.en.md"><img alt="English" src="https://img.shields.io/badge/English-Switch-2f855a"></a>
 </p>
 
 <p align="center">
@@ -39,6 +39,23 @@
   它保留原始识别证据，把文本、坐标、样式、结构角色、阅读顺序和可编辑字段落到同一个 IR，再用可重复 benchmark 追踪每次优化是否真的变好。
 </p>
 
+<table>
+  <tr>
+    <td width="34%" valign="top">
+      <strong>目标</strong><br>
+      把 PDF、网页打印 PDF、扫描/截图 PDF 和外部 OCR 结构结果转换为带坐标证据的 HTML。
+    </td>
+    <td width="33%" valign="top">
+      <strong>不是</strong><br>
+      不是给单个样例手写样式，也不是只把整页截图包进 HTML 再叠一层不可维护的文字。
+    </td>
+    <td width="33%" valign="top">
+      <strong>输出</strong><br>
+      每个节点保留 bbox、role、style、source、reading order、编辑字段和翻译字段，便于继续回写 PDF。
+    </td>
+  </tr>
+</table>
+
 | 能力 | 当前状态 |
 |---|---|
 | 结构化 HTML | 文本、image、shape、layout group、role、bbox、style id、source marker 都进入 DOM 标记。 |
@@ -50,14 +67,15 @@
 
 <table>
   <tr>
-    <td width="50%">
+    <td width="50%" valign="top">
       <strong>中文文档</strong><br>
-      <a href="README.zh-CN.md">中文 README</a> ·
+      <a href="README.md">默认中文首页</a> ·
+      <a href="README.zh-CN.md">中文镜像</a> ·
       <a href="docs/implementation-notes.zh-CN.md">实现说明</a> ·
       <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a> ·
       <a href="docs/external-benchmarks.zh-CN.md">外部基准</a>
     </td>
-    <td width="50%">
+    <td width="50%" valign="top">
       <strong>English documentation</strong><br>
       <a href="README.en.md">English README</a> ·
       <a href="docs/implementation-notes.md">Implementation notes</a> ·
