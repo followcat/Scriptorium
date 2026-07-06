@@ -10,6 +10,7 @@ from scriptorium.reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
     infer_semantic_reading_order,
+    infer_successor_consensus_order,
     pairwise_order_disagreement,
     successor_order_disagreement,
 )
@@ -289,6 +290,35 @@ def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:
     candidate_order = infer_relation_graph_order(bboxes, page_width=612, page_height=792)
 
     assert candidate_order == list(range(len(bboxes)))
+
+
+def test_successor_consensus_order_uses_majority_successor_edges() -> None:
+    candidate_order = infer_successor_consensus_order(
+        {
+            "visual_yx": [0, 1, 2, 3],
+            "box_flow": [0, 2, 3, 1],
+            "relation_graph": [0, 2, 3, 1],
+        },
+        item_count=4,
+        base_order=[0, 1, 2, 3],
+    )
+
+    assert candidate_order == [0, 2, 3, 1]
+
+
+def test_successor_consensus_order_keeps_all_items_and_avoids_cycles() -> None:
+    candidate_order = infer_successor_consensus_order(
+        {
+            "first": [0, 1, 2],
+            "second": [1, 2, 0],
+            "third": [2, 0, 1],
+        },
+        item_count=4,
+        base_order=[0, 1, 2, 3],
+    )
+
+    assert sorted(candidate_order) == [0, 1, 2, 3]
+    assert len(candidate_order) == 4
 
 
 def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:

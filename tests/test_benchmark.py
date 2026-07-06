@@ -113,6 +113,14 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_relation_graph_successor_disagreement_count" in case for case in report["cases"])
     assert all("reading_order_relation_graph_successor_disagreement_ratio" in case for case in report["cases"])
     assert all("reading_order_relation_graph_successor_disagreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_pair_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_disagreement_pair_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_disagreement_ratio" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_disagreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_successor_edge_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_successor_disagreement_count" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_successor_disagreement_ratio" in case for case in report["cases"])
+    assert all("reading_order_successor_consensus_successor_disagreement_page_count" in case for case in report["cases"])
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
@@ -135,6 +143,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_successor_consensus_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_external_structure_successor_accuracy" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
     assert all(case["raster_policy"] == "dense" for case in report["cases"])
@@ -179,6 +188,14 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_relation_graph_successor_disagreements" in report["summary"]
     assert "mean_reading_order_relation_graph_successor_disagreement_ratio" in report["summary"]
     assert "total_reading_order_relation_graph_successor_disagreement_pages" in report["summary"]
+    assert "total_reading_order_successor_consensus_pairs" in report["summary"]
+    assert "total_reading_order_successor_consensus_disagreement_pairs" in report["summary"]
+    assert "mean_reading_order_successor_consensus_disagreement_ratio" in report["summary"]
+    assert "total_reading_order_successor_consensus_disagreement_pages" in report["summary"]
+    assert "total_reading_order_successor_consensus_successor_edges" in report["summary"]
+    assert "total_reading_order_successor_consensus_successor_disagreements" in report["summary"]
+    assert "mean_reading_order_successor_consensus_successor_disagreement_ratio" in report["summary"]
+    assert "total_reading_order_successor_consensus_successor_disagreement_pages" in report["summary"]
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
@@ -209,6 +226,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_semantic_visual_yx_successor_accuracy" in report["summary"]
     assert "mean_semantic_box_flow_successor_accuracy" in report["summary"]
     assert "mean_semantic_relation_graph_successor_accuracy" in report["summary"]
+    assert "mean_semantic_successor_consensus_successor_accuracy" in report["summary"]
     assert "mean_semantic_external_structure_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
     assert all(case["semantic_ground_truth_available"] for case in report["cases"])
@@ -285,6 +303,7 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
     candidates = _semantic_candidate_orders(document)
 
     assert candidates["external_structure"][0] == ["left-one", "left-two", "right-one", "right-two"]
+    assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
 
 
 def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
@@ -350,10 +369,12 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_box_flow_disagreement_ratio" in csv_text
     assert "reading_order_box_flow_successor_disagreement_ratio" in csv_text
     assert "reading_order_relation_graph_successor_disagreement_ratio" in csv_text
+    assert "reading_order_successor_consensus_successor_disagreement_ratio" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_candidate_arbitration_recommendation" in csv_text
     assert "semantic_candidate_successor_delta" in csv_text
     assert "semantic_relation_graph_successor_accuracy" in csv_text
+    assert "semantic_successor_consensus_successor_accuracy" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text
     assert "reading_order_table_like_page_count" in csv_text

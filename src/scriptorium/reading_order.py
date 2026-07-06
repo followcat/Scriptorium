@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
 import re
@@ -282,6 +283,94 @@ def infer_relation_graph_order(
     return ordered
 
 
+def infer_successor_consensus_order(
+    candidate_orders: dict[str, list[int]] | list[list[int]],
+    item_count: int | None = None,
+    base_order: list[int] | None = None,
+) -> list[int]:
+    """Return a path-cover order from successor edges shared by candidates.
+
+    Each candidate order contributes adjacent successor edges. The consensus
+    order selects high-vote edges under one-predecessor/one-successor acyclic
+    constraints, then serializes the resulting paths using ``base_order`` as a
+    stable tie-breaker. This is a candidate primitive for arbitration, not a
+    guarantee that the consensus should replace the selected reading order.
+    """
+
+    raw_orders = candidate_orders.values() if isinstance(candidate_orders, dict) else candidate_orders
+    normalized_orders = [_dedupe_order(order) for order in raw_orders]
+    normalized_orders = [order for order in normalized_orders if len(order) >= 2]
+
+    if base_order is None:
+        base_order = []
+        for order in normalized_orders:
+            for item in order:
+                if item not in base_order:
+                    base_order.append(item)
+    else:
+        base_order = _dedupe_order(base_order)
+
+    universe = list(base_order)
+    if item_count is not None:
+        for item in range(item_count):
+            if item not in universe:
+                universe.append(item)
+    for order in normalized_orders:
+        for item in order:
+            if item not in universe:
+                universe.append(item)
+    if not universe:
+        return []
+    if not normalized_orders:
+        return universe
+
+    edge_votes: Counter[tuple[int, int]] = Counter()
+    for order in normalized_orders:
+        clean_order = [item for item in order if item in universe]
+        for source, target in zip(clean_order, clean_order[1:]):
+            if source != target:
+                edge_votes[(source, target)] += 1
+    if not edge_votes:
+        return universe
+
+    base_rank = {item: rank for rank, item in enumerate(universe)}
+    outgoing_votes: dict[int, list[int]] = {}
+    incoming_votes: dict[int, list[int]] = {}
+    for (source, target), vote_count in edge_votes.items():
+        outgoing_votes.setdefault(source, []).append(vote_count)
+        incoming_votes.setdefault(target, []).append(vote_count)
+    for votes in [*outgoing_votes.values(), *incoming_votes.values()]:
+        votes.sort(reverse=True)
+
+    def regret(source: int, target: int, vote_count: int) -> int:
+        outgoing_alternative = _consensus_alternative_vote(vote_count, outgoing_votes.get(source, []))
+        incoming_alternative = _consensus_alternative_vote(vote_count, incoming_votes.get(target, []))
+        return (vote_count - outgoing_alternative) + (vote_count - incoming_alternative)
+
+    ranked_edges = sorted(
+        edge_votes,
+        key=lambda edge: (
+            -edge_votes[edge],
+            -regret(edge[0], edge[1], edge_votes[edge]),
+            base_rank.get(edge[0], 1_000_000),
+            base_rank.get(edge[1], 1_000_000),
+            edge[0],
+            edge[1],
+        ),
+    )
+    successor_by_item: dict[int, int] = {}
+    predecessor_by_item: dict[int, int] = {}
+    for source, target in ranked_edges:
+        if source in successor_by_item or target in predecessor_by_item:
+            continue
+        if _relation_graph_would_cycle(source, target, successor_by_item):
+            continue
+        successor_by_item[source] = target
+        predecessor_by_item[target] = source
+
+    return _serialize_consensus_paths(universe, successor_by_item, predecessor_by_item, base_rank)
+
+
 def pairwise_order_disagreement(
     reference_order: list[int],
     candidate_order: list[int],
@@ -334,6 +423,50 @@ def successor_order_disagreement(
         disagreement_count=disagreement_count,
         disagreement_ratio=round(disagreement_count / edge_count, 8),
     )
+
+
+def _dedupe_order(order: list[int]) -> list[int]:
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for item in order:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _consensus_alternative_vote(vote_count: int, votes: list[int]) -> int:
+    skipped_current = False
+    for alternative in votes:
+        if not skipped_current and alternative == vote_count:
+            skipped_current = True
+            continue
+        return alternative
+    return 0
+
+
+def _serialize_consensus_paths(
+    source_indices: list[int],
+    successor_by_item: dict[int, int],
+    predecessor_by_item: dict[int, int],
+    base_rank: dict[int, int],
+) -> list[int]:
+    heads = [item for item in source_indices if item not in predecessor_by_item]
+    ordered: list[int] = []
+    visited: set[int] = set()
+    for head_index in sorted(heads, key=lambda index: (base_rank.get(index, 1_000_000), index)):
+        cursor = head_index
+        while cursor not in visited:
+            visited.add(cursor)
+            ordered.append(cursor)
+            if cursor not in successor_by_item:
+                break
+            cursor = successor_by_item[cursor]
+    for item in sorted(source_indices, key=lambda index: (base_rank.get(index, 1_000_000), index)):
+        if item not in visited:
+            ordered.append(item)
+    return ordered
 
 
 def _visual_assignments(
