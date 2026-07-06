@@ -19,7 +19,7 @@
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
   <img alt="Benchmark" src="https://img.shields.io/badge/benchmark-visual%20%2B%20semantic-805ad5">
   <img alt="OCR" src="https://img.shields.io/badge/OCR-optional%20Paddle%2FDocling-0f766e">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-81%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-84%20passing-2f855a">
 </p>
 
 <p align="center">
@@ -127,6 +127,8 @@ Scriptorium treats reading order as evidence, not a single y/x sort. The runtime
 Caption metadata now goes beyond lexical labels. Figure/table captions can be linked to nearby native images, local raster regions, or inferred layout regions, then exported as `reading_order_caption_target_*` metadata and `data-scriptorium-caption-target-*` HTML attributes. Benchmark reports include targeted/orphan caption counts and target coverage so figure/table relation quality can be measured before it affects runtime ordering.
 
 The `structure_relation` semantic candidate combines page artifacts, footnotes, sidebars, caption-target proximity, and relation-graph body ordering into a structure-aware diagnostic order. It is scored by semantic sidecars and exported in benchmark metrics, but it does not replace the runtime selected order.
+
+Semantic sidecars can now use relation-style labels. `successor_edges` score adjacent labelled nodes, while `precedence_edges` score local before/after constraints. Complex pages can label only the key body, sidebar, caption, or table relations without forcing the whole page into one global `text_sequence`.
 
 Successor-consensus diagnostics vote over adjacent successor edges from visual-yx, box-flow, relation-graph, structure-relation, and external-structure candidates, then serialize an acyclic path-cover order. This keeps structure relation available as evidence while preserving conservative runtime behavior.
 
@@ -282,5 +284,5 @@ pytest
 Current local test baseline:
 
 ```text
-81 passed
+84 passed
 ```

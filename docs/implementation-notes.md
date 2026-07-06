@@ -239,6 +239,28 @@ example.semantic-order.json
 
 The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source PDF and then under `benchmarks/semantic-ground-truth/` for matching repo sidecars. Repo-level lookup supports both `<pdf-stem>.semantic-order.json` and `<parent-dir>.<pdf-stem>.semantic-order.json`, so generic files like `web-hn/input.pdf` can have stable tracked labels without colliding with other `input.pdf` samples. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
 
+Sidecars can also store relation-style ground truth, which is better for complex pages where several global sequences are acceptable:
+
+```json
+{
+  "version": 2,
+  "pages": [
+    {
+      "page_index": 0,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": ["Article title", "First body line"],
+      "successor_edges": [["Article title", "First body line"]],
+      "precedence_edges": [
+        {"source": "Sidebar heading", "target": "Sidebar detail"},
+        {"from": "Figure 1.", "to": "The caption continues."}
+      ]
+    }
+  ]
+}
+```
+
+`successor_edges` score immediate adjacency among labelled nodes, ignoring unlabelled actual text between them. `precedence_edges` only require the source label to appear before the target label. If a page has relation edges but no `text_sequence`, `match_mode` defaults to `ordered-subsequence` so the page is not penalized for unlabelled text. Candidate orders receive the same relation metrics as the selected order.
+
 Supported page match modes:
 
 - `full-sequence`: the default mode for generated fixtures; expected and actual page text should match exactly except for reported missing/extra nodes.
@@ -248,6 +270,9 @@ Metrics:
 
 - `semantic_order_pair_accuracy`: pairwise order correctness across expected text nodes; this is Kendall-tau-like and catches left/right column swaps.
 - `semantic_successor_accuracy`: adjacent successor-edge correctness across expected text nodes. In `ordered-subsequence` mode, unlabelled actual text between two labelled nodes is ignored, but a labelled node inserted between them, a reversed adjacent pair, or a missing adjacent node breaks the edge. Reports also expose `semantic_successor_correct_count` and `semantic_successor_total_count`.
+- `semantic_relation_successor_accuracy`: correctness for explicit `successor_edges`. This is the relation-style metric to watch when evaluating relation-graph, structure-relation, and successor-consensus candidates on complex layouts.
+- `semantic_relation_precedence_accuracy`: correctness for explicit `precedence_edges`, useful when a page has several valid global reading orders but still has local before/after constraints.
+- `semantic_relation_missing_text_count`: unique relation labels that were not found in the extracted page text.
 - `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
 - `semantic_exact_page_match_rate`: page-level exact sequence match rate.
 - `ignored_text_count`: unlabelled actual text ignored by `ordered-subsequence` pages.
@@ -395,6 +420,9 @@ Metrics:
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
 - `semantic_successor_accuracy`: labelled adjacent successor-edge score when ground truth is available.
 - `semantic_successor_correct_count`, `semantic_successor_total_count`: raw successor-edge counts used for case and summary aggregation.
+- `semantic_relation_successor_accuracy`, `semantic_relation_successor_correct_count`, and `semantic_relation_successor_total_count`: explicit relation-edge adjacency score from sidecar `successor_edges`.
+- `semantic_relation_precedence_accuracy`, `semantic_relation_precedence_correct_count`, and `semantic_relation_precedence_total_count`: explicit before/after relation score from sidecar `precedence_edges`.
+- `semantic_best_candidate_by_relation_successor`: candidate with the highest explicit relation successor accuracy when relation labels are available.
 - `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, `relation_graph`, `structure_relation`, `successor_consensus`, and `external_structure`.
 - `semantic_best_candidate_by_successor`: candidate name with the highest labelled successor-edge accuracy, using pairwise accuracy as the tie-breaker.
 - `semantic_best_candidate_successor_accuracy`: successor-edge accuracy of that best candidate.
@@ -402,7 +430,8 @@ Metrics:
 - `semantic_candidate_arbitration_candidate`: best scored candidate used for the recommendation.
 - `semantic_candidate_successor_delta`: best candidate successor accuracy minus selected-order successor accuracy.
 - `semantic_candidate_pairwise_delta`: best candidate pairwise accuracy minus selected-order pairwise accuracy.
-- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_structure_relation_order_pair_accuracy`, `semantic_structure_relation_successor_accuracy`, `semantic_successor_consensus_order_pair_accuracy`, `semantic_successor_consensus_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
+- `semantic_candidate_relation_successor_delta`: best relation-edge candidate successor accuracy minus selected-order relation successor accuracy when `successor_edges` are available. Relation successor deltas can drive `consider-<candidate>` even when sequence metrics are tied.
+- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_structure_relation_order_pair_accuracy`, `semantic_structure_relation_successor_accuracy`, `semantic_successor_consensus_order_pair_accuracy`, `semantic_successor_consensus_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons. Candidate relation metrics use the same prefix pattern with `_relation_successor_accuracy` and `_relation_precedence_accuracy`.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
@@ -447,9 +476,10 @@ These relation-graph numbers are not correctness scores. They show that a local 
 Latest semantic candidate scoring validation:
 
 - `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
+- Sidecars can include `successor_edges` and `precedence_edges`, so complex layouts can be evaluated as relation constraints instead of only as one serialized `text_sequence`.
 - `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, `relation_graph`, `structure_relation`, and `successor_consensus` candidates for each page.
 - `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure/Docling evidence has at least two distinct block orders on a page.
-- Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`, `semantic_structure_relation_successor_accuracy`, and `semantic_successor_consensus_successor_accuracy`.
+- Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`, `semantic_structure_relation_successor_accuracy`, `semantic_successor_consensus_successor_accuracy`, and relation-edge variants such as `semantic_structure_relation_relation_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
 - Case reports also include page-level candidate diagnostics that do not require sidecar labels, so external complex PDFs can be queued for review before ground truth exists.

@@ -25,6 +25,7 @@ This project optimizes two different outcomes:
 - Successor-consensus diagnostics now vote over adjacent successor edges from visual-yx, box-flow, relation-graph, structure-relation, and optional external-structure candidates, producing an acyclic path-cover candidate for benchmark scoring plus support/coverage/conflict metrics for arbitration triage.
 - Page-level candidate diagnostics now compare the selected order against successor-consensus per page and emit `reading_order_candidate_page_recommendation_counts`, so unlabeled external PDFs can still surface pages needing structure evidence or review.
 - Semantic sidecars now score named candidate orders directly. Benchmark emits selected, visual-yx, box-flow, relation-graph, structure-relation, successor-consensus, and external-structure semantic candidate metrics where ground truth exists, plus candidate-vs-selected arbitration recommendations. Future order switching can therefore be evaluated against human labels instead of only candidate-vs-selected disagreement.
+- Semantic sidecars now also support relation-style labels: `successor_edges` for local adjacent labelled nodes and `precedence_edges` for partial before/after constraints. This lets complex pages be labelled as graph relations when a single global sequence would be too brittle.
 - Pure table-like grids use `table-row-major-v1`, so table cells stay row-major without being reported as an unknown visual-order fallback.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
 - Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
@@ -56,7 +57,7 @@ This project optimizes two different outcomes:
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity. Docling `body.children` order now becomes `external_structure_order` evidence when its provenance bboxes match native elements.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
 - Structured HTML exposes reading-order strategy, region, scope, artifact, sidebar, confidence, and evidence attributes.
-- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `successor_consensus_arbitration_element_count`, `recursive_xy_cut_element_count`, caption counts, caption target coverage/counts, box-flow/relation-graph/successor-consensus disagreement/support metrics, structure-relation semantic candidate metrics, page-level candidate recommendation counts, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
+- Benchmark reports now include `image_count`, `multi_column_element_count`, `column_flow_element_count`, `mixed_table_column_flow_element_count`, `table_row_major_element_count`, `spatial_graph_element_count`, `box_flow_element_count`, `successor_consensus_arbitration_element_count`, `recursive_xy_cut_element_count`, caption counts, caption target coverage/counts, box-flow/relation-graph/successor-consensus disagreement/support metrics, relation-style semantic sidecar metrics, structure-relation semantic candidate metrics, page-level candidate recommendation counts, `reading_order_strategy_counts`, font profile, and structure evidence match/reorder counts.
 - Benchmark reports now include text-run, mixed-inline-style, layout-region, raster-policy, raster-fallback, OCR fallback, auto font-profile candidate, reading-order footnote/sidebar/confidence/evidence counts, and detailed reading-order risk diagnostics.
 - Built-in fixtures and selected external PDFs use `.semantic-order.json` sidecars and benchmark semantic order with pairwise order accuracy, labelled successor-edge accuracy, normalized sequence similarity, candidate-vs-selected disagreement, and sidecar-scored candidate order metrics.
 
@@ -171,7 +172,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 1. Expand real semantic ground truth for complex PDFs
 
-   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. The PUMA annual report first-12-pages benchmark now adds a high-risk non-paper sample with 99 direct column-flow elements, 238 mixed-table-flow elements, 2 footnote elements, 36 sidebar elements, and no semantic sidecar. Built-in fixtures now explicitly score 18 pure-table nodes as `table-row-major-v1`. Expand this to more pages and more document families, especially annual reports, equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages.
+   The arXiv Attention sidecar covers 5 representative pages and 38 labeled text nodes. The Transformer-XL sidecar covers 3 real ACL two-column pages and 44 labeled text nodes. The Hacker News web-to-PDF sidecar covers 2 pages and 26 dense-list/footer labels. Current ignored-text diagnostics show 147 unlabeled Attention nodes, 277 Transformer-XL nodes, and 69 web-HN table-cell nodes. The PUMA annual report first-12-pages benchmark now adds a high-risk non-paper sample with 99 direct column-flow elements, 238 mixed-table-flow elements, 2 footnote elements, 36 sidebar elements, and no semantic sidecar. Built-in fixtures now explicitly score 18 pure-table nodes as `table-row-major-v1`. Expand this to more pages and more document families, especially annual reports, equations, tables, footnotes, appendices, manuals, and additional web-to-PDF pages. Use `successor_edges` / `precedence_edges` when a page has several acceptable global reading orders but clear local relation constraints.
 
 2. Recursive XY-Cut refinement
 
@@ -203,11 +204,12 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 9. Semantic-order benchmark expansion
 
-   The first sidecar-based benchmark is implemented. Expand it with real/hand-labeled documents and report:
+   The first sidecar-based benchmark is implemented, including relation-style labels for complex pages. Expand it with real/hand-labeled documents and report:
 
    - normalized edit distance between expected and exported source text
    - column order accuracy
    - successor-edge accuracy for local reading-order continuity
+   - relation successor / precedence accuracy for graph-style labels
    - table row-major preservation
    - figure/table caption proximity
    - footnote/header/footer order calibration and edge-case coverage
