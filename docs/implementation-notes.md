@@ -43,7 +43,8 @@ The structured HTML export must not rely on a hand-authored stylesheet to make a
    - `semantic_order`, `visual_order`, `column_index`, `column_count`, `column_span`, and `flow_segment_index`
    - `reading_order_strategy` and `reading_order_region_path`
    - `reading_order_scope`, `reading_order_artifact_type`, and `reading_order_sidebar_type` for page-level running headers/footers, footnotes, and secondary sidebar/marginalia content
-   - `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index` for page-local reading streams such as `body-main`, `footnote`, `sidebar-right`, `page-artifact-header`, `caption-figure-*`, and `table-island-001`
+   - `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index` for page-local reading streams such as `body-main`, `body-segment-002`, `footnote`, `sidebar-right`, `page-artifact-header`, `caption-figure-*`, and `table-island-001`
+   - body segment streams are assigned only when the page has structural break evidence such as full-width flow breaks or multiple recursive XY-Cut regions; the first continuous body chain stays `body-main`
    - `reading_order_caption_target_id`, `reading_order_caption_target_kind`, `reading_order_caption_target_position`, `reading_order_caption_target_confidence`, and target bbox/source metadata when a figure/table caption is locally associated with an object
    - `reading_order_confidence`, `reading_order_evidence`, and `reading_order_evidence_summary` for explaining the geometry/model evidence behind each ordering decision
    - `editable` and `edit_target`: whether the node maps to editable text

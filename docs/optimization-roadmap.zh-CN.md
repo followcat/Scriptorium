@@ -23,8 +23,9 @@
 - `structure_relation` 候选会组合页眉页脚 artifact、脚注、边栏、caption-target proximity 和正文 relation-graph 顺序，形成结构感知候选；它只参与 sidecar 打分和诊断，不改变 runtime 默认顺序。
 - Successor-consensus 会汇总 visual-yx、box-flow、relation-graph、structure-relation 和 external-structure 的相邻后继边，作为后续仲裁的支持/冲突证据。
 - Reading-order assignment 现在会输出 page-local reading streams：`body-main`、脚注流、边栏流、页眉页脚 artifact 流、caption 流和 table-island 流。这样编辑器、翻译器和 semantic sidecar 可以使用局部 thread，而不必依赖唯一全局 `semantic_order`。
+- 正文 reading streams 现在会在结构断点明确时按 segment 暴露：第一条正文链仍是 `body-main`，后续链会变成 `body-segment-002` 等。这为复杂页面提供局部编辑/翻译流，但不会改变当前选中的全局 semantic order。
 - Semantic sidecar 能直接给 selected、visual-yx、box-flow、relation-graph、structure-relation、successor-consensus、external-structure 候选打分，并输出候选是否值得考虑接管。
-- Semantic sidecar 现在支持 `successor_edges` 和 `precedence_edges` 关系式标签，复杂页面不必被强制写成唯一全局 `text_sequence`。
+- Semantic sidecar 现在支持关系式和 stream-aware 标签：`successor_edges` 标相邻 labelled 节点，`precedence_edges` 标局部先后约束，`reading_streams` / `streams` 标正文、边栏、脚注、caption 或表格岛的独立局部链。复杂页面不必被强制写成唯一全局 `text_sequence`。
 - `table-row-major-v1` 明确保留表格行优先，不把表格误报为未知 visual-yx fallback。
 - `mixed-table-column-flow-v1` 支持混合表格/正文页面：表格岛保持 row-major，周围正文继续按多栏排序。
 - 页边 running header/footer、脚注、边栏/旁注会被标注为 secondary/page-artifact flow，保持可编辑但不污染主体列检测。

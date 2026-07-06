@@ -147,11 +147,13 @@ Scriptorium treats reading order as evidence, not a single y/x sort. The runtime
 
 Reading-order output now includes page-local stream metadata: `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index`. The main body is usually `body-main`; footnotes, left/right sidebars, header/footer artifacts, captions, and table islands become separate local streams. This follows the same architectural idea as PDF article threads: complex pages can expose multiple navigable reading paths instead of only one global sequence.
 
+Body streams are now segment-aware when the page has real structural breaks. The first continuous body chain stays `body-main`; later body chains become `body-segment-002`, `body-segment-003`, etc. This is only activated when the page has evidence such as full-width flow breaks or multiple recursive XY-Cut regions, so a simple title plus one body flow does not get split unnecessarily.
+
 Caption metadata now goes beyond lexical labels. Figure/table captions can be linked to nearby native images, local raster regions, or inferred layout regions, then exported as `reading_order_caption_target_*` metadata and `data-scriptorium-caption-target-*` HTML attributes. Benchmark reports include targeted/orphan caption counts and target coverage so figure/table relation quality can be measured before it affects runtime ordering.
 
 The `structure_relation` semantic candidate combines page artifacts, footnotes, sidebars, caption-target proximity, and relation-graph body ordering into a structure-aware diagnostic order. It is scored by semantic sidecars and exported in benchmark metrics, but it does not replace the runtime selected order.
 
-Semantic sidecars can now use relation-style labels. `successor_edges` score adjacent labelled nodes, while `precedence_edges` score local before/after constraints. Complex pages can label only the key body, sidebar, caption, or table relations without forcing the whole page into one global `text_sequence`.
+Semantic sidecars can now use relation-style and stream-aware labels. `successor_edges` score adjacent labelled nodes, `precedence_edges` score local before/after constraints, and `reading_streams` / `streams` describe independent body, sidebar, footnote, caption, or table chains. Complex pages can label only the key local relations without forcing the whole page into one global `text_sequence`.
 
 Successor-consensus diagnostics vote over adjacent successor edges from visual-yx, box-flow, relation-graph, structure-relation, and external-structure candidates, then serialize an acyclic path-cover order. This keeps structure relation available as evidence while preserving conservative runtime behavior.
 
