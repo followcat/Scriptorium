@@ -9,9 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="README.md">简体中文</a>
-  |
-  <a href="README.en.md"><strong>English</strong></a>
+  <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
+  <a href="README.en.md"><img alt="English" src="https://img.shields.io/badge/English-Read-2f855a"></a>
 </p>
 
 <p align="center">
@@ -20,7 +19,7 @@
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
   <img alt="Benchmark" src="https://img.shields.io/badge/benchmark-visual%20%2B%20semantic-805ad5">
   <img alt="OCR" src="https://img.shields.io/badge/OCR-optional%20Paddle%2FDocling-0f766e">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-80%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-81%20passing-2f855a">
 </p>
 
 <p align="center">
@@ -44,7 +43,7 @@
   <tr>
     <td width="50%">
       <strong>Chinese documentation</strong><br>
-      <a href="README.md">中文 README</a> ·
+      <a href="README.zh-CN.md">中文 README</a> ·
       <a href="docs/implementation-notes.zh-CN.md">实现说明</a> ·
       <a href="docs/optimization-roadmap.zh-CN.md">优化路线</a> ·
       <a href="docs/external-benchmarks.zh-CN.md">外部基准</a>
@@ -65,8 +64,23 @@
 | Editing and translation | `source_text` is preserved; edits go to `edited_text`, translations go to `translated_text`, with XML/IR round trips. |
 | OCR and structure evidence | Supports image-only OCR fallback and PaddleOCR-VL / PP-Structure / Docling JSON fusion. |
 | Visual fidelity | Supports structured redraw, SVG/raster fidelity overlay, and benchmark-time font/scale/text-fit selection. |
-| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, caption-target proximity, relation graph, successor-consensus diagnostics, and conservative runtime arbitration. |
+| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, caption-target proximity, relation graph, structure-relation, successor-consensus diagnostics, and conservative runtime arbitration. |
 | Quality metrics | Reports visual similarity, page diff distribution, semantic order, successor accuracy, candidate arbitration, and risk diagnostics. |
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/readme-webpage-score.png" alt="Web page PDF conversion preview" width="100%"><br>
+      <strong>Web and portal PDFs</strong><br>
+      Playwright print or screenshot PDFs keep their source visual layer while native/OCR text becomes editable coordinate anchors and DOM metadata.
+    </td>
+    <td width="50%">
+      <img src="docs/assets/readme-benchmark-score.png" alt="Benchmark score preview" width="100%"><br>
+      <strong>Papers, reports, and manuals</strong><br>
+      Every optimization is measured with reproducible visual similarity, semantic order, candidate disagreement, risk, and timing metrics.
+    </td>
+  </tr>
+</table>
 
 ## What It Does
 
@@ -79,6 +93,8 @@ Scriptorium PDF is a core conversion engine. It does not treat PDF-to-HTML as a 
 - Support XML-level local node edits, then write them back into IR and exported HTML/PDF.
 - Print HTML back to PDF with Playwright and compare rendered pages for measurable visual quality.
 - Track optimization progress with repeatable benchmark reports.
+
+The output is not a hand-authored stylesheet for one sample. The tool is designed to identify and annotate page structure automatically: bboxes, roles, layout groups, style ids, source kinds, reading-order strategies, caption targets, and edit/translation fields are carried through IR and HTML `data-scriptorium-*` attributes.
 
 ## Why It Is Different
 
@@ -109,6 +125,10 @@ Each node can be traced back to source evidence, coordinates, style buckets, lay
 Scriptorium treats reading order as evidence, not a single y/x sort. The runtime path includes recursive XY-Cut, repeated-anchor column flow, spatial graph fallback, guarded box-flow fallback, table islands, footnotes, sidebars, captions, caption-to-object proximity evidence, and optional external PaddleOCR-VL / PP-Structure / Docling order evidence.
 
 Caption metadata now goes beyond lexical labels. Figure/table captions can be linked to nearby native images, local raster regions, or inferred layout regions, then exported as `reading_order_caption_target_*` metadata and `data-scriptorium-caption-target-*` HTML attributes. Benchmark reports include targeted/orphan caption counts and target coverage so figure/table relation quality can be measured before it affects runtime ordering.
+
+The `structure_relation` semantic candidate combines page artifacts, footnotes, sidebars, caption-target proximity, and relation-graph body ordering into a structure-aware diagnostic order. It is scored by semantic sidecars and exported in benchmark metrics, but it does not replace the runtime selected order.
+
+Successor-consensus diagnostics vote over adjacent successor edges from visual-yx, box-flow, relation-graph, structure-relation, and external-structure candidates, then serialize an acyclic path-cover order. This keeps structure relation available as evidence while preserving conservative runtime behavior.
 
 `successor-consensus-arbitration-v1` is intentionally narrow. It only takes over when a page would otherwise fall back to weak `single-column-visual-order`, non-visual candidates such as box-flow and relation graph strongly agree, the consensus disagrees with visual-yx on adjacent successor edges, and the consensus order contains clear column handoffs. It now preserves `column_count` / `column_index` metadata across sparse multi-column pages. Benchmark reports expose `successor_consensus_arbitration_element_count` so external PDFs show when this path is actually active.
 
@@ -245,7 +265,7 @@ Core modules:
 
 ## Documentation
 
-- [简体中文 README](README.md)
+- [简体中文 README](README.zh-CN.md)
 - [中文实现说明](docs/implementation-notes.zh-CN.md)
 - [中文优化路线](docs/optimization-roadmap.zh-CN.md)
 - [中文外部基准](docs/external-benchmarks.zh-CN.md)
@@ -262,5 +282,5 @@ pytest
 Current local test baseline:
 
 ```text
-80 passed
+81 passed
 ```
