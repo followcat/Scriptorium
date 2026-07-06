@@ -159,6 +159,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_structure_relation_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_successor_consensus_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_external_structure_successor_accuracy" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
@@ -258,6 +259,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_semantic_visual_yx_successor_accuracy" in report["summary"]
     assert "mean_semantic_box_flow_successor_accuracy" in report["summary"]
     assert "mean_semantic_relation_graph_successor_accuracy" in report["summary"]
+    assert "mean_semantic_structure_relation_successor_accuracy" in report["summary"]
     assert "mean_semantic_successor_consensus_successor_accuracy" in report["summary"]
     assert "mean_semantic_external_structure_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
@@ -336,6 +338,121 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
 
     assert candidates["external_structure"][0] == ["left-one", "left-two", "right-one", "right-two"]
     assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
+
+
+def test_semantic_candidate_orders_include_structure_relation_order() -> None:
+    elements = [
+        ElementIR(
+            id="header",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=20, y0=8, x1=180, y1=18),
+            bbox_px=BBox(x0=20, y0=8, x1=180, y1=18),
+            source_text="Running header",
+            reading_order=1,
+            metadata={
+                "source": "unit-test",
+                "reading_order_scope": "page-artifact",
+                "reading_order_artifact_type": "header",
+            },
+        ),
+        ElementIR(
+            id="body",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=40, y0=42, x1=145, y1=54),
+            bbox_px=BBox(x0=40, y0=42, x1=145, y1=54),
+            source_text="Body text before figure.",
+            reading_order=2,
+            metadata={"source": "unit-test"},
+        ),
+        ElementIR(
+            id="sidebar",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=4, y0=46, x1=28, y1=88),
+            bbox_px=BBox(x0=4, y0=46, x1=28, y1=88),
+            source_text="Side note",
+            reading_order=3,
+            metadata={
+                "source": "unit-test",
+                "reading_order_scope": "sidebar",
+                "reading_order_sidebar_type": "left",
+            },
+        ),
+        ElementIR(
+            id="caption",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=52, y0=112, x1=160, y1=124),
+            bbox_px=BBox(x0=52, y0=112, x1=160, y1=124),
+            source_text="Figure 1: A diagram.",
+            reading_order=4,
+            metadata={
+                "source": "unit-test",
+                "reading_order_caption_type": "figure",
+                "reading_order_caption_target_id": "figure-001",
+                "reading_order_caption_target_kind": "figure",
+                "reading_order_caption_target_position": "caption-below-target",
+                "reading_order_caption_target_bbox_pdf": [48, 68, 162, 104],
+            },
+        ),
+        ElementIR(
+            id="footnote",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=40, y0=174, x1=150, y1=185),
+            bbox_px=BBox(x0=40, y0=174, x1=150, y1=185),
+            source_text="1. Footnote",
+            reading_order=5,
+            metadata={"source": "unit-test", "reading_order_scope": "footnote"},
+        ),
+        ElementIR(
+            id="footer",
+            page_index=0,
+            type="text",
+            bbox_pdf=BBox(x0=82, y0=192, x1=118, y1=198),
+            bbox_px=BBox(x0=82, y0=192, x1=118, y1=198),
+            source_text="Page 1",
+            reading_order=6,
+            metadata={
+                "source": "unit-test",
+                "reading_order_scope": "page-artifact",
+                "reading_order_artifact_type": "footer",
+            },
+        ),
+    ]
+    page = PageIR(
+        page_index=0,
+        width_pt=200,
+        height_pt=220,
+        width_px=200,
+        height_px=220,
+        render_dpi=72,
+        scale_x=1.0,
+        scale_y=1.0,
+        background_image="",
+        elements=elements,
+    )
+    document = DocumentIR(
+        source_pdf="unit.pdf",
+        render_dpi=72,
+        page_count=1,
+        pages=[page],
+    )
+
+    candidates = _semantic_candidate_orders(document)
+
+    assert candidates["structure_relation"][0] == [
+        "header",
+        "body",
+        "caption",
+        "footnote",
+        "sidebar",
+        "footer",
+    ]
+    assert "successor_consensus" in candidates
+    assert sorted(candidates["successor_consensus"][0]) == sorted(element.id for element in elements)
 
 
 def test_candidate_page_diagnostics_recommend_review_for_supported_disagreement() -> None:
@@ -431,6 +548,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "semantic_candidate_arbitration_recommendation" in csv_text
     assert "semantic_candidate_successor_delta" in csv_text
     assert "semantic_relation_graph_successor_accuracy" in csv_text
+    assert "semantic_structure_relation_successor_accuracy" in csv_text
     assert "semantic_successor_consensus_successor_accuracy" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text

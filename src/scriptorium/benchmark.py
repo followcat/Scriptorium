@@ -13,7 +13,7 @@ from typing import Any, Literal
 from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import FidelityBackground, HtmlTextFit, export_html
-from .models import DocumentIR
+from .models import BBox, DocumentIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import render_pdf
@@ -45,6 +45,7 @@ SEMANTIC_ORDER_CANDIDATES: tuple[str, ...] = (
     "visual_yx",
     "box_flow",
     "relation_graph",
+    "structure_relation",
     "successor_consensus",
     "external_structure",
 )
@@ -966,6 +967,9 @@ def _candidate_index_orders(
     external_structure_order = _external_structure_candidate_order(text_elements)
     if external_structure_order:
         candidates["external_structure"] = external_structure_order
+    structure_relation_order = _structure_relation_candidate_order(text_elements, page)
+    if structure_relation_order:
+        candidates["structure_relation"] = structure_relation_order
     if include_successor_consensus:
         candidates["successor_consensus"] = _successor_consensus_candidate_order(text_elements, page)
     return candidates
@@ -993,6 +997,133 @@ def _selected_candidate_order(text_elements: list[Any]) -> list[int]:
             ),
         )
     ]
+
+
+def _structure_relation_candidate_order(text_elements: list[Any], page: Any) -> list[int]:
+    """Return a structure-aware relation-graph candidate order.
+
+    This candidate is diagnostic-only. It combines page-level scope metadata
+    (headers/body/footnotes/sidebars/footers), caption target anchors, and the
+    geometry relation graph for the primary body stream.
+    """
+
+    if len(text_elements) < 2 or not _has_structure_relation_signal(text_elements):
+        return []
+
+    header_indices: list[int] = []
+    body_indices: list[int] = []
+    footnote_indices: list[int] = []
+    sidebar_indices: list[int] = []
+    footer_indices: list[int] = []
+    for index, element in enumerate(text_elements):
+        scope = str(element.metadata.get("reading_order_scope") or "body").strip()
+        artifact_type = str(element.metadata.get("reading_order_artifact_type") or "").strip()
+        if scope == "page-artifact" and artifact_type == "header":
+            header_indices.append(index)
+        elif scope == "page-artifact" and artifact_type == "footer":
+            footer_indices.append(index)
+        elif scope == "footnote":
+            footnote_indices.append(index)
+        elif scope == "sidebar":
+            sidebar_indices.append(index)
+        else:
+            body_indices.append(index)
+
+    ordered_body = _structure_relation_body_order(text_elements, body_indices, page)
+    ordered = [
+        *sorted(header_indices, key=lambda index: _visual_candidate_sort_key(text_elements[index], index)),
+        *ordered_body,
+        *sorted(footnote_indices, key=lambda index: _visual_candidate_sort_key(text_elements[index], index)),
+        *sorted(sidebar_indices, key=lambda index: _sidebar_candidate_sort_key(text_elements[index], index)),
+        *sorted(footer_indices, key=lambda index: _visual_candidate_sort_key(text_elements[index], index)),
+    ]
+    if len(ordered) != len(text_elements):
+        return []
+    return ordered
+
+
+def _has_structure_relation_signal(text_elements: list[Any]) -> bool:
+    for element in text_elements:
+        metadata = element.metadata
+        scope = str(metadata.get("reading_order_scope") or "body").strip()
+        role = _annotation_value(element, "role")
+        if scope in {"footnote", "sidebar", "page-artifact"}:
+            return True
+        if metadata.get("reading_order_caption_target_id"):
+            return True
+        if metadata.get("reading_order_caption_type"):
+            return True
+        if role in {"caption", "footnote", "sidebar-text", "running-header", "footer"}:
+            return True
+    return False
+
+
+def _structure_relation_body_order(text_elements: list[Any], body_indices: list[int], page: Any) -> list[int]:
+    if len(body_indices) < 2:
+        return body_indices[:]
+    surrogate_bboxes = [
+        _structure_relation_bbox(text_elements[index], page_width=page.width_pt, page_height=page.height_pt)
+        for index in body_indices
+    ]
+    local_order = infer_relation_graph_order(
+        surrogate_bboxes,
+        page_width=page.width_pt,
+        page_height=page.height_pt,
+    )
+    return [body_indices[local_index] for local_index in local_order]
+
+
+def _structure_relation_bbox(element: Any, *, page_width: float, page_height: float) -> BBox:
+    target_bbox = _caption_target_bbox(element)
+    if target_bbox is None:
+        return element.bbox_pdf
+
+    position = str(element.metadata.get("reading_order_caption_target_position") or "").strip()
+    caption_box = element.bbox_pdf
+    height = max(caption_box.height, min(max(page_height * 0.018, 6.0), 16.0))
+    if position == "caption-below-target":
+        y0 = min(page_height - height, target_bbox.y1 + 0.5)
+        y1 = min(page_height, y0 + height)
+    elif position == "caption-above-target":
+        y1 = max(height, target_bbox.y0 - 0.5)
+        y0 = max(0.0, y1 - height)
+    else:
+        y0 = max(0.0, min(page_height - height, caption_box.y0))
+        y1 = min(page_height, y0 + height)
+
+    x0 = max(0.0, min(page_width, min(caption_box.x0, target_bbox.x0)))
+    x1 = max(x0 + 1.0, min(page_width, max(caption_box.x1, target_bbox.x1)))
+    return BBox(x0=x0, y0=y0, x1=x1, y1=y1)
+
+
+def _caption_target_bbox(element: Any) -> BBox | None:
+    value = element.metadata.get("reading_order_caption_target_bbox_pdf")
+    if value is None:
+        return None
+    try:
+        return BBox.from_any(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _annotation_value(element: Any, key: str) -> str:
+    annotation = element.metadata.get("annotation")
+    if isinstance(annotation, dict) and annotation.get(key) is not None:
+        return str(annotation.get(key) or "").strip()
+    return str(element.metadata.get(key) or "").strip()
+
+
+def _visual_candidate_sort_key(element: Any, index: int) -> tuple[float, float, int]:
+    return (element.bbox_pdf.y0, element.bbox_pdf.x0, index)
+
+
+def _sidebar_candidate_sort_key(element: Any, index: int) -> tuple[str, float, float, int]:
+    return (
+        str(element.metadata.get("reading_order_sidebar_type") or ""),
+        element.bbox_pdf.y0,
+        element.bbox_pdf.x0,
+        index,
+    )
 
 
 def _external_structure_candidate_order(elements: list[Any]) -> list[int]:
@@ -1692,6 +1823,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_box_flow_successor_accuracy",
         "semantic_relation_graph_order_pair_accuracy",
         "semantic_relation_graph_successor_accuracy",
+        "semantic_structure_relation_order_pair_accuracy",
+        "semantic_structure_relation_successor_accuracy",
         "semantic_successor_consensus_order_pair_accuracy",
         "semantic_successor_consensus_successor_accuracy",
         "semantic_external_structure_order_pair_accuracy",
