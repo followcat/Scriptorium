@@ -145,6 +145,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `box-flow-v1`: a guarded weak-column fallback that uses a pdfminer-style column-biased candidate only after table, repeated-anchor column flow, and spatial graph decline the page.
 - `infer_box_flow_order()`: a reusable pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the same primitive for pairwise disagreement diagnostics even when `box-flow-v1` is not selected.
 - `infer_relation_graph_order()`: a geometry-only successor-graph candidate sorter. It builds local successor edges, selects a degree-constrained path cover with a max-regret rule, and serializes the chains for benchmark diagnostics without replacing the selected semantic order.
+- `infer_successor_consensus_order()`: a candidate-arbitration primitive. It takes adjacent successor edges from visual-yx, box-flow, relation-graph, and optional external-structure candidates, votes on those edges under acyclic one-predecessor/one-successor constraints, then serializes a path-cover candidate for benchmark scoring.
 - `reading_order_caption_type`: shallow caption evidence inferred from native/OCR text labels such as `Figure 1`, `Fig. 2`, `Table 3`, or `Algorithm 1`. Column-local captions stay in their column; captions that cross the column gutter become local flow breaks and carry `caption-label`, `figure-caption`/`table-caption`, and `cross-column-caption` evidence.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
@@ -168,6 +169,8 @@ The table guard intentionally preserves obvious three-or-more-column grids as ro
 The box-flow diagnostic is separate from strategy selection. It compares the current semantic order against a column-biased continuous order and reports pairwise disagreement counts. Low disagreement on labeled two-column papers is evidence that the current structural path agrees with a generic horizontal-flow candidate; high disagreement on dense webpage/OCR pages identifies samples that need semantic labels or external structure evidence before changing the default order.
 
 The relation-graph diagnostic is also separate from strategy selection. It compares the current semantic order against a geometry-only local successor graph and reports both pairwise and adjacent-successor disagreement. The successor metric is the more relevant signal for this candidate because the graph predicts immediate next-node relations before serialization. Current results show lower local successor disagreement than box-flow on the complex samples, but pairwise disagreement remains high enough that the graph must stay candidate-only until semantic sidecars or external model evidence can arbitrate when it should take over.
+
+The successor-consensus diagnostic is the next arbitration layer. It does not create new geometry rules; instead, it asks whether independent candidates agree on local successor edges. This follows relation/path-cover reading-order work: shared immediate edges are stronger evidence than broad global rank agreement, while disagreement highlights pages that need semantic sidecars, model structure evidence, or manual review.
 
 The sidebar and footnote rules follow the same principle as page artifacts: secondary material should stay addressable but should not distort the primary narrative flow. They are deliberately geometry-only and conservative, so regular three-column papers still keep three body columns while annual-report marginal notes and bottom-zone note clusters can be routed as secondary content.
 
@@ -314,6 +317,14 @@ Metrics:
 - `reading_order_relation_graph_successor_disagreement_count`: adjacent successor edges that are not preserved by the relation-graph candidate.
 - `reading_order_relation_graph_successor_disagreement_ratio`: relation-graph successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
 - `reading_order_relation_graph_successor_disagreement_page_count`: pages with at least one relation-graph successor-edge disagreement.
+- `reading_order_successor_consensus_pair_count`: text-element pairs compared against the successor-consensus candidate.
+- `reading_order_successor_consensus_disagreement_pair_count`: compared pairs whose order differs from the current semantic order.
+- `reading_order_successor_consensus_disagreement_ratio`: successor-consensus pairwise disagreement divided by compared pairs; diagnostic only, not a correctness score.
+- `reading_order_successor_consensus_disagreement_page_count`: pages with at least one successor-consensus pairwise disagreement.
+- `reading_order_successor_consensus_successor_edge_count`: adjacent reference successor edges compared against the successor-consensus candidate.
+- `reading_order_successor_consensus_successor_disagreement_count`: adjacent successor edges that are not preserved by the successor-consensus candidate.
+- `reading_order_successor_consensus_successor_disagreement_ratio`: successor-consensus successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
+- `reading_order_successor_consensus_successor_disagreement_page_count`: pages with at least one successor-consensus successor-edge disagreement.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -351,7 +362,7 @@ Metrics:
 - `semantic_candidate_arbitration_candidate`: best scored candidate used for the recommendation.
 - `semantic_candidate_successor_delta`: best candidate successor accuracy minus selected-order successor accuracy.
 - `semantic_candidate_pairwise_delta`: best candidate pairwise accuracy minus selected-order pairwise accuracy.
-- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
+- `semantic_visual_yx_order_pair_accuracy`, `semantic_visual_yx_successor_accuracy`, `semantic_box_flow_order_pair_accuracy`, `semantic_box_flow_successor_accuracy`, `semantic_relation_graph_order_pair_accuracy`, `semantic_relation_graph_successor_accuracy`, `semantic_successor_consensus_order_pair_accuracy`, `semantic_successor_consensus_successor_accuracy`, `semantic_external_structure_order_pair_accuracy`, and `semantic_external_structure_successor_accuracy`: flattened candidate metrics for CSV/report comparisons.
 - `semantic_sequence_similarity`: normalized sequence similarity against the sidecar sequence.
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
@@ -396,9 +407,9 @@ These relation-graph numbers are not correctness scores. They show that a local 
 Latest semantic candidate scoring validation:
 
 - `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
-- `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, and `relation_graph` candidates for each page.
+- `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, `relation_graph`, and `successor_consensus` candidates for each page.
 - `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure/Docling evidence has at least two distinct block orders on a page.
-- Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`.
+- Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy` and `semantic_successor_consensus_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
 - Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth` and benchmark field assertions in `tests/test_benchmark.py`.
