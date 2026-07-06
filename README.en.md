@@ -20,7 +20,7 @@
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
   <img alt="Benchmark" src="https://img.shields.io/badge/benchmark-visual%20%2B%20semantic-805ad5">
   <img alt="OCR" src="https://img.shields.io/badge/OCR-optional%20Paddle%2FDocling-0f766e">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-78%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-79%20passing-2f855a">
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@
 | Editing and translation | `source_text` is preserved; edits go to `edited_text`, translations go to `translated_text`, with XML/IR round trips. |
 | OCR and structure evidence | Supports image-only OCR fallback and PaddleOCR-VL / PP-Structure / Docling JSON fusion. |
 | Visual fidelity | Supports structured redraw, SVG/raster fidelity overlay, and benchmark-time font/scale/text-fit selection. |
-| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, relation graph, and successor-consensus diagnostics. |
+| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, relation graph, successor-consensus diagnostics, and conservative runtime arbitration. |
 | Quality metrics | Reports visual similarity, page diff distribution, semantic order, successor accuracy, candidate arbitration, and risk diagnostics. |
 
 ## What It Does
@@ -84,6 +84,12 @@ Scriptorium's structured mode keeps page content addressable:
 ```
 
 Each node can be traced back to source evidence, coordinates, style buckets, layout grouping, reading-order evidence, and edit targets. Complex vector regions can still fall back to local raster crops, but those are local elements with bbox/source metadata rather than a full-page background.
+
+## Reading Order
+
+Scriptorium treats reading order as evidence, not a single y/x sort. The runtime path includes recursive XY-Cut, repeated-anchor column flow, spatial graph fallback, guarded box-flow fallback, table islands, footnotes, sidebars, captions, and optional external PaddleOCR-VL / PP-Structure / Docling order evidence.
+
+`successor-consensus-arbitration-v1` is intentionally narrow. It only takes over when a page would otherwise fall back to weak `single-column-visual-order`, non-visual candidates such as box-flow and relation graph strongly agree, the consensus disagrees with visual-yx on adjacent successor edges, and the consensus order contains a clear column handoff. Benchmark reports expose `successor_consensus_arbitration_element_count` so external PDFs show when this path is actually active.
 
 ## Real-World Scores
 
@@ -232,5 +238,5 @@ pytest
 Current local test baseline:
 
 ```text
-78 passed
+79 passed
 ```

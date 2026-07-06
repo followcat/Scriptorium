@@ -20,7 +20,7 @@
   <img alt="Structured HTML" src="https://img.shields.io/badge/output-annotated%20HTML-6b46c1">
   <img alt="Benchmark" src="https://img.shields.io/badge/benchmark-visual%20%2B%20semantic-805ad5">
   <img alt="OCR" src="https://img.shields.io/badge/OCR-optional%20Paddle%2FDocling-0f766e">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-78%20passing-2f855a">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-79%20passing-2f855a">
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@
 | 可编辑与翻译 | `source_text` 永久保留，编辑写入 `edited_text`，翻译写入 `translated_text`，支持 XML/IR 往返。 |
 | OCR / 结构证据 | 支持 image-only OCR fallback，并可融合 PaddleOCR-VL / PP-Structure / Docling JSON。 |
 | 视觉保真 | 支持 structured redraw、SVG/raster fidelity overlay、字体/字号/text-fit 自动基准比较。 |
-| 语义顺序 | 支持 XY-Cut、多栏 flow、表格岛、页眉页脚、脚注、边栏、caption、relation graph、successor consensus 诊断。 |
+| 语义顺序 | 支持 XY-Cut、多栏 flow、表格岛、页眉页脚、脚注、边栏、caption、relation graph、successor consensus 诊断和保守 runtime 仲裁。 |
 | 质量指标 | 同时输出 `visual_similarity`、diff 分布、semantic order、successor accuracy、候选仲裁和风险指标。 |
 
 ## 项目定位
@@ -131,6 +131,8 @@ Relation-graph 候选排序现在也进入 benchmark 诊断。`infer_relation_gr
 
 Successor-consensus 候选现在把 visual-yx、box-flow、relation-graph 和 external-structure 的相邻后继边作为投票来源，用 acyclic path-cover 生成一个共识顺序。它同样只作为候选/诊断输出，用来观察多个独立候选是否支持同一局部阅读链。benchmark 还会记录 candidate count、selected-edge support、edge coverage、conflicted-edge ratio 和 high/medium/low agreement page counts，为后续 runtime arbitration 做基础。
 
+`successor-consensus-arbitration-v1` 现在是一个保守的 runtime 仲裁路径：只在页面原本会落回弱 `single-column-visual-order`、非 visual 候选（box-flow 与 relation-graph）高度一致、与 visual-yx 存在相邻后继分歧，并且共识顺序出现明确跨栏回跳时才接管。它用于少量行/稀疏两栏页面，不会替代表格、XY-Cut、column-flow、spatial-graph、box-flow、脚注、边栏或外部结构证据路径。
+
 页级候选仲裁诊断现在也会在没有 semantic sidecar 的 PDF 上工作。benchmark 会逐页比较 selected semantic order 与 successor-consensus 候选，输出 `reading_order_candidate_page_diagnostics`，并汇总 `reading_order_candidate_page_recommendation_counts`。推荐值包括 `keep-selected-supported`、`keep-selected-low-consensus`、`review-consensus`、`review-disagreement`、`needs-structure-evidence` 和 `unavailable`；它们用于安排复核/模型证据补充，不会自动改写转换结果。
 
 Semantic sidecar 现在还能对候选顺序直接打分。benchmark 会为有 ground truth 的页面同时评估 selected semantic order、visual-yx、box-flow、relation-graph、successor-consensus，以及可用时的 external-structure order 的 `semantic_*_order_pair_accuracy` 与 `semantic_*_successor_accuracy`，并记录 `semantic_best_candidate_by_successor`。这一步把“候选分歧诊断”推进成“候选能否接近人工语义顺序”的可复用证据，但仍不自动改写输出顺序。
@@ -141,7 +143,7 @@ Semantic sidecar 现在还能对候选顺序直接打分。benchmark 会为有 g
 
 `outputs/benchmark-semantic-arbitration-v1` 进一步记录首个仲裁诊断基线：5 个内置 fixture 全部是 `keep-selected`，平均 best-candidate successor delta 为 `-0.06`，平均 pairwise delta 为 `-0.02181818`。这说明诊断层能识别“候选接近但不应接管”的情况。
 
-Reading-order 输出现在带有可解释证据和启发式置信度：`reading_order_confidence`、`reading_order_evidence`、`reading_order_evidence_summary` 会进入 IR、annotation 和 HTML `data-scriptorium-*` 属性。benchmark 同步汇总 `reading_order_mean_confidence`、`reading_order_low_confidence_element_count`、`table_row_major_element_count`、`spatial_graph_element_count`、`box_flow_element_count`、`reading_order_caption_element_count`、`reading_order_box_flow_disagreement_ratio`、`reading_order_box_flow_successor_disagreement_ratio`、`reading_order_relation_graph_disagreement_ratio`、`reading_order_relation_graph_successor_disagreement_ratio`、`reading_order_successor_consensus_disagreement_ratio`、`reading_order_successor_consensus_successor_disagreement_ratio`、`reading_order_successor_consensus_selected_edge_support_ratio`、`reading_order_successor_consensus_selected_edge_coverage_ratio`、`reading_order_successor_consensus_conflicted_edge_ratio`、`reading_order_candidate_page_recommendation_counts`、`semantic_candidate_order_metrics`、`semantic_candidate_arbitration_recommendation`、`semantic_best_candidate_by_successor`、`reading_order_footnote_element_count`、`reading_order_sidebar_element_count`、`reading_order_evidence_counts`、`semantic_successor_accuracy` 和 successor edge counts。内置 fixtures relation-graph diagnostics v1 结果保持 `visual_similarity = 0.9906702`、`semantic_order_pair_accuracy = 1.0`、`semantic_successor_accuracy = 1.0`，box-flow 候选 successor disagreement 为 19/47，relation-graph 候选 successor disagreement 为 3/47，18 个表格文本节点标为 `table-row-major-v1`，平均 reading-order confidence 保持 `0.80113208`，风险保持 `0`，所有 fixture 都是 low risk。
+Reading-order 输出现在带有可解释证据和启发式置信度：`reading_order_confidence`、`reading_order_evidence`、`reading_order_evidence_summary` 会进入 IR、annotation 和 HTML `data-scriptorium-*` 属性。benchmark 同步汇总 `reading_order_mean_confidence`、`reading_order_low_confidence_element_count`、`table_row_major_element_count`、`spatial_graph_element_count`、`box_flow_element_count`、`successor_consensus_arbitration_element_count`、`reading_order_caption_element_count`、`reading_order_box_flow_disagreement_ratio`、`reading_order_box_flow_successor_disagreement_ratio`、`reading_order_relation_graph_disagreement_ratio`、`reading_order_relation_graph_successor_disagreement_ratio`、`reading_order_successor_consensus_disagreement_ratio`、`reading_order_successor_consensus_successor_disagreement_ratio`、`reading_order_successor_consensus_selected_edge_support_ratio`、`reading_order_successor_consensus_selected_edge_coverage_ratio`、`reading_order_successor_consensus_conflicted_edge_ratio`、`reading_order_candidate_page_recommendation_counts`、`semantic_candidate_order_metrics`、`semantic_candidate_arbitration_recommendation`、`semantic_best_candidate_by_successor`、`reading_order_footnote_element_count`、`reading_order_sidebar_element_count`、`reading_order_evidence_counts`、`semantic_successor_accuracy` 和 successor edge counts。内置 fixtures relation-graph diagnostics v1 结果保持 `visual_similarity = 0.9906702`、`semantic_order_pair_accuracy = 1.0`、`semantic_successor_accuracy = 1.0`，box-flow 候选 successor disagreement 为 19/47，relation-graph 候选 successor disagreement 为 3/47，18 个表格文本节点标为 `table-row-major-v1`，平均 reading-order confidence 保持 `0.80113208`，风险保持 `0`，所有 fixture 都是 low risk。
 
 `--html-mode fidelity` 是高保真 overlay 路径：HTML 可见层使用每页 SVG 或 raster 背景，识别出的文本/结构节点仍以透明 `contenteditable` 坐标锚点存在；未编辑时打印只输出背景层，已编辑或已翻译节点会作为局部白底 replacement layer 打印。`--html-mode auto --fidelity-background auto` 会同时比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选：
 
@@ -472,6 +474,7 @@ scriptorium benchmark \
 - table row-major element count
 - spatial graph element count
 - box-flow fallback element count
+- successor-consensus arbitration element count
 - recursive XY-Cut element count
 - reading-order page artifact count
 - reading-order footnote element count
@@ -602,9 +605,9 @@ pytest
 当前本地测试基线：
 
 ```text
-78 passed
+79 passed
 ```
 
 ## 项目状态
 
-This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, image-only OCR fallback, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, repeated-anchor two/three-column flow detection with table guard protection, spatial-graph weak-column fallback, guarded box-flow fallback plus candidate disagreement diagnostics, geometry-only relation-graph candidate diagnostics, successor-consensus candidate diagnostics with support/conflict metrics, page-level candidate arbitration diagnostics, sidecar-scored semantic candidate order metrics including external structure order, semantic candidate arbitration diagnostics, shallow caption-flow detection for figure/table/algorithm labels, local table-island segmentation for mixed table/body pages, page-artifact tagging, sidebar/marginalia secondary-flow routing, per-element reading-order confidence/evidence metadata, table-vs-column reading-order diagnostics, Paddle/PP-Structure/Docling external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, relation-graph/successor-consensus candidate arbitration, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
+This is a core-first prototype. It already has real PDF and real webpage benchmarks, stricter visual metrics, v2 layout grouping, native PDF span-level inline style preservation, PDF line-width alignment for structured text, SVG text-fit calibration with editable proxies, gated script-run positioning, native drawing SVG path output, fidelity SVG/raster overlay with edited/translated replacement printing, native image extraction, image-only OCR fallback, local raster fallback for dense vector regions, benchmark-time font profile/font-size/text-fit/background calibration, benchmark page limiting for large reports, recursive XY-Cut semantic order for sectioned multi-column pages, repeated-anchor two/three-column flow detection with table guard protection, spatial-graph weak-column fallback, guarded box-flow fallback plus candidate disagreement diagnostics, geometry-only relation-graph candidate diagnostics, successor-consensus candidate diagnostics with support/conflict metrics, conservative successor-consensus runtime arbitration, page-level candidate arbitration diagnostics, sidecar-scored semantic candidate order metrics including external structure order, semantic candidate arbitration diagnostics, shallow caption-flow detection for figure/table/algorithm labels, local table-island segmentation for mixed table/body pages, page-artifact tagging, sidebar/marginalia secondary-flow routing, per-element reading-order confidence/evidence metadata, table-vs-column reading-order diagnostics, Paddle/PP-Structure/Docling external evidence fusion, real-paper partial semantic ground truth, and strategy coverage metrics. The next useful work is running real model outputs through the fusion path, broader real-document semantic ground truth, richer OCR adapter mapping, relation-graph/successor-consensus candidate arbitration, and more precise edit-aware masks/reflow while keeping benchmark scores comparable.
