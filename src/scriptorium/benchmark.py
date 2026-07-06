@@ -369,6 +369,10 @@ def _run_case(
         "reading_order_successor_consensus_unavailable_page_count": stats[
             "reading_order_successor_consensus_unavailable_page_count"
         ],
+        "reading_order_candidate_page_diagnostics": stats["reading_order_candidate_page_diagnostics"],
+        "reading_order_candidate_page_recommendation_counts": stats[
+            "reading_order_candidate_page_recommendation_counts"
+        ],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
         "figure_region_count": stats["figure_region_count"],
@@ -546,6 +550,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     box_flow_diagnostics = _reading_order_box_flow_diagnostics(document)
     relation_graph_diagnostics = _reading_order_relation_graph_diagnostics(document)
     successor_consensus_diagnostics = _reading_order_successor_consensus_diagnostics(document)
+    candidate_page_diagnostics = _reading_order_candidate_page_diagnostics(document)
+    candidate_page_recommendation_counts = Counter(
+        str(page_diagnostic.get("recommendation") or "unknown")
+        for page_diagnostic in candidate_page_diagnostics
+    )
     structure_evidence = document.metadata.get("structure_evidence")
     if not isinstance(structure_evidence, dict):
         structure_evidence = {}
@@ -658,6 +667,10 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         **box_flow_diagnostics,
         **relation_graph_diagnostics,
         **successor_consensus_diagnostics,
+        "reading_order_candidate_page_diagnostics": candidate_page_diagnostics,
+        "reading_order_candidate_page_recommendation_counts": dict(
+            sorted(candidate_page_recommendation_counts.items())
+        ),
         "layout_region_counts": layout_region_counts,
         "table_region_count": int(layout_region_counts.get("table", 0)),
         "figure_region_count": int(layout_region_counts.get("figure", 0)),
@@ -812,6 +825,62 @@ def _successor_consensus_support_diagnostics(document: DocumentIR) -> dict[str, 
         "reading_order_successor_consensus_low_agreement_page_count": low_agreement_pages,
         "reading_order_successor_consensus_unavailable_page_count": unavailable_pages,
     }
+
+
+def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        if len(text_elements) < 2:
+            continue
+        reference_order = _selected_candidate_order(text_elements)
+        source_candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=False)
+        consensus = successor_consensus_diagnostics(
+            source_candidates,
+            item_count=len(text_elements),
+            base_order=reference_order,
+        )
+        pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
+        successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
+        recommendation, reason = _reading_order_candidate_page_recommendation(consensus, successor)
+        diagnostics.append(
+            {
+                "page_index": page.page_index,
+                "text_element_count": len(text_elements),
+                "candidate_names": sorted(source_candidates),
+                "candidate_count": consensus.candidate_count,
+                "agreement_level": consensus.agreement_level,
+                "selected_edge_support_ratio": consensus.selected_edge_support_ratio,
+                "selected_edge_coverage_ratio": consensus.selected_edge_coverage_ratio,
+                "conflicted_edge_ratio": consensus.conflicted_edge_ratio,
+                "consensus_pair_count": pairwise.pair_count,
+                "consensus_disagreement_pair_count": pairwise.disagreement_count,
+                "consensus_disagreement_ratio": pairwise.disagreement_ratio,
+                "consensus_successor_edge_count": successor.edge_count,
+                "consensus_successor_disagreement_count": successor.disagreement_count,
+                "consensus_successor_disagreement_ratio": successor.disagreement_ratio,
+                "recommendation": recommendation,
+                "reason": reason,
+            }
+        )
+    return diagnostics
+
+
+def _reading_order_candidate_page_recommendation(
+    consensus: Any,
+    successor_disagreement: Any,
+) -> tuple[str, str]:
+    if consensus.agreement_level == "unavailable":
+        return "unavailable", "not enough candidate successor evidence"
+    if successor_disagreement.disagreement_count == 0:
+        if consensus.agreement_level in {"high", "medium"}:
+            return "keep-selected-supported", "selected order agrees with candidate successor consensus"
+        return "keep-selected-low-consensus", "selected order agrees but candidate consensus is weak"
+    if consensus.agreement_level == "high":
+        return "review-consensus", "high-support consensus disagrees with selected order"
+    if consensus.agreement_level == "medium":
+        return "review-disagreement", "medium-support consensus disagrees with selected order"
+    return "needs-structure-evidence", "candidate consensus is weak or conflicted"
 
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
@@ -1373,6 +1442,10 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_successor_consensus_unavailable_pages": sum(
             int(case["reading_order_successor_consensus_unavailable_page_count"]) for case in cases
         ),
+        "reading_order_candidate_page_recommendation_counts": _sum_case_count_dicts(
+            cases,
+            "reading_order_candidate_page_recommendation_counts",
+        ),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -1494,6 +1567,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_successor_consensus_medium_agreement_page_count",
         "reading_order_successor_consensus_low_agreement_page_count",
         "reading_order_successor_consensus_unavailable_page_count",
+        "reading_order_candidate_page_recommendation_counts",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",

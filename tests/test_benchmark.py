@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from scriptorium.benchmark import (
     _page_reading_order_geometry_profile,
+    _reading_order_candidate_page_diagnostics,
     _semantic_candidate_arbitration_metrics,
     _semantic_candidate_orders,
     run_benchmark,
@@ -129,6 +130,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_successor_consensus_high_agreement_page_count" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_medium_agreement_page_count" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_low_agreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_candidate_page_diagnostics" in case for case in report["cases"])
+    assert all("reading_order_candidate_page_recommendation_counts" in case for case in report["cases"])
     assert all("layout_region_counts" in case for case in report["cases"])
     assert all("table_region_count" in case for case in report["cases"])
     assert all("raster_fallback_count" in case for case in report["cases"])
@@ -214,6 +217,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_successor_consensus_high_agreement_pages" in report["summary"]
     assert "total_reading_order_successor_consensus_medium_agreement_pages" in report["summary"]
     assert "total_reading_order_successor_consensus_low_agreement_pages" in report["summary"]
+    assert "reading_order_candidate_page_recommendation_counts" in report["summary"]
     assert "font_profile_counts" in report["summary"]
     assert report["summary"]["html_mode_counts"] == {"structured": 2}
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
@@ -324,6 +328,24 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
     assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
 
 
+def test_candidate_page_diagnostics_recommend_review_for_supported_disagreement() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("candidate-one", "Candidate one.", BBox(x0=10, y0=10, x1=70, y1=20), 1, 1),
+            ("selected-second", "Selected second.", BBox(x0=10, y0=50, x1=70, y1=60), 2, 3),
+            ("candidate-second", "Candidate second.", BBox(x0=10, y0=30, x1=70, y1=40), 3, 2),
+            ("candidate-fourth", "Candidate fourth.", BBox(x0=10, y0=70, x1=70, y1=80), 4, 4),
+        ]
+    )
+
+    diagnostics = _reading_order_candidate_page_diagnostics(document)
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["recommendation"] == "review-consensus"
+    assert diagnostics[0]["agreement_level"] == "high"
+    assert diagnostics[0]["consensus_successor_disagreement_count"] > 0
+
+
 def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
     metrics = _semantic_candidate_arbitration_metrics(
         selected_pairwise=0.75,
@@ -390,6 +412,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_successor_consensus_successor_disagreement_ratio" in csv_text
     assert "reading_order_successor_consensus_selected_edge_support_ratio" in csv_text
     assert "reading_order_successor_consensus_conflicted_edge_ratio" in csv_text
+    assert "reading_order_candidate_page_recommendation_counts" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_candidate_arbitration_recommendation" in csv_text
     assert "semantic_candidate_successor_delta" in csv_text
