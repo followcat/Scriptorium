@@ -82,7 +82,7 @@
 | Editing and translation | `source_text` is preserved; edits go to `edited_text`, translations go to `translated_text`, with XML/IR round trips. |
 | OCR and structure evidence | Supports image-only OCR fallback and PaddleOCR-VL / PP-Structure / Docling JSON fusion. |
 | Visual fidelity | Supports structured redraw, SVG/raster fidelity overlay, and benchmark-time font/scale/text-fit selection. |
-| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, caption-target proximity, relation graph, structure-relation, successor-consensus diagnostics, and conservative runtime arbitration. |
+| Semantic reading order | Supports XY-Cut, multi-column flow, table islands, headers/footers, footnotes, sidebars, captions, reading streams, caption-target proximity, relation graph, structure-relation, successor-consensus diagnostics, and conservative runtime arbitration. |
 | Quality metrics | Reports visual similarity, page diff distribution, semantic order, successor accuracy, candidate arbitration, and risk diagnostics. |
 
 <table>
@@ -127,6 +127,9 @@ Scriptorium's structured mode keeps page content addressable:
   data-scriptorium-style-id="style-004"
   data-scriptorium-semantic-order="12"
   data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+  data-scriptorium-reading-order-stream-id="body-main"
+  data-scriptorium-reading-order-stream-type="body"
+  data-scriptorium-reading-order-stream-index="12"
   data-scriptorium-reading-order-confidence="0.83"
   data-scriptorium-edit-target="edited_text"
   data-bbox-pdf="76.99,212.49,117.83,224.22"
@@ -141,6 +144,8 @@ Each node can be traced back to source evidence, coordinates, style buckets, lay
 ## Reading Order
 
 Scriptorium treats reading order as evidence, not a single y/x sort. The runtime path includes recursive XY-Cut, repeated-anchor column flow, spatial graph fallback, guarded box-flow fallback, table islands, footnotes, sidebars, captions, caption-to-object proximity evidence, and optional external PaddleOCR-VL / PP-Structure / Docling order evidence.
+
+Reading-order output now includes page-local stream metadata: `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index`. The main body is usually `body-main`; footnotes, left/right sidebars, header/footer artifacts, captions, and table islands become separate local streams. This follows the same architectural idea as PDF article threads: complex pages can expose multiple navigable reading paths instead of only one global sequence.
 
 Caption metadata now goes beyond lexical labels. Figure/table captions can be linked to nearby native images, local raster regions, or inferred layout regions, then exported as `reading_order_caption_target_*` metadata and `data-scriptorium-caption-target-*` HTML attributes. Benchmark reports include targeted/orphan caption counts and target coverage so figure/table relation quality can be measured before it affects runtime ordering.
 
