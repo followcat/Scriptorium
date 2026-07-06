@@ -46,7 +46,7 @@
 | 可编辑与翻译 | `source_text` 永久保留，编辑写入 `edited_text`，翻译写入 `translated_text`，支持 XML/IR 往返。 |
 | OCR / 结构证据 | 支持 image-only OCR fallback，并可融合 PaddleOCR-VL / PP-Structure / Docling JSON。 |
 | 视觉保真 | 支持 structured redraw、SVG/raster fidelity overlay、字体/字号/text-fit 自动基准比较。 |
-| 语义顺序 | 支持 XY-Cut、多栏 flow、表格岛、页眉页脚、脚注、边栏、caption、relation graph、successor consensus 诊断和保守 runtime 仲裁。 |
+| 语义顺序 | 支持 XY-Cut、多栏 flow、表格岛、页眉页脚、脚注、边栏、caption、caption-target proximity、relation graph、successor consensus 诊断和保守 runtime 仲裁。 |
 | 质量指标 | 同时输出 `visual_similarity`、diff 分布、semantic order、successor accuracy、候选仲裁和风险指标。 |
 
 <table>
