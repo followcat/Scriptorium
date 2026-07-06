@@ -1809,26 +1809,48 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_successor_accuracy",
         "semantic_successor_correct_count",
         "semantic_successor_total_count",
+        "semantic_relation_successor_accuracy",
+        "semantic_relation_successor_correct_count",
+        "semantic_relation_successor_total_count",
+        "semantic_relation_precedence_accuracy",
+        "semantic_relation_precedence_correct_count",
+        "semantic_relation_precedence_total_count",
+        "semantic_relation_missing_text_count",
         "semantic_candidate_order_metrics",
         "semantic_best_candidate_by_successor",
         "semantic_best_candidate_successor_accuracy",
+        "semantic_best_candidate_by_relation_successor",
+        "semantic_best_candidate_relation_successor_accuracy",
         "semantic_candidate_arbitration_recommendation",
         "semantic_candidate_arbitration_candidate",
         "semantic_candidate_arbitration_reason",
         "semantic_candidate_successor_delta",
         "semantic_candidate_pairwise_delta",
+        "semantic_candidate_relation_successor_delta",
         "semantic_visual_yx_order_pair_accuracy",
         "semantic_visual_yx_successor_accuracy",
+        "semantic_visual_yx_relation_successor_accuracy",
+        "semantic_visual_yx_relation_precedence_accuracy",
         "semantic_box_flow_order_pair_accuracy",
         "semantic_box_flow_successor_accuracy",
+        "semantic_box_flow_relation_successor_accuracy",
+        "semantic_box_flow_relation_precedence_accuracy",
         "semantic_relation_graph_order_pair_accuracy",
         "semantic_relation_graph_successor_accuracy",
+        "semantic_relation_graph_relation_successor_accuracy",
+        "semantic_relation_graph_relation_precedence_accuracy",
         "semantic_structure_relation_order_pair_accuracy",
         "semantic_structure_relation_successor_accuracy",
+        "semantic_structure_relation_relation_successor_accuracy",
+        "semantic_structure_relation_relation_precedence_accuracy",
         "semantic_successor_consensus_order_pair_accuracy",
         "semantic_successor_consensus_successor_accuracy",
+        "semantic_successor_consensus_relation_successor_accuracy",
+        "semantic_successor_consensus_relation_precedence_accuracy",
         "semantic_external_structure_order_pair_accuracy",
         "semantic_external_structure_successor_accuracy",
+        "semantic_external_structure_relation_successor_accuracy",
+        "semantic_external_structure_relation_precedence_accuracy",
         "semantic_ignored_text_count",
         "semantic_missing_text_count",
         "semantic_extra_text_count",
@@ -2155,6 +2177,25 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_successor_accuracy": selected_successor,
         "semantic_successor_correct_count": report.get("semantic_successor_correct_count") if available else 0,
         "semantic_successor_total_count": report.get("semantic_successor_total_count") if available else 0,
+        "semantic_relation_successor_accuracy": report.get("semantic_relation_successor_accuracy")
+        if available
+        else None,
+        "semantic_relation_successor_correct_count": report.get("semantic_relation_successor_correct_count")
+        if available
+        else 0,
+        "semantic_relation_successor_total_count": report.get("semantic_relation_successor_total_count")
+        if available
+        else 0,
+        "semantic_relation_precedence_accuracy": report.get("semantic_relation_precedence_accuracy")
+        if available
+        else None,
+        "semantic_relation_precedence_correct_count": report.get("semantic_relation_precedence_correct_count")
+        if available
+        else 0,
+        "semantic_relation_precedence_total_count": report.get("semantic_relation_precedence_total_count")
+        if available
+        else 0,
+        "semantic_relation_missing_text_count": report.get("semantic_relation_missing_text_count") if available else 0,
         "semantic_ignored_text_count": report.get("semantic_ignored_text_count") if available else 0,
         "semantic_ignored_text_zone_counts": report.get("semantic_ignored_text_zone_counts") if available else {},
         "semantic_ignored_text_role_counts": report.get("semantic_ignored_text_role_counts") if available else {},
@@ -2166,9 +2207,18 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "semantic_best_candidate_successor_accuracy": report.get("semantic_best_candidate_successor_accuracy")
         if available
         else None,
+        "semantic_best_candidate_by_relation_successor": report.get("semantic_best_candidate_by_relation_successor")
+        if available
+        else None,
+        "semantic_best_candidate_relation_successor_accuracy": report.get(
+            "semantic_best_candidate_relation_successor_accuracy"
+        )
+        if available
+        else None,
         **_semantic_candidate_arbitration_metrics(
             selected_pairwise=selected_pairwise,
             selected_successor=selected_successor,
+            selected_relation_successor=report.get("semantic_relation_successor_accuracy") if available else None,
             candidate_metrics=candidate_metrics,
         ),
         **_semantic_candidate_case_metrics(candidate_metrics),
@@ -2179,6 +2229,7 @@ def _semantic_candidate_arbitration_metrics(
     *,
     selected_pairwise: Any,
     selected_successor: Any,
+    selected_relation_successor: Any,
     candidate_metrics: dict[str, Any],
 ) -> dict[str, Any]:
     default = {
@@ -2187,11 +2238,13 @@ def _semantic_candidate_arbitration_metrics(
         "semantic_candidate_arbitration_reason": "no semantic candidate scores",
         "semantic_candidate_successor_delta": None,
         "semantic_candidate_pairwise_delta": None,
+        "semantic_candidate_relation_successor_delta": None,
     }
     if selected_pairwise is None or selected_successor is None or not candidate_metrics:
         return default
 
     valid_candidates: list[tuple[str, float, float]] = []
+    valid_relation_candidates: list[tuple[str, float, float]] = []
     for candidate_name, metrics in candidate_metrics.items():
         if not isinstance(metrics, dict):
             continue
@@ -2201,6 +2254,19 @@ def _semantic_candidate_arbitration_metrics(
         except (KeyError, TypeError, ValueError):
             continue
         valid_candidates.append((str(candidate_name), successor_accuracy, pairwise_accuracy))
+        relation_successor_accuracy = metrics.get("semantic_relation_successor_accuracy")
+        relation_precedence_accuracy = metrics.get("semantic_relation_precedence_accuracy")
+        if relation_successor_accuracy is not None:
+            try:
+                valid_relation_candidates.append(
+                    (
+                        str(candidate_name),
+                        float(relation_successor_accuracy),
+                        float(relation_precedence_accuracy if relation_precedence_accuracy is not None else 0.0),
+                    )
+                )
+            except (TypeError, ValueError):
+                pass
     if not valid_candidates:
         return default
 
@@ -2212,7 +2278,27 @@ def _semantic_candidate_arbitration_metrics(
     )
     successor_delta = round(best_successor - selected_successor_value, 8)
     pairwise_delta = round(best_pairwise - selected_pairwise_value, 8)
-    if successor_delta > 0 or (successor_delta == 0 and pairwise_delta > 0):
+
+    relation_delta: float | None = None
+    relation_recommendation: tuple[str, str] | None = None
+    if selected_relation_successor is not None and valid_relation_candidates:
+        selected_relation_value = float(selected_relation_successor)
+        relation_name, relation_successor, _relation_precedence = max(
+            valid_relation_candidates,
+            key=lambda item: (item[1], item[2], item[0]),
+        )
+        relation_delta = round(relation_successor - selected_relation_value, 8)
+        if relation_delta > 0:
+            relation_recommendation = (
+                relation_name,
+                "best candidate improves labelled relation successor edges",
+            )
+
+    if relation_recommendation is not None:
+        recommendation = f"consider-{relation_recommendation[0]}"
+        reason = relation_recommendation[1]
+        best_name = relation_recommendation[0]
+    elif successor_delta > 0 or (successor_delta == 0 and pairwise_delta > 0):
         recommendation = f"consider-{best_name}"
         reason = "best candidate improves labelled semantic order"
     else:
@@ -2224,6 +2310,7 @@ def _semantic_candidate_arbitration_metrics(
         "semantic_candidate_arbitration_reason": reason,
         "semantic_candidate_successor_delta": successor_delta,
         "semantic_candidate_pairwise_delta": pairwise_delta,
+        "semantic_candidate_relation_successor_delta": relation_delta,
     }
 
 
@@ -2249,6 +2336,24 @@ def _semantic_candidate_case_metrics(candidate_metrics: dict[str, Any]) -> dict[
                 f"semantic_{candidate_name}_successor_total_count": int(
                     candidate.get("semantic_successor_total_count") or 0
                 ),
+                f"semantic_{candidate_name}_relation_successor_accuracy": candidate.get(
+                    "semantic_relation_successor_accuracy"
+                ),
+                f"semantic_{candidate_name}_relation_successor_correct_count": int(
+                    candidate.get("semantic_relation_successor_correct_count") or 0
+                ),
+                f"semantic_{candidate_name}_relation_successor_total_count": int(
+                    candidate.get("semantic_relation_successor_total_count") or 0
+                ),
+                f"semantic_{candidate_name}_relation_precedence_accuracy": candidate.get(
+                    "semantic_relation_precedence_accuracy"
+                ),
+                f"semantic_{candidate_name}_relation_precedence_correct_count": int(
+                    candidate.get("semantic_relation_precedence_correct_count") or 0
+                ),
+                f"semantic_{candidate_name}_relation_precedence_total_count": int(
+                    candidate.get("semantic_relation_precedence_total_count") or 0
+                ),
             }
         )
     return metrics
@@ -2262,9 +2367,16 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_semantic_sequence_similarity": None,
             "mean_semantic_exact_page_match_rate": None,
             "mean_semantic_successor_accuracy": None,
+            "mean_semantic_relation_successor_accuracy": None,
+            "mean_semantic_relation_precedence_accuracy": None,
             "total_semantic_expected_text_count": 0,
             "total_semantic_successor_correct_count": 0,
             "total_semantic_successor_count": 0,
+            "total_semantic_relation_successor_correct_count": 0,
+            "total_semantic_relation_successor_count": 0,
+            "total_semantic_relation_precedence_correct_count": 0,
+            "total_semantic_relation_precedence_count": 0,
+            "total_semantic_relation_missing_text_count": 0,
             "total_semantic_ignored_text_count": 0,
             "total_semantic_ignored_text_zone_counts": {},
             "total_semantic_ignored_text_role_counts": {},
@@ -2272,10 +2384,12 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "total_semantic_missing_text_count": 0,
             "total_semantic_extra_text_count": 0,
             "semantic_best_candidate_by_successor_counts": {},
+            "semantic_best_candidate_by_relation_successor_counts": {},
             "semantic_candidate_arbitration_recommendation_counts": {},
             "semantic_candidate_arbitration_candidate_counts": {},
             "mean_semantic_candidate_successor_delta": None,
             "mean_semantic_candidate_pairwise_delta": None,
+            "mean_semantic_candidate_relation_successor_delta": None,
         }
         summary.update(_empty_semantic_candidate_summary())
         return summary
@@ -2287,12 +2401,24 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
     pairwise_total = sum(int(case["semantic_pairwise_total_count"]) for case in cases)
     successor_correct = sum(int(case["semantic_successor_correct_count"]) for case in cases)
     successor_total = sum(int(case["semantic_successor_total_count"]) for case in cases)
+    relation_successor_correct = sum(int(case["semantic_relation_successor_correct_count"]) for case in cases)
+    relation_successor_total = sum(int(case["semantic_relation_successor_total_count"]) for case in cases)
+    relation_precedence_correct = sum(int(case["semantic_relation_precedence_correct_count"]) for case in cases)
+    relation_precedence_total = sum(int(case["semantic_relation_precedence_total_count"]) for case in cases)
     summary = {
         "semantic_case_count": len(cases),
         "mean_semantic_order_pair_accuracy": round(pairwise_correct / pairwise_total if pairwise_total else 1.0, 8),
         "mean_semantic_successor_accuracy": round(
             successor_correct / successor_total if successor_total else 1.0,
             8,
+        ),
+        "mean_semantic_relation_successor_accuracy": _optional_case_ratio(
+            relation_successor_correct,
+            relation_successor_total,
+        ),
+        "mean_semantic_relation_precedence_accuracy": _optional_case_ratio(
+            relation_precedence_correct,
+            relation_precedence_total,
         ),
         "mean_semantic_sequence_similarity": round(
             1.0 - edit_distance / max(expected_count, actual_count, 1),
@@ -2305,6 +2431,13 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_semantic_expected_text_count": expected_count,
         "total_semantic_successor_correct_count": successor_correct,
         "total_semantic_successor_count": successor_total,
+        "total_semantic_relation_successor_correct_count": relation_successor_correct,
+        "total_semantic_relation_successor_count": relation_successor_total,
+        "total_semantic_relation_precedence_correct_count": relation_precedence_correct,
+        "total_semantic_relation_precedence_count": relation_precedence_total,
+        "total_semantic_relation_missing_text_count": sum(
+            int(case["semantic_relation_missing_text_count"]) for case in cases
+        ),
         "total_semantic_ignored_text_count": sum(int(case["semantic_ignored_text_count"]) for case in cases),
         "total_semantic_ignored_text_zone_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_zone_counts"),
         "total_semantic_ignored_text_role_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_role_counts"),
@@ -2312,6 +2445,10 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_semantic_missing_text_count": sum(int(case["semantic_missing_text_count"]) for case in cases),
         "total_semantic_extra_text_count": sum(int(case["semantic_extra_text_count"]) for case in cases),
         "semantic_best_candidate_by_successor_counts": _sum_case_values(cases, "semantic_best_candidate_by_successor"),
+        "semantic_best_candidate_by_relation_successor_counts": _sum_case_values(
+            cases,
+            "semantic_best_candidate_by_relation_successor",
+        ),
         "semantic_candidate_arbitration_recommendation_counts": _sum_case_values(
             cases,
             "semantic_candidate_arbitration_recommendation",
@@ -2328,6 +2465,10 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             cases,
             "semantic_candidate_pairwise_delta",
         ),
+        "mean_semantic_candidate_relation_successor_delta": _mean_optional_case_float(
+            cases,
+            "semantic_candidate_relation_successor_delta",
+        ),
     }
     summary.update(_semantic_candidate_summary(cases))
     return summary
@@ -2340,6 +2481,12 @@ def _empty_semantic_candidate_summary() -> dict[str, Any]:
         summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = None
         summary[f"total_semantic_{candidate_name}_successor_correct_count"] = 0
         summary[f"total_semantic_{candidate_name}_successor_count"] = 0
+        summary[f"mean_semantic_{candidate_name}_relation_successor_accuracy"] = None
+        summary[f"total_semantic_{candidate_name}_relation_successor_correct_count"] = 0
+        summary[f"total_semantic_{candidate_name}_relation_successor_count"] = 0
+        summary[f"mean_semantic_{candidate_name}_relation_precedence_accuracy"] = None
+        summary[f"total_semantic_{candidate_name}_relation_precedence_correct_count"] = 0
+        summary[f"total_semantic_{candidate_name}_relation_precedence_count"] = 0
     return summary
 
 
@@ -2350,6 +2497,18 @@ def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
         pairwise_total = sum(int(case[f"semantic_{candidate_name}_pairwise_total_count"]) for case in cases)
         successor_correct = sum(int(case[f"semantic_{candidate_name}_successor_correct_count"]) for case in cases)
         successor_total = sum(int(case[f"semantic_{candidate_name}_successor_total_count"]) for case in cases)
+        relation_successor_correct = sum(
+            int(case[f"semantic_{candidate_name}_relation_successor_correct_count"]) for case in cases
+        )
+        relation_successor_total = sum(
+            int(case[f"semantic_{candidate_name}_relation_successor_total_count"]) for case in cases
+        )
+        relation_precedence_correct = sum(
+            int(case[f"semantic_{candidate_name}_relation_precedence_correct_count"]) for case in cases
+        )
+        relation_precedence_total = sum(
+            int(case[f"semantic_{candidate_name}_relation_precedence_total_count"]) for case in cases
+        )
         summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = round(
             pairwise_correct / pairwise_total if pairwise_total else 1.0,
             8,
@@ -2360,6 +2519,18 @@ def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
         )
         summary[f"total_semantic_{candidate_name}_successor_correct_count"] = successor_correct
         summary[f"total_semantic_{candidate_name}_successor_count"] = successor_total
+        summary[f"mean_semantic_{candidate_name}_relation_successor_accuracy"] = _optional_case_ratio(
+            relation_successor_correct,
+            relation_successor_total,
+        )
+        summary[f"total_semantic_{candidate_name}_relation_successor_correct_count"] = relation_successor_correct
+        summary[f"total_semantic_{candidate_name}_relation_successor_count"] = relation_successor_total
+        summary[f"mean_semantic_{candidate_name}_relation_precedence_accuracy"] = _optional_case_ratio(
+            relation_precedence_correct,
+            relation_precedence_total,
+        )
+        summary[f"total_semantic_{candidate_name}_relation_precedence_correct_count"] = relation_precedence_correct
+        summary[f"total_semantic_{candidate_name}_relation_precedence_count"] = relation_precedence_total
     return summary
 
 
@@ -2385,6 +2556,12 @@ def _mean_optional_case_float(cases: list[dict[str, Any]], key: str) -> float | 
     if not values:
         return None
     return round(sum(values) / len(values), 8)
+
+
+def _optional_case_ratio(correct: int, total: int) -> float | None:
+    if total <= 0:
+        return None
+    return round(correct / total, 8)
 
 
 def _percentile(values: list[float], percentile: float) -> float:

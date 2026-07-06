@@ -153,13 +153,18 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("semantic_candidate_order_metrics" in case for case in report["cases"])
     assert all("semantic_best_candidate_by_successor" in case for case in report["cases"])
     assert all("semantic_best_candidate_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_best_candidate_by_relation_successor" in case for case in report["cases"])
+    assert all("semantic_best_candidate_relation_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_candidate_arbitration_recommendation" in case for case in report["cases"])
     assert all("semantic_candidate_arbitration_candidate" in case for case in report["cases"])
     assert all("semantic_candidate_successor_delta" in case for case in report["cases"])
+    assert all("semantic_candidate_relation_successor_delta" in case for case in report["cases"])
     assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_relation_graph_relation_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_structure_relation_successor_accuracy" in case for case in report["cases"])
+    assert all("semantic_structure_relation_relation_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_successor_consensus_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_external_structure_successor_accuracy" in case for case in report["cases"])
     assert all(case["font_profile"] == "browser-default" for case in report["cases"])
@@ -249,17 +254,23 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["semantic_case_count"] == 2
     assert report["summary"]["mean_semantic_order_pair_accuracy"] == 1
     assert report["summary"]["mean_semantic_successor_accuracy"] == 1
+    assert report["summary"]["mean_semantic_relation_successor_accuracy"] is None
+    assert report["summary"]["total_semantic_relation_successor_count"] == 0
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
     assert "total_semantic_successor_correct_count" in report["summary"]
     assert "total_semantic_successor_count" in report["summary"]
     assert "semantic_best_candidate_by_successor_counts" in report["summary"]
+    assert "semantic_best_candidate_by_relation_successor_counts" in report["summary"]
     assert "semantic_candidate_arbitration_recommendation_counts" in report["summary"]
     assert "semantic_candidate_arbitration_candidate_counts" in report["summary"]
     assert "mean_semantic_candidate_successor_delta" in report["summary"]
+    assert "mean_semantic_candidate_relation_successor_delta" in report["summary"]
     assert "mean_semantic_visual_yx_successor_accuracy" in report["summary"]
     assert "mean_semantic_box_flow_successor_accuracy" in report["summary"]
     assert "mean_semantic_relation_graph_successor_accuracy" in report["summary"]
+    assert "mean_semantic_relation_graph_relation_successor_accuracy" in report["summary"]
     assert "mean_semantic_structure_relation_successor_accuracy" in report["summary"]
+    assert "mean_semantic_structure_relation_relation_successor_accuracy" in report["summary"]
     assert "mean_semantic_successor_consensus_successor_accuracy" in report["summary"]
     assert "mean_semantic_external_structure_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
@@ -477,6 +488,7 @@ def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
     metrics = _semantic_candidate_arbitration_metrics(
         selected_pairwise=0.75,
         selected_successor=0.5,
+        selected_relation_successor=None,
         candidate_metrics={
             "visual_yx": {
                 "semantic_order_pair_accuracy": 0.75,
@@ -493,6 +505,33 @@ def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
     assert metrics["semantic_candidate_arbitration_candidate"] == "relation_graph"
     assert metrics["semantic_candidate_successor_delta"] == 0.25
     assert metrics["semantic_candidate_pairwise_delta"] == 0.15
+
+
+def test_semantic_candidate_arbitration_uses_relation_edges_when_available() -> None:
+    metrics = _semantic_candidate_arbitration_metrics(
+        selected_pairwise=1.0,
+        selected_successor=1.0,
+        selected_relation_successor=0.5,
+        candidate_metrics={
+            "visual_yx": {
+                "semantic_order_pair_accuracy": 1.0,
+                "semantic_successor_accuracy": 1.0,
+                "semantic_relation_successor_accuracy": 0.5,
+                "semantic_relation_precedence_accuracy": 1.0,
+            },
+            "structure_relation": {
+                "semantic_order_pair_accuracy": 1.0,
+                "semantic_successor_accuracy": 1.0,
+                "semantic_relation_successor_accuracy": 1.0,
+                "semantic_relation_precedence_accuracy": 1.0,
+            },
+        },
+    )
+
+    assert metrics["semantic_candidate_arbitration_recommendation"] == "consider-structure_relation"
+    assert metrics["semantic_candidate_arbitration_candidate"] == "structure_relation"
+    assert metrics["semantic_candidate_relation_successor_delta"] == 0.5
+    assert metrics["semantic_candidate_successor_delta"] == 0
 
 
 def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
@@ -547,8 +586,12 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "semantic_candidate_order_metrics" in csv_text
     assert "semantic_candidate_arbitration_recommendation" in csv_text
     assert "semantic_candidate_successor_delta" in csv_text
+    assert "semantic_candidate_relation_successor_delta" in csv_text
+    assert "semantic_relation_successor_accuracy" in csv_text
     assert "semantic_relation_graph_successor_accuracy" in csv_text
+    assert "semantic_relation_graph_relation_successor_accuracy" in csv_text
     assert "semantic_structure_relation_successor_accuracy" in csv_text
+    assert "semantic_structure_relation_relation_successor_accuracy" in csv_text
     assert "semantic_successor_consensus_successor_accuracy" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
     assert "reading_order_repeated_anchor_page_count" in csv_text

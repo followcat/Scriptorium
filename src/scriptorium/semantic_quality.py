@@ -91,8 +91,15 @@ def _compare_page(
     candidate_orders: dict[str, dict[int, list[str]]],
 ) -> dict[str, Any]:
     page_index = int(page_truth.get("page_index", 0))
-    match_mode = str(page_truth.get("match_mode", "full-sequence"))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
+    relation_edges = _page_relation_edges(page_truth)
+    has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
+    match_mode = str(
+        page_truth.get(
+            "match_mode",
+            "ordered-subsequence" if has_relation_edges and not expected else "full-sequence",
+        )
+    )
     page = document.pages[page_index]
     actual_elements = [
         element
@@ -112,8 +119,10 @@ def _compare_page(
             page.height_pt,
             include_sequences=True,
             include_ignored_texts=True,
+            ignored_label_texts=_merged_label_texts(expected, relation_edges),
         )
     )
+    page_report.update(_relation_quality(actual_elements, relation_edges))
 
     candidate_reports: dict[str, Any] = {}
     for candidate_name, page_orders in sorted(candidate_orders.items()):
@@ -129,10 +138,149 @@ def _compare_page(
             include_sequences=False,
             include_ignored_texts=False,
         )
+        candidate_reports[candidate_name].update(_relation_quality(candidate_elements, relation_edges))
     if candidate_reports:
         page_report["candidate_orders"] = candidate_reports
 
     return page_report
+
+
+def _page_relation_edges(page_truth: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
+    return {
+        "successor_edges": _relation_edges_from_any(
+            _combined_relation_values(
+                page_truth.get("successor_edges"),
+                page_truth.get("successor_relations"),
+            )
+        ),
+        "precedence_edges": _relation_edges_from_any(
+            _combined_relation_values(
+                page_truth.get("precedence_edges"),
+                page_truth.get("order_edges"),
+            )
+        ),
+    }
+
+
+def _combined_relation_values(*values: Any) -> list[Any]:
+    combined: list[Any] = []
+    for value in values:
+        if isinstance(value, list):
+            combined.extend(value)
+    return combined
+
+
+def _relation_edges_from_any(value: Any) -> list[tuple[str, str]]:
+    if not isinstance(value, list):
+        return []
+    edges: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        source: Any = None
+        target: Any = None
+        if isinstance(item, dict):
+            source = item.get("source", item.get("from"))
+            target = item.get("target", item.get("to"))
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            source = item[0]
+            target = item[1]
+        source_text = str(source or "").strip()
+        target_text = str(target or "").strip()
+        edge = (source_text, target_text)
+        if not source_text or not target_text or source_text == target_text or edge in seen:
+            continue
+        edges.append(edge)
+        seen.add(edge)
+    return edges
+
+
+def _merged_label_texts(expected: list[str], relation_edges: dict[str, list[tuple[str, str]]]) -> list[str]:
+    labels = list(expected)
+    seen = set(labels)
+    for edge in [*relation_edges["successor_edges"], *relation_edges["precedence_edges"]]:
+        for text in edge:
+            if text not in seen:
+                labels.append(text)
+                seen.add(text)
+    return labels
+
+
+def _relation_quality(
+    actual_elements: list[Any],
+    relation_edges: dict[str, list[tuple[str, str]]],
+) -> dict[str, Any]:
+    successor_edges = relation_edges["successor_edges"]
+    precedence_edges = relation_edges["precedence_edges"]
+    positions = _first_text_positions([element.source_text.strip() for element in actual_elements])
+
+    successor_correct, successor_missing = _relation_successor_counts(successor_edges, positions)
+    precedence_correct, precedence_missing = _relation_precedence_counts(precedence_edges, positions)
+    missing_labels = successor_missing | precedence_missing
+    return {
+        "relation_successor_correct_count": successor_correct,
+        "relation_successor_total_count": len(successor_edges),
+        "relation_successor_accuracy": _optional_ratio(successor_correct, len(successor_edges)),
+        "relation_precedence_correct_count": precedence_correct,
+        "relation_precedence_total_count": len(precedence_edges),
+        "relation_precedence_accuracy": _optional_ratio(precedence_correct, len(precedence_edges)),
+        "relation_missing_text_count": len(missing_labels),
+        "relation_missing_texts": sorted(missing_labels),
+    }
+
+
+def _first_text_positions(actual: list[str]) -> dict[str, int]:
+    positions: dict[str, int] = {}
+    for index, text in enumerate(actual):
+        if text and text not in positions:
+            positions[text] = index
+    return positions
+
+
+def _relation_successor_counts(
+    edges: list[tuple[str, str]],
+    positions: dict[str, int],
+) -> tuple[int, set[str]]:
+    if not edges:
+        return 0, set()
+    labelled_positions = {
+        positions[text]
+        for edge in edges
+        for text in edge
+        if text in positions
+    }
+    correct = 0
+    missing: set[str] = set()
+    for source, target in edges:
+        source_position = positions.get(source)
+        target_position = positions.get(target)
+        if source_position is None:
+            missing.add(source)
+        if target_position is None:
+            missing.add(target)
+        if source_position is None or target_position is None or source_position >= target_position:
+            continue
+        if any(source_position < other_position < target_position for other_position in labelled_positions):
+            continue
+        correct += 1
+    return correct, missing
+
+
+def _relation_precedence_counts(
+    edges: list[tuple[str, str]],
+    positions: dict[str, int],
+) -> tuple[int, set[str]]:
+    correct = 0
+    missing: set[str] = set()
+    for source, target in edges:
+        source_position = positions.get(source)
+        target_position = positions.get(target)
+        if source_position is None:
+            missing.add(source)
+        if target_position is None:
+            missing.add(target)
+        if source_position is not None and target_position is not None and source_position < target_position:
+            correct += 1
+    return correct, missing
 
 
 def _sequence_quality(
@@ -143,14 +291,16 @@ def _sequence_quality(
     *,
     include_sequences: bool,
     include_ignored_texts: bool,
+    ignored_label_texts: list[str] | None = None,
 ) -> dict[str, Any]:
     actual = [element.source_text.strip() for element in actual_elements]
     matched_positions = _matched_positions(expected, actual)
+    ignored_label_positions = _matched_positions(ignored_label_texts or expected, actual)
     matched_count = sum(1 for position in matched_positions if position is not None)
     missing_texts = [text for text, position in zip(expected, matched_positions) if position is None]
     extra_texts = [] if match_mode == "ordered-subsequence" else _extra_texts(expected, actual)
     ignored_texts = (
-        _ignored_text_entries(actual_elements, matched_positions, page_height)
+        _ignored_text_entries(actual_elements, ignored_label_positions, page_height)
         if match_mode == "ordered-subsequence"
         else []
     )
@@ -173,7 +323,7 @@ def _sequence_quality(
         "expected_text_count": len(expected),
         "actual_text_count": len(actual),
         "matched_text_count": matched_count,
-        "ignored_text_count": max(0, len(actual) - matched_count) if match_mode == "ordered-subsequence" else 0,
+        "ignored_text_count": len(ignored_texts) if match_mode == "ordered-subsequence" else 0,
         "ignored_text_zone_counts": dict(sorted(ignored_zone_counts.items())),
         "ignored_text_role_counts": dict(sorted(ignored_role_counts.items())),
         "ignored_text_source_counts": dict(sorted(ignored_source_counts.items())),
@@ -356,6 +506,17 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     pairwise_total = sum(int(page["pairwise_total_count"]) for page in pages)
     successor_correct = sum(int(page["successor_correct_count"]) for page in pages)
     successor_total = sum(int(page["successor_total_count"]) for page in pages)
+    relation_successor_correct = sum(int(page["relation_successor_correct_count"]) for page in pages)
+    relation_successor_total = sum(int(page["relation_successor_total_count"]) for page in pages)
+    relation_precedence_correct = sum(int(page["relation_precedence_correct_count"]) for page in pages)
+    relation_precedence_total = sum(int(page["relation_precedence_total_count"]) for page in pages)
+    relation_missing_texts = sorted(
+        {
+            str(text)
+            for page in pages
+            for text in page.get("relation_missing_texts", [])
+        }
+    )
     return {
         "semantic_page_count": len(pages),
         "semantic_expected_text_count": expected_count,
@@ -377,6 +538,20 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_successor_accuracy": _round_ratio(
             successor_correct / successor_total if successor_total else 1.0
         ),
+        "semantic_relation_successor_correct_count": relation_successor_correct,
+        "semantic_relation_successor_total_count": relation_successor_total,
+        "semantic_relation_successor_accuracy": _optional_ratio(
+            relation_successor_correct,
+            relation_successor_total,
+        ),
+        "semantic_relation_precedence_correct_count": relation_precedence_correct,
+        "semantic_relation_precedence_total_count": relation_precedence_total,
+        "semantic_relation_precedence_accuracy": _optional_ratio(
+            relation_precedence_correct,
+            relation_precedence_total,
+        ),
+        "semantic_relation_missing_text_count": len(relation_missing_texts),
+        "semantic_relation_missing_texts": relation_missing_texts,
         "semantic_exact_page_match_rate": _round_ratio(
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),
@@ -407,6 +582,10 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
         pairwise_total = sum(int(page["pairwise_total_count"]) for page in page_metrics)
         successor_correct = sum(int(page["successor_correct_count"]) for page in page_metrics)
         successor_total = sum(int(page["successor_total_count"]) for page in page_metrics)
+        relation_successor_correct = sum(int(page["relation_successor_correct_count"]) for page in page_metrics)
+        relation_successor_total = sum(int(page["relation_successor_total_count"]) for page in page_metrics)
+        relation_precedence_correct = sum(int(page["relation_precedence_correct_count"]) for page in page_metrics)
+        relation_precedence_total = sum(int(page["relation_precedence_total_count"]) for page in page_metrics)
         metrics[name] = {
             "semantic_page_count": len(page_metrics),
             "semantic_expected_text_count": expected_count,
@@ -425,6 +604,18 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
             "semantic_successor_total_count": successor_total,
             "semantic_successor_accuracy": _round_ratio(
                 successor_correct / successor_total if successor_total else 1.0
+            ),
+            "semantic_relation_successor_correct_count": relation_successor_correct,
+            "semantic_relation_successor_total_count": relation_successor_total,
+            "semantic_relation_successor_accuracy": _optional_ratio(
+                relation_successor_correct,
+                relation_successor_total,
+            ),
+            "semantic_relation_precedence_correct_count": relation_precedence_correct,
+            "semantic_relation_precedence_total_count": relation_precedence_total,
+            "semantic_relation_precedence_accuracy": _optional_ratio(
+                relation_precedence_correct,
+                relation_precedence_total,
             ),
             "semantic_exact_page_match_rate": _round_ratio(
                 sum(1 for page in page_metrics if bool(page["exact_match"])) / len(page_metrics)
@@ -445,6 +636,40 @@ def _summarize_candidate_orders(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_candidate_order_metrics": metrics,
         "semantic_best_candidate_by_successor": best_name,
         "semantic_best_candidate_successor_accuracy": best_metrics["semantic_successor_accuracy"],
+        **_best_relation_candidate(metrics),
+    }
+
+
+def _best_relation_candidate(metrics: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    valid_candidates: list[tuple[str, float, float, float]] = []
+    for candidate_name, candidate_metrics in metrics.items():
+        if int(candidate_metrics.get("semantic_relation_successor_total_count") or 0) <= 0:
+            continue
+        relation_successor_accuracy = candidate_metrics.get("semantic_relation_successor_accuracy")
+        if relation_successor_accuracy is None:
+            continue
+        relation_precedence_accuracy = candidate_metrics.get("semantic_relation_precedence_accuracy")
+        valid_candidates.append(
+            (
+                str(candidate_name),
+                float(relation_successor_accuracy),
+                float(relation_precedence_accuracy if relation_precedence_accuracy is not None else 0.0),
+                float(candidate_metrics["semantic_successor_accuracy"]),
+            )
+        )
+    if not valid_candidates:
+        return {
+            "semantic_best_candidate_by_relation_successor": None,
+            "semantic_best_candidate_relation_successor_accuracy": None,
+        }
+
+    best_name, relation_successor, _relation_precedence, _sequence_successor = max(
+        valid_candidates,
+        key=lambda item: (item[1], item[2], item[3], item[0]),
+    )
+    return {
+        "semantic_best_candidate_by_relation_successor": best_name,
+        "semantic_best_candidate_relation_successor_accuracy": relation_successor,
     }
 
 
@@ -459,3 +684,9 @@ def _sum_page_count_dicts(pages: list[dict[str, Any]], key: str) -> dict[str, in
 
 def _round_ratio(value: float) -> float:
     return round(max(0.0, min(1.0, float(value))), 8)
+
+
+def _optional_ratio(correct: int, total: int) -> float | None:
+    if total <= 0:
+        return None
+    return _round_ratio(correct / total)

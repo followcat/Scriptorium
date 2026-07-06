@@ -201,6 +201,83 @@ def test_candidate_orders_are_scored_against_semantic_ground_truth(tmp_path: Pat
     assert report["semantic_best_candidate_successor_accuracy"] == 1
 
 
+def test_relation_edges_ground_truth_scores_selected_and_candidate_orders(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    semantic_ground_truth = source_pdf.with_suffix(".semantic-order.json")
+    semantic_ground_truth.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "successor_edges": [["A", "B"], {"source": "C", "target": "D"}],
+                        "precedence_edges": [["A", "D"], {"from": "B", "to": "D"}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "C", "B", "D"])
+
+    report = compare_semantic_reading_order(
+        document,
+        source_pdf,
+        tmp_path / "semantic",
+        candidate_orders={
+            "selected_like": {0: ["e0", "e1", "e2", "e3"]},
+            "fixed": {0: ["e0", "e2", "e1", "e3"]},
+        },
+    )
+    page = report["pages"][0]
+    page_candidates = page["candidate_orders"]
+
+    assert page["match_mode"] == "ordered-subsequence"
+    assert page["expected_text_count"] == 0
+    assert page["extra_text_count"] == 0
+    assert page["ignored_text_count"] == 0
+    assert report["semantic_relation_successor_correct_count"] == 0
+    assert report["semantic_relation_successor_total_count"] == 2
+    assert report["semantic_relation_successor_accuracy"] == 0
+    assert report["semantic_relation_precedence_correct_count"] == 2
+    assert report["semantic_relation_precedence_total_count"] == 2
+    assert report["semantic_relation_precedence_accuracy"] == 1
+    assert page_candidates["selected_like"]["relation_successor_accuracy"] == 0
+    assert page_candidates["fixed"]["relation_successor_accuracy"] == 1
+    assert report["semantic_candidate_order_metrics"]["fixed"]["semantic_relation_successor_accuracy"] == 1
+    assert report["semantic_best_candidate_by_relation_successor"] == "fixed"
+    assert report["semantic_best_candidate_relation_successor_accuracy"] == 1
+
+
+def test_relation_edges_report_missing_labels(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    source_pdf.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "successor_edges": [["A", "Missing"]],
+                        "precedence_edges": [["Missing", "B"]],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "B"])
+
+    report = compare_semantic_reading_order(document, source_pdf, tmp_path / "semantic")
+
+    assert report["semantic_relation_missing_text_count"] == 1
+    assert report["semantic_relation_missing_texts"] == ["Missing"]
+    assert report["semantic_relation_successor_accuracy"] == 0
+    assert report["semantic_relation_precedence_accuracy"] == 0
+
+
 def _document_with_texts(texts: list[str]) -> DocumentIR:
     elements = []
     for index, text in enumerate(texts):
