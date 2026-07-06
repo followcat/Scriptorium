@@ -146,6 +146,7 @@ PDF text is positioned drawing evidence, not guaranteed semantic text order. The
 - `infer_box_flow_order()`: a reusable pdfminer-style candidate sorter with a continuous `boxes_flow` control. Benchmark uses the same primitive for pairwise disagreement diagnostics even when `box-flow-v1` is not selected.
 - `infer_relation_graph_order()`: a geometry-only successor-graph candidate sorter. It builds local successor edges, selects a degree-constrained path cover with a max-regret rule, and serializes the chains for benchmark diagnostics without replacing the selected semantic order.
 - `infer_successor_consensus_order()`: a candidate-arbitration primitive. It takes adjacent successor edges from visual-yx, box-flow, relation-graph, and optional external-structure candidates, votes on those edges under acyclic one-predecessor/one-successor constraints, then serializes a path-cover candidate for benchmark scoring.
+- `successor_consensus_diagnostics()`: exposes the same candidate plus support metrics: candidate count, candidate/unique edge counts, selected-edge support ratio, selected-edge coverage ratio, conflicted-edge ratio, and `high` / `medium` / `low` / `unavailable` agreement level.
 - `reading_order_caption_type`: shallow caption evidence inferred from native/OCR text labels such as `Figure 1`, `Fig. 2`, `Table 3`, or `Algorithm 1`. Column-local captions stay in their column; captions that cross the column gutter become local flow breaks and carry `caption-label`, `figure-caption`/`table-caption`, and `cross-column-caption` evidence.
 - `mixed-table-column-flow-v1`: a local table-island backend for mixed pages. It detects consecutive rows with repeated short-cell column slots, preserves those islands as row-major subregions, and infers surrounding prose columns from non-table text so table cells do not distort body-column detection.
 - `table-row-major-v1`: a pure table-grid backend for table-dominated pages. It preserves row-major order with explicit table evidence instead of reporting an unqualified `visual-yx` fallback.
@@ -170,7 +171,7 @@ The box-flow diagnostic is separate from strategy selection. It compares the cur
 
 The relation-graph diagnostic is also separate from strategy selection. It compares the current semantic order against a geometry-only local successor graph and reports both pairwise and adjacent-successor disagreement. The successor metric is the more relevant signal for this candidate because the graph predicts immediate next-node relations before serialization. Current results show lower local successor disagreement than box-flow on the complex samples, but pairwise disagreement remains high enough that the graph must stay candidate-only until semantic sidecars or external model evidence can arbitrate when it should take over.
 
-The successor-consensus diagnostic is the next arbitration layer. It does not create new geometry rules; instead, it asks whether independent candidates agree on local successor edges. This follows relation/path-cover reading-order work: shared immediate edges are stronger evidence than broad global rank agreement, while disagreement highlights pages that need semantic sidecars, model structure evidence, or manual review.
+The successor-consensus diagnostic is the next arbitration layer. It does not create new geometry rules; instead, it asks whether independent candidates agree on local successor edges. This follows relation/path-cover reading-order work: shared immediate edges are stronger evidence than broad global rank agreement, while disagreement highlights pages that need semantic sidecars, model structure evidence, or manual review. The support/conflict metrics are intentionally separate from correctness: a high-support consensus can still be wrong, but a low-support or high-conflict page should not be automatically reordered without stronger evidence.
 
 The sidebar and footnote rules follow the same principle as page artifacts: secondary material should stay addressable but should not distort the primary narrative flow. They are deliberately geometry-only and conservative, so regular three-column papers still keep three body columns while annual-report marginal notes and bottom-zone note clusters can be routed as secondary content.
 
@@ -325,6 +326,17 @@ Metrics:
 - `reading_order_successor_consensus_successor_disagreement_count`: adjacent successor edges that are not preserved by the successor-consensus candidate.
 - `reading_order_successor_consensus_successor_disagreement_ratio`: successor-consensus successor disagreement divided by compared successor edges; diagnostic only, not a correctness score.
 - `reading_order_successor_consensus_successor_disagreement_page_count`: pages with at least one successor-consensus successor-edge disagreement.
+- `reading_order_successor_consensus_candidate_page_count`: pages with at least two editable text nodes where successor-consensus could be evaluated.
+- `reading_order_successor_consensus_mean_candidate_count`: average number of source candidates available per evaluated page.
+- `reading_order_successor_consensus_candidate_edge_count`: total adjacent edges contributed by all source candidates.
+- `reading_order_successor_consensus_unique_edge_count`: distinct adjacent edges proposed by the source candidates.
+- `reading_order_successor_consensus_selected_edge_count`: edges selected into the consensus path cover.
+- `reading_order_successor_consensus_selected_edge_vote_count`: total votes behind selected consensus edges.
+- `reading_order_successor_consensus_selected_edge_support_ratio`: selected-edge votes divided by selected-edge capacity across available source candidates.
+- `reading_order_successor_consensus_selected_edge_coverage_ratio`: selected consensus edges divided by the maximum page-local successor edges.
+- `reading_order_successor_consensus_conflicted_edge_count`: candidate edges whose source or target participates in more than one proposed successor/predecessor relation.
+- `reading_order_successor_consensus_conflicted_edge_ratio`: conflicted candidate edges divided by unique candidate edges.
+- `reading_order_successor_consensus_high_agreement_page_count`, `reading_order_successor_consensus_medium_agreement_page_count`, `reading_order_successor_consensus_low_agreement_page_count`, and `reading_order_successor_consensus_unavailable_page_count`: page-level agreement buckets for runtime-arbitration triage.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.
@@ -412,7 +424,7 @@ Latest semantic candidate scoring validation:
 - Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy` and `semantic_successor_consensus_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
-- Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth` and benchmark field assertions in `tests/test_benchmark.py`.
+- Unit coverage lives in `tests/test_semantic_quality.py::test_candidate_orders_are_scored_against_semantic_ground_truth`, `tests/test_reading_order.py::test_successor_consensus_diagnostics_report_support_and_conflict`, `tests/test_reading_order.py::test_successor_consensus_diagnostics_downgrades_cycle_conflict`, and benchmark field assertions in `tests/test_benchmark.py`.
 
 Built-in semantic candidate baseline:
 
