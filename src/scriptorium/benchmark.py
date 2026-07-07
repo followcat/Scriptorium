@@ -389,6 +389,11 @@ def _run_case(
         "reading_order_candidate_page_recommendation_counts": stats[
             "reading_order_candidate_page_recommendation_counts"
         ],
+        "reading_order_candidate_stream_diagnostics": stats["reading_order_candidate_stream_diagnostics"],
+        "reading_order_candidate_stream_count": stats["reading_order_candidate_stream_count"],
+        "reading_order_candidate_stream_recommendation_counts": stats[
+            "reading_order_candidate_stream_recommendation_counts"
+        ],
         "layout_region_counts": stats["layout_region_counts"],
         "table_region_count": stats["table_region_count"],
         "figure_region_count": stats["figure_region_count"],
@@ -603,6 +608,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         str(page_diagnostic.get("recommendation") or "unknown")
         for page_diagnostic in candidate_page_diagnostics
     )
+    candidate_stream_diagnostics = _reading_order_candidate_stream_diagnostics(document)
+    candidate_stream_recommendation_counts = Counter(
+        str(stream_diagnostic.get("recommendation") or "unknown")
+        for stream_diagnostic in candidate_stream_diagnostics
+    )
     structure_evidence = document.metadata.get("structure_evidence")
     if not isinstance(structure_evidence, dict):
         structure_evidence = {}
@@ -741,6 +751,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "reading_order_candidate_page_diagnostics": candidate_page_diagnostics,
         "reading_order_candidate_page_recommendation_counts": dict(
             sorted(candidate_page_recommendation_counts.items())
+        ),
+        "reading_order_candidate_stream_diagnostics": candidate_stream_diagnostics,
+        "reading_order_candidate_stream_count": len(candidate_stream_diagnostics),
+        "reading_order_candidate_stream_recommendation_counts": dict(
+            sorted(candidate_stream_recommendation_counts.items())
         ),
         "layout_region_counts": layout_region_counts,
         "table_region_count": int(layout_region_counts.get("table", 0)),
@@ -934,6 +949,56 @@ def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict
                 "reason": reason,
             }
         )
+    return diagnostics
+
+
+def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        streams: dict[tuple[str, str], list[Any]] = {}
+        for element in text_elements:
+            stream_id = str(element.metadata.get("reading_order_stream_id") or "").strip()
+            if not stream_id:
+                continue
+            stream_type = str(element.metadata.get("reading_order_stream_type") or "unknown").strip() or "unknown"
+            streams.setdefault((stream_id, stream_type), []).append(element)
+
+        for (stream_id, stream_type), stream_elements in sorted(streams.items()):
+            if len(stream_elements) < 2:
+                continue
+            reference_order = _selected_candidate_order(stream_elements)
+            source_candidates = _candidate_index_orders(stream_elements, page, include_successor_consensus=False)
+            consensus = successor_consensus_diagnostics(
+                source_candidates,
+                item_count=len(stream_elements),
+                base_order=reference_order,
+            )
+            pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
+            successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
+            recommendation, reason = _reading_order_candidate_page_recommendation(consensus, successor)
+            diagnostics.append(
+                {
+                    "page_index": page.page_index,
+                    "stream_id": stream_id,
+                    "stream_type": stream_type,
+                    "text_element_count": len(stream_elements),
+                    "candidate_names": sorted(source_candidates),
+                    "candidate_count": consensus.candidate_count,
+                    "agreement_level": consensus.agreement_level,
+                    "selected_edge_support_ratio": consensus.selected_edge_support_ratio,
+                    "selected_edge_coverage_ratio": consensus.selected_edge_coverage_ratio,
+                    "conflicted_edge_ratio": consensus.conflicted_edge_ratio,
+                    "consensus_pair_count": pairwise.pair_count,
+                    "consensus_disagreement_pair_count": pairwise.disagreement_count,
+                    "consensus_disagreement_ratio": pairwise.disagreement_ratio,
+                    "consensus_successor_edge_count": successor.edge_count,
+                    "consensus_successor_disagreement_count": successor.disagreement_count,
+                    "consensus_successor_disagreement_ratio": successor.disagreement_ratio,
+                    "recommendation": recommendation,
+                    "reason": reason,
+                }
+            )
     return diagnostics
 
 
@@ -1671,6 +1736,13 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             cases,
             "reading_order_candidate_page_recommendation_counts",
         ),
+        "total_reading_order_candidate_streams": sum(
+            int(case["reading_order_candidate_stream_count"]) for case in cases
+        ),
+        "reading_order_candidate_stream_recommendation_counts": _sum_case_count_dicts(
+            cases,
+            "reading_order_candidate_stream_recommendation_counts",
+        ),
         "font_profile_counts": _sum_case_values(cases, "font_profile"),
         "ocr_fallback_counts": _sum_case_values(cases, "ocr_fallback"),
         "total_ocr_fallback_applied_pages": sum(int(case["ocr_fallback_applied_page_count"]) for case in cases),
@@ -1802,6 +1874,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_successor_consensus_low_agreement_page_count",
         "reading_order_successor_consensus_unavailable_page_count",
         "reading_order_candidate_page_recommendation_counts",
+        "reading_order_candidate_stream_count",
+        "reading_order_candidate_stream_recommendation_counts",
         "table_region_count",
         "figure_region_count",
         "raster_fallback_count",
