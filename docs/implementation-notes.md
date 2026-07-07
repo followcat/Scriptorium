@@ -396,6 +396,9 @@ Metrics:
 - `reading_order_successor_consensus_high_agreement_page_count`, `reading_order_successor_consensus_medium_agreement_page_count`, `reading_order_successor_consensus_low_agreement_page_count`, and `reading_order_successor_consensus_unavailable_page_count`: page-level agreement buckets for runtime-arbitration triage.
 - `reading_order_candidate_page_diagnostics`: per-case JSON-only page diagnostics for selected-vs-successor-consensus arbitration. Each entry includes page index, text element count, candidate names/count, consensus agreement level, selected-edge support/coverage/conflict ratios, pairwise disagreement, successor-edge disagreement, recommendation, and reason.
 - `reading_order_candidate_page_recommendation_counts`: case, summary, and CSV counts for page triage recommendations. Values currently include `keep-selected-supported`, `keep-selected-low-consensus`, `review-consensus`, `review-disagreement`, `needs-structure-evidence`, and `unavailable`.
+- `reading_order_candidate_stream_diagnostics`: per-case JSON-only stream diagnostics for selected-vs-successor-consensus arbitration. Entries are scoped by `stream_id` and `stream_type`, so body/sidebar/footnote stream disagreements are isolated from one another.
+- `reading_order_candidate_stream_count`: number of stream-local candidate diagnostics emitted for the case.
+- `reading_order_candidate_stream_recommendation_counts`: case, summary, and CSV counts for stream triage recommendations.
 - `reading_order_risk_score`: benchmark diagnostic for pages that likely need stronger order evidence. It combines column-like geometry still using mostly visual order, missing/extra semantic text, partial-label ignored text, and absent ground truth.
 - `reading_order_risk_level`: `low`, `medium`, or `high` bucket for the risk score.
 - `reading_order_column_geometry_page_count`: pages with repeated anchors that look like text-flow columns, not just short table cells.

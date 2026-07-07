@@ -34,7 +34,7 @@
 - `--font-profile auto`、`--font-size-scale auto`、`--text-fit auto` 在 benchmark 中执行可重复候选 sweep。
 - `--html-mode auto --fidelity-background auto` 比较 structured redraw、SVG fidelity 和 raster fidelity，选择最高视觉相似度路径。
 - `fidelity` HTML 模式保留源 SVG/raster 背景，同时叠加透明可编辑坐标节点；编辑/翻译节点打印为局部白底 replacement overlay。
-- Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics 和外部结构证据匹配结果。
+- Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics 和外部结构证据匹配结果。候选诊断现在包括 `reading_order_candidate_page_recommendation_counts` 与 `reading_order_candidate_stream_recommendation_counts`，后者按 `reading_order_stream_id` 与 `stream_type` 做局部复核统计，避免边栏/脚注局部流差异被正文页级分数掩盖。
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据；匹配到的模型 label 也会驱动 page-artifact、footnote、sidebar、caption 和 table-island reading streams。
 - Structured HTML 现在暴露 reading-order strategy、region、scope、artifact、sidebar、stream id/type/index、confidence 和 evidence 属性。
 
