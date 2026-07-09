@@ -30,7 +30,7 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Scriptorium is a source-neutral document-to-HTML conversion and evaluation engine. The current main path covers PNG/JPEG/TIFF/WebP images, PDFs, web-printed PDFs, and image-only PDFs; image sources enter the IR as first-class sources instead of pretending to be PDFs first.
+Scriptorium is a source-neutral document-to-HTML conversion and evaluation engine. The current main path covers PNG/JPEG/TIFF/WebP images, screenshots, PDFs, web-printed PDFs, and image-only PDFs; image sources enter the IR as first-class sources instead of pretending to be PDFs first.
 
 It merges source text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
 
@@ -41,7 +41,7 @@ It merges source text, images, vector drawings, OCR output, and external structu
 | Document editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
 | Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, mask/fit/overflow/conflict diagnostics. |
 | Papers, annual reports, and portal pages | Multi-column body flow, table islands, card grids, footnotes, sidebars, page artifacts, and local reading streams. |
-| OCR/layout-model validation | PaddleOCR-VL, PP-Structure, and Docling-style JSON fusion with native-only vs native-plus-structure A/B benchmarks. |
+| OCR/layout-model validation | PaddleOCR-VL, PP-Structure, Docling, and ROOR-style JSON fusion where OCR/structure JSON can drive image-source semantics, plus native-only vs native-plus-structure A/B benchmarks. |
 | Conversion quality regression | Print HTML back to PDF and measure visual similarity, page/size match, semantic order, and risk metrics. |
 
 ## Why Not Just Screenshots
@@ -79,7 +79,22 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Create a fixture PDF and export HTML:
+Images, screenshots, and scanned pages can be converted directly. When OCR/structure JSON is available, it seeds text anchors first, then structure evidence adds roles, reading order, and reading streams:
+
+```bash
+scriptorium convert \
+  path/to/page.png \
+  --input-kind image \
+  --structure-json path/to/page.structure.json \
+  --out-dir outputs/image-source
+
+scriptorium export-html \
+  outputs/image-source/document.ir.json \
+  --out-dir outputs/image-source/html \
+  --display-mode fidelity
+```
+
+The built-in PDF fixture is still useful for a fully runnable smoke test:
 
 ```bash
 scriptorium make-fixture --out-dir data/fixture
@@ -108,25 +123,7 @@ scriptorium compare-pdf \
   --out-dir outputs/sample/pdf-quality
 ```
 
-External OCR/layout models are optional. If an image, scan, or screenshot already has structure JSON, it can be used as the semantic-layer input:
-
-```bash
-scriptorium convert \
-  path/to/page.png \
-  --input-kind image \
-  --structure-json path/to/structure.json \
-  --out-dir outputs/with-structure
-```
-
-Images can be passed as source files directly. Without OCR or structure JSON, the result keeps the full-page image visual layer; with OCR or Paddle/PP-Structure/Docling structure JSON, it gains transparent text anchors and reading-stream evidence:
-
-```bash
-scriptorium convert \
-  path/to/page.png \
-  --input-kind image \
-  --structure-json path/to/page.structure.json \
-  --out-dir outputs/image-source
-```
+External OCR/layout models are optional. Without OCR or structure JSON, an image source still keeps the full-page visual layer; with OCR or Paddle/PP-Structure/Docling/ROOR-style structure JSON it gains transparent text anchors and reading-stream evidence.
 
 Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallback also requires the system `tesseract` binary and language data.
 
@@ -134,9 +131,9 @@ Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallbac
 
 ```mermaid
 flowchart LR
-  S[Document source] --> A{Source kind}
-  A -->|PDF| B[Native PDF Extractor]
-  A -->|Image| C[Image Renderer]
+  S[Document / image source] --> A{Source kind}
+  A -->|Digital PDF| B[Native PDF Extractor]
+  A -->|Image / screenshot| C[Image Renderer]
   A --> C2[Render Pages]
   C --> E[OCR / Structure JSON Adapter]
   C2 --> E
@@ -161,8 +158,8 @@ Main modules:
 | Module | Role |
 |---|---|
 | `native_pdf.py` | Extract native text, images, drawings, and page geometry. |
-| `structure_evidence.py` | Normalize PaddleOCR-VL / PP-Structure / Docling-style structure evidence. |
-| `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source. |
+| `structure_evidence.py` | Normalize PaddleOCR-VL / PP-Structure / Docling / ROOR-style structure evidence. |
+| `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source; for image sources, structure JSON can be the semantic driver. |
 | `reading_order.py` | Build multi-column flow, table islands, card grids, footnotes, sidebars, captions, and reading streams. |
 | `html_export.py` | Export structured/fidelity HTML with edit and translation anchors. |
 | `benchmark.py` | Run visual, semantic-order, structure A/B, and translation re-rendering benchmarks. |
