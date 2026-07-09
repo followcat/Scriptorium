@@ -35,12 +35,14 @@ BenchmarkHtmlMode = Literal["structured", "fidelity", "auto"]
 BenchmarkFontSizeScale = float | Literal["auto"]
 BenchmarkTextFit = Literal["none", "svg", "auto"]
 BenchmarkFidelityBackground = Literal["svg", "raster", "auto"]
+BenchmarkTranslationStress = Literal["off", "pseudo-expand"]
 FidelityBackgroundChoice = Literal["none", "svg", "raster"]
 FONT_PROFILE_CANDIDATES: tuple[FontProfile, ...] = ("browser-default", "local-urw")
 HTML_MODE_CANDIDATES: tuple[HtmlMode, ...] = ("structured", "fidelity")
 FONT_SIZE_SCALE_CANDIDATES: tuple[float, ...] = (0.99, 1.0)
 TEXT_FIT_CANDIDATES: tuple[HtmlTextFit, ...] = ("none", "svg")
 FIDELITY_BACKGROUND_CANDIDATES: tuple[FidelityBackground, ...] = ("svg", "raster")
+TRANSLATION_STRESS_POLICIES: tuple[BenchmarkTranslationStress, ...] = ("off", "pseudo-expand")
 SEMANTIC_ORDER_CANDIDATES: tuple[str, ...] = (
     "visual_yx",
     "box_flow",
@@ -66,6 +68,7 @@ def run_benchmark(
     font_size_scale: BenchmarkFontSizeScale = 1.0,
     text_fit: BenchmarkTextFit = "none",
     fidelity_background: BenchmarkFidelityBackground = "auto",
+    translation_stress: BenchmarkTranslationStress = "off",
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,7 @@ def run_benchmark(
     font_size_scale_request = _font_size_scale_request(font_size_scale)
     text_fit_request = _text_fit_request(text_fit)
     fidelity_background_request = _fidelity_background_request(fidelity_background)
+    translation_stress_request = _translation_stress_request(translation_stress)
     input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
     structure_json_by_pdf = _structure_json_by_pdf(input_pdfs, structure_jsons or [])
 
@@ -102,6 +106,7 @@ def run_benchmark(
                     font_profile=font_profile,
                     text_fit=text_fit_request,
                     fidelity_background=fidelity_background_request,
+                    translation_stress=translation_stress_request,
                 )
             )
         else:
@@ -122,6 +127,7 @@ def run_benchmark(
                     font_size_scale=float(font_size_scale_request),
                     text_fit=text_fit_request,
                     fidelity_background=case_fidelity_background,
+                    translation_stress=translation_stress_request,
                 )
             )
 
@@ -139,6 +145,7 @@ def run_benchmark(
         "font_size_scale": font_size_scale_request,
         "text_fit": text_fit_request,
         "fidelity_background": fidelity_background_request,
+        "translation_stress": translation_stress_request,
         "case_count": len(cases),
         "summary": summary,
         "cases": cases,
@@ -163,6 +170,7 @@ def run_structure_ab_benchmark(
     font_size_scale: BenchmarkFontSizeScale = 1.0,
     text_fit: BenchmarkTextFit = "none",
     fidelity_background: BenchmarkFidelityBackground = "auto",
+    translation_stress: BenchmarkTranslationStress = "off",
 ) -> dict[str, Any]:
     """Run native-only and native-plus-structure benchmarks, then compare them."""
 
@@ -184,6 +192,7 @@ def run_structure_ab_benchmark(
         font_size_scale=font_size_scale,
         text_fit=text_fit,
         fidelity_background=fidelity_background,
+        translation_stress=translation_stress,
     )
     structure_report = run_benchmark(
         pdfs,
@@ -200,6 +209,7 @@ def run_structure_ab_benchmark(
         font_size_scale=font_size_scale,
         text_fit=text_fit,
         fidelity_background=fidelity_background,
+        translation_stress=translation_stress,
     )
     comparisons = [
         _structure_ab_case_comparison(native_case, structure_case)
@@ -218,6 +228,7 @@ def run_structure_ab_benchmark(
         "font_size_scale": _font_size_scale_request(font_size_scale),
         "text_fit": _text_fit_request(text_fit),
         "fidelity_background": _fidelity_background_request(fidelity_background),
+        "translation_stress": _translation_stress_request(translation_stress),
         "case_count": len(comparisons),
         "native_report": str(native_dir / "benchmark_report.json"),
         "native_csv": str(native_dir / "benchmark_summary.csv"),
@@ -275,6 +286,32 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "native_grid_island_element_count": native_case["grid_island_element_count"],
         "structure_grid_island_element_count": structure_case["grid_island_element_count"],
         "grid_island_element_delta": _numeric_delta(structure_case, native_case, "grid_island_element_count"),
+        "native_translation_stress_element_count": native_case["translation_stress_element_count"],
+        "structure_translation_stress_element_count": structure_case["translation_stress_element_count"],
+        "translation_stress_element_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "translation_stress_element_count",
+        ),
+        "native_fidelity_replacement_conflict_count": native_case["fidelity_replacement_conflict_count"],
+        "structure_fidelity_replacement_conflict_count": structure_case["fidelity_replacement_conflict_count"],
+        "fidelity_replacement_conflict_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_conflict_count",
+        ),
+        "native_fidelity_replacement_overflow_count": native_case["fidelity_replacement_overflow_count"],
+        "structure_fidelity_replacement_overflow_count": structure_case["fidelity_replacement_overflow_count"],
+        "fidelity_replacement_overflow_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_overflow_count",
+        ),
+        "fidelity_replacement_mean_fit_scale_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_mean_fit_scale",
+        ),
         "structure_evidence_region_count": structure_case["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": structure_case["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": structure_case["structure_evidence_reordered_page_count"],
@@ -340,6 +377,18 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
             values["reading_order_risk_score_delta"] for values in comparisons
         ),
         "total_grid_island_element_delta": sum(int(values["grid_island_element_delta"] or 0) for values in comparisons),
+        "total_translation_stress_element_delta": sum(
+            int(values["translation_stress_element_delta"] or 0) for values in comparisons
+        ),
+        "total_fidelity_replacement_conflict_delta": sum(
+            int(values["fidelity_replacement_conflict_delta"] or 0) for values in comparisons
+        ),
+        "total_fidelity_replacement_overflow_delta": sum(
+            int(values["fidelity_replacement_overflow_delta"] or 0) for values in comparisons
+        ),
+        "mean_fidelity_replacement_fit_scale_delta": _mean_optional(
+            values["fidelity_replacement_mean_fit_scale_delta"] for values in comparisons
+        ),
         "total_structure_evidence_regions": sum(int(values["structure_evidence_region_count"]) for values in comparisons),
         "total_structure_evidence_matched_elements": sum(
             int(values["structure_evidence_matched_element_count"]) for values in comparisons
@@ -404,6 +453,16 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_grid_island_element_count",
         "structure_grid_island_element_count",
         "grid_island_element_delta",
+        "native_translation_stress_element_count",
+        "structure_translation_stress_element_count",
+        "translation_stress_element_delta",
+        "native_fidelity_replacement_conflict_count",
+        "structure_fidelity_replacement_conflict_count",
+        "fidelity_replacement_conflict_delta",
+        "native_fidelity_replacement_overflow_count",
+        "structure_fidelity_replacement_overflow_count",
+        "fidelity_replacement_overflow_delta",
+        "fidelity_replacement_mean_fit_scale_delta",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
@@ -453,6 +512,7 @@ def _run_case(
     font_size_scale: float = 1.0,
     text_fit: HtmlTextFit = "none",
     fidelity_background: FidelityBackground = "svg",
+    translation_stress: BenchmarkTranslationStress = "off",
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     timings: dict[str, float] = {}
@@ -480,6 +540,7 @@ def _run_case(
     if structure_json is not None:
         apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
     annotate_document(document)
+    translation_stress_stats = _apply_translation_stress(document, translation_stress)
     ir_path = out_dir / "document.ir.json"
     document.save(ir_path)
     timings["extract_annotate_seconds"] = _elapsed(start)
@@ -705,6 +766,15 @@ def _run_case(
         "font_size_scale": stats["font_size_scale"],
         "text_fit": text_fit,
         "fidelity_background": fidelity_background if html_mode == "fidelity" else "none",
+        "translation_stress": translation_stress,
+        "translation_stress_element_count": translation_stress_stats["translation_stress_element_count"],
+        "translation_stress_source_char_count": translation_stress_stats["translation_stress_source_char_count"],
+        "translation_stress_translated_char_count": translation_stress_stats[
+            "translation_stress_translated_char_count"
+        ],
+        "translation_stress_char_expansion_ratio": translation_stress_stats[
+            "translation_stress_char_expansion_ratio"
+        ],
         "fidelity_replacement_element_count": replacement_stats["fidelity_replacement_element_count"],
         "fidelity_replacement_overflow_count": replacement_stats["fidelity_replacement_overflow_count"],
         "fidelity_replacement_conflict_count": replacement_stats["fidelity_replacement_conflict_count"],
@@ -749,6 +819,7 @@ def _run_calibrated_case(
     font_profile: BenchmarkFontProfile,
     text_fit: BenchmarkTextFit,
     fidelity_background: BenchmarkFidelityBackground,
+    translation_stress: BenchmarkTranslationStress,
 ) -> dict[str, Any]:
     start = time.perf_counter()
     candidates = [
@@ -767,6 +838,7 @@ def _run_calibrated_case(
             font_size_scale=scale,
             text_fit=fit,
             fidelity_background=_case_fidelity_background(background),
+            translation_stress=translation_stress,
         )
         for mode, background, profile, scale, fit in _calibration_candidates(
             font_profile=font_profile,
@@ -793,6 +865,11 @@ def _run_calibrated_case(
             "font_size_scale": candidate["font_size_scale"],
             "text_fit": candidate["text_fit"],
             "fidelity_background": candidate["fidelity_background"],
+            "translation_stress": candidate["translation_stress"],
+            "translation_stress_element_count": candidate["translation_stress_element_count"],
+            "fidelity_replacement_element_count": candidate["fidelity_replacement_element_count"],
+            "fidelity_replacement_conflict_count": candidate["fidelity_replacement_conflict_count"],
+            "fidelity_replacement_mean_fit_scale": candidate["fidelity_replacement_mean_fit_scale"],
             "visual_similarity": candidate["visual_similarity"],
             "max_diff_ratio": candidate["max_diff_ratio"],
             "mean_diff_ratio": candidate["mean_diff_ratio"],
@@ -1127,6 +1204,75 @@ def _empty_fidelity_replacement_stats() -> dict[str, Any]:
         "fidelity_replacement_mean_fit_scale": None,
         "fidelity_replacement_policy_counts": {},
     }
+
+
+def _apply_translation_stress(document: DocumentIR, policy: BenchmarkTranslationStress) -> dict[str, Any]:
+    policy = _translation_stress_request(policy)
+    if policy == "off":
+        document.metadata["translation_stress"] = _empty_translation_stress_stats(policy)
+        return _empty_translation_stress_stats(policy)
+
+    element_count = 0
+    source_chars = 0
+    translated_chars = 0
+    for page in document.pages:
+        for element in page.elements:
+            if not _is_translation_stress_target(element):
+                continue
+            source_text = element.source_text.strip()
+            translated_text = _pseudo_expanded_translation(source_text)
+            element.translated_text = translated_text
+            element_count += 1
+            source_chars += len(source_text)
+            translated_chars += len(translated_text)
+
+    stats = {
+        "translation_stress": policy,
+        "translation_stress_element_count": element_count,
+        "translation_stress_source_char_count": source_chars,
+        "translation_stress_translated_char_count": translated_chars,
+        "translation_stress_char_expansion_ratio": round(translated_chars / max(source_chars, 1), 8)
+        if element_count
+        else None,
+    }
+    document.metadata["translation_stress"] = stats
+    return stats
+
+
+def _empty_translation_stress_stats(policy: BenchmarkTranslationStress) -> dict[str, Any]:
+    return {
+        "translation_stress": policy,
+        "translation_stress_element_count": 0,
+        "translation_stress_source_char_count": 0,
+        "translation_stress_translated_char_count": 0,
+        "translation_stress_char_expansion_ratio": None,
+    }
+
+
+def _is_translation_stress_target(element: ElementIR) -> bool:
+    if element.type not in {"text", "title", "table", "figure", "formula"}:
+        return False
+    text = element.source_text.strip()
+    if len(text) < 2:
+        return False
+    if element.metadata.get("reading_order_artifact_type") == "page_number":
+        return False
+    return any(character.isalpha() for character in text)
+
+
+def _pseudo_expanded_translation(text: str) -> str:
+    lines = text.splitlines() or [text]
+    return "\n".join(_pseudo_expanded_translation_line(line) for line in lines)
+
+
+def _pseudo_expanded_translation_line(line: str) -> str:
+    normalized = " ".join(line.split())
+    if not normalized:
+        return normalized
+    if len(normalized) <= 18:
+        return f"{normalized} translated layout expansion"
+    prefix = normalized[: max(12, min(48, len(normalized)))]
+    return f"{normalized} translated layout expansion {prefix}"
 
 
 def _reading_order_confidences(elements: list[Any]) -> list[float]:
@@ -2097,6 +2243,19 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "font_size_scale_counts": _sum_case_values(cases, "font_size_scale"),
         "text_fit_counts": _sum_case_values(cases, "text_fit"),
         "fidelity_background_counts": _sum_case_values(cases, "fidelity_background"),
+        "translation_stress_counts": _sum_case_values(cases, "translation_stress"),
+        "total_translation_stress_elements": sum(int(case["translation_stress_element_count"]) for case in cases),
+        "total_translation_stress_source_chars": sum(
+            int(case["translation_stress_source_char_count"]) for case in cases
+        ),
+        "total_translation_stress_translated_chars": sum(
+            int(case["translation_stress_translated_char_count"]) for case in cases
+        ),
+        "mean_translation_stress_char_expansion_ratio": _weighted_optional_case_mean(
+            cases,
+            value_key="translation_stress_char_expansion_ratio",
+            weight_key="translation_stress_source_char_count",
+        ),
         "total_fidelity_replacement_elements": sum(
             int(case["fidelity_replacement_element_count"]) for case in cases
         ),
@@ -2258,6 +2417,11 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "font_size_scale",
         "text_fit",
         "fidelity_background",
+        "translation_stress",
+        "translation_stress_element_count",
+        "translation_stress_source_char_count",
+        "translation_stress_translated_char_count",
+        "translation_stress_char_expansion_ratio",
         "fidelity_replacement_element_count",
         "fidelity_replacement_overflow_count",
         "fidelity_replacement_conflict_count",
@@ -2575,6 +2739,15 @@ def _fidelity_background_request(
             f"got {fidelity_background}"
         )
     return fidelity_background
+
+
+def _translation_stress_request(translation_stress: BenchmarkTranslationStress) -> BenchmarkTranslationStress:
+    if translation_stress not in TRANSLATION_STRESS_POLICIES:
+        raise ValueError(
+            "translation_stress must be one of off or pseudo-expand, "
+            f"got {translation_stress}"
+        )
+    return translation_stress
 
 
 def _font_size_scale_candidates(font_size_scale: BenchmarkFontSizeScale) -> tuple[float, ...]:

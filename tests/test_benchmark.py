@@ -68,6 +68,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["font_size_scale"] == 1.0
     assert report["text_fit"] == "none"
     assert report["fidelity_background"] == "auto"
+    assert report["translation_stress"] == "off"
     assert "mean_visual_similarity" in report["summary"]
     assert "mean_diff_ratio" in report["summary"]
     assert "p95_diff_ratio" in report["summary"]
@@ -77,6 +78,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_ocr_text_elements" in report["summary"]
     assert "total_image_only_candidate_pages" in report["summary"]
     assert "total_textless_pages" in report["summary"]
+    assert report["summary"]["translation_stress_counts"] == {"off": 2}
+    assert report["summary"]["total_translation_stress_elements"] == 0
     assert "total_fidelity_replacement_elements" in report["summary"]
     assert "total_fidelity_replacement_conflicts" in report["summary"]
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
@@ -272,6 +275,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
     assert report["summary"]["text_fit_counts"] == {"none": 2}
     assert report["summary"]["fidelity_background_counts"] == {"none": 2}
+    assert report["summary"]["translation_stress_counts"] == {"off": 2}
+    assert report["summary"]["mean_translation_stress_char_expansion_ratio"] is None
     assert report["summary"]["total_fidelity_replacement_elements"] == 0
     assert report["summary"]["total_fidelity_replacement_overflows"] == 0
     assert report["summary"]["total_fidelity_replacement_conflicts"] == 0
@@ -653,6 +658,7 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert report["fidelity_background"] == "svg"
     assert case["html_mode"] == "fidelity"
     assert case["fidelity_background"] == "svg"
+    assert case["translation_stress"] == "off"
     assert case["font_size_scale"] == 1.0
     assert case["vector_background_page_count"] == case["page_count"]
     assert case["fidelity_replacement_element_count"] == 0
@@ -663,6 +669,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "font_size_scale" in csv_text
     assert "text_fit" in csv_text
     assert "fidelity_background" in csv_text
+    assert "translation_stress" in csv_text
+    assert "translation_stress_element_count" in csv_text
     assert "fidelity_replacement_element_count" in csv_text
     assert "fidelity_replacement_overflow_count" in csv_text
     assert "fidelity_replacement_conflict_count" in csv_text
@@ -725,6 +733,36 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
     assert report["summary"]["fidelity_background_counts"] == {"svg": 1}
     assert report["summary"]["total_fidelity_replacement_elements"] == 0
+
+
+def test_benchmark_translation_stress_populates_translated_text_and_replacement_metrics(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    report = run_benchmark(
+        pdfs,
+        tmp_path / "benchmark-translation-stress",
+        dpi=96,
+        html_mode="fidelity",
+        fidelity_background="svg",
+        translation_stress="pseudo-expand",
+    )
+    case = report["cases"][0]
+    ir = DocumentIR.load(case["ir"])
+    csv_text = (tmp_path / "benchmark-translation-stress" / "benchmark_summary.csv").read_text(encoding="utf-8")
+
+    assert report["translation_stress"] == "pseudo-expand"
+    assert case["translation_stress"] == "pseudo-expand"
+    assert case["translation_stress_element_count"] > 0
+    assert case["translation_stress_char_expansion_ratio"] > 1
+    assert case["fidelity_replacement_element_count"] == case["translation_stress_element_count"]
+    assert case["fidelity_replacement_mean_fit_scale"] is not None
+    assert report["summary"]["translation_stress_counts"] == {"pseudo-expand": 1}
+    assert report["summary"]["total_translation_stress_elements"] == case["translation_stress_element_count"]
+    assert report["summary"]["mean_translation_stress_char_expansion_ratio"] == case[
+        "translation_stress_char_expansion_ratio"
+    ]
+    assert any(element.translated_text for page in ir.pages for element in page.elements)
+    assert "translation_stress_char_expansion_ratio" in csv_text
+    assert "fidelity_replacement_conflict_count" in csv_text
 
 
 def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> None:
@@ -908,6 +946,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
     assert "semantic_external_structure_successor_accuracy" not in csv_text
+    assert "translation_stress_element_delta" in csv_text
+    assert "fidelity_replacement_conflict_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
     assert "grid_island_element_delta" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1

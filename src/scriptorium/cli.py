@@ -11,6 +11,7 @@ from .benchmark import (
     BenchmarkFontProfile,
     BenchmarkHtmlMode,
     BenchmarkTextFit,
+    BenchmarkTranslationStress,
     run_benchmark,
     run_structure_ab_benchmark,
 )
@@ -111,6 +112,10 @@ def benchmark_command(
             "For multiple PDFs, pass files in PDF order or use matching names."
         ),
     ),
+    translation_stress: BenchmarkTranslationStress = typer.Option(
+        "off",
+        help="Deterministic pseudo-translation stress for replacement metrics: off or pseudo-expand.",
+    ),
 ) -> None:
     report = run_benchmark(
         pdf,
@@ -127,6 +132,7 @@ def benchmark_command(
         font_size_scale=font_size_scale,
         text_fit=text_fit,
         fidelity_background=fidelity_background,
+        translation_stress=translation_stress,
     )
     typer.echo(f"Benchmark report: {out_dir / 'benchmark_report.json'}")
     typer.echo(f"Benchmark CSV: {out_dir / 'benchmark_summary.csv'}")
@@ -144,6 +150,7 @@ def benchmark_command(
     typer.echo(f"Font size scale: {report.get('font_size_scale')}")
     typer.echo(f"Text fit: {report.get('text_fit')}")
     typer.echo(f"Fidelity background: {report.get('fidelity_background')}")
+    typer.echo(f"Translation stress: {report.get('translation_stress')}")
     typer.echo(f"Mismatched cases: {report['summary'].get('mismatched_case_count')}")
     typer.echo(f"Semantic cases: {report['summary'].get('semantic_case_count')}")
     typer.echo(f"Mean semantic order accuracy: {report['summary'].get('mean_semantic_order_pair_accuracy')}")
@@ -151,6 +158,8 @@ def benchmark_command(
     typer.echo(f"OCR text elements: {report['summary'].get('total_ocr_text_elements')}")
     typer.echo(f"Structure evidence regions: {report['summary'].get('total_structure_evidence_regions')}")
     typer.echo(f"Structure evidence matched elements: {report['summary'].get('total_structure_evidence_matched_elements')}")
+    typer.echo(f"Translation stress elements: {report['summary'].get('total_translation_stress_elements')}")
+    typer.echo(f"Fidelity replacement conflicts: {report['summary'].get('total_fidelity_replacement_conflicts')}")
 
 
 @app.command("benchmark-structure-ab")
@@ -208,6 +217,10 @@ def benchmark_structure_ab_command(
         "auto",
         help="Fidelity background source: svg, raster, or auto.",
     ),
+    translation_stress: BenchmarkTranslationStress = typer.Option(
+        "off",
+        help="Deterministic pseudo-translation stress for replacement metrics: off or pseudo-expand.",
+    ),
 ) -> None:
     report = run_structure_ab_benchmark(
         pdf,
@@ -224,6 +237,7 @@ def benchmark_structure_ab_command(
         font_size_scale=font_size_scale,
         text_fit=text_fit,
         fidelity_background=fidelity_background,
+        translation_stress=translation_stress,
     )
     typer.echo(f"Structure A/B report: {out_dir / 'structure_ab_report.json'}")
     typer.echo(f"Structure A/B CSV: {out_dir / 'structure_ab_summary.csv'}")
@@ -233,6 +247,11 @@ def benchmark_structure_ab_command(
     typer.echo(f"Mean visual similarity delta: {report['summary'].get('mean_visual_similarity_delta')}")
     typer.echo(f"Mean reading-order risk delta: {report['summary'].get('mean_reading_order_risk_score_delta')}")
     typer.echo(f"Grid-island element delta: {report['summary'].get('total_grid_island_element_delta')}")
+    typer.echo(f"Translation stress element delta: {report['summary'].get('total_translation_stress_element_delta')}")
+    typer.echo(
+        "Fidelity replacement conflict delta: "
+        f"{report['summary'].get('total_fidelity_replacement_conflict_delta')}"
+    )
     typer.echo(
         "Stream needs-structure-evidence delta: "
         f"{report['summary'].get('total_stream_needs_structure_evidence_delta')}"
