@@ -368,6 +368,66 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
 
 
+def test_docling_furniture_tree_feeds_page_artifact_streams() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("header", "Quarterly Report", BBox(x0=10, y0=8, x1=150, y1=18), 1),
+            ("body", "Body paragraph.", BBox(x0=10, y0=50, x1=130, y1=64), 2),
+            ("footer", "Page 1", BBox(x0=10, y0=180, x1=60, y1=192), 3),
+        ],
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {"self_ref": "#/body", "children": [{"$ref": "#/texts/1"}]},
+        "furniture": {"self_ref": "#/furniture", "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/2"}]},
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "label": "page_header",
+                "text": "Quarterly Report",
+                "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 8, "r": 150, "b": 18, "coord_origin": "TOPLEFT"}}],
+            },
+            {
+                "self_ref": "#/texts/1",
+                "label": "text",
+                "text": "Body paragraph.",
+                "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 50, "r": 130, "b": 64, "coord_origin": "TOPLEFT"}}],
+            },
+            {
+                "self_ref": "#/texts/2",
+                "label": "page_footer",
+                "text": "Page 1",
+                "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 180, "r": 60, "b": 192, "coord_origin": "TOPLEFT"}}],
+            },
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [(region.label, region.order, region.order_source) for region in regions] == [
+        ("text", 1, "docling-body"),
+        ("page_header", None, "docling-furniture"),
+        ("page_footer", None, "docling-furniture"),
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 3
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 3
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {
+        "docling-body": 1,
+        "docling-furniture": 2,
+    }
+    assert by_id["header"].metadata["reading_order_scope"] == "page-artifact"
+    assert by_id["header"].metadata["reading_order_artifact_type"] == "header"
+    assert by_id["header"].metadata["reading_order_stream_id"] == "page-artifact-header"
+    assert by_id["footer"].metadata["reading_order_scope"] == "page-artifact"
+    assert by_id["footer"].metadata["reading_order_artifact_type"] == "footer"
+    assert by_id["footer"].metadata["reading_order_stream_id"] == "page-artifact-footer"
+    assert by_id["body"].metadata["external_structure_order"] == 1
+    assert by_id["body"].metadata["reading_order_stream_id"] == "body-main"
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [

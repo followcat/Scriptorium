@@ -260,7 +260,8 @@ def _normalize_docling_document(
     source: str | None,
 ) -> list[StructureRegion]:
     body = doc.get("body")
-    if not isinstance(body, dict):
+    furniture = doc.get("furniture")
+    if not isinstance(body, dict) and not isinstance(furniture, dict):
         return []
 
     ref_index = _build_docling_ref_index(doc)
@@ -268,7 +269,13 @@ def _normalize_docling_document(
     emitted: set[tuple[str, int, tuple[float, float, float, float]]] = set()
     order_counter = 0
 
-    def traverse(node: Any, current_ref: str | None = None) -> None:
+    def traverse(
+        node: Any,
+        current_ref: str | None = None,
+        *,
+        order_source: str,
+        orderable: bool,
+    ) -> None:
         nonlocal order_counter
         item, ref = _resolve_docling_node(node, doc, ref_index, current_ref)
         if not isinstance(item, dict):
@@ -276,10 +283,12 @@ def _normalize_docling_document(
 
         ref_kind = _docling_ref_kind(ref or item.get("self_ref"))
         if ref_kind != "groups":
+            region_order = order_counter + 1 if orderable else None
             item_regions = _docling_item_regions(
                 item,
                 document,
-                order=order_counter + 1,
+                order=region_order,
+                order_source=order_source,
                 source=source or "docling",
                 ref=ref or item.get("self_ref"),
             )
@@ -296,19 +305,31 @@ def _normalize_docling_document(
                 new_regions.append(region)
             if new_regions:
                 regions.extend(new_regions)
-                order_counter += 1
+                if orderable:
+                    order_counter += 1
 
         children = item.get("children")
         if isinstance(children, list):
             for child in children:
-                traverse(child)
+                traverse(
+                    child,
+                    order_source=order_source,
+                    orderable=orderable,
+                )
 
-    traverse(body, "#/body")
+    if isinstance(body, dict):
+        traverse(body, "#/body", order_source="docling-body", orderable=True)
+    if isinstance(furniture, dict):
+        traverse(furniture, "#/furniture", order_source="docling-furniture", orderable=False)
     return regions
 
 
 def _build_docling_ref_index(doc: dict[str, Any]) -> dict[str, Any]:
-    index: dict[str, Any] = {"#/body": doc.get("body")}
+    index: dict[str, Any] = {}
+    for root_key in ("body", "furniture"):
+        root = doc.get(root_key)
+        if isinstance(root, dict):
+            index[f"#/{root_key}"] = root
     for key, value in doc.items():
         if not isinstance(value, list):
             continue
@@ -371,7 +392,8 @@ def _docling_item_regions(
     item: dict[str, Any],
     document: DocumentIR,
     *,
-    order: int,
+    order: int | None,
+    order_source: str,
     source: str,
     ref: Any,
 ) -> list[StructureRegion]:
@@ -403,7 +425,7 @@ def _docling_item_regions(
                 bbox_px=bbox_px,
                 bbox_pdf=normalized_bbox_pdf,
                 order=order,
-                order_source="docling-body",
+                order_source=order_source,
                 text=_extract_docling_text(item),
                 confidence=_extract_confidence(item) or _extract_confidence(prov),
                 source=source,
