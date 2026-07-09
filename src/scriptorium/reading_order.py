@@ -139,10 +139,11 @@ class _TableIsland:
     island_index: int
     indices: tuple[int, ...]
     bbox: BBox
+    kind: str = "table"
 
     @property
     def region_path(self) -> str:
-        return f"root/table-island-{self.island_index:03d}"
+        return f"root/{self.kind}-island-{self.island_index:03d}"
 
 
 @dataclass(frozen=True)
@@ -246,7 +247,7 @@ def infer_semantic_reading_order(
         return _with_reading_streams(_visual_assignments(visual_indices, visual_rank))
 
     normalized_texts = _normalize_texts(texts, len(bboxes))
-    table_islands = _infer_table_islands(bboxes, page_width, page_height)
+    table_islands = _infer_local_structure_islands(bboxes, page_width, page_height)
     if strategy in {"auto", "column-flow-v1"} and table_islands:
         mixed_table_assignments = _mixed_table_column_flow_assignments(
             bboxes,
@@ -1096,12 +1097,15 @@ def _mixed_table_column_flow_assignments(
     table_islands: list[_TableIsland],
     texts: list[str],
 ) -> list[ReadingOrderAssignment] | None:
-    table_by_item = {
+    island_by_item = {
         item_index: island
         for island in table_islands
         for item_index in island.indices
     }
-    if not table_by_item or len(table_by_item) / max(len(bboxes), 1) >= 0.75:
+    island_kinds = {island.kind for island in table_islands}
+    if not island_by_item:
+        return None
+    if island_kinds == {"table"} and len(island_by_item) / max(len(bboxes), 1) >= 0.75:
         return None
 
     artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
@@ -1112,7 +1116,7 @@ def _mixed_table_column_flow_assignments(
     non_table_indices = [
         index
         for index in range(len(bboxes))
-        if index not in table_by_item
+        if index not in island_by_item
         and index not in artifact_type_by_item
         and index not in sidebar_type_by_item
         and index not in footnote_indices
@@ -1134,7 +1138,7 @@ def _mixed_table_column_flow_assignments(
         or (item_index in non_table_indices and _is_full_width_box(bboxes[item_index], columns, bboxes, page_width))
     }
 
-    emitted_islands: set[int] = set()
+    emitted_islands: set[tuple[str, int]] = set()
     pending_tokens: list[_OrderToken] = []
     ordered_indices: list[int] = []
     flow_segment_by_item: dict[int, int] = {}
@@ -1170,24 +1174,22 @@ def _mixed_table_column_flow_assignments(
     for item_index in visual_indices:
         if item_index in footer_indices or item_index in sidebar_indices or item_index in footnote_indices:
             continue
-        island = table_by_item.get(item_index)
+        island = island_by_item.get(item_index)
         if island is not None:
-            if island.island_index in emitted_islands:
+            island_key = (island.kind, island.island_index)
+            if island_key in emitted_islands:
                 continue
-            emitted_islands.add(island.island_index)
+            emitted_islands.add(island_key)
             table_full_width = _is_full_width_table_island(island.bbox, columns, bboxes, page_width)
             token = _OrderToken(
-                kind="table",
+                kind=island.kind,
                 bbox=island.bbox,
                 indices=tuple(sorted(island.indices, key=lambda index: reading_order_key(bboxes[index]))),
                 column_index=None if table_full_width else column_by_item[item_index],
                 full_width=table_full_width,
                 region_path=island.region_path,
                 confidence=_table_island_confidence(island, bboxes, page_width),
-                evidence=_merge_evidence(
-                    ("table-island-row-major", "table-grid-slots"),
-                    ("full-width-table-island",) if table_full_width else ("column-table-island",),
-                ),
+                evidence=_island_evidence(island, full_width=table_full_width),
             )
             if token.full_width:
                 flush_column_segment()
@@ -1276,7 +1278,12 @@ def _mixed_table_column_flow_assignments(
             if item_index in footnote_indices
             else column_span_by_item[item_index],
             flow_segment_index=flow_segment_by_item[item_index],
-            strategy=_mixed_table_flow_strategy(artifact_type_by_item, sidebar_type_by_item, footnote_indices),
+            strategy=_mixed_island_flow_strategy(
+                table_islands,
+                artifact_type_by_item,
+                sidebar_type_by_item,
+                footnote_indices,
+            ),
             region_path=region_path_by_item.get(item_index),
             artifact_type=artifact_type_by_item.get(item_index),
             scope="page-artifact"
@@ -1304,6 +1311,8 @@ def _order_token_sort_key(token: _OrderToken) -> tuple[int, float, float, str]:
 def _column_span_for_token(token: _OrderToken, column_count: int) -> str:
     if token.kind == "table":
         return "table-full" if token.full_width else "table-column"
+    if token.kind == "grid":
+        return "grid-full" if token.full_width else "grid-column"
     if token.caption_type:
         return "caption-full" if token.full_width else "caption-column"
     if token.full_width:
@@ -1771,13 +1780,16 @@ def _column_flow_strategy(
     )
 
 
-def _mixed_table_flow_strategy(
+def _mixed_island_flow_strategy(
+    islands: list[_TableIsland],
     artifact_type_by_item: dict[int, str],
     sidebar_type_by_item: dict[int, str],
     footnote_indices: set[int],
 ) -> str:
+    kinds = {island.kind for island in islands}
+    base_strategy = "mixed-grid-column-flow-v1" if kinds == {"grid"} else "mixed-table-column-flow-v1"
     return _qualified_strategy(
-        "mixed-table-column-flow-v1",
+        base_strategy,
         artifact_type_by_item=artifact_type_by_item,
         sidebar_type_by_item=sidebar_type_by_item,
         footnote_indices=footnote_indices,
@@ -1906,7 +1918,20 @@ def _table_island_confidence(island: _TableIsland, bboxes: list[BBox], page_widt
     row_score = min(len(rows) / 6.0, 1.0)
     cell_score = min((median(cells_per_row) if cells_per_row else 0.0) / 5.0, 1.0)
     width_score = min(island.bbox.width / max(page_width * 0.42, 1.0), 1.0)
-    return _bounded_confidence(0.72 + 0.08 * row_score + 0.08 * cell_score + 0.05 * width_score)
+    base = 0.68 if island.kind == "grid" else 0.72
+    return _bounded_confidence(base + 0.08 * row_score + 0.08 * cell_score + 0.05 * width_score)
+
+
+def _island_evidence(island: _TableIsland, *, full_width: bool) -> tuple[str, ...]:
+    if island.kind == "grid":
+        return _merge_evidence(
+            ("grid-island-row-major", "repeated-grid-slots", "local-structure-grid"),
+            ("full-width-grid-island",) if full_width else ("column-grid-island",),
+        )
+    return _merge_evidence(
+        ("table-island-row-major", "table-grid-slots"),
+        ("full-width-table-island",) if full_width else ("column-table-island",),
+    )
 
 
 def _xy_cut_confidence(result: _XyCutResult) -> float:
@@ -2786,6 +2811,85 @@ def _infer_table_islands(bboxes: list[BBox], page_width: float, page_height: flo
     return islands
 
 
+def _infer_local_structure_islands(bboxes: list[BBox], page_width: float, page_height: float) -> list[_TableIsland]:
+    table_islands = _infer_table_islands(bboxes, page_width, page_height)
+    table_indices = {index for island in table_islands for index in island.indices}
+    grid_islands = _infer_grid_islands(
+        bboxes,
+        page_width,
+        page_height,
+        excluded_indices=table_indices,
+        start_index=1,
+    )
+    return [*table_islands, *grid_islands]
+
+
+def _infer_grid_islands(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+    *,
+    excluded_indices: set[int],
+    start_index: int,
+) -> list[_TableIsland]:
+    candidates = [
+        index
+        for index, bbox in enumerate(bboxes)
+        if index not in excluded_indices
+        and bbox.width >= 4
+        and bbox.height >= 3
+        and bbox.width <= page_width * 0.32
+    ]
+    if len(candidates) < 6:
+        return []
+
+    heights = [bboxes[index].height for index in candidates if bboxes[index].height > 0]
+    y_tolerance = max(4.0, (median(heights) if heights else 8.0) * 0.9)
+    rows = _cluster_index_rows(candidates, bboxes, tolerance=y_tolerance)
+    grid_rows = [
+        tuple(sorted(row, key=lambda index: bboxes[index].x0))
+        for row in rows
+        if _row_looks_like_grid_items(row, bboxes, page_width)
+    ]
+    if len(grid_rows) < 2:
+        return []
+
+    repeated_x_clusters = _grid_repeated_x_clusters(grid_rows, bboxes, page_width)
+    if len(repeated_x_clusters) < 3:
+        return []
+
+    repeated_slots_by_item = _grid_repeated_slot_by_item(repeated_x_clusters, bboxes, page_width)
+    eligible_rows = [
+        tuple(index for index in row if index in repeated_slots_by_item)
+        for row in grid_rows
+        if sum(1 for index in row if index in repeated_slots_by_item) >= 3
+        and _row_has_unique_repeated_slots(row, repeated_slots_by_item)
+    ]
+    if len(eligible_rows) < 2:
+        return []
+
+    islands: list[_TableIsland] = []
+    consumed: set[int] = set()
+    for run in _consecutive_grid_row_runs(eligible_rows, bboxes, page_height):
+        island_indices = tuple(
+            sorted({index for row in run for index in row}, key=lambda index: reading_order_key(bboxes[index]))
+        )
+        if len(island_indices) < 6 or any(index in consumed for index in island_indices):
+            continue
+        if _grid_run_looks_like_body_columns(island_indices, repeated_slots_by_item, bboxes, page_width):
+            continue
+        islands.append(
+            _TableIsland(
+                island_index=start_index + len(islands),
+                indices=island_indices,
+                bbox=_union_bbox_for_indices(island_indices, bboxes),
+                kind="grid",
+            )
+        )
+        consumed.update(island_indices)
+    return islands
+
+
 def _row_looks_like_table_cells(row: list[int], bboxes: list[BBox], page_width: float) -> bool:
     if len(row) < 3:
         return False
@@ -2799,6 +2903,21 @@ def _row_looks_like_table_cells(row: list[int], bboxes: list[BBox], page_width: 
     short_threshold = max(32.0, page_width * 0.14)
     short_ratio = sum(1 for width in widths if width <= short_threshold) / len(widths)
     return short_ratio > 0.5 and median(widths) <= page_width * 0.18
+
+
+def _row_looks_like_grid_items(row: list[int], bboxes: list[BBox], page_width: float) -> bool:
+    if len(row) < 3:
+        return False
+    row_bboxes = [bboxes[index] for index in row]
+    widths = [bbox.width for bbox in row_bboxes if bbox.width > 0]
+    if not widths:
+        return False
+    row_width = max(bbox.x1 for bbox in row_bboxes) - min(bbox.x0 for bbox in row_bboxes)
+    if row_width < page_width * 0.28:
+        return False
+    if median(widths) > page_width * 0.24:
+        return False
+    return sum(1 for width in widths if width <= page_width * 0.28) / len(widths) >= 0.75
 
 
 def _table_repeated_x_clusters(
@@ -2839,6 +2958,44 @@ def _table_repeated_slot_by_item(
     return slot_by_item
 
 
+def _grid_repeated_x_clusters(
+    rows: list[tuple[int, ...]],
+    bboxes: list[BBox],
+    page_width: float,
+) -> list[list[int]]:
+    tolerance = max(12.0, page_width * 0.04)
+    clusters: list[list[int]] = []
+    centers: list[float] = []
+    for index in sorted((item for row in rows for item in row), key=lambda item: bboxes[item].x0):
+        x0 = bboxes[index].x0
+        if not clusters or abs(x0 - centers[-1]) > tolerance:
+            clusters.append([index])
+            centers.append(x0)
+        else:
+            clusters[-1].append(index)
+            centers[-1] = sum(bboxes[item].x0 for item in clusters[-1]) / len(clusters[-1])
+
+    return [cluster for cluster in clusters if len(cluster) >= 2]
+
+
+def _grid_repeated_slot_by_item(
+    clusters: list[list[int]],
+    bboxes: list[BBox],
+    page_width: float,
+) -> dict[int, int]:
+    tolerance = max(12.0, page_width * 0.04)
+    slot_by_item: dict[int, int] = {}
+    cluster_starts = [
+        sum(bboxes[index].x0 for index in cluster) / len(cluster)
+        for cluster in clusters
+    ]
+    for slot_index, (start, cluster) in enumerate(zip(cluster_starts, clusters, strict=True)):
+        for item_index in cluster:
+            if abs(bboxes[item_index].x0 - start) <= tolerance:
+                slot_by_item[item_index] = slot_index
+    return slot_by_item
+
+
 def _row_has_unique_repeated_slots(row: tuple[int, ...], slot_by_item: dict[int, int]) -> bool:
     slots = [slot_by_item[index] for index in row if index in slot_by_item]
     return len(slots) == len(set(slots))
@@ -2866,6 +3023,28 @@ def _consecutive_table_row_runs(
     return [run for run in runs if len(run) >= 3]
 
 
+def _consecutive_grid_row_runs(
+    rows: list[tuple[int, ...]],
+    bboxes: list[BBox],
+    page_height: float,
+) -> list[list[tuple[int, ...]]]:
+    if not rows:
+        return []
+    heights = [bboxes[index].height for row in rows for index in row if bboxes[index].height > 0]
+    max_gap = max(page_height * 0.055, (median(heights) if heights else 8.0) * 4.5)
+    ordered_rows = sorted(rows, key=lambda row: min(bboxes[index].y0 for index in row))
+    runs: list[list[tuple[int, ...]]] = [[ordered_rows[0]]]
+    previous_bottom = max(bboxes[index].y1 for index in ordered_rows[0])
+    for row in ordered_rows[1:]:
+        row_top = min(bboxes[index].y0 for index in row)
+        if row_top - previous_bottom > max_gap:
+            runs.append([row])
+        else:
+            runs[-1].append(row)
+        previous_bottom = max(previous_bottom, max(bboxes[index].y1 for index in row))
+    return [run for run in runs if len(run) >= 2]
+
+
 def _table_run_looks_like_text_columns(
     indices: tuple[int, ...],
     slot_by_item: dict[int, int],
@@ -2881,6 +3060,24 @@ def _table_run_looks_like_text_columns(
     if len(widths_by_slot) < 3:
         return False
     return all(median(widths) >= page_width * 0.08 for widths in widths_by_slot.values() if widths)
+
+
+def _grid_run_looks_like_body_columns(
+    indices: tuple[int, ...],
+    slot_by_item: dict[int, int],
+    bboxes: list[BBox],
+    page_width: float,
+) -> bool:
+    widths_by_slot: dict[int, list[float]] = {}
+    for index in indices:
+        slot = slot_by_item.get(index)
+        if slot is None:
+            continue
+        widths_by_slot.setdefault(slot, []).append(bboxes[index].width)
+    if len(widths_by_slot) < 3:
+        return True
+    broad_slots = sum(1 for widths in widths_by_slot.values() if widths and median(widths) >= page_width * 0.18)
+    return broad_slots >= max(2, len(widths_by_slot) - 1)
 
 
 def _cluster_index_rows(indices: list[int], bboxes: list[BBox], tolerance: float) -> list[list[int]]:

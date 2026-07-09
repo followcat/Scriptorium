@@ -254,6 +254,7 @@ def _run_case(
         "multi_column_element_count": stats["multi_column_element_count"],
         "column_flow_element_count": stats["column_flow_element_count"],
         "mixed_table_column_flow_element_count": stats["mixed_table_column_flow_element_count"],
+        "grid_island_element_count": stats["grid_island_element_count"],
         "table_row_major_element_count": stats["table_row_major_element_count"],
         "spatial_graph_element_count": stats["spatial_graph_element_count"],
         "box_flow_element_count": stats["box_flow_element_count"],
@@ -662,6 +663,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
                 "sidebar-footnote-aware-mixed-table-column-flow-v1",
                 "marginal-sidebar-footnote-aware-mixed-table-column-flow-v1",
             }
+        ),
+        "grid_island_element_count": sum(
+            1
+            for element in text_elements
+            if element.metadata.get("reading_order_stream_type") == "grid-island"
         ),
         "table_row_major_element_count": sum(
             1
@@ -1555,6 +1561,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_mixed_table_column_flow_elements": sum(
             int(case["mixed_table_column_flow_element_count"]) for case in cases
         ),
+        "total_grid_island_elements": sum(int(case["grid_island_element_count"]) for case in cases),
         "total_table_row_major_elements": sum(int(case["table_row_major_element_count"]) for case in cases),
         "total_spatial_graph_elements": sum(int(case["spatial_graph_element_count"]) for case in cases),
         "total_box_flow_elements": sum(int(case["box_flow_element_count"]) for case in cases),
@@ -1812,6 +1819,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "multi_column_element_count",
         "column_flow_element_count",
         "mixed_table_column_flow_element_count",
+        "grid_island_element_count",
         "table_row_major_element_count",
         "spatial_graph_element_count",
         "box_flow_element_count",

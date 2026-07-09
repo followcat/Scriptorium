@@ -699,6 +699,41 @@ def test_mixed_table_island_keeps_body_columns_and_table_rows() -> None:
     )
 
 
+def test_local_grid_island_becomes_translation_stream_without_table_semantics() -> None:
+    bboxes: list[BBox] = [
+        BBox(x0=72, y0=44, x1=540, y1=60),
+        BBox(x0=72, y0=88, x1=460, y1=100),
+    ]
+    intro_index = 1
+    grid_rows: list[list[int]] = []
+
+    for row, y0 in enumerate([148, 186]):
+        grid_row: list[int] = []
+        for column, x0 in enumerate([72, 250, 428]):
+            grid_row.append(len(bboxes))
+            width = 78 + column * 4 + row * 3
+            bboxes.append(BBox(x0=x0, y0=y0, x1=x0 + width, y1=y0 + 11))
+        grid_rows.append(grid_row)
+
+    after_index = len(bboxes)
+    bboxes.append(BBox(x0=72, y0=260, x1=500, y1=272))
+
+    assignments = infer_semantic_reading_order(bboxes, page_width=612, page_height=792, strategy="column-flow-v1")
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+    grid_indices = [index for row in grid_rows for index in row]
+
+    assert {by_item[index].strategy for index in grid_indices} == {"mixed-grid-column-flow-v1"}
+    assert {by_item[index].column_span for index in grid_indices} == {"grid-full"}
+    assert {by_item[index].region_path for index in grid_indices} == {"root/grid-island-001"}
+    assert {by_item[index].reading_order_stream_type for index in grid_indices} == {"grid-island"}
+    assert {by_item[index].reading_order_stream_id for index in grid_indices} == {"grid-island-001"}
+    assert all("grid-island-row-major" in by_item[index].evidence for index in grid_indices)
+    assert all("local-structure-grid" in by_item[index].evidence for index in grid_indices)
+    assert all("table-island-row-major" not in by_item[index].evidence for index in grid_indices)
+    assert by_item[intro_index].semantic_order < min(by_item[index].semantic_order for index in grid_indices)
+    assert max(by_item[index].semantic_order for index in grid_indices) < by_item[after_index].semantic_order
+
+
 def test_formula_fragments_do_not_become_table_islands() -> None:
     bboxes: list[BBox] = []
     left_indices: list[int] = []

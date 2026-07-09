@@ -110,3 +110,37 @@ def test_recursive_xy_cut_regions_create_local_body_streams() -> None:
         "body-main",
         "body-segment-002",
     ]
+
+
+def test_grid_island_uses_region_path_as_translation_stream_id() -> None:
+    metadata_items = [
+        {
+            "semantic_order": 1,
+            "visual_order": 1,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_span": "grid-full",
+            "reading_order_strategy": "mixed-grid-column-flow-v1",
+            "reading_order_region_path": "root/grid-island-003",
+            "reading_order_evidence": ["grid-island-row-major", "local-structure-grid"],
+        },
+        {
+            "semantic_order": 2,
+            "visual_order": 2,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_span": "grid-full",
+            "reading_order_strategy": "mixed-grid-column-flow-v1",
+            "reading_order_region_path": "root/grid-island-003",
+            "reading_order_evidence": ["grid-island-row-major", "local-structure-grid"],
+        },
+    ]
+
+    assign_reading_streams_to_metadata(
+        metadata_items,
+        order_key=lambda item: (item["semantic_order"], item["visual_order"]),
+    )
+
+    assert [item["reading_order_stream_type"] for item in metadata_items] == ["grid-island", "grid-island"]
+    assert [item["reading_order_stream_id"] for item in metadata_items] == ["grid-island-003", "grid-island-003"]
+    assert [item["reading_order_stream_index"] for item in metadata_items] == [1, 2]

@@ -42,6 +42,8 @@ def test_fidelity_html_keeps_background_with_editable_overlay(tmp_path: Path) ->
     assert "mode-fidelity" in html
     assert "page_0001.svg" in html
     assert 'data-scriptorium-editable="true"' in html
+    assert 'data-scriptorium-translation-target="translated_text"' in html
+    assert "data-scriptorium-translation-stream-id" in html
     assert 'contenteditable="true"' in html
     assert "color: transparent !important" in html
 

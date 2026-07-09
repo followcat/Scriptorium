@@ -54,6 +54,12 @@ def reading_order_stream_type(metadata: Mapping[str, Any]) -> str:
         or "table-island-row-major" in evidence
     ):
         return "table-island"
+    if (
+        "grid-island" in region_path
+        or column_span.startswith("grid")
+        or "grid-island-row-major" in evidence
+    ):
+        return "grid-island"
     if "table-row-major" in evidence or strategy.endswith("table-row-major-v1"):
         return "table-grid"
     return "body"
@@ -74,6 +80,11 @@ def reading_order_stream_id(metadata: Mapping[str, Any], *, stream_type: str | N
         if "table-island-" in region_path:
             return region_path.rsplit("/", maxsplit=1)[-1]
         return f"table-island-{_segment_suffix(metadata)}"
+    if resolved_type == "grid-island":
+        region_path = _text(metadata.get("reading_order_region_path"))
+        if "grid-island-" in region_path:
+            return region_path.rsplit("/", maxsplit=1)[-1]
+        return f"grid-island-{_segment_suffix(metadata)}"
     if resolved_type.startswith("caption-"):
         target_id = _slug(metadata.get("reading_order_caption_target_id"))
         if target_id:
