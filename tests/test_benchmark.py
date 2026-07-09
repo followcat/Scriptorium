@@ -7,6 +7,7 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from scriptorium.benchmark import (
+    _fidelity_replacement_stats,
     _page_reading_order_geometry_profile,
     _reading_order_candidate_page_diagnostics,
     _reading_order_candidate_stream_diagnostics,
@@ -76,6 +77,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_ocr_text_elements" in report["summary"]
     assert "total_image_only_candidate_pages" in report["summary"]
     assert "total_textless_pages" in report["summary"]
+    assert "total_fidelity_replacement_elements" in report["summary"]
+    assert "total_fidelity_replacement_conflicts" in report["summary"]
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
     assert all("dimension_match" in case for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
@@ -90,6 +93,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("spatial_graph_element_count" in case for case in report["cases"])
     assert all("box_flow_element_count" in case for case in report["cases"])
     assert all("successor_consensus_arbitration_element_count" in case for case in report["cases"])
+    assert all("fidelity_replacement_element_count" in case for case in report["cases"])
+    assert all("fidelity_replacement_policy_counts" in case for case in report["cases"])
     assert all("reading_order_artifact_element_count" in case for case in report["cases"])
     assert all("reading_order_artifact_counts" in case for case in report["cases"])
     assert all("reading_order_footnote_element_count" in case for case in report["cases"])
@@ -267,6 +272,13 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["font_size_scale_counts"] == {"1.0": 2}
     assert report["summary"]["text_fit_counts"] == {"none": 2}
     assert report["summary"]["fidelity_background_counts"] == {"none": 2}
+    assert report["summary"]["total_fidelity_replacement_elements"] == 0
+    assert report["summary"]["total_fidelity_replacement_overflows"] == 0
+    assert report["summary"]["total_fidelity_replacement_conflicts"] == 0
+    assert report["summary"]["total_fidelity_replacement_conflict_targets"] == 0
+    assert report["summary"]["min_fidelity_replacement_fit_scale"] is None
+    assert report["summary"]["mean_fidelity_replacement_fit_scale"] is None
+    assert report["summary"]["fidelity_replacement_policy_counts"] == {}
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
@@ -643,10 +655,19 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert case["fidelity_background"] == "svg"
     assert case["font_size_scale"] == 1.0
     assert case["vector_background_page_count"] == case["page_count"]
+    assert case["fidelity_replacement_element_count"] == 0
+    assert case["fidelity_replacement_overflow_count"] == 0
+    assert case["fidelity_replacement_conflict_count"] == 0
+    assert case["fidelity_replacement_mean_fit_scale"] is None
     assert "html_mode" in csv_text
     assert "font_size_scale" in csv_text
     assert "text_fit" in csv_text
     assert "fidelity_background" in csv_text
+    assert "fidelity_replacement_element_count" in csv_text
+    assert "fidelity_replacement_overflow_count" in csv_text
+    assert "fidelity_replacement_conflict_count" in csv_text
+    assert "fidelity_replacement_mean_fit_scale" in csv_text
+    assert "fidelity_replacement_policy_counts" in csv_text
     assert "vector_background_page_count" in csv_text
     assert "ocr_fallback_applied_page_count" in csv_text
     assert "ocr_text_count" in csv_text
@@ -703,6 +724,59 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert (tmp_path / "benchmark-fidelity" / "cases" / pdfs[0].stem / "fidelity-svg-export.pdf").exists()
     assert report["summary"]["html_mode_counts"] == {"fidelity": 1}
     assert report["summary"]["fidelity_background_counts"] == {"svg": 1}
+    assert report["summary"]["total_fidelity_replacement_elements"] == 0
+
+
+def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> None:
+    replacement = ElementIR(
+        id="replace",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=10, y0=10, x1=90, y1=24),
+        bbox_px=BBox(x0=10, y0=10, x1=90, y1=24),
+        source_text="Buy now",
+        translated_text="A much longer translated replacement line",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    neighbor = ElementIR(
+        id="neighbor",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=91, y0=10, x1=130, y1=24),
+        bbox_px=BBox(x0=91, y0=10, x1=130, y1=24),
+        source_text="Next",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    document = DocumentIR(
+        source_pdf="synthetic.pdf",
+        render_dpi=72,
+        page_count=1,
+        pages=[
+            PageIR(
+                page_index=0,
+                width_pt=160,
+                height_pt=80,
+                width_px=160,
+                height_px=80,
+                render_dpi=72,
+                scale_x=1,
+                scale_y=1,
+                background_image="page.png",
+                elements=[replacement, neighbor],
+            )
+        ],
+    )
+
+    stats = _fidelity_replacement_stats(document, "fidelity")
+    structured_stats = _fidelity_replacement_stats(document, "structured")
+
+    assert stats["fidelity_replacement_element_count"] == 1
+    assert stats["fidelity_replacement_conflict_count"] == 1
+    assert stats["fidelity_replacement_conflict_target_count"] == 1
+    assert stats["fidelity_replacement_min_fit_scale"] < 1
+    assert stats["fidelity_replacement_mean_fit_scale"] == stats["fidelity_replacement_min_fit_scale"]
+    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v1": 1}
+    assert structured_stats["fidelity_replacement_element_count"] == 0
 
 
 def test_benchmark_can_auto_select_fidelity_background(tmp_path: Path) -> None:

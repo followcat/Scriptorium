@@ -161,10 +161,14 @@ def has_replacement_text(element: ElementIR, display_mode: DisplayMode) -> bool:
     return display_mode == "fidelity" and bool((element.translated_text or element.edited_text or "").strip())
 
 
+def page_replacement_geometries(page: PageIR, display_mode: DisplayMode) -> dict[str, dict[str, object]]:
+    return _replacement_candidates(page, display_mode)
+
+
 def replacement_geometry(element: ElementIR, page: PageIR, display_mode: DisplayMode) -> dict[str, object] | None:
     if not has_replacement_text(element, display_mode):
         return None
-    return _replacement_geometry_for_page(element, page, _replacement_candidates(page, display_mode))
+    return _replacement_geometry_for_page(element, page, page_replacement_geometries(page, display_mode))
 
 
 def _run_script(run: dict[str, object]) -> str:
@@ -291,7 +295,7 @@ def _prepare_page_assets(
             shutil.copy2(background_source, background_target)
         background_rel = background_target.relative_to(assets_dir.parent).as_posix()
 
-    replacements = _replacement_candidates(page, display_mode)
+    replacements = page_replacement_geometries(page, display_mode)
     elements: list[dict[str, object]] = []
     for element in page.elements:
         crop_rel: str | None = None

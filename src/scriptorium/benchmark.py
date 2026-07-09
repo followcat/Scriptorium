@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from .annotations import annotate_document
 from .benchmark_fixtures import create_benchmark_fixtures
-from .html_export import FidelityBackground, HtmlTextFit, export_html
+from .html_export import FidelityBackground, HtmlTextFit, export_html, page_replacement_geometries
 from .models import BBox, DocumentIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .pdf_export import print_html_to_pdf
@@ -517,6 +517,7 @@ def _run_case(
     timings["semantic_compare_seconds"] = _elapsed(start)
 
     stats = _document_stats(document)
+    replacement_stats = _fidelity_replacement_stats(document, html_mode)
     reading_order_risk = _reading_order_risk_metrics(document, semantic_quality)
     max_diff_ratio = float(quality["max_diff_ratio"])
     mean_diff_ratio = float(quality["mean_diff_ratio"])
@@ -704,6 +705,15 @@ def _run_case(
         "font_size_scale": stats["font_size_scale"],
         "text_fit": text_fit,
         "fidelity_background": fidelity_background if html_mode == "fidelity" else "none",
+        "fidelity_replacement_element_count": replacement_stats["fidelity_replacement_element_count"],
+        "fidelity_replacement_overflow_count": replacement_stats["fidelity_replacement_overflow_count"],
+        "fidelity_replacement_conflict_count": replacement_stats["fidelity_replacement_conflict_count"],
+        "fidelity_replacement_conflict_target_count": replacement_stats[
+            "fidelity_replacement_conflict_target_count"
+        ],
+        "fidelity_replacement_min_fit_scale": replacement_stats["fidelity_replacement_min_fit_scale"],
+        "fidelity_replacement_mean_fit_scale": replacement_stats["fidelity_replacement_mean_fit_scale"],
+        "fidelity_replacement_policy_counts": replacement_stats["fidelity_replacement_policy_counts"],
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
@@ -1079,6 +1089,43 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
         "structure_evidence_reordered_page_count": int(structure_evidence.get("reordered_page_count") or 0),
+    }
+
+
+def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> dict[str, Any]:
+    if html_mode != "fidelity":
+        return _empty_fidelity_replacement_stats()
+
+    geometries: list[dict[str, object]] = []
+    for page in document.pages:
+        geometries.extend(page_replacement_geometries(page, "fidelity").values())
+    fit_scales = [float(geometry["fit_scale"]) for geometry in geometries if geometry.get("fit_scale") is not None]
+    policy_counts = Counter(str(geometry.get("policy") or "unknown") for geometry in geometries)
+    conflict_target_count = sum(
+        len(geometry.get("conflict_ids") or [])
+        for geometry in geometries
+        if isinstance(geometry.get("conflict_ids"), list)
+    )
+    return {
+        "fidelity_replacement_element_count": len(geometries),
+        "fidelity_replacement_overflow_count": sum(1 for geometry in geometries if bool(geometry.get("overflow"))),
+        "fidelity_replacement_conflict_count": sum(1 for geometry in geometries if bool(geometry.get("conflict"))),
+        "fidelity_replacement_conflict_target_count": conflict_target_count,
+        "fidelity_replacement_min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
+        "fidelity_replacement_mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
+        "fidelity_replacement_policy_counts": dict(sorted(policy_counts.items())),
+    }
+
+
+def _empty_fidelity_replacement_stats() -> dict[str, Any]:
+    return {
+        "fidelity_replacement_element_count": 0,
+        "fidelity_replacement_overflow_count": 0,
+        "fidelity_replacement_conflict_count": 0,
+        "fidelity_replacement_conflict_target_count": 0,
+        "fidelity_replacement_min_fit_scale": None,
+        "fidelity_replacement_mean_fit_scale": None,
+        "fidelity_replacement_policy_counts": {},
     }
 
 
@@ -2050,6 +2097,25 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "font_size_scale_counts": _sum_case_values(cases, "font_size_scale"),
         "text_fit_counts": _sum_case_values(cases, "text_fit"),
         "fidelity_background_counts": _sum_case_values(cases, "fidelity_background"),
+        "total_fidelity_replacement_elements": sum(
+            int(case["fidelity_replacement_element_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_overflows": sum(
+            int(case["fidelity_replacement_overflow_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_conflicts": sum(
+            int(case["fidelity_replacement_conflict_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_conflict_targets": sum(
+            int(case["fidelity_replacement_conflict_target_count"]) for case in cases
+        ),
+        "min_fidelity_replacement_fit_scale": _min_optional_case_float(cases, "fidelity_replacement_min_fit_scale"),
+        "mean_fidelity_replacement_fit_scale": _weighted_optional_case_mean(
+            cases,
+            value_key="fidelity_replacement_mean_fit_scale",
+            weight_key="fidelity_replacement_element_count",
+        ),
+        "fidelity_replacement_policy_counts": _sum_case_count_dicts(cases, "fidelity_replacement_policy_counts"),
         "layout_region_counts": _sum_case_count_dicts(cases, "layout_region_counts"),
         "total_table_regions": sum(int(case["table_region_count"]) for case in cases),
         "total_figure_regions": sum(int(case["figure_region_count"]) for case in cases),
@@ -2192,6 +2258,13 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "font_size_scale",
         "text_fit",
         "fidelity_background",
+        "fidelity_replacement_element_count",
+        "fidelity_replacement_overflow_count",
+        "fidelity_replacement_conflict_count",
+        "fidelity_replacement_conflict_target_count",
+        "fidelity_replacement_min_fit_scale",
+        "fidelity_replacement_mean_fit_scale",
+        "fidelity_replacement_policy_counts",
         "structure_evidence_source",
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
@@ -2318,6 +2391,38 @@ def _weighted_case_mean(cases: list[dict[str, Any]], value_key: str, weight_key:
     weighted_sum = sum(float(case[value_key]) * int(case[weight_key]) for case in cases)
     weight = sum(int(case[weight_key]) for case in cases)
     return round(weighted_sum / max(weight, 1), 8)
+
+
+def _weighted_optional_case_mean(cases: list[dict[str, Any]], value_key: str, weight_key: str) -> float | None:
+    weighted_sum = 0.0
+    weight = 0
+    for case in cases:
+        value = case.get(value_key)
+        if value is None:
+            continue
+        case_weight = int(case.get(weight_key) or 0)
+        if case_weight <= 0:
+            continue
+        weighted_sum += float(value) * case_weight
+        weight += case_weight
+    if weight <= 0:
+        return None
+    return round(weighted_sum / weight, 8)
+
+
+def _min_optional_case_float(cases: list[dict[str, Any]], key: str) -> float | None:
+    values: list[float] = []
+    for case in cases:
+        value = case.get(key)
+        if value is None:
+            continue
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return round(min(values), 8)
 
 
 def _ratio_from_case_sums(
