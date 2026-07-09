@@ -258,6 +258,8 @@ Stream sidecar 使用同一套形状。`text_sequence`、`sequence` 或 `texts` 
 
 Stream sidecar 现在还会单独评估 IR 的流归属质量。`semantic_stream_successor_accuracy` / `semantic_stream_precedence_accuracy` 只看局部顺序约束；`semantic_stream_assignment_id_accuracy`、`semantic_stream_assignment_type_accuracy` 以及对应的 label/found/missing/correct count 字段，会把 sidecar 的 stream membership 和当前元素的 `reading_order_stream_id`、归一化后的 `reading_order_stream_type` 对比。这样 benchmark 可以判断 OCR/结构 JSON 是否真的把 image/source 文本分进了正确的正文、边栏、表格、caption、脚注或卡片网格翻译流，而不是只得到一个看似可用的全局顺序。候选顺序不会参与 assignment 评分，因为 stream membership/type 是语义层抽取结果，不是候选排序列表本身。
 
+对应的 triage 字段还包括 `semantic_stream_assignment_id_mismatch_count`、`semantic_stream_assignment_type_mismatch_count` 和 `semantic_stream_assignment_type_confusion_counts`。Confusion key 使用 `expected=>actual`，例如 `grid-island=>body`，用于快速判断复杂页面错在卡片网格、边栏、表格岛、caption、脚注还是页边 artifact 的流类型归属。
+
 在 `benchmark-structure-ab` 中，`semantic_stream_assignment_id_accuracy_delta` 和 `semantic_stream_assignment_type_accuracy_delta` 表示 native-plus-structure 减去 native-only 的流归属准确率。正向 delta 表示结构 JSON 改善了局部翻译流 membership，即使视觉相似度主要仍由背景层决定。
 
 Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
