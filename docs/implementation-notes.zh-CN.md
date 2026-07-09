@@ -95,6 +95,7 @@ HTML exporter 会把这些标记落成 DOM 属性，例如：
 - `text_fit = svg` 使用 PDF run bbox、baseline origin、SVG `textLength` / `lengthAdjust="spacingAndGlyphs"` 拟合行宽，同时保留透明编辑代理。
 - `fidelity` HTML 模式用 SVG 或 raster 页面背景保留源视觉，同时叠加透明可编辑坐标节点。打印时未编辑节点隐藏；编辑或翻译节点作为局部白底 replacement overlay 打印。
 - `fidelity` 的 edited/translated replacement 使用 `fidelity-replacement-fit-v1`：导出器会扩展局部白底 mask，记录 `data-scriptorium-replacement-mask-padding`，用 CSS padding 把替换文本对齐回原 bbox，对长文本写入 `data-scriptorium-replacement-fit-scale`，并在仍然溢出或与相邻元素重叠时写入 `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` 和冲突元素 id。
+- `--translation-stress pseudo-expand` 会在 benchmark 内写入确定性伪译文到 `translated_text`，用于压测翻译回渲染的 mask、fit-scale、overflow 和邻近冲突；它不是翻译质量评测，也不需要外部翻译服务。
 - `--html-mode auto --fidelity-background auto` 会比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选。
 - 打印后的 PDF page box 会归一到源 PDF 尺寸，避免 Chromium A4 1px 量化误差污染视觉指标。
 - 简单 drawing 输出为 SVG line/path；密集矢量图可以局部 raster fallback，但仍然保留 bbox/source metadata。
@@ -156,6 +157,8 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 此外，新增加了流内候选诊断：`reading_order_candidate_stream_diagnostics` 会按 `reading_order_stream_id` 记录局部文档流内 selected 与候选共识的分歧与推荐，`reading_order_candidate_stream_count` 给出当次 case 的流内候选数量，`reading_order_candidate_stream_recommendation_counts` 则用于 case/summary/CSV 的流级 triage 统计，避免将边栏/脚注与正文流混到同一页级分数。Benchmark 也会记录 `grid_island_element_count`，用于观察复杂卡片/门户布局是否被识别为可翻译局部流。
 
 翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`。源文档无 replacement 时这些字段为 0/`null`；翻译写入 `translated_text` 后，它们用于衡量像素相似度之外的遮罩、压缩和邻近冲突风险。
+
+对应的输入压力统计包括 `translation_stress`、`translation_stress_element_count`、`translation_stress_source_char_count`、`translation_stress_translated_char_count` 和 `translation_stress_char_expansion_ratio`。`pseudo-expand` 会故意拉长源文本，让 JD/PUMA/门户页这类复杂布局能在没有真实翻译服务的情况下先暴露 replacement 风险。
 
 Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 

@@ -498,6 +498,19 @@ scriptorium benchmark path/to/paper.pdf \
 
 这个模式会在 HTML 中保留可编辑坐标节点，但打印时隐藏未编辑节点，因此分数衡量的是源视觉保真度。SVG 背景保留矢量和缩放友好特性；raster 背景通常在复杂页面上获得更严格的像素一致性。这个模式用于把未来 edit-mask / replacement 架构和完全结构化重绘路径分开评测。
 
+运行翻译回渲染压力测试：
+
+```bash
+scriptorium benchmark path/to/paper.pdf \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand \
+  --out-dir outputs/translation-stress \
+  --dpi 144
+```
+
+`--translation-stress pseudo-expand` 会用确定性伪译文写入 `translated_text`，专门压测长译文的 mask、fit-scale、overflow 和邻近冲突。它不评估翻译质量，也不依赖外部翻译服务。
+
 native extraction 默认启用 image-only OCR fallback，并且只在页面没有 native text 且图像覆盖率很高时触发：
 
 ```bash

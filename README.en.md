@@ -259,6 +259,19 @@ scriptorium benchmark path/to/paper.pdf \
   --dpi 144
 ```
 
+To stress-test translated re-rendering without a live translation service:
+
+```bash
+scriptorium benchmark path/to/paper.pdf \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand \
+  --out-dir outputs/translation-stress \
+  --dpi 144
+```
+
+`--translation-stress pseudo-expand` writes deterministic pseudo-translations to `translated_text` so mask, fit-scale, overflow, and neighbor-conflict metrics can be measured. It is a layout stressor, not a translation-quality score.
+
 External PaddleOCR-VL / PP-Structure / Docling structure evidence can be fused with:
 
 ```bash

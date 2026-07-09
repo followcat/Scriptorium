@@ -327,6 +327,19 @@ scriptorium benchmark data/external/puma-2024-annual-report.pdf \
   --dpi 144
 ```
 
+Translated re-rendering can be stress-tested without a live translation service:
+
+```bash
+scriptorium benchmark input.pdf \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand \
+  --out-dir outputs/translation-stress \
+  --dpi 144
+```
+
+This writes deterministic pseudo-expanded text into `translated_text`, then scores visual similarity plus replacement overflow/conflict/fit-scale metrics. It is useful for JD/PUMA/portal samples where the source page may look perfect with a background layer but translated replacements can still collide locally.
+
 External structure evidence can be evaluated with a paired A/B run:
 
 ```bash
@@ -346,6 +359,7 @@ Metrics:
 - `p95_diff_ratio`: 95th percentile diff ratio for the compared page set.
 - `worst_page`: 1-based page number with the largest effective diff ratio.
 - `visual_similarity`: `1 - max_diff_ratio`; higher is better.
+- `translation_stress`, `translation_stress_element_count`, `translation_stress_source_char_count`, `translation_stress_translated_char_count`, and `translation_stress_char_expansion_ratio`: deterministic pseudo-translation input used to stress translated re-rendering. `pseudo-expand` intentionally lengthens source text; it does not measure translation quality.
 - `fidelity_replacement_element_count`, `fidelity_replacement_overflow_count`, `fidelity_replacement_conflict_count`, `fidelity_replacement_conflict_target_count`, `fidelity_replacement_min_fit_scale`, `fidelity_replacement_mean_fit_scale`, and `fidelity_replacement_policy_counts`: replacement-risk diagnostics for edited/translated nodes in fidelity mode. These fields stay zero/`null` for source-only runs and become the primary non-visual quality signal for translated HTML-to-PDF round trips.
 - `page_count_match`: whether expected and actual PDFs have the same page count.
 - `dimension_match`: whether every reported page has matching render dimensions.
