@@ -522,6 +522,18 @@ scriptorium benchmark \
 
 单个 PDF 传一个 `--structure-json`。多个 PDF 可以按 PDF 顺序传多个 JSON，或者把文件命名为 `<pdf-stem>.structure.json` / `<parent-dir>.<pdf-stem>.structure.json`，benchmark 会自动匹配。
 
+对比 native-only 和 native-plus-structure：
+
+```bash
+scriptorium benchmark-structure-ab \
+  path/to/input.pdf \
+  --structure-json path/to/input.structure.json \
+  --out-dir outputs/structure-ab \
+  --dpi 144
+```
+
+该命令会写出 `structure_ab_report.json` 和 `structure_ab_summary.csv`，直接比较 visual similarity、reading-order risk、grid-island 元素、结构匹配数，以及 page/stream `needs-structure-evidence` 推荐数的变化。
+
 输出：
 
 - `benchmark_report.json`: full metrics, per-stage timings, artifact paths

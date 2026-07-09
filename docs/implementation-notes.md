@@ -325,6 +325,17 @@ scriptorium benchmark data/external/puma-2024-annual-report.pdf \
   --dpi 144
 ```
 
+External structure evidence can be evaluated with a paired A/B run:
+
+```bash
+scriptorium benchmark-structure-ab input.pdf \
+  --structure-json input.structure.json \
+  --out-dir outputs/structure-ab \
+  --dpi 144
+```
+
+This writes `native-only/benchmark_report.json`, `native-plus-structure/benchmark_report.json`, `structure_ab_report.json`, and `structure_ab_summary.csv`. The A/B report records deltas for visual similarity, reading-order risk, `grid_island_element_count`, structure-evidence region/match/reorder counts, page/stream `needs-structure-evidence` recommendations, review recommendations, successor-disagreement counts, and semantic successor metrics when sidecars exist.
+
 Metrics:
 
 - `max_pages`: optional first-N-pages benchmark limit. The source PDF remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.

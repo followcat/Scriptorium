@@ -37,6 +37,7 @@
 - `fidelity` HTML 模式保留源 SVG/raster 背景，同时叠加透明可编辑坐标节点；编辑/翻译节点打印为局部白底 replacement overlay。
 - Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、`grid_island_element_count`、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics 和外部结构证据匹配结果。候选诊断现在包括 `reading_order_candidate_page_recommendation_counts` 与 `reading_order_candidate_stream_recommendation_counts`，后者按 `reading_order_stream_id` 与 `stream_type` 做局部复核统计，避免边栏/脚注局部流差异被正文页级分数掩盖。
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据；匹配到的模型 label 也会驱动 page-artifact、footnote、sidebar、caption、table-island，以及明确 card/grid/product/tile 类区域的 `grid-island` reading streams。普通 list label 只作为列表证据，不作为卡片网格证据。
+- `benchmark-structure-ab` 会并行运行 native-only 和 native-plus-structure 报告，并输出 `structure_ab_report.json` / `structure_ab_summary.csv`，对比 visual similarity、reading-order risk、grid-island 元素、结构匹配数、page/stream `needs-structure-evidence`，以及存在 sidecar 时的 semantic successor 指标。
 - Structured HTML 现在暴露 reading-order strategy、region、scope、artifact、sidebar、stream id/type/index、confidence、evidence 和显式 translation target/stream 属性。
 
 ## 当前基准覆盖

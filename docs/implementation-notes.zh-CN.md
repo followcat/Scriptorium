@@ -120,7 +120,10 @@ A/B 路径示例：
 scriptorium convert input.pdf --out-dir outputs/native
 scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
 scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/benchmark-native-plus-structure
+scriptorium benchmark-structure-ab input.pdf --structure-json paddle.json --out-dir outputs/structure-ab
 ```
+
+`benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 指标。
 
 ## 阅读顺序层
 
