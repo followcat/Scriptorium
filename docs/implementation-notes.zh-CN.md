@@ -39,7 +39,7 @@ scriptorium convert page.png \
 - `--ocr-json` 是稳定测试入口，适合转换质量工作。
 - `PaddleOcrAdapter` 隔离在 `scriptorium.ocr`，并且延迟导入 `paddleocr`。
 - `--structure-json` 是真实模型输出的轻量桥接入口，支持 PaddleOCR-VL / PP-StructureV3 风格 JSON、DoclingDocument JSON，以及 `document` / `ro_linkings` 这类关系式结构 payload。
-- 对图片 source，如果没有单独提供 `--ocr-json`，`--structure-json` 也可以先生成初始文本锚点。常见 `parsing_res_list` / `block_bbox` / `block_content`，以及 ROOR 风格 `document` segment 的 `box` / `text`，都会被归一成 `native-ocr` 文本节点，再由结构 evidence 反向融合标签、顺序和置信度。
+- 对图片 source，如果没有单独提供 `--ocr-json`，`--structure-json` 也可以先生成初始文本锚点。常见 `parsing_res_list` / `block_bbox` / `block_content`、PP 的 `overall_ocr_res` 等 OCR 字典，以及 ROOR 风格 `document` segment 的 `box` / `text`，都会被归一成 `native-ocr` 文本节点，再由结构 evidence 反向融合标签、顺序和置信度。适配器会递归常见 `res`、`result`、`data`、`pages`、`page_results`、`raw_results`、`results` 包装，并保留 page index fallback。
 - `DocumentIR.metadata.semantic_layer` 会记录当前语义层驱动。图片 case 会报告 `structure-json`、`ocr-json`、`ocr-fallback` 或 `visual-only`；原生 PDF case 报告 `native-pdf`，结构 JSON 默认作为增强证据。
 - 原生 PDF 提取提供 `image-only` OCR fallback：当页面没有原生文字且图像覆盖面积很高时，生成透明的 `native-ocr` 可编辑锚点，同时保留原始图像元素。
 - `structure_evidence.py` 能解析嵌套 `res`、`raw_results`、`pages`、`parsing_res_list`、`document`、`layout_det_res.boxes` 形状，也能解析 Docling `body.children`、`furniture.children`、`prov` bbox/page 证据和上下坐标原点差异，并把 ROOR 风格 `ro_linkings` 当作 successor edges。
