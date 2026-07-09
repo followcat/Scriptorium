@@ -142,7 +142,7 @@ PaddleOCR-VL, PP-StructureV3, and Docling are best treated as optional evidence 
 - Matched text elements receive `structure_evidence`, `external_structure_label`, and `external_structure_order` metadata.
 - When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`.
 - Reordered elements also append `external-structure-order` to `reading_order_evidence` and preserve the model confidence under `reading_order_confidence` when it is stronger than the native heuristic confidence.
-- External labels also feed reading-order scope and stream metadata: header/footer/page-number labels become page artifacts, footnotes and sidebars become secondary local streams, caption labels become caption streams, and table labels become table-island streams.
+- External labels also feed reading-order scope and stream metadata: header/footer/page-number labels become page artifacts, footnotes and sidebars become secondary local streams, caption labels become caption streams, table labels become table-island streams, and explicit card/grid/product/tile labels become `grid-island` streams for translation/editing. Plain `list` labels remain list-role evidence instead of being promoted to grid streams, so ranked/news pages do not get false card-grid structure.
 - The annotation pass maps external labels into roles, so labels such as `formula`, `header`, `footer`, `table_caption`, and `table` can affect the structured HTML metadata.
 
 This gives the project an A/B path:

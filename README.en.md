@@ -265,7 +265,7 @@ scriptorium benchmark \
   --dpi 144
 ```
 
-Matched external labels now feed both order and stream metadata: header/footer/page-number labels become page-artifact streams, footnotes and sidebars become local secondary streams, caption labels become caption streams, and table labels become table-island streams.
+Matched external labels now feed both order and stream metadata: header/footer/page-number labels become page-artifact streams, footnotes and sidebars become local secondary streams, caption labels become caption streams, table labels become table-island streams, and explicit card/grid/product/tile labels become `grid-island` translation streams. Plain `list` labels are not promoted to grid streams, avoiding false card-grid signals on news/list pages.
 
 ## Architecture
 

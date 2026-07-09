@@ -326,7 +326,7 @@ scriptorium convert \
   --out-dir outputs/with-structure
 ```
 
-匹配到的外部 label 现在不仅会影响 role/order，也会进入 reading stream：header/footer/page-number 会变成 page-artifact stream，footnote/sidebar 会变成局部 secondary stream，caption 会变成 caption stream，table 会变成 table-island stream。
+匹配到的外部 label 现在不仅会影响 role/order，也会进入 reading stream：header/footer/page-number 会变成 page-artifact stream，footnote/sidebar 会变成局部 secondary stream，caption 会变成 caption stream，table 会变成 table-island stream，明确的 card/grid/product/tile 类区域会变成 `grid-island` 翻译流。普通 `list` 不会自动当作 grid，避免把新闻列表误标成卡片网格。
 
 导出 HTML：
 
