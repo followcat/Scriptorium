@@ -57,9 +57,9 @@ def normalize_structure_evidence(
     regions.extend(_normalize_docling_evidence(payload, document, source=source))
     for fallback_page_index, page_payload in enumerate(_collect_page_payloads(payload)):
         page_index = _extract_page_index(page_payload, fallback_page_index)
-        if page_index < 0 or page_index >= len(document.pages):
+        page = _document_page_by_evidence_index(document, page_index)
+        if page is None:
             continue
-        page = document.pages[page_index]
         for raw_block in _iter_blocks(page_payload):
             bbox_info = _extract_bbox(raw_block)
             if bbox_info is None:
@@ -70,7 +70,7 @@ def normalize_structure_evidence(
                 continue
             regions.append(
                 StructureRegion(
-                    page_index=page_index,
+                    page_index=page.page_index,
                     label=_extract_label(raw_block),
                     bbox_px=bbox_px,
                     bbox_pdf=bbox_pdf,
@@ -262,9 +262,9 @@ def _docling_item_regions(
         if not isinstance(prov, dict):
             continue
         page_index = _docling_page_index(prov)
-        if page_index < 0 or page_index >= len(document.pages):
+        page = _document_page_by_evidence_index(document, page_index)
+        if page is None:
             continue
-        page = document.pages[page_index]
         bbox_pdf = _docling_bbox_from_prov(prov, page)
         if bbox_pdf is None:
             continue
@@ -276,7 +276,7 @@ def _docling_item_regions(
         raw["docling_prov"] = dict(prov)
         regions.append(
             StructureRegion(
-                page_index=page_index,
+                page_index=page.page_index,
                 label=_extract_label(item),
                 bbox_px=bbox_px,
                 bbox_pdf=normalized_bbox_pdf,
@@ -288,6 +288,19 @@ def _docling_item_regions(
             )
         )
     return regions
+
+
+def _document_page_by_evidence_index(document: DocumentIR, page_index: int) -> PageIR | None:
+    for page in document.pages:
+        if page.page_index == page_index:
+            return page
+    if _document_uses_positional_page_indices(document) and 0 <= page_index < len(document.pages):
+        return document.pages[page_index]
+    return None
+
+
+def _document_uses_positional_page_indices(document: DocumentIR) -> bool:
+    return all(page.page_index == index for index, page in enumerate(document.pages))
 
 
 def _docling_page_index(prov: dict[str, Any]) -> int:

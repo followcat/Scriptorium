@@ -58,6 +58,7 @@ def run_benchmark(
     out_dir: str | Path,
     dpi: int = 192,
     max_pages: int | None = None,
+    page_ranges: str | None = None,
     structure_jsons: list[str | Path] | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
@@ -73,6 +74,8 @@ def run_benchmark(
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
     max_pages_request = _max_pages_request(max_pages)
+    page_ranges_request = _page_ranges_request(page_ranges)
+    page_indices_request = _page_indices_request(page_ranges_request, max_pages_request)
     html_mode_request = _html_mode_request(html_mode)
     font_size_scale_request = _font_size_scale_request(font_size_scale)
     text_fit_request = _text_fit_request(text_fit)
@@ -96,6 +99,8 @@ def run_benchmark(
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
                     max_pages=max_pages_request,
+                    page_ranges=page_ranges_request,
+                    page_indices=page_indices_request,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     raster_policy=raster_policy,
                     ocr_fallback=ocr_fallback,
@@ -117,6 +122,8 @@ def run_benchmark(
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
                     max_pages=max_pages_request,
+                    page_ranges=page_ranges_request,
+                    page_indices=page_indices_request,
                     structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
@@ -136,6 +143,8 @@ def run_benchmark(
         "version": 1,
         "dpi": dpi,
         "max_pages": max_pages_request,
+        "page_ranges": page_ranges_request,
+        "sampled_page_numbers": [index + 1 for index in page_indices_request] if page_indices_request else None,
         "font_profile": font_profile,
         "raster_policy": raster_policy,
         "ocr_fallback": ocr_fallback,
@@ -161,6 +170,7 @@ def run_structure_ab_benchmark(
     structure_jsons: list[str | Path],
     dpi: int = 192,
     max_pages: int | None = None,
+    page_ranges: str | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
     ocr_fallback: OcrFallback = "image-only",
@@ -183,6 +193,7 @@ def run_structure_ab_benchmark(
         native_dir,
         dpi=dpi,
         max_pages=max_pages,
+        page_ranges=page_ranges,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -199,6 +210,7 @@ def run_structure_ab_benchmark(
         structure_dir,
         dpi=dpi,
         max_pages=max_pages,
+        page_ranges=page_ranges,
         structure_jsons=structure_jsons,
         font_profile=font_profile,
         raster_policy=raster_policy,
@@ -219,6 +231,12 @@ def run_structure_ab_benchmark(
         "version": 1,
         "dpi": dpi,
         "max_pages": _max_pages_request(max_pages),
+        "page_ranges": _page_ranges_request(page_ranges),
+        "sampled_page_numbers": [
+            index + 1
+            for index in (_page_indices_request(_page_ranges_request(page_ranges), _max_pages_request(max_pages)) or [])
+        ]
+        or None,
         "font_profile": font_profile,
         "raster_policy": raster_policy,
         "ocr_fallback": ocr_fallback,
@@ -502,6 +520,8 @@ def _run_case(
     out_dir: Path,
     dpi: int,
     max_pages: int | None = None,
+    page_ranges: str | None = None,
+    page_indices: tuple[int, ...] | None = None,
     structure_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
@@ -524,6 +544,7 @@ def _run_case(
         dpi=dpi,
         include_svg_background=html_mode == "fidelity" and fidelity_background == "svg",
         max_pages=max_pages,
+        page_indices=page_indices,
     )
     timings["render_seconds"] = _elapsed(start)
 
@@ -565,7 +586,14 @@ def _run_case(
     timings["print_pdf_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    quality = compare_pdf_renderings(pdf_path, exported_pdf, out_dir / "quality", dpi=dpi, max_pages=max_pages)
+    quality = compare_pdf_renderings(
+        pdf_path,
+        exported_pdf,
+        out_dir / "quality",
+        dpi=dpi,
+        max_pages=max_pages,
+        expected_page_indices=page_indices,
+    )
     timings["compare_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
@@ -589,6 +617,8 @@ def _run_case(
         "name": pdf_path.stem,
         "source_pdf": str(pdf_path),
         "max_pages": max_pages,
+        "page_ranges": page_ranges,
+        "sampled_page_numbers": [index + 1 for index in page_indices] if page_indices else None,
         "ir": str(ir_path),
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
@@ -828,6 +858,8 @@ def _run_calibrated_case(
     out_dir: Path,
     dpi: int,
     max_pages: int | None,
+    page_ranges: str | None,
+    page_indices: tuple[int, ...] | None,
     structure_json: Path | None,
     raster_policy: RasterPolicy,
     ocr_fallback: OcrFallback,
@@ -847,6 +879,8 @@ def _run_calibrated_case(
             out_dir / _candidate_slug(mode, background, profile, scale, fit),
             dpi=dpi,
             max_pages=max_pages,
+            page_ranges=page_ranges,
+            page_indices=page_indices,
             structure_json=structure_json,
             font_profile=profile,
             raster_policy=raster_policy,
@@ -2448,6 +2482,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
     fieldnames = [
         "name",
         "max_pages",
+        "page_ranges",
+        "sampled_page_numbers",
         "page_count",
         "element_count",
         "editable_element_count",
@@ -2859,6 +2895,46 @@ def _max_pages_request(max_pages: int | None) -> int | None:
     if value <= 0:
         raise ValueError(f"max_pages must be positive, got {max_pages}")
     return value
+
+
+def _page_ranges_request(page_ranges: str | None) -> str | None:
+    if page_ranges is None:
+        return None
+    value = ",".join(part.strip() for part in str(page_ranges).split(",") if part.strip())
+    return value or None
+
+
+def _page_indices_request(page_ranges: str | None, max_pages: int | None) -> tuple[int, ...] | None:
+    if page_ranges is None:
+        return None
+    if max_pages is not None:
+        raise ValueError("page_ranges cannot be combined with max_pages")
+
+    indices: list[int] = []
+    seen: set[int] = set()
+    for part in page_ranges.split(","):
+        if "-" in part:
+            start_text, end_text = (item.strip() for item in part.split("-", 1))
+        else:
+            start_text = end_text = part.strip()
+        try:
+            start = int(start_text)
+            end = int(end_text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid page range segment: {part!r}") from exc
+        if start <= 0 or end <= 0:
+            raise ValueError(f"Page ranges are 1-based and must be positive, got {part!r}")
+        if end < start:
+            raise ValueError(f"Page range end must be >= start, got {part!r}")
+        for page_number in range(start, end + 1):
+            index = page_number - 1
+            if index in seen:
+                continue
+            indices.append(index)
+            seen.add(index)
+    if not indices:
+        raise ValueError("page_ranges did not contain any pages")
+    return tuple(indices)
 
 
 def _fidelity_background_request(

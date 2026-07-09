@@ -61,6 +61,34 @@ def test_pdf_rendering_can_limit_pages(tmp_path: Path) -> None:
     assert report["page_count_match"] is True
 
 
+def test_pdf_rendering_can_select_source_page_indices(tmp_path: Path) -> None:
+    pdf = tmp_path / "three-page.pdf"
+    _make_blank_pdf(pdf, page_count=3)
+
+    rendered = render_pdf(pdf, tmp_path / "pages", dpi=72, page_indices=(1,))
+    report = compare_pdf_renderings(
+        pdf,
+        pdf,
+        tmp_path / "quality",
+        dpi=72,
+        expected_page_indices=(1,),
+        actual_page_indices=(1,),
+    )
+
+    assert len(rendered.pages) == 1
+    assert rendered.pages[0].page_index == 1
+    assert rendered.pages[0].background_image.name == "page_0002.png"
+    assert report["max_pages"] is None
+    assert report["expected_page_indices"] == [1]
+    assert report["actual_page_indices"] == [1]
+    assert report["expected_page_count"] == 1
+    assert report["actual_page_count"] == 1
+    assert report["pages"][0]["expected_source_page_index"] == 1
+    assert report["pages"][0]["expected_source_page_number"] == 2
+    assert report["pages"][0]["actual_source_page_index"] == 1
+    assert report["pages"][0]["actual_source_page_number"] == 2
+
+
 def _make_blank_pdf(path: Path, page_count: int) -> None:
     doc = fitz.open()
     try:

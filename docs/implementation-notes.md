@@ -355,6 +355,8 @@ This writes `native-only/benchmark_report.json`, `native-plus-structure/benchmar
 Metrics:
 
 - `max_pages`: optional first-N-pages benchmark limit. The source PDF remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.
+- `page_ranges`: optional explicit 1-based source page sampling such as `1-12,136-160,220`. It is mutually exclusive with `max_pages`. Rendered pages keep their original source `page_index`, so semantic sidecars and Paddle/PP-Structure/Docling structure JSON can still align by source page number instead of the sampled list position.
+- `sampled_page_numbers`: the exact 1-based source page numbers scored by the run when `page_ranges` is used.
 - `max_diff_ratio`: maximum normalized page difference between original PDF render and structured HTML-to-PDF render. Missing/extra pages are scored as `1.0`; page dimension mismatches add a size penalty instead of silently resizing away the mismatch.
 - `mean_diff_ratio`: average page difference across all matched and unmatched pages.
 - `p95_diff_ratio`: 95th percentile diff ratio for the compared page set.

@@ -201,6 +201,40 @@ def test_candidate_orders_are_scored_against_semantic_ground_truth(tmp_path: Pat
     assert report["semantic_best_candidate_successor_accuracy"] == 1
 
 
+def test_semantic_ground_truth_matches_sparse_source_page_index(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "paper.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    source_pdf.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 1,
+                        "text_sequence": ["A", "B"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "B"], page_index=1)
+
+    report = compare_semantic_reading_order(
+        document,
+        source_pdf,
+        tmp_path / "semantic",
+        candidate_orders={"selected_like": {1: ["e0", "e1"]}},
+    )
+    page = report["pages"][0]
+
+    assert report["ground_truth_available"] is True
+    assert page["truth_page_index"] == 1
+    assert page["page_index"] == 1
+    assert page["candidate_orders"]["selected_like"]["successor_order_accuracy"] == 1
+    assert report["semantic_successor_accuracy"] == 1
+
+
 def test_relation_edges_ground_truth_scores_selected_and_candidate_orders(tmp_path: Path) -> None:
     source_pdf = tmp_path / "paper.pdf"
     source_pdf.write_bytes(b"%PDF-1.4\n")
@@ -333,7 +367,7 @@ def test_reading_streams_score_local_successors_independently(tmp_path: Path) ->
     assert report["semantic_best_candidate_by_stream_successor"] in {"selected_like", "sidebar_first"}
 
 
-def _document_with_texts(texts: list[str]) -> DocumentIR:
+def _document_with_texts(texts: list[str], page_index: int = 0) -> DocumentIR:
     elements = []
     for index, text in enumerate(texts):
         if text == "Running header":
@@ -348,7 +382,7 @@ def _document_with_texts(texts: list[str]) -> DocumentIR:
         elements.append(
             ElementIR(
                 id=f"e{index}",
-                page_index=0,
+                page_index=page_index,
                 type="text",
                 bbox_pdf=BBox(x0=10, y0=y0, x1=120, y1=y0 + 10),
                 bbox_px=BBox(x0=10, y0=y0, x1=120, y1=y0 + 10),
@@ -358,7 +392,7 @@ def _document_with_texts(texts: list[str]) -> DocumentIR:
             )
         )
     page = PageIR(
-        page_index=0,
+        page_index=page_index,
         width_pt=200,
         height_pt=300,
         width_px=200,

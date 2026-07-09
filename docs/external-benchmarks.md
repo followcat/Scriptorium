@@ -129,6 +129,17 @@ BYD A-share annual report, first 40 pages:
   --fidelity-background auto
 ```
 
+BYD financial statement section, explicit source pages 136-160:
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-financial-pages-v1 \
+  --dpi 144 \
+  --page-ranges 136-160 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
 BYD translated re-rendering stress, first 40 pages:
 
 ```bash
@@ -140,6 +151,8 @@ BYD translated re-rendering stress, first 40 pages:
   --fidelity-background auto \
   --translation-stress pseudo-expand
 ```
+
+Use `--page-ranges` when the important section is not at the beginning of a long source. Page ranges are 1-based source page numbers, cannot be combined with `--max-pages`, and preserve original `page_index` values for semantic sidecars and structure JSON alignment.
 
 Translation re-rendering stress run for annual-report, ecommerce screenshot, and web portal samples:
 

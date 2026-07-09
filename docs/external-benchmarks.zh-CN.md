@@ -129,6 +129,17 @@ JD 截图 PDF：
   --fidelity-background auto
 ```
 
+比亚迪财务报表区间，按源页码抽样第 136-160 页：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-financial-pages-v1 \
+  --dpi 144 \
+  --page-ranges 136-160 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
 比亚迪翻译回渲染压力测试前 40 页：
 
 ```bash
@@ -140,6 +151,8 @@ JD 截图 PDF：
   --fidelity-background auto \
   --translation-stress pseudo-expand
 ```
+
+当关键内容不在长文档开头时，使用 `--page-ranges`。页码是 1-based 源页码，不能和 `--max-pages` 同时使用，并且会保留原始 `page_index`，用于 semantic sidecar 和结构 JSON 对齐。
 
 年报、电商截图和真实门户页的翻译回渲染压力测试：
 

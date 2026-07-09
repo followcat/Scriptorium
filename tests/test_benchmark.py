@@ -354,6 +354,48 @@ def test_benchmark_can_limit_large_documents_to_first_pages(tmp_path: Path) -> N
     assert "max_pages" in csv_text
 
 
+def test_benchmark_can_score_explicit_source_page_ranges(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
+    multipage_pdf = next(pdf for pdf in pdfs if pdf.name == "multipage_mixed.pdf")
+    report = run_benchmark([multipage_pdf], tmp_path / "benchmark-page-ranges", dpi=96, page_ranges="2")
+    case = report["cases"][0]
+    csv_text = (tmp_path / "benchmark-page-ranges" / "benchmark_summary.csv").read_text(encoding="utf-8")
+    quality = json.loads(Path(case["quality_report"]).read_text(encoding="utf-8"))
+    semantic = json.loads(Path(case["semantic_report"]).read_text(encoding="utf-8"))
+
+    assert report["max_pages"] is None
+    assert report["page_ranges"] == "2"
+    assert report["sampled_page_numbers"] == [2]
+    assert case["max_pages"] is None
+    assert case["page_ranges"] == "2"
+    assert case["sampled_page_numbers"] == [2]
+    assert case["page_count"] == 1
+    assert quality["max_pages"] is None
+    assert quality["expected_page_indices"] == [1]
+    assert quality["actual_page_indices"] is None
+    assert quality["expected_page_count"] == 1
+    assert quality["actual_page_count"] == 1
+    assert quality["pages"][0]["expected_source_page_index"] == 1
+    assert quality["pages"][0]["expected_source_page_number"] == 2
+    assert quality["pages"][0]["actual_source_page_index"] == 0
+    assert quality["pages"][0]["actual_source_page_number"] == 1
+    assert semantic["ground_truth_available"] is True
+    assert semantic["pages"][0]["truth_page_index"] == 1
+    assert semantic["pages"][0]["page_index"] == 1
+    assert case["semantic_ground_truth_available"] is True
+    assert case["semantic_expected_text_count"] == 4
+    assert "page_ranges" in csv_text
+    assert "sampled_page_numbers" in csv_text
+
+
+def test_benchmark_rejects_page_ranges_with_max_pages(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
+    multipage_pdf = next(pdf for pdf in pdfs if pdf.name == "multipage_mixed.pdf")
+
+    with pytest.raises(ValueError, match="page_ranges cannot be combined with max_pages"):
+        run_benchmark([multipage_pdf], tmp_path / "benchmark-invalid-page-ranges", dpi=96, max_pages=1, page_ranges="2")
+
+
 def test_reading_order_geometry_profile_separates_text_flow_columns_from_tables() -> None:
     text_flow_boxes: list[BBox] = []
     table_boxes: list[BBox] = []

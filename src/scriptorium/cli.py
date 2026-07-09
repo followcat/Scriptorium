@@ -54,6 +54,10 @@ def benchmark_command(
         min=1,
         help="Limit each benchmark PDF to the first N pages for large external documents.",
     ),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Score explicit 1-based source page ranges, for example 1-12,136-160. Cannot be combined with --max-pages.",
+    ),
     font_profile: BenchmarkFontProfile = typer.Option(
         "browser-default",
         help=(
@@ -122,6 +126,7 @@ def benchmark_command(
         out_dir,
         dpi=dpi,
         max_pages=max_pages,
+        page_ranges=page_ranges,
         structure_jsons=structure_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
@@ -141,6 +146,7 @@ def benchmark_command(
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
     typer.echo(f"Max pages: {report.get('max_pages')}")
+    typer.echo(f"Page ranges: {report.get('page_ranges')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
     typer.echo(f"OCR fallback: {report.get('ocr_fallback')}")
@@ -178,6 +184,10 @@ def benchmark_structure_ab_command(
         None,
         min=1,
         help="Limit each benchmark PDF to the first N pages for large external documents.",
+    ),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Score explicit 1-based source page ranges, for example 1-12,136-160. Cannot be combined with --max-pages.",
     ),
     font_profile: BenchmarkFontProfile = typer.Option(
         "browser-default",
@@ -228,6 +238,7 @@ def benchmark_structure_ab_command(
         structure_json,
         dpi=dpi,
         max_pages=max_pages,
+        page_ranges=page_ranges,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -244,6 +255,7 @@ def benchmark_structure_ab_command(
     typer.echo(f"Native report: {report['native_report']}")
     typer.echo(f"Native-plus-structure report: {report['structure_report']}")
     typer.echo(f"Cases: {report['case_count']}")
+    typer.echo(f"Page ranges: {report.get('page_ranges')}")
     typer.echo(f"Mean visual similarity delta: {report['summary'].get('mean_visual_similarity_delta')}")
     typer.echo(f"Mean reading-order risk delta: {report['summary'].get('mean_reading_order_risk_score_delta')}")
     typer.echo(f"Grid-island element delta: {report['summary'].get('total_grid_island_element_delta')}")

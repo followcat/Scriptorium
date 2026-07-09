@@ -82,7 +82,7 @@ def _page_truth_in_document(document: DocumentIR, page_truth: dict[str, Any]) ->
         page_index = int(page_truth.get("page_index", 0))
     except (TypeError, ValueError):
         return False
-    return 0 <= page_index < len(document.pages)
+    return _document_page_by_index(document, page_index) is not None
 
 
 def _compare_page(
@@ -90,7 +90,7 @@ def _compare_page(
     page_truth: dict[str, Any],
     candidate_orders: dict[str, dict[int, list[str]]],
 ) -> dict[str, Any]:
-    page_index = int(page_truth.get("page_index", 0))
+    truth_page_index = int(page_truth.get("page_index", 0))
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
     relation_edges = _page_relation_edges(page_truth)
     reading_streams = _page_reading_streams(page_truth)
@@ -102,7 +102,9 @@ def _compare_page(
             "ordered-subsequence" if (has_relation_edges or has_stream_labels) and not expected else "full-sequence",
         )
     )
-    page = document.pages[page_index]
+    page = _document_page_by_index(document, truth_page_index)
+    if page is None:
+        raise ValueError(f"Page {truth_page_index} is not present in document")
     actual_elements = [
         element
         for element in sorted(page.elements, key=lambda item: (item.reading_order, item.bbox_pdf.y0, item.bbox_pdf.x0))
@@ -110,7 +112,8 @@ def _compare_page(
     ]
 
     page_report = {
-        "page_index": page_index,
+        "page_index": page.page_index,
+        "truth_page_index": truth_page_index,
         "match_mode": match_mode,
     }
     page_report.update(
@@ -129,7 +132,7 @@ def _compare_page(
 
     candidate_reports: dict[str, Any] = {}
     for candidate_name, page_orders in sorted(candidate_orders.items()):
-        ordered_ids = page_orders.get(page_index)
+        ordered_ids = page_orders.get(page.page_index)
         if not ordered_ids:
             continue
         candidate_elements = _candidate_ordered_elements(actual_elements, ordered_ids)
@@ -147,6 +150,19 @@ def _compare_page(
         page_report["candidate_orders"] = candidate_reports
 
     return page_report
+
+
+def _document_page_by_index(document: DocumentIR, page_index: int) -> Any:
+    for page in document.pages:
+        if page.page_index == page_index:
+            return page
+    if _document_uses_positional_page_indices(document) and 0 <= page_index < len(document.pages):
+        return document.pages[page_index]
+    return None
+
+
+def _document_uses_positional_page_indices(document: DocumentIR) -> bool:
+    return all(page.page_index == index for index, page in enumerate(document.pages))
 
 
 def _page_relation_edges(page_truth: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:

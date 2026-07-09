@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,18 +34,23 @@ def render_pdf(
     dpi: int = 192,
     include_svg_background: bool = False,
     max_pages: int | None = None,
+    page_indices: Sequence[int] | None = None,
 ) -> RenderedDocument:
     source = Path(pdf_path).resolve()
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     if max_pages is not None and max_pages <= 0:
         raise ValueError(f"max_pages must be positive, got {max_pages}")
+    if page_indices is not None and max_pages is not None:
+        raise ValueError("page_indices and max_pages cannot be used together")
 
     pages: list[RenderedPage] = []
     with fitz.open(source) as doc:
-        for page_index, page in enumerate(doc):
+        selected_indices = _selected_page_indices(doc.page_count, page_indices)
+        for page_index in selected_indices:
             if max_pages is not None and len(pages) >= max_pages:
                 break
+            page = doc[page_index]
             pixmap = page.get_pixmap(dpi=dpi, alpha=False)
             image_path = target_dir / f"page_{page_index + 1:04d}.png"
             pixmap.save(image_path)
@@ -72,3 +78,20 @@ def render_pdf(
             )
 
     return RenderedDocument(source_pdf=source, render_dpi=dpi, pages=pages)
+
+
+def _selected_page_indices(page_count: int, page_indices: Sequence[int] | None) -> list[int]:
+    if page_indices is None:
+        return list(range(page_count))
+
+    selected: list[int] = []
+    seen: set[int] = set()
+    for raw_index in page_indices:
+        index = int(raw_index)
+        if index < 0 or index >= page_count:
+            raise ValueError(f"page index {index} is outside PDF page range 0-{page_count - 1}")
+        if index in seen:
+            continue
+        selected.append(index)
+        seen.add(index)
+    return selected

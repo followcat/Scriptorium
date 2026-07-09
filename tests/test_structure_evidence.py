@@ -167,6 +167,69 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
 
 
+def test_structure_evidence_matches_sparse_source_page_index() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("line", "Sampled page line.", BBox(x0=10, y0=10, x1=100, y1=22), 1),
+        ],
+        page_index=4,
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 4,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 200, 44],
+                    "block_order": 1,
+                    "block_content": "Sampled page line.",
+                    "confidence": 0.94,
+                },
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert len(regions) == 1
+    assert regions[0].page_index == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 1
+    assert document.pages[0].elements[0].metadata["external_structure_order"] == 1
+
+
+def test_structure_evidence_does_not_fallback_to_position_for_sparse_source_page_index() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("line", "Sampled page line.", BBox(x0=10, y0=10, x1=100, y1=22), 1),
+        ],
+        page_index=4,
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 200, 44],
+                    "block_order": 1,
+                    "block_content": "Wrong source page.",
+                    "confidence": 0.94,
+                },
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert regions == []
+    assert document.metadata["structure_evidence"]["region_count"] == 0
+    assert "external_structure_order" not in document.pages[0].elements[0].metadata
+
+
 def test_external_structure_labels_feed_reading_stream_scopes() -> None:
     document = _document_with_text_boxes(
         [
@@ -270,11 +333,11 @@ def test_external_card_grid_label_creates_grid_translation_stream() -> None:
     assert by_id["intro"].metadata["reading_order_stream_id"] == "body-main"
 
 
-def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> DocumentIR:
+def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]], page_index: int = 0) -> DocumentIR:
     elements = [
         ElementIR(
             id=element_id,
-            page_index=0,
+            page_index=page_index,
             type="text",
             bbox_pdf=bbox,
             bbox_px=BBox(x0=bbox.x0 * 2, y0=bbox.y0 * 2, x1=bbox.x1 * 2, y1=bbox.y1 * 2),
@@ -285,7 +348,7 @@ def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> Docume
         for element_id, text, bbox, reading_order in items
     ]
     page = PageIR(
-        page_index=0,
+        page_index=page_index,
         width_pt=200,
         height_pt=200,
         width_px=400,

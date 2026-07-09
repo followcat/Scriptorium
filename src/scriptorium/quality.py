@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -78,10 +79,26 @@ def compare_pdf_renderings(
     out_dir: str | Path,
     dpi: int = 192,
     max_pages: int | None = None,
+    expected_page_indices: Sequence[int] | None = None,
+    actual_page_indices: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     target = Path(out_dir)
-    expected_render = render_pdf(expected_pdf, target / "expected_pages", dpi=dpi, max_pages=max_pages)
-    actual_render = render_pdf(actual_pdf, target / "actual_pages", dpi=dpi, max_pages=max_pages)
+    if max_pages is not None and (expected_page_indices is not None or actual_page_indices is not None):
+        raise ValueError("max_pages cannot be combined with explicit page indices")
+    expected_render = render_pdf(
+        expected_pdf,
+        target / "expected_pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=expected_page_indices,
+    )
+    actual_render = render_pdf(
+        actual_pdf,
+        target / "actual_pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=actual_page_indices,
+    )
     expected_page_count = len(expected_render.pages)
     actual_page_count = len(actual_render.pages)
     compared_page_count = min(expected_page_count, actual_page_count)
@@ -91,39 +108,41 @@ def compare_pdf_renderings(
     for index in range(report_page_count):
         diff_path = target / f"pdf_page_{index + 1:04d}.diff.png"
         if index < expected_page_count and index < actual_page_count:
-            pages.append(
-                compare_images(
-                    expected_render.pages[index].background_image,
-                    actual_render.pages[index].background_image,
-                    diff_path,
-                    page_number=index + 1,
-                )
+            page_report = compare_images(
+                expected_render.pages[index].background_image,
+                actual_render.pages[index].background_image,
+                diff_path,
+                page_number=index + 1,
             )
+            page_report.update(_source_page_metadata(expected_render.pages[index], actual_render.pages[index]))
+            pages.append(page_report)
         elif index < expected_page_count:
-            pages.append(
-                _unmatched_page_report(
-                    expected_render.pages[index].background_image,
-                    None,
-                    diff_path,
-                    page_number=index + 1,
-                    mismatch_type="missing_actual_page",
-                )
+            page_report = _unmatched_page_report(
+                expected_render.pages[index].background_image,
+                None,
+                diff_path,
+                page_number=index + 1,
+                mismatch_type="missing_actual_page",
             )
+            page_report.update(_source_page_metadata(expected_render.pages[index], None))
+            pages.append(page_report)
         else:
-            pages.append(
-                _unmatched_page_report(
-                    None,
-                    actual_render.pages[index].background_image,
-                    diff_path,
-                    page_number=index + 1,
-                    mismatch_type="extra_actual_page",
-                )
+            page_report = _unmatched_page_report(
+                None,
+                actual_render.pages[index].background_image,
+                diff_path,
+                page_number=index + 1,
+                mismatch_type="extra_actual_page",
             )
+            page_report.update(_source_page_metadata(None, actual_render.pages[index]))
+            pages.append(page_report)
 
     report = {
         "expected_pdf": str(expected_pdf),
         "actual_pdf": str(actual_pdf),
         "max_pages": max_pages,
+        "expected_page_indices": list(expected_page_indices) if expected_page_indices is not None else None,
+        "actual_page_indices": list(actual_page_indices) if actual_page_indices is not None else None,
         "expected_page_count": expected_page_count,
         "actual_page_count": actual_page_count,
         "compared_page_count": compared_page_count,
@@ -134,6 +153,17 @@ def compare_pdf_renderings(
     report.update(_summarize_pages(pages))
     (target / "pdf_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
+
+
+def _source_page_metadata(expected: Any, actual: Any) -> dict[str, int | None]:
+    expected_index = getattr(expected, "page_index", None)
+    actual_index = getattr(actual, "page_index", None)
+    return {
+        "expected_source_page_index": int(expected_index) if expected_index is not None else None,
+        "expected_source_page_number": int(expected_index) + 1 if expected_index is not None else None,
+        "actual_source_page_index": int(actual_index) if actual_index is not None else None,
+        "actual_source_page_number": int(actual_index) + 1 if actual_index is not None else None,
+    }
 
 
 def compare_images(
