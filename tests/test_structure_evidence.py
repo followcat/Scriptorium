@@ -495,6 +495,78 @@ def test_docling_furniture_tree_feeds_page_artifact_streams() -> None:
     assert by_id["body"].metadata["reading_order_stream_id"] == "body-main"
 
 
+def test_docling_table_cells_drive_row_major_table_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("b", "B", BBox(x0=60, y0=50, x1=95, y1=62), 1),
+            ("a", "A", BBox(x0=20, y0=50, x1=55, y1=62), 2),
+            ("d", "D", BBox(x0=60, y0=70, x1=95, y1=82), 3),
+            ("c", "C", BBox(x0=20, y0=70, x1=55, y1=82), 4),
+        ]
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {"self_ref": "#/body", "children": [{"$ref": "#/tables/0"}]},
+        "tables": [
+            {
+                "self_ref": "#/tables/0",
+                "label": "table",
+                "prov": [
+                    {
+                        "page_no": 1,
+                        "bbox": {"l": 18, "t": 48, "r": 98, "b": 84, "coord_origin": "TOPLEFT"},
+                    }
+                ],
+                "data": {
+                    "num_rows": 2,
+                    "num_cols": 2,
+                    "table_cells": [
+                        _docling_cell("A", 0, 0, 20, 50, 55, 62),
+                        _docling_cell("B", 0, 1, 60, 50, 95, 62),
+                        _docling_cell("C", 1, 0, 20, 70, 55, 82),
+                        _docling_cell("D", 1, 1, 60, 70, 95, 82),
+                    ],
+                },
+            }
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    ordered_text = [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+
+    assert [(region.label, region.order, region.order_source) for region in regions] == [
+        ("table", 1, "docling-body"),
+        ("table_cell", 1, "docling-table-cell"),
+        ("table_cell", 1, "docling-table-cell"),
+        ("table_cell", 1, "docling-table-cell"),
+        ("table_cell", 1, "docling-table-cell"),
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 5
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {
+        "docling-body": 1,
+        "docling-table-cell": 4,
+    }
+    assert ordered_text == ["A", "B", "C", "D"]
+    assert by_id["a"].metadata["external_structure_label"] == "table_cell"
+    assert by_id["a"].metadata["external_structure_order_subindex"] == 1
+    assert by_id["b"].metadata["external_structure_order_subindex"] == 2
+    assert by_id["c"].metadata["external_structure_order_subindex"] == 3
+    assert by_id["d"].metadata["external_structure_order_subindex"] == 4
+    assert by_id["a"].metadata["external_structure_table_cell_row"] == 0
+    assert by_id["a"].metadata["external_structure_table_cell_col"] == 0
+    assert by_id["b"].metadata["external_structure_table_cell_col"] == 1
+    assert by_id["a"].metadata["reading_order_stream_type"] == "table-island"
+    assert by_id["a"].metadata["role"] == "table-cell-text"
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [
@@ -777,4 +849,15 @@ def _nested_region(
         "block_bbox": element.bbox_px.as_list(),
         "block_content": text,
         "confidence": 0.92,
+    }
+
+
+def _docling_cell(text: str, row: int, col: int, x0: float, y0: float, x1: float, y1: float) -> dict[str, object]:
+    return {
+        "text": text,
+        "start_row_offset_idx": row,
+        "end_row_offset_idx": row + 1,
+        "start_col_offset_idx": col,
+        "end_col_offset_idx": col + 1,
+        "bbox": {"l": x0, "t": y0, "r": x1, "b": y1, "coord_origin": "TOPLEFT"},
     }

@@ -307,6 +307,24 @@ def _normalize_docling_document(
                 regions.extend(new_regions)
                 if orderable:
                     order_counter += 1
+            table_cell_regions = _docling_table_cell_regions(
+                item,
+                document,
+                order=region_order,
+                order_source="docling-table-cell" if orderable else order_source,
+                source=source or "docling",
+                ref=ref or item.get("self_ref"),
+            )
+            for region in table_cell_regions:
+                key = (
+                    str(region.raw.get("docling_ref") or id(region.raw)),
+                    region.page_index,
+                    tuple(round(value, 4) for value in region.bbox_pdf.as_list()),
+                )
+                if key in emitted:
+                    continue
+                emitted.add(key)
+                regions.append(region)
 
         children = item.get("children")
         if isinstance(children, list):
@@ -433,6 +451,169 @@ def _docling_item_regions(
             )
         )
     return regions
+
+
+def _docling_table_cell_regions(
+    item: dict[str, Any],
+    document: DocumentIR,
+    *,
+    order: int | None,
+    order_source: str,
+    source: str,
+    ref: Any,
+) -> list[StructureRegion]:
+    data = item.get("data")
+    if not isinstance(data, dict):
+        return []
+
+    cells = _docling_table_cells(data)
+    if not cells:
+        return []
+
+    parent_prov_items = [prov for prov in item.get("prov", []) if isinstance(prov, dict)]
+    regions: list[StructureRegion] = []
+    for cell_index, cell in enumerate(cells):
+        if not isinstance(cell, dict):
+            continue
+        text = str(cell.get("text") or cell.get("content") or "").strip()
+        if not text:
+            continue
+        page_index = _docling_cell_page_index(cell, parent_prov_items)
+        page = _document_page_by_evidence_index(document, page_index)
+        if page is None:
+            continue
+        bbox_pdf = _docling_cell_bbox(cell, page, parent_prov_items)
+        if bbox_pdf is None:
+            continue
+        bbox_px, normalized_bbox_pdf = _normalize_region_bbox(bbox_pdf, "pdf", page)
+        if bbox_px.width <= 0 or bbox_px.height <= 0:
+            continue
+        row_index = _optional_int(cell.get("start_row_offset_idx"))
+        col_index = _optional_int(cell.get("start_col_offset_idx"))
+        raw = dict(cell)
+        raw["docling_table_ref"] = ref
+        raw["docling_ref"] = str(cell.get("ref") or f"{ref}/data/table_cells/{cell_index}")
+        raw["_scriptorium_structure_order_subindex"] = _docling_cell_order_subindex(cell, cell_index, data)
+        if row_index is not None:
+            raw["external_structure_table_cell_row"] = row_index
+        if col_index is not None:
+            raw["external_structure_table_cell_col"] = col_index
+        for key in ("row_span", "col_span", "column_header", "row_header", "row_section"):
+            if key in cell:
+                raw[f"external_structure_table_cell_{key}"] = cell[key]
+        regions.append(
+            StructureRegion(
+                page_index=page.page_index,
+                label="table_cell",
+                bbox_px=bbox_px,
+                bbox_pdf=normalized_bbox_pdf,
+                order=order,
+                order_source=order_source,
+                text=text,
+                confidence=_extract_confidence(cell) or _extract_confidence(item),
+                source=source,
+                raw=raw,
+            )
+        )
+    return regions
+
+
+def _docling_table_cells(data: dict[str, Any]) -> list[dict[str, Any]]:
+    table_cells = data.get("table_cells")
+    if isinstance(table_cells, list) and table_cells:
+        return [cell for cell in table_cells if isinstance(cell, dict)]
+
+    grid = data.get("grid")
+    cells: list[dict[str, Any]] = []
+    if isinstance(grid, list):
+        for row in grid:
+            if isinstance(row, list):
+                cells.extend(cell for cell in row if isinstance(cell, dict))
+            elif isinstance(row, dict):
+                cells.append(row)
+    return cells
+
+
+def _docling_cell_page_index(cell: dict[str, Any], parent_prov_items: list[dict[str, Any]]) -> int:
+    prov_items = cell.get("prov")
+    if isinstance(prov_items, list):
+        for prov in prov_items:
+            if isinstance(prov, dict):
+                return _docling_page_index(prov)
+    if parent_prov_items:
+        return _docling_page_index(parent_prov_items[0])
+    value = cell.get("page_index")
+    if value is not None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+    for key in ("page_no", "page", "page_num"):
+        value = cell.get(key)
+        if value is None:
+            continue
+        try:
+            return max(int(value) - 1, 0)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _docling_cell_bbox(
+    cell: dict[str, Any],
+    page: PageIR,
+    parent_prov_items: list[dict[str, Any]],
+) -> BBox | None:
+    prov_items = cell.get("prov")
+    if isinstance(prov_items, list):
+        for prov in prov_items:
+            if isinstance(prov, dict):
+                bbox = _docling_bbox_from_prov(prov, page)
+                if bbox is not None:
+                    return bbox
+
+    raw_bbox = cell.get("bbox") or cell.get("box") or cell.get("bbox_pdf")
+    bbox = _docling_bbox_from_any(raw_bbox)
+    if bbox is None:
+        return None
+
+    origin = ""
+    if isinstance(raw_bbox, dict):
+        origin = str(raw_bbox.get("coord_origin") or "").upper()
+    if not origin:
+        origin = str(cell.get("coord_origin") or "").upper()
+    if not origin and parent_prov_items:
+        parent_bbox = parent_prov_items[0].get("bbox")
+        if isinstance(parent_bbox, dict):
+            origin = str(parent_bbox.get("coord_origin") or "").upper()
+        if not origin:
+            origin = str(parent_prov_items[0].get("coord_origin") or "").upper()
+    if origin == "BOTTOMLEFT" or (not origin and bbox.y0 > bbox.y1):
+        return BBox(
+            x0=bbox.x0,
+            y0=page.height_pt - bbox.y0,
+            x1=bbox.x1,
+            y1=page.height_pt - bbox.y1,
+        )
+    return bbox
+
+
+def _docling_cell_order_subindex(cell: dict[str, Any], cell_index: int, data: dict[str, Any]) -> int:
+    row = _optional_int(cell.get("start_row_offset_idx"))
+    col = _optional_int(cell.get("start_col_offset_idx"))
+    num_cols = _optional_int(data.get("num_cols")) or 1000
+    if row is None or col is None:
+        return cell_index + 1
+    return row * max(num_cols, 1) + col + 1
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _document_page_by_evidence_index(document: DocumentIR, page_index: int) -> PageIR | None:
@@ -1275,6 +1456,7 @@ def _apply_page_regions(
             element.metadata["external_structure_order"] = region.order
         if region.order_source is not None:
             element.metadata["external_structure_order_source"] = region.order_source
+        _apply_external_structure_detail_metadata(element, region)
         _apply_external_structure_reading_metadata(element, page, region)
         matched_count += 1
     return matched_count
@@ -1599,6 +1781,25 @@ def _dedupe_texts(values: list[str]) -> list[str]:
     return deduped
 
 
+def _apply_external_structure_detail_metadata(element: ElementIR, region: StructureRegion) -> None:
+    subindex = _optional_int(region.raw.get("_scriptorium_structure_order_subindex"))
+    if subindex is not None:
+        element.metadata["external_structure_order_subindex"] = subindex
+
+    for raw_key, metadata_key in (
+        ("docling_table_ref", "external_structure_table_ref"),
+        ("external_structure_table_cell_row", "external_structure_table_cell_row"),
+        ("external_structure_table_cell_col", "external_structure_table_cell_col"),
+        ("external_structure_table_cell_row_span", "external_structure_table_cell_row_span"),
+        ("external_structure_table_cell_col_span", "external_structure_table_cell_col_span"),
+        ("external_structure_table_cell_column_header", "external_structure_table_cell_column_header"),
+        ("external_structure_table_cell_row_header", "external_structure_table_cell_row_header"),
+        ("external_structure_table_cell_row_section", "external_structure_table_cell_row_section"),
+    ):
+        if raw_key in region.raw:
+            element.metadata[metadata_key] = region.raw[raw_key]
+
+
 def _apply_external_structure_reading_metadata(
     element: ElementIR,
     page: PageIR,
@@ -1784,7 +1985,13 @@ def _reorder_page_from_regions(page: PageIR) -> str | None:
         return "relation"
 
     ordered_elements = [element for element in text_elements if element.metadata.get("external_structure_order") is not None]
-    distinct_orders = {int(element.metadata["external_structure_order"]) for element in ordered_elements}
+    distinct_orders = {
+        (
+            int(element.metadata["external_structure_order"]),
+            int(element.metadata.get("external_structure_order_subindex") or 0),
+        )
+        for element in ordered_elements
+    }
     if len(distinct_orders) < 2:
         return None
 
@@ -1795,6 +2002,7 @@ def _reorder_page_from_regions(page: PageIR) -> str | None:
             text_elements,
             key=lambda element: (
                 int(element.metadata.get("external_structure_order") or 1_000_000),
+                int(element.metadata.get("external_structure_order_subindex") or 0),
                 old_order_by_id[element.id],
                 element.bbox_pdf.y0,
                 element.bbox_pdf.x0,

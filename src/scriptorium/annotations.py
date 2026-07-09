@@ -57,6 +57,8 @@ STRUCTURE_ROLE_MAP = {
     "sidebar_text": "sidebar-text",
     "table": "table-cell-text",
     "table_caption": "caption",
+    "table_cell": "table-cell-text",
+    "table_content": "table-cell-text",
     "text": "paragraph",
     "tile": "card-text",
     "tile_grid": "card-text",
