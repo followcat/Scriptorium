@@ -755,14 +755,20 @@ def test_benchmark_translation_stress_populates_translated_text_and_replacement_
     assert case["translation_stress_char_expansion_ratio"] > 1
     assert case["fidelity_replacement_element_count"] == case["translation_stress_element_count"]
     assert case["fidelity_replacement_mean_fit_scale"] is not None
+    assert case["fidelity_replacement_stream_diagnostics"]
+    assert case["fidelity_replacement_stream_type_counts"]
+    assert case["fidelity_replacement_stream_id_counts"]
     assert report["summary"]["translation_stress_counts"] == {"pseudo-expand": 1}
     assert report["summary"]["total_translation_stress_elements"] == case["translation_stress_element_count"]
     assert report["summary"]["mean_translation_stress_char_expansion_ratio"] == case[
         "translation_stress_char_expansion_ratio"
     ]
+    assert report["summary"]["fidelity_replacement_stream_type_counts"]
+    assert report["summary"]["fidelity_replacement_stream_id_counts"]
     assert any(element.translated_text for page in ir.pages for element in page.elements)
     assert "translation_stress_char_expansion_ratio" in csv_text
     assert "fidelity_replacement_conflict_count" in csv_text
+    assert "fidelity_replacement_stream_type_conflict_counts" in csv_text
 
 
 def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> None:
@@ -775,6 +781,7 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
         source_text="Buy now",
         translated_text="A much longer translated replacement line",
         style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+        metadata={"reading_order_stream_id": "grid-island-001", "reading_order_stream_type": "grid-island"},
     )
     neighbor = ElementIR(
         id="neighbor",
@@ -784,6 +791,17 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
         bbox_px=BBox(x0=91, y0=10, x1=130, y1=24),
         source_text="Next",
         style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    body_replacement = ElementIR(
+        id="body_replace",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=10, y0=50, x1=90, y1=64),
+        bbox_px=BBox(x0=10, y0=50, x1=90, y1=64),
+        source_text="Body",
+        translated_text="Ok",
+        style_hint={"font_size_px": 12, "line_height": 1.1, "font_family": "Arial"},
+        metadata={"reading_order_stream_id": "body-main", "reading_order_stream_type": "body"},
     )
     document = DocumentIR(
         source_pdf="synthetic.pdf",
@@ -800,7 +818,7 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
                 scale_x=1,
                 scale_y=1,
                 background_image="page.png",
-                elements=[replacement, neighbor],
+                elements=[replacement, neighbor, body_replacement],
             )
         ],
     )
@@ -808,13 +826,25 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
     stats = _fidelity_replacement_stats(document, "fidelity")
     structured_stats = _fidelity_replacement_stats(document, "structured")
 
-    assert stats["fidelity_replacement_element_count"] == 1
+    assert stats["fidelity_replacement_element_count"] == 2
     assert stats["fidelity_replacement_conflict_count"] == 1
     assert stats["fidelity_replacement_conflict_target_count"] == 1
     assert stats["fidelity_replacement_min_fit_scale"] < 1
-    assert stats["fidelity_replacement_mean_fit_scale"] == stats["fidelity_replacement_min_fit_scale"]
-    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v1": 1}
+    assert stats["fidelity_replacement_mean_fit_scale"] > stats["fidelity_replacement_min_fit_scale"]
+    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v1": 2}
+    assert stats["fidelity_replacement_stream_type_counts"] == {"body": 1, "grid-island": 1}
+    assert stats["fidelity_replacement_stream_type_conflict_counts"] == {"grid-island": 1}
+    assert stats["fidelity_replacement_stream_id_counts"] == {"body-main": 1, "grid-island-001": 1}
+    assert stats["fidelity_replacement_stream_id_conflict_counts"] == {"grid-island-001": 1}
+    diagnostics = {
+        item["stream_id"]: item
+        for item in stats["fidelity_replacement_stream_diagnostics"]
+    }
+    assert diagnostics["body-main"]["conflict_count"] == 0
+    assert diagnostics["grid-island-001"]["conflict_count"] == 1
+    assert diagnostics["grid-island-001"]["conflict_target_count"] == 1
     assert structured_stats["fidelity_replacement_element_count"] == 0
+    assert structured_stats["fidelity_replacement_stream_diagnostics"] == []
 
 
 def test_benchmark_can_auto_select_fidelity_background(tmp_path: Path) -> None:
