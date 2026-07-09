@@ -1,4 +1,4 @@
-"""Scriptorium PDF core package."""
+"""Scriptorium core package."""
 
 __all__ = ["__version__"]
 

@@ -17,7 +17,7 @@ def test_native_pdf_extraction_produces_structured_elements(tmp_path: Path) -> N
 
     texts = [element.source_text for element in document.pages[0].elements]
     text_elements = [element for element in document.pages[0].elements if element.source_text]
-    assert "Scriptorium PDF" in texts
+    assert "Scriptorium" in texts
     assert any("OCR structure" in text for text in texts)
     assert all(element.metadata["source"] == "native-pdf" for element in text_elements)
     assert any(element.type == "shape" for element in document.pages[0].elements)
@@ -47,7 +47,7 @@ def test_structured_html_uses_editable_nodes_without_page_image(tmp_path: Path) 
     assert 'data-scriptorium-edit-target="edited_text"' in html
     assert 'data-bbox-pdf="' in html
     assert "text-align-last: justify" in html
-    assert "Scriptorium PDF" in html
+    assert "Scriptorium" in html
 
 
 def test_structured_html_can_render_svg_text_fit_layer(tmp_path: Path) -> None:
@@ -62,7 +62,7 @@ def test_structured_html_can_render_svg_text_fit_layer(tmp_path: Path) -> None:
     assert '<svg class="text-fit-layer"' in html
     assert 'lengthAdjust="spacingAndGlyphs"' in html
     assert 'class="editable-text-proxy"' in html
-    assert "Scriptorium PDF" in html
+    assert "Scriptorium" in html
 
 
 def test_structured_html_renders_native_line_shapes_as_svg(tmp_path: Path) -> None:
@@ -220,7 +220,7 @@ def test_xml_node_edit_updates_only_edited_text(tmp_path: Path) -> None:
     changed = apply_xml_edits(document, xml_path)
 
     assert changed == 1
-    assert target.source_text == "Scriptorium PDF"
+    assert target.source_text == "Scriptorium"
     assert target.edited_text == "Edited XML Node"
     untouched = [element for element in document.pages[0].elements if element.id != target.id]
     assert all(element.edited_text is None for element in untouched)

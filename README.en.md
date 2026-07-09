@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/assets/readme-hero.png" alt="Scriptorium PDF" width="100%">
+  <img src="docs/assets/readme-hero.png" alt="Scriptorium" width="100%">
 </p>
 
-<h1 align="center">Scriptorium PDF</h1>
+<h1 align="center">Scriptorium</h1>
 
 <p align="center">
-  <strong>Convert PDFs into editable, annotated, benchmarkable HTML with enough structure evidence for translation and re-rendering.</strong>
+  <strong>Convert document sources into editable, annotated, benchmarkable HTML with enough structure evidence for translation and re-rendering.</strong>
 </p>
 
 <p align="center">
@@ -30,13 +30,13 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Scriptorium PDF is a PDF-to-HTML conversion and evaluation engine. It is built for PDFs that need to remain editable, translatable, structurally inspectable, or regression-tested, not for one-off screenshot-style conversions.
+Scriptorium is a document-to-HTML conversion and evaluation engine. The current main path covers PDFs, web-printed PDFs, and image-only PDFs; the next architecture step is to make image sources first-class instead of pretending they are PDFs.
 
-It merges native PDF text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
+It merges source text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
 
 ## When to Use It
 
-| Use case | What Scriptorium PDF provides |
+| Use case | What Scriptorium provides |
 |---|---|
 | PDF editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
 | Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, mask/fit/overflow/conflict diagnostics. |
@@ -48,7 +48,7 @@ It merges native PDF text, images, vector drawings, OCR output, and external str
 
 Many PDF-to-HTML tools render a whole page image and overlay a hidden text layer. That can look close, but it leaves little structure for local editing, translation, or reading-order analysis.
 
-Scriptorium PDF supports two output paths:
+Scriptorium supports two output paths:
 
 - `structured`: rebuild text, images, and shapes with HTML/SVG where possible, making structure and editability easy to inspect.
 - `fidelity`: preserve an SVG/raster source visual layer while keeping recognized text and structure nodes as transparent coordinate anchors; edited or translated nodes print as local replacement overlays.

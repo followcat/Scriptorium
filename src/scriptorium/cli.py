@@ -28,7 +28,7 @@ from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
 
-app = typer.Typer(help="Scriptorium PDF core conversion tools.")
+app = typer.Typer(help="Scriptorium core conversion tools.")
 
 
 @app.command()

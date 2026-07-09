@@ -17,13 +17,13 @@ def test_fixture_pipeline_exports_html(tmp_path: Path) -> None:
 
     assert document.page_count == 1
     assert len(document.pages[0].elements) == 4
-    assert document.pages[0].elements[0].source_text == "Scriptorium PDF"
+    assert document.pages[0].elements[0].source_text == "Scriptorium"
     assert document.pages[0].elements[0].bbox_px.width > document.pages[0].elements[0].bbox_pdf.width
 
     ir_path = tmp_path / "document.ir.json"
     document.save(ir_path)
     reloaded = DocumentIR.load(ir_path)
-    assert reloaded.pages[0].elements[0].source_text == "Scriptorium PDF"
+    assert reloaded.pages[0].elements[0].source_text == "Scriptorium"
 
     html_path = export_html(reloaded, tmp_path / "html", display_mode="background")
     html = html_path.read_text(encoding="utf-8")
@@ -156,8 +156,8 @@ def test_edit_and_translation_do_not_overwrite_source(tmp_path: Path) -> None:
     element.translated_text = "Titre traduit"
     document.revisions.append(RevisionIR(reason="test-edit", payload={"element_id": element.id}))
 
-    assert element.source_text == "Scriptorium PDF"
-    assert element.text_for_mode("source") == "Scriptorium PDF"
+    assert element.source_text == "Scriptorium"
+    assert element.text_for_mode("source") == "Scriptorium"
     assert element.text_for_mode("edited") == "Edited title"
     assert element.text_for_mode("translated") == "Titre traduit"
     assert element.text_for_mode("fidelity") == "Titre traduit"

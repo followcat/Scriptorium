@@ -14,7 +14,7 @@ def create_fixture(out_dir: str | Path) -> tuple[Path, Path]:
 
     doc = fitz.open()
     page = doc.new_page(width=420, height=594)
-    page.insert_text((48, 64), "Scriptorium PDF", fontsize=24, fontname="helv", color=(0.05, 0.08, 0.12))
+    page.insert_text((48, 64), "Scriptorium", fontsize=24, fontname="helv", color=(0.05, 0.08, 0.12))
     page.insert_text((50, 108), "OCR structure -> HTML -> editable output", fontsize=12, fontname="helv")
     page.draw_rect(fitz.Rect(48, 146, 372, 250), color=(0.2, 0.36, 0.62), width=1.2)
     page.insert_text((62, 172), "Structured block", fontsize=16, fontname="helv")
@@ -44,7 +44,7 @@ def create_fixture(out_dir: str | Path) -> tuple[Path, Path]:
                     {
                         "type": "title",
                         "bbox_pdf": [48, 42, 282, 74],
-                        "text": "Scriptorium PDF",
+                        "text": "Scriptorium",
                         "confidence": 0.99,
                     },
                     {

@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scriptorium-pdf"
+name = "scriptorium"
 version = "0.1.0"
-description = "OCR/structure-driven PDF to visually faithful HTML pipeline."
+description = "OCR/structure-driven document to visually faithful HTML pipeline."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
