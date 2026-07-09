@@ -217,9 +217,11 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 
 ```json
 {
+  "version": 3,
   "pages": [
     {
       "page_index": 0,
+      "match_mode": "ordered-subsequence",
       "successor_edges": [["Article title", "First body line"]],
       "precedence_edges": [
         {"source": "Sidebar heading", "target": "Sidebar detail"},
@@ -230,7 +232,27 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 }
 ```
 
-`successor_edges` 评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
+同一个评测器也接受 ROOR/结构 JSON 风格的 page payload。Sidecar 可以在 page 级提供带 id 和文本的 `document`、`elements`、`blocks`、`parsing_res_list` 或 `layout_det_res.boxes`，再用 `ro_linkings`、`reading_order_edges`、`reading_order_relations` 或 `reading_order_linkings` 引用这些 id：
+
+```json
+{
+  "version": 3,
+  "pages": [
+    {
+      "page_index": 0,
+      "document": [
+        {"id": 0, "box": [0, 0, 10, 10], "text": "A"},
+        {"id": 1, "box": [20, 0, 30, 10], "text": "C"},
+        {"id": 2, "box": [0, 20, 10, 30], "text": "B"},
+        {"id": 3, "box": [20, 20, 30, 30], "text": "D"}
+      ],
+      "ro_linkings": [[0, 2], [2, 1], [1, 3]]
+    }
+  ]
+}
+```
+
+`successor_edges` 和 ROOR 风格 linkings 会评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。关系端点可以是文本、数组，也可以是使用 `source` / `target`、`from` / `to`、`head` / `tail`、`source_id` / `target_id` 等别名的字典；id 会先通过 page label map 解析成文本再评分。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
 
 Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
 

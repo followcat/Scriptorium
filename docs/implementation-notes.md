@@ -289,7 +289,7 @@ Sidecars can also store relation-style ground truth, which is better for complex
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "pages": [
     {
       "page_index": 0,
@@ -305,7 +305,27 @@ Sidecars can also store relation-style ground truth, which is better for complex
 }
 ```
 
-`successor_edges` score immediate adjacency among labelled nodes, ignoring unlabelled actual text between them. `precedence_edges` only require the source label to appear before the target label. If a page has relation edges but no `text_sequence`, `match_mode` defaults to `ordered-subsequence` so the page is not penalized for unlabelled text. Candidate orders receive the same relation metrics as the selected order.
+The same evaluator also accepts ROOR/structure-style page payloads. A sidecar can provide page-level `document`, `elements`, `blocks`, `parsing_res_list`, or `layout_det_res.boxes` entries with ids and text, then reference those ids from `ro_linkings`, `reading_order_edges`, `reading_order_relations`, or `reading_order_linkings`:
+
+```json
+{
+  "version": 3,
+  "pages": [
+    {
+      "page_index": 0,
+      "document": [
+        {"id": 0, "box": [0, 0, 10, 10], "text": "A"},
+        {"id": 1, "box": [20, 0, 30, 10], "text": "C"},
+        {"id": 2, "box": [0, 20, 10, 30], "text": "B"},
+        {"id": 3, "box": [20, 20, 30, 30], "text": "D"}
+      ],
+      "ro_linkings": [[0, 2], [2, 1], [1, 3]]
+    }
+  ]
+}
+```
+
+`successor_edges` and ROOR-style linkings score immediate adjacency among labelled nodes, ignoring unlabelled actual text between them. `precedence_edges` only require the source label to appear before the target label. Relation endpoints may be text strings, arrays, or dictionaries using aliases such as `source` / `target`, `from` / `to`, `head` / `tail`, or `source_id` / `target_id`; ids are resolved through the page label map before scoring. If a page has relation edges but no `text_sequence`, `match_mode` defaults to `ordered-subsequence` so the page is not penalized for unlabelled text. Candidate orders receive the same relation metrics as the selected order.
 
 Supported page match modes:
 
@@ -316,7 +336,7 @@ Metrics:
 
 - `semantic_order_pair_accuracy`: pairwise order correctness across expected text nodes; this is Kendall-tau-like and catches left/right column swaps.
 - `semantic_successor_accuracy`: adjacent successor-edge correctness across expected text nodes. In `ordered-subsequence` mode, unlabelled actual text between two labelled nodes is ignored, but a labelled node inserted between them, a reversed adjacent pair, or a missing adjacent node breaks the edge. Reports also expose `semantic_successor_correct_count` and `semantic_successor_total_count`.
-- `semantic_relation_successor_accuracy`: correctness for explicit `successor_edges`. This is the relation-style metric to watch when evaluating relation-graph, structure-relation, and successor-consensus candidates on complex layouts.
+- `semantic_relation_successor_accuracy`: correctness for explicit `successor_edges` or ROOR-style reading-order linkings. This is the relation-style metric to watch when evaluating relation-graph, structure-relation, and successor-consensus candidates on complex layouts.
 - `semantic_relation_precedence_accuracy`: correctness for explicit `precedence_edges`, useful when a page has several valid global reading orders but still has local before/after constraints.
 - `semantic_relation_missing_text_count`: unique relation labels that were not found in the extracted page text.
 - `semantic_sequence_similarity`: normalized Levenshtein similarity between expected and actual text sequences.
