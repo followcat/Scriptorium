@@ -263,21 +263,22 @@ def _group_ocr_elements_by_page(payload: dict[str, Any]) -> dict[int, list[dict[
                     continue
                 page_index = _extract_page_index(page, index)
                 add(page_index, _raw_page_elements(page))
-                for key in ("res", "result"):
+                for key in ("res", "result", "data"):
                     if key in page:
                         visit(page[key], page_index)
             return
 
+        node_has_page_index = any(key in node for key in ("page_index", "index", "page", "page_no", "page_num"))
         page_index = _extract_page_index(node, fallback_page_index)
         add(page_index, _raw_page_elements(node))
-        for key in ("res", "result"):
+        for key in ("res", "result", "data"):
             if key in node:
                 visit(node[key], page_index)
-        for key in ("raw_results", "results"):
+        for key in ("raw_results", "results", "page_results"):
             value = node.get(key)
             if isinstance(value, list):
                 for index, item in enumerate(value):
-                    visit(item, index)
+                    visit(item, page_index if node_has_page_index else index)
 
     visit(payload)
     return grouped
