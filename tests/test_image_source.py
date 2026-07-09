@@ -173,6 +173,70 @@ def test_image_source_can_seed_table_cells_from_pp_structure_json(tmp_path: Path
     assert by_text["A"].metadata["annotation"]["role"] == "table-cell-text"
 
 
+def test_image_source_can_seed_pp_ocr_formula_and_seal_results(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    structure_payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Body OCR"],
+                "rec_scores": [0.91],
+            },
+            "text_paragraphs_ocr_res": {
+                "rec_polys": [[[24, 56], [180, 56], [180, 74], [24, 74]]],
+                "rec_texts": ["Paragraph OCR"],
+                "rec_scores": [0.9],
+            },
+            "formula_res_list": [
+                {
+                    "formula_region_id": "formula-1",
+                    "rec_formula": "E=mc^2",
+                    "rec_polys": [[24, 84], [110, 84], [110, 104], [24, 104]],
+                    "rec_score": 0.89,
+                }
+            ],
+            "seal_res_list": [
+                {
+                    "seal_region_id": "seal-1",
+                    "rec_boxes": [[180, 84, 246, 104]],
+                    "rec_texts": ["Seal"],
+                    "rec_scores": [0.88],
+                }
+            ],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, structure_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert [element.source_text for element in text_elements] == [
+        "Body OCR",
+        "Paragraph OCR",
+        "E=mc^2",
+        "Seal",
+    ]
+    assert by_text["Body OCR"].type == "text"
+    assert by_text["Paragraph OCR"].type == "text"
+    assert by_text["E=mc^2"].type == "formula"
+    assert by_text["Seal"].type == "text"
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["semantic_layer"]["payload_kind"] == "structure-json"
+    assert document.metadata["structure_evidence"]["region_count"] == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 4}
+    assert by_text["Body OCR"].metadata["external_structure_label"] == "text"
+    assert by_text["E=mc^2"].metadata["external_structure_label"] == "formula"
+    assert by_text["E=mc^2"].metadata["annotation"]["role"] == "formula"
+    assert by_text["Seal"].metadata["external_structure_label"] == "seal"
+    assert by_text["Seal"].metadata["annotation"]["role"] == "seal-text"
+
+
 def test_image_source_roor_json_seeds_text_and_drives_semantic_order(tmp_path: Path) -> None:
     image_path = _make_image(tmp_path / "source.png")
     rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)

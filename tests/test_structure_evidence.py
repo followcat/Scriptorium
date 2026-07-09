@@ -647,6 +647,71 @@ def test_pp_structure_table_res_cells_inherit_parent_table_order() -> None:
     assert by_id["a"].metadata["role"] == "table-cell-text"
 
 
+def test_pp_structure_ocr_formula_and_seal_results_are_region_evidence() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("body", "Body OCR", BBox(x0=12, y0=14, x1=65, y1=24), 1),
+            ("paragraph", "Paragraph OCR", BBox(x0=12, y0=28, x1=90, y1=37), 2),
+            ("formula", "E=mc^2", BBox(x0=12, y0=42, x1=55, y1=52), 3),
+            ("seal", "Seal", BBox(x0=90, y0=42, x1=123, y1=52), 4),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Body OCR"],
+                "rec_scores": [0.91],
+            },
+            "text_paragraphs_ocr_res": {
+                "rec_polys": [[[24, 56], [180, 56], [180, 74], [24, 74]]],
+                "rec_texts": ["Paragraph OCR"],
+                "rec_scores": [0.9],
+            },
+            "formula_res_list": [
+                {
+                    "formula_region_id": "formula-1",
+                    "rec_formula": "E=mc^2",
+                    "rec_polys": [[24, 84], [110, 84], [110, 104], [24, 104]],
+                    "rec_score": 0.89,
+                }
+            ],
+            "seal_res_list": [
+                {
+                    "seal_region_id": "seal-1",
+                    "rec_boxes": [[180, 84, 246, 104]],
+                    "rec_texts": ["Seal"],
+                    "rec_scores": [0.88],
+                }
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [(region.label, region.order, region.order_source, region.text) for region in regions] == [
+        ("text", None, None, "Body OCR"),
+        ("text", None, None, "Paragraph OCR"),
+        ("formula", None, None, "E=mc^2"),
+        ("seal", None, None, "Seal"),
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 4}
+    assert by_id["body"].metadata["external_structure_label"] == "text"
+    assert by_id["body"].metadata["structure_evidence"]["confidence"] == 0.91
+    assert by_id["formula"].metadata["external_structure_label"] == "formula"
+    assert by_id["formula"].metadata["role"] == "formula"
+    assert by_id["seal"].metadata["external_structure_label"] == "seal"
+    assert by_id["seal"].metadata["role"] == "seal-text"
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [

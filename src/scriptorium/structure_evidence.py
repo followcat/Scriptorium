@@ -1246,6 +1246,8 @@ def _has_blocks(value: dict[str, Any]) -> bool:
         return True
     if isinstance(value.get("table_res_list"), list):
         return True
+    if _has_paddle_ocr_results(value):
+        return True
     layout = value.get("layout_det_res")
     return isinstance(layout, dict) and isinstance(layout.get("boxes"), list)
 
@@ -1284,8 +1286,124 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(block, dict):
                 continue
             add_block(block, list_key="layout_det_res.boxes", orderable=False)
+    blocks.extend(_paddle_ocr_result_blocks(page_payload))
     blocks.extend(_paddle_table_cell_blocks(page_payload))
     return blocks
+
+
+def _has_paddle_ocr_results(value: dict[str, Any]) -> bool:
+    for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
+        if isinstance(value.get(key), dict):
+            return True
+    for key in ("formula_res_list", "seal_res_list"):
+        if isinstance(value.get(key), list):
+            return True
+    return False
+
+
+def _paddle_ocr_result_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
+        result = page_payload.get(key)
+        if isinstance(result, dict):
+            blocks.extend(_paddle_rec_result_blocks(result, list_key=key, label="text"))
+
+    formula_results = page_payload.get("formula_res_list")
+    if isinstance(formula_results, list):
+        for result_index, result in enumerate(formula_results):
+            if isinstance(result, dict):
+                block = _paddle_formula_result_block(result, result_index)
+                if block is not None:
+                    blocks.append(block)
+
+    seal_results = page_payload.get("seal_res_list")
+    if isinstance(seal_results, list):
+        for result_index, result in enumerate(seal_results):
+            if isinstance(result, dict):
+                blocks.extend(
+                    _paddle_rec_result_blocks(
+                        result,
+                        list_key="seal_res_list",
+                        label="seal",
+                        result_index=result_index,
+                    )
+                )
+    return blocks
+
+
+def _paddle_rec_result_blocks(
+    result: dict[str, Any],
+    *,
+    list_key: str,
+    label: str,
+    result_index: int | None = None,
+) -> list[dict[str, Any]]:
+    boxes = _paddle_result_boxes(result)
+    texts = _string_values(result.get("rec_texts"))
+    scores = _float_values(result.get("rec_scores"))
+    blocks: list[dict[str, Any]] = []
+    for text_index, bbox in enumerate(boxes):
+        text = texts[text_index] if text_index < len(texts) else ""
+        if not text.strip():
+            continue
+        block: dict[str, Any] = {
+            "block_label": label,
+            "block_bbox": bbox.as_list(),
+            "block_content": text.strip(),
+            "confidence": scores[text_index] if text_index < len(scores) else None,
+            "_scriptorium_structure_list_key": list_key,
+            "paddle_text_index": text_index,
+        }
+        if result_index is not None:
+            block["paddle_result_index"] = result_index
+        for key in ("region_id", "seal_region_id", "layout_region_id", "block_id", "id"):
+            value = result.get(key)
+            if value is not None:
+                block[key] = value
+        blocks.append(block)
+    return blocks
+
+
+def _paddle_formula_result_block(result: dict[str, Any], result_index: int) -> dict[str, Any] | None:
+    text = str(result.get("rec_formula") or result.get("formula") or "").strip()
+    if not text:
+        return None
+    bbox = _first_bbox_from_any(
+        result.get("rec_boxes"),
+        result.get("rec_polys"),
+        result.get("dt_polys"),
+        result.get("bbox"),
+        result.get("box"),
+    )
+    if bbox is None:
+        return None
+    block: dict[str, Any] = {
+        "block_label": "formula",
+        "block_bbox": bbox.as_list(),
+        "block_content": text,
+        "confidence": _first_float(result.get("rec_score"), result.get("score"), result.get("confidence")),
+        "_scriptorium_structure_list_key": "formula_res_list",
+        "paddle_result_index": result_index,
+    }
+    for key in ("formula_region_id", "region_id", "layout_region_id", "block_id", "id"):
+        value = result.get(key)
+        if value is not None:
+            block[key] = value
+    return block
+
+
+def _paddle_result_boxes(result: dict[str, Any]) -> list[BBox]:
+    for value in (
+        result.get("rec_boxes"),
+        result.get("rec_polys"),
+        result.get("dt_polys"),
+        result.get("boxes"),
+        result.get("polys"),
+    ):
+        boxes = _bboxes_from_any_or_single(value)
+        if boxes:
+            return boxes
+    return []
 
 
 def _paddle_table_cell_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1365,6 +1483,22 @@ def _bboxes_from_list(value: Any) -> list[BBox]:
     return boxes
 
 
+def _bboxes_from_any_or_single(value: Any) -> list[BBox]:
+    boxes = _bboxes_from_list(value)
+    if boxes:
+        return boxes
+    bbox = _bbox_from_any(value)
+    return [bbox] if bbox is not None and bbox.width > 0 and bbox.height > 0 else []
+
+
+def _first_bbox_from_any(*values: Any) -> BBox | None:
+    for value in values:
+        boxes = _bboxes_from_any_or_single(value)
+        if boxes:
+            return boxes[0]
+    return None
+
+
 def _string_values(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -1381,6 +1515,17 @@ def _float_values(value: Any) -> list[float]:
         except (TypeError, ValueError):
             continue
     return floats
+
+
+def _first_float(*values: Any) -> float | None:
+    for value in values:
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _paddle_table_parent_order(
@@ -1602,7 +1747,7 @@ def _extract_label(raw: dict[str, Any]) -> str:
 
 
 def _extract_text(raw: dict[str, Any]) -> str:
-    for key in ("block_content", "text", "content", "rec_text", "markdown", "html"):
+    for key in ("block_content", "text", "content", "rec_text", "rec_formula", "markdown", "html"):
         value = raw.get(key)
         if value:
             return str(value).strip()
@@ -1643,7 +1788,7 @@ def _extract_implicit_order_source(raw: dict[str, Any]) -> str:
 
 
 def _extract_confidence(raw: dict[str, Any]) -> float | None:
-    for key in ("confidence", "score", "layout_score"):
+    for key in ("confidence", "score", "layout_score", "rec_score"):
         value = raw.get(key)
         if value is None:
             continue
