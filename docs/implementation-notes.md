@@ -167,6 +167,7 @@ PaddleOCR-VL, PP-StructureV3, and Docling are best treated as optional evidence 
 - `apply_structure_evidence(document, payload)` aligns model regions to native elements by element bbox coverage and text similarity.
 - When a parent region and a more specific child region both cover the same text equally well, the smaller child region wins the match. This lets nested card/product/tile structures drive local reading streams instead of being swallowed by the parent grid bbox.
 - Matched text elements receive `structure_evidence`, `external_structure_label`, `external_structure_order`, and `external_structure_order_source` metadata.
+- Structure JSON can also provide relation evidence through page-level or stream-level `successor_edges`, `successor_relations`, `precedence_edges`, `order_edges`, `relations`, `reading_streams`, or `streams`. Endpoints may reference matched structure node ids/refs or text. Resolved edges are stored on source elements as `external_structure_successor_ids` and `external_structure_precedence_target_ids`.
 - When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`. Benchmark reports expose `structure_evidence_order_source_counts`, so A/B runs can distinguish explicit model order, Docling body-tree order, implicit list order, and unordered detector regions.
 - Reordered elements also append `external-structure-order` to `reading_order_evidence` and preserve the model confidence under `reading_order_confidence` when it is stronger than the native heuristic confidence.
 - External labels also feed reading-order scope and stream metadata: header/footer/page-number labels become page artifacts, footnotes and sidebars become secondary local streams, caption labels become caption streams, table labels become table-island streams, and explicit card/grid/product/tile labels become `grid-island` streams for translation/editing. Plain `list` labels remain list-role evidence instead of being promoted to grid streams, so ranked/news pages do not get false card-grid structure.
@@ -506,6 +507,7 @@ Metrics:
 - `raster_fallback_count`, `rasterized_text_count`, `rasterized_image_count`, and `rasterized_shape_count`: editability cost of local raster fallback regions.
 - `structure_evidence_source`: optional JSON evidence source used by the case.
 - `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure/Docling structure JSON.
+- `structure_evidence_relation_edge_count` and `structure_evidence_resolved_relation_edge_count`: external successor/precedence edges loaded from structure JSON and successfully resolved to current page elements.
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.
 - `structure_evidence_reordered_page_count`: pages whose text order was reassigned from external block order.
 - `semantic_order_pair_accuracy`: pairwise semantic order score when ground truth is available.
@@ -569,7 +571,7 @@ Latest semantic candidate scoring validation:
 - `semantic_quality.py` now scores named candidate element-id orders against sidecars and reports `semantic_candidate_order_metrics`.
 - Sidecars can include `successor_edges` and `precedence_edges`, so complex layouts can be evaluated as relation constraints instead of only as one serialized `text_sequence`.
 - `scriptorium benchmark` automatically supplies `visual_yx`, `box_flow`, `relation_graph`, `structure_relation`, and `successor_consensus` candidates for each page.
-- `external_structure` is also supplied when `external_structure_order` metadata from Paddle/PP-Structure/Docling evidence has at least two distinct block orders on a page.
+- `external_structure` is supplied when Paddle/PP-Structure/Docling evidence has either resolved successor/precedence relations or at least two distinct `external_structure_order` values on a page. Relation edges are converted into a diagnostic path-cover order first; explicit block order remains the fallback when no relation edges are present.
 - Case reports and CSV include flattened candidate accuracies such as `semantic_relation_graph_successor_accuracy`, `semantic_structure_relation_successor_accuracy`, `semantic_successor_consensus_successor_accuracy`, and relation-edge variants such as `semantic_structure_relation_relation_successor_accuracy`.
 - Summary reports aggregate candidate successor accuracy and `semantic_best_candidate_by_successor_counts`.
 - Case and summary reports also include arbitration diagnostics, including candidate-vs-selected successor/pairwise deltas and recommendation counts.
