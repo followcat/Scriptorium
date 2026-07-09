@@ -41,6 +41,7 @@ def print_html_to_pdf(
 
     if page_sizes_pt is not None:
         normalize_pdf_page_boxes(target, page_sizes_pt)
+        trim_trailing_blank_pages(target, expected_page_count=len(page_sizes_pt))
 
     return target
 
@@ -78,3 +79,51 @@ def normalize_pdf_page_boxes(
     if changed:
         temp_path.replace(target)
     return changed
+
+
+def trim_trailing_blank_pages(pdf_path: str | Path, expected_page_count: int) -> bool:
+    """Remove browser-added blank tail pages after fixed-size HTML printing."""
+    target = Path(pdf_path)
+    if expected_page_count <= 0:
+        return False
+
+    changed = False
+    temp_path = target.with_name(f"{target.stem}.trimmed.tmp{target.suffix}")
+    with fitz.open(target) as doc:
+        while doc.page_count > expected_page_count and _is_blank_print_artifact_page(doc[doc.page_count - 1]):
+            doc.delete_page(doc.page_count - 1)
+            changed = True
+
+        if changed:
+            if temp_path.exists():
+                temp_path.unlink()
+            doc.save(temp_path, garbage=4, deflate=True)
+
+    if changed:
+        temp_path.replace(target)
+    return changed
+
+
+def _is_blank_print_artifact_page(page: fitz.Page) -> bool:
+    if page.get_text().strip():
+        return False
+    if page.get_images(full=True):
+        return False
+    annotations = page.annots()
+    if annotations is not None and any(True for _ in annotations):
+        return False
+    drawings = page.get_drawings()
+    return all(_is_blank_background_drawing(drawing) for drawing in drawings)
+
+
+def _is_blank_background_drawing(drawing: dict[str, Any]) -> bool:
+    fill = drawing.get("fill")
+    color = drawing.get("color")
+    stroke_opacity = drawing.get("stroke_opacity")
+    if color is not None and float(stroke_opacity or 1.0) > 0:
+        return False
+    if fill is None:
+        return True
+    if not isinstance(fill, (list, tuple)) or len(fill) < 3:
+        return False
+    return all(float(channel) >= 0.995 for channel in fill[:3])
