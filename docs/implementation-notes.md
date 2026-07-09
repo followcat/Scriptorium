@@ -273,7 +273,7 @@ The built-in benchmark fixtures now write a sidecar file next to each generated 
 example.semantic-order.json
 ```
 
-The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source PDF and then under `benchmarks/semantic-ground-truth/` for matching repo sidecars. Repo-level lookup supports both `<pdf-stem>.semantic-order.json` and `<parent-dir>.<pdf-stem>.semantic-order.json`, so generic files like `web-hn/input.pdf` can have stable tracked labels without colliding with other `input.pdf` samples. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
+The sidecar stores a per-page `text_sequence` ground truth. During `scriptorium benchmark`, `semantic_quality.py` first looks next to the source document and then under `benchmarks/semantic-ground-truth/` for matching repo sidecars. Repo-level lookup supports both `<source-stem>.semantic-order.json` and `<parent-dir>.<source-stem>.semantic-order.json`, so generic files like `web-hn/input.pdf` can have stable tracked labels without colliding with other `input.pdf` samples. It compares the extracted semantic order against that sequence and writes `semantic/semantic_quality_report.json` per case.
 
 Sidecars can also store relation-style ground truth, which is better for complex pages where several global sequences are acceptable:
 
@@ -373,9 +373,25 @@ scriptorium benchmark-structure-ab input.pdf \
 
 This writes `native-only/benchmark_report.json`, `native-plus-structure/benchmark_report.json`, `structure_ab_report.json`, and `structure_ab_summary.csv`. The A/B report records deltas for visual similarity, reading-order risk, `grid_island_element_count`, structure-evidence region/match/reorder counts, page/stream `needs-structure-evidence` recommendations, review recommendations, successor-disagreement counts, and semantic successor metrics when sidecars exist.
 
+Image sources use the same benchmark command:
+
+```bash
+scriptorium benchmark page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json page.structure.json \
+  --html-mode structured \
+  --out-dir outputs/page-image-benchmark
+```
+
+The visual comparison renders the exported PDF at `image_dpi` so the source image layer and printed output are compared at the same pixel dimensions. Structure JSON can seed the initial `native-ocr` anchor layer before structure evidence is fused back onto those anchors.
+
 Metrics:
 
-- `max_pages`: optional first-N-pages benchmark limit. The source PDF remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.
+- `source_type_counts`: count of `pdf` and `image` cases in a benchmark run.
+- `input_kind`: requested source detection mode, `auto`, `pdf`, or `image`.
+- `image_dpi`: pixel density used to map image source pixels into PDF-point coordinates and to render the exported PDF for image-source visual scoring.
+- `max_pages`: optional first-N-pages benchmark limit. The source document remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.
 - `page_ranges`: optional explicit 1-based source page sampling such as `1-12,136-160,220`. It is mutually exclusive with `max_pages`. Rendered pages keep their original source `page_index`, so semantic sidecars and Paddle/PP-Structure/Docling structure JSON can still align by source page number instead of the sampled list position.
 - `sampled_page_numbers`: the exact 1-based source page numbers scored by the run when `page_ranges` is used.
 - `max_diff_ratio`: maximum normalized page difference between original PDF render and structured HTML-to-PDF render. Missing/extra pages are scored as `1.0`; page dimension mismatches add a size penalty instead of silently resizing away the mismatch.

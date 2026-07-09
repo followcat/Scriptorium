@@ -149,6 +149,21 @@ scriptorium benchmark-structure-ab input.pdf --structure-json paddle.json --out-
 
 `benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 指标。
 
+图片 source 使用同一个 benchmark 命令：
+
+```bash
+scriptorium benchmark page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json page.structure.json \
+  --html-mode structured \
+  --out-dir outputs/page-image-benchmark
+```
+
+视觉比较会按 `image_dpi` 渲染导出的 PDF，让源图片 visual layer 和打印输出在相同像素尺寸下比较。结构 JSON 可以先生成 `native-ocr` 初始锚点层，再由 structure evidence 反向融合标签、顺序和置信度。
+
+报告会记录 `source_type_counts`、`input_kind` 和 `image_dpi`，用于区分 PDF case 与 image case，并复现图片像素到 PDF point 的坐标映射。
+
 长文档可以用 `--page-ranges` 按源页码抽样，例如 `--page-ranges 1-12,136-160,220`。页码是 1-based，且不能和 `--max-pages` 同时使用。渲染后的 `DocumentIR.pages[*].page_index` 仍保留原始源页索引，所以 semantic sidecar 和 Paddle/PP-Structure/Docling 结构 JSON 可以继续按源页码对齐，而不是按抽样后的列表位置误匹配。报告会记录 `page_ranges` 和 `sampled_page_numbers`，便于复现实验。
 
 ## 阅读顺序层

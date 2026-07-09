@@ -201,6 +201,17 @@ scriptorium benchmark path/to/file.pdf \
   --dpi 144
 ```
 
+Image sources can be benchmarked directly. Visual scoring compares the source image visual layer against the rendered HTML-to-PDF output; structure JSON first seeds OCR/text anchors, then participates in reading-stream and structure-evidence fusion:
+
+```bash
+scriptorium benchmark path/to/page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json path/to/page.structure.json \
+  --html-mode structured \
+  --out-dir outputs/image-benchmark
+```
+
 Representative current scores are shown below. Exact commands, sources, checksums, and full metrics are in [External benchmarks](docs/external-benchmarks.md).
 
 | Sample | Pages | Main stress | Visual similarity | Notes |

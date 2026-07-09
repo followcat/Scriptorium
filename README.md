@@ -201,6 +201,17 @@ scriptorium benchmark path/to/file.pdf \
   --dpi 144
 ```
 
+图片源也可以直接 benchmark。视觉评分会比较源图片 visual layer 与 HTML 打印 PDF 的渲染结果；结构 JSON 会先生成 OCR/text anchors，再参与 reading-stream 和结构证据融合：
+
+```bash
+scriptorium benchmark path/to/page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json path/to/page.structure.json \
+  --html-mode structured \
+  --out-dir outputs/image-benchmark
+```
+
 代表性样本的当前结果如下。详细命令、样本来源、checksum 和完整指标见 [外部基准](docs/external-benchmarks.zh-CN.md)。
 
 | 样本 | 页数 | 主要压力 | Visual similarity | 备注 |

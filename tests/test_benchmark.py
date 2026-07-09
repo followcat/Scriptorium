@@ -50,6 +50,16 @@ def _create_image_only_text_pdf(tmp_path: Path) -> Path:
     return pdf_path
 
 
+def _create_image_source(tmp_path: Path) -> Path:
+    image_path = tmp_path / "benchmark_image_source.png"
+    image = Image.new("RGB", (480, 260), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((40, 42), "IMAGE SOURCE", font=_readable_test_font(42), fill=(0, 0, 0))
+    draw.text((42, 126), "STRUCTURE JSON TEXT", font=_readable_test_font(28), fill=(20, 20, 20))
+    image.save(image_path)
+    return image_path
+
+
 def test_benchmark_fixtures_create_multiple_pdfs(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")
     assert len(pdfs) == 5
@@ -63,6 +73,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
 
     assert report["case_count"] == 2
     assert report["font_profile"] == "browser-default"
+    assert report["input_kind"] == "auto"
+    assert report["image_dpi"] == 96
     assert report["raster_policy"] == "dense"
     assert report["html_mode"] == "structured"
     assert report["font_size_scale"] == 1.0
@@ -74,6 +86,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "p95_diff_ratio" in report["summary"]
     assert report["summary"]["total_pages"] >= 2
     assert report["summary"]["ocr_fallback_counts"] == {"image-only": 2}
+    assert report["summary"]["source_type_counts"] == {"pdf": 2}
     assert "total_ocr_fallback_applied_pages" in report["summary"]
     assert "total_ocr_text_elements" in report["summary"]
     assert "total_image_only_candidate_pages" in report["summary"]
@@ -84,6 +97,8 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_fidelity_replacement_conflicts" in report["summary"]
     assert all(0 <= case["visual_similarity"] <= 1 for case in report["cases"])
     assert all("dimension_match" in case for case in report["cases"])
+    assert all(case["source_type"] == "pdf" for case in report["cases"])
+    assert all(case["input_kind"] == "auto" for case in report["cases"])
     assert all("worst_page" in case for case in report["cases"])
     assert all("image_count" in case for case in report["cases"])
     assert all("text_run_count" in case for case in report["cases"])
@@ -394,6 +409,69 @@ def test_benchmark_rejects_page_ranges_with_max_pages(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="page_ranges cannot be combined with max_pages"):
         run_benchmark([multipage_pdf], tmp_path / "benchmark-invalid-page-ranges", dpi=96, max_pages=1, page_ranges="2")
+
+
+def test_benchmark_can_score_image_source_with_structure_json(tmp_path: Path) -> None:
+    image_path = _create_image_source(tmp_path)
+    structure_json = tmp_path / "benchmark_image_source.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "pp-structurev3",
+                "res": {
+                    "page_index": 0,
+                    "parsing_res_list": [
+                        {
+                            "block_label": "title",
+                            "block_bbox": [40, 42, 360, 88],
+                            "block_order": 1,
+                            "block_content": "IMAGE SOURCE",
+                            "confidence": 0.94,
+                        },
+                        {
+                            "block_label": "text",
+                            "block_bbox": [42, 126, 420, 160],
+                            "block_order": 2,
+                            "block_content": "STRUCTURE JSON TEXT",
+                            "confidence": 0.92,
+                        },
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_benchmark(
+        [image_path],
+        tmp_path / "benchmark-image-source",
+        dpi=96,
+        input_kind="image",
+        image_dpi=96,
+        structure_jsons=[structure_json],
+        html_mode="structured",
+        fidelity_background="raster",
+    )
+    case = report["cases"][0]
+    quality = json.loads(Path(case["quality_report"]).read_text(encoding="utf-8"))
+    csv_text = (tmp_path / "benchmark-image-source" / "benchmark_summary.csv").read_text(encoding="utf-8")
+
+    assert report["input_kind"] == "image"
+    assert report["image_dpi"] == 96
+    assert report["summary"]["source_type_counts"] == {"image": 1}
+    assert case["source_type"] == "image"
+    assert case["image_dpi"] == 96
+    assert case["page_count"] == 1
+    assert case["image_count"] == 1
+    assert case["editable_element_count"] == 2
+    assert case["structure_evidence_matched_element_count"] == 2
+    assert quality["expected_source_type"] == "image"
+    assert quality["image_dpi"] == 96
+    assert quality["expected_page_count"] == 1
+    assert quality["actual_page_count"] == 1
+    assert quality["dimension_match"] is True
+    assert "source_type" in csv_text
+    assert "image_dpi" in csv_text
 
 
 def test_reading_order_geometry_profile_separates_text_flow_columns_from_tables() -> None:

@@ -10,7 +10,7 @@ from typing import Any
 from PIL import Image, ImageChops
 
 from .models import DocumentIR
-from .pdf_render import render_pdf
+from .pdf_render import SourceKind, render_pdf, render_source
 
 
 def compare_html_to_rendered_pdf(
@@ -82,20 +82,49 @@ def compare_pdf_renderings(
     expected_page_indices: Sequence[int] | None = None,
     actual_page_indices: Sequence[int] | None = None,
 ) -> dict[str, Any]:
+    return compare_source_to_pdf_rendering(
+        expected_pdf,
+        actual_pdf,
+        out_dir,
+        dpi=dpi,
+        max_pages=max_pages,
+        expected_page_indices=expected_page_indices,
+        actual_page_indices=actual_page_indices,
+        expected_input_kind="pdf",
+        image_dpi=dpi,
+        report_filename="pdf_quality_report.json",
+    )
+
+
+def compare_source_to_pdf_rendering(
+    expected_source: str | Path,
+    actual_pdf: str | Path,
+    out_dir: str | Path,
+    dpi: int = 192,
+    max_pages: int | None = None,
+    expected_page_indices: Sequence[int] | None = None,
+    actual_page_indices: Sequence[int] | None = None,
+    expected_input_kind: SourceKind = "auto",
+    image_dpi: int = 96,
+    report_filename: str = "source_quality_report.json",
+) -> dict[str, Any]:
     target = Path(out_dir)
     if max_pages is not None and (expected_page_indices is not None or actual_page_indices is not None):
         raise ValueError("max_pages cannot be combined with explicit page indices")
-    expected_render = render_pdf(
-        expected_pdf,
+    expected_render = render_source(
+        expected_source,
         target / "expected_pages",
         dpi=dpi,
         max_pages=max_pages,
         page_indices=expected_page_indices,
+        input_kind=expected_input_kind,
+        image_dpi=image_dpi,
     )
+    actual_dpi = image_dpi if expected_render.source_type == "image" else dpi
     actual_render = render_pdf(
         actual_pdf,
         target / "actual_pages",
-        dpi=dpi,
+        dpi=actual_dpi,
         max_pages=max_pages,
         page_indices=actual_page_indices,
     )
@@ -138,9 +167,14 @@ def compare_pdf_renderings(
             pages.append(page_report)
 
     report = {
-        "expected_pdf": str(expected_pdf),
+        "expected_source": str(expected_source),
+        "expected_pdf": str(expected_source),
+        "expected_source_type": expected_render.source_type,
         "actual_pdf": str(actual_pdf),
         "max_pages": max_pages,
+        "dpi": dpi,
+        "actual_render_dpi": actual_dpi,
+        "image_dpi": image_dpi if expected_render.source_type == "image" else None,
         "expected_page_indices": list(expected_page_indices) if expected_page_indices is not None else None,
         "actual_page_indices": list(actual_page_indices) if actual_page_indices is not None else None,
         "expected_page_count": expected_page_count,
@@ -151,7 +185,7 @@ def compare_pdf_renderings(
         "pages": pages,
     }
     report.update(_summarize_pages(pages))
-    (target / "pdf_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (target / report_filename).write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 

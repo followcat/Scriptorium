@@ -46,9 +46,22 @@ def make_web_fixture(out_dir: Path = typer.Option(Path("data/web-fixture"), help
 
 @app.command("benchmark")
 def benchmark_command(
-    pdf: Optional[list[Path]] = typer.Argument(None, help="Optional PDF files. If omitted, built-in fixtures are generated."),
+    pdf: Optional[list[Path]] = typer.Argument(
+        None,
+        help="Optional source PDF/image files. If omitted, built-in PDF fixtures are generated.",
+    ),
     out_dir: Path = typer.Option(Path("outputs/benchmark"), help="Benchmark output directory."),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    input_kind: SourceKind = typer.Option(
+        "auto",
+        help="Source type for explicit inputs: auto, pdf, or image.",
+    ),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image source pixels into PDF points.",
+    ),
     max_pages: Optional[int] = typer.Option(
         None,
         min=1,
@@ -125,6 +138,8 @@ def benchmark_command(
         pdf,
         out_dir,
         dpi=dpi,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
         structure_jsons=structure_json,
@@ -145,6 +160,8 @@ def benchmark_command(
     typer.echo(f"Mean visual similarity: {report['summary'].get('mean_visual_similarity')}")
     typer.echo(f"Max diff ratio: {report['summary'].get('max_diff_ratio')}")
     typer.echo(f"Mean diff ratio: {report['summary'].get('mean_diff_ratio')}")
+    typer.echo(f"Input kind: {report.get('input_kind')}")
+    typer.echo(f"Image DPI: {report.get('image_dpi')}")
     typer.echo(f"Max pages: {report.get('max_pages')}")
     typer.echo(f"Page ranges: {report.get('page_ranges')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
@@ -170,7 +187,7 @@ def benchmark_command(
 
 @app.command("benchmark-structure-ab")
 def benchmark_structure_ab_command(
-    pdf: list[Path] = typer.Argument(..., help="PDF files to compare with and without structure evidence."),
+    pdf: list[Path] = typer.Argument(..., help="Source PDF/image files to compare with and without structure evidence."),
     out_dir: Path = typer.Option(Path("outputs/structure-ab"), help="A/B benchmark output directory."),
     structure_json: list[Path] = typer.Option(
         ...,
@@ -180,6 +197,16 @@ def benchmark_structure_ab_command(
         help="PaddleOCR-VL/PP-StructureV3/Docling JSON evidence. Pass files in PDF order or use matching names.",
     ),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    input_kind: SourceKind = typer.Option(
+        "auto",
+        help="Source type for explicit inputs: auto, pdf, or image.",
+    ),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image source pixels into PDF points.",
+    ),
     max_pages: Optional[int] = typer.Option(
         None,
         min=1,
@@ -237,6 +264,8 @@ def benchmark_structure_ab_command(
         out_dir,
         structure_json,
         dpi=dpi,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
         font_profile=font_profile,
@@ -255,6 +284,8 @@ def benchmark_structure_ab_command(
     typer.echo(f"Native report: {report['native_report']}")
     typer.echo(f"Native-plus-structure report: {report['structure_report']}")
     typer.echo(f"Cases: {report['case_count']}")
+    typer.echo(f"Input kind: {report.get('input_kind')}")
+    typer.echo(f"Image DPI: {report.get('image_dpi')}")
     typer.echo(f"Page ranges: {report.get('page_ranges')}")
     typer.echo(f"Mean visual similarity delta: {report['summary'].get('mean_visual_similarity_delta')}")
     typer.echo(f"Mean reading-order risk delta: {report['summary'].get('mean_reading_order_risk_score_delta')}")

@@ -15,9 +15,10 @@ from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import FidelityBackground, HtmlTextFit, export_html, page_replacement_geometries
 from .models import BBox, DocumentIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
+from .ocr import normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
-from .pdf_render import render_pdf
-from .quality import compare_pdf_renderings
+from .pdf_render import SourceKind, render_source
+from .quality import compare_source_to_pdf_rendering
 from .reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
@@ -57,6 +58,8 @@ def run_benchmark(
     pdfs: list[str | Path] | None,
     out_dir: str | Path,
     dpi: int = 192,
+    input_kind: SourceKind = "auto",
+    image_dpi: int = 96,
     max_pages: int | None = None,
     page_ranges: str | None = None,
     structure_jsons: list[str | Path] | None = None,
@@ -98,6 +101,8 @@ def run_benchmark(
                     pdf_path,
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
+                    input_kind=input_kind,
+                    image_dpi=image_dpi,
                     max_pages=max_pages_request,
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
@@ -121,6 +126,8 @@ def run_benchmark(
                     pdf_path,
                     target / "cases" / pdf_path.stem,
                     dpi=dpi,
+                    input_kind=input_kind,
+                    image_dpi=image_dpi,
                     max_pages=max_pages_request,
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
@@ -142,6 +149,8 @@ def run_benchmark(
     report = {
         "version": 1,
         "dpi": dpi,
+        "input_kind": input_kind,
+        "image_dpi": image_dpi,
         "max_pages": max_pages_request,
         "page_ranges": page_ranges_request,
         "sampled_page_numbers": [index + 1 for index in page_indices_request] if page_indices_request else None,
@@ -169,6 +178,8 @@ def run_structure_ab_benchmark(
     out_dir: str | Path,
     structure_jsons: list[str | Path],
     dpi: int = 192,
+    input_kind: SourceKind = "auto",
+    image_dpi: int = 96,
     max_pages: int | None = None,
     page_ranges: str | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
@@ -192,6 +203,8 @@ def run_structure_ab_benchmark(
         pdfs,
         native_dir,
         dpi=dpi,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
         font_profile=font_profile,
@@ -209,6 +222,8 @@ def run_structure_ab_benchmark(
         pdfs,
         structure_dir,
         dpi=dpi,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
         structure_jsons=structure_jsons,
@@ -230,6 +245,8 @@ def run_structure_ab_benchmark(
     report = {
         "version": 1,
         "dpi": dpi,
+        "input_kind": input_kind,
+        "image_dpi": image_dpi,
         "max_pages": _max_pages_request(max_pages),
         "page_ranges": _page_ranges_request(page_ranges),
         "sampled_page_numbers": [
@@ -519,6 +536,8 @@ def _run_case(
     pdf_path: Path,
     out_dir: Path,
     dpi: int,
+    input_kind: SourceKind = "auto",
+    image_dpi: int = 96,
     max_pages: int | None = None,
     page_ranges: str | None = None,
     page_indices: tuple[int, ...] | None = None,
@@ -538,28 +557,34 @@ def _run_case(
     timings: dict[str, float] = {}
 
     start = time.perf_counter()
-    rendered = render_pdf(
+    rendered = render_source(
         pdf_path,
         out_dir / "pages",
         dpi=dpi,
         include_svg_background=html_mode == "fidelity" and fidelity_background == "svg",
         max_pages=max_pages,
         page_indices=page_indices,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
     )
     timings["render_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    document = extract_native_pdf_to_ir(
-        rendered,
-        font_profile=font_profile,
-        raster_policy=raster_policy,
-        font_size_scale=font_size_scale,
-        ocr_fallback=ocr_fallback,
-        ocr_language=ocr_language,
-        ocr_dpi=ocr_dpi,
-    )
+    structure_payload = load_structure_json(structure_json) if structure_json is not None else None
+    if rendered.source_type == "pdf":
+        document = extract_native_pdf_to_ir(
+            rendered,
+            font_profile=font_profile,
+            raster_policy=raster_policy,
+            font_size_scale=font_size_scale,
+            ocr_fallback=ocr_fallback,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
+        )
+    else:
+        document = normalize_ocr_to_ir(rendered, structure_payload, crop_dir=out_dir / "crops")
     if structure_json is not None:
-        apply_structure_evidence(document, load_structure_json(structure_json), source=_structure_source_name(structure_json))
+        apply_structure_evidence(document, structure_payload or {}, source=_structure_source_name(structure_json))
     annotate_document(document)
     translation_stress_stats = _apply_translation_stress(document, translation_stress)
     ir_path = out_dir / "document.ir.json"
@@ -586,13 +611,17 @@ def _run_case(
     timings["print_pdf_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
-    quality = compare_pdf_renderings(
+    quality_report_name = "source_quality_report.json" if rendered.source_type == "image" else "pdf_quality_report.json"
+    quality = compare_source_to_pdf_rendering(
         pdf_path,
         exported_pdf,
         out_dir / "quality",
         dpi=dpi,
         max_pages=max_pages,
         expected_page_indices=page_indices,
+        expected_input_kind=rendered.source_type,
+        image_dpi=image_dpi,
+        report_filename=quality_report_name,
     )
     timings["compare_seconds"] = _elapsed(start)
 
@@ -616,13 +645,17 @@ def _run_case(
     return {
         "name": pdf_path.stem,
         "source_pdf": str(pdf_path),
+        "source_path": str(pdf_path),
+        "source_type": rendered.source_type,
+        "input_kind": input_kind,
+        "image_dpi": image_dpi if rendered.source_type == "image" else None,
         "max_pages": max_pages,
         "page_ranges": page_ranges,
         "sampled_page_numbers": [index + 1 for index in page_indices] if page_indices else None,
         "ir": str(ir_path),
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
-        "quality_report": str(out_dir / "quality" / "pdf_quality_report.json"),
+        "quality_report": str(out_dir / "quality" / quality_report_name),
         "semantic_report": str(out_dir / "semantic" / "semantic_quality_report.json"),
         "page_count": stats["page_count"],
         "element_count": stats["element_count"],
@@ -857,6 +890,8 @@ def _run_calibrated_case(
     pdf_path: Path,
     out_dir: Path,
     dpi: int,
+    input_kind: SourceKind,
+    image_dpi: int,
     max_pages: int | None,
     page_ranges: str | None,
     page_indices: tuple[int, ...] | None,
@@ -878,6 +913,8 @@ def _run_calibrated_case(
             pdf_path,
             out_dir / _candidate_slug(mode, background, profile, scale, fit),
             dpi=dpi,
+            input_kind=input_kind,
+            image_dpi=image_dpi,
             max_pages=max_pages,
             page_ranges=page_ranges,
             page_indices=page_indices,
@@ -2161,6 +2198,7 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "p95_diff_ratio": round(_percentile(diff_ratios, 95.0), 8),
         "worst_case": worst_case["name"],
         "worst_page": worst_case["worst_page"],
+        "source_type_counts": dict(Counter(str(case.get("source_type") or "pdf") for case in cases)),
         "dimension_match_rate": round(
             sum(1 for case in cases if bool(case["dimension_match"])) / len(cases),
             8,
@@ -2481,6 +2519,9 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
 def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
     fieldnames = [
         "name",
+        "source_type",
+        "input_kind",
+        "image_dpi",
         "max_pages",
         "page_ranges",
         "sampled_page_numbers",
