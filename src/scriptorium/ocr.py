@@ -20,6 +20,9 @@ TYPE_ALIASES = {
     "text": "text",
     "title": "title",
     "table": "table",
+    "table_cell": "table",
+    "table content": "table",
+    "table_content": "table",
     "figure": "figure",
     "formula": "formula",
     "image": "image",
@@ -189,6 +192,9 @@ def _semantic_payload_kind(payload: dict[str, Any]) -> str:
         {
             "parsing_res_list",
             "layout_det_res",
+            "table_res_list",
+            "cell_box_list",
+            "table_ocr_pred",
             "block_bbox",
             "block_content",
             "block_label",
@@ -290,7 +296,92 @@ def _raw_page_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
         boxes = layout.get("boxes")
         if isinstance(boxes, list):
             collected.extend(item for item in boxes if isinstance(item, dict))
+    collected.extend(_paddle_table_ocr_blocks(payload))
     return collected
+
+
+def _paddle_table_ocr_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    table_results = payload.get("table_res_list")
+    if not isinstance(table_results, list):
+        return []
+
+    blocks: list[dict[str, Any]] = []
+    for table_index, table in enumerate(table_results):
+        if not isinstance(table, dict):
+            continue
+        ocr_pred = table.get("table_ocr_pred")
+        if not isinstance(ocr_pred, dict):
+            continue
+        boxes = _paddle_table_cell_boxes(table, ocr_pred)
+        texts = _string_values(ocr_pred.get("rec_texts"))
+        scores = _float_values(ocr_pred.get("rec_scores"))
+        for cell_index, bbox in enumerate(boxes):
+            text = texts[cell_index] if cell_index < len(texts) else ""
+            if not text.strip():
+                continue
+            block: dict[str, Any] = {
+                "bbox": bbox,
+                "bbox_unit": "px",
+                "text": text.strip(),
+                "type": "table_cell",
+                "source": "native-ocr",
+                "table_ref": _paddle_table_ref(table, table_index),
+            }
+            if cell_index < len(scores):
+                block["confidence"] = scores[cell_index]
+            blocks.append(block)
+    return blocks
+
+
+def _paddle_table_cell_boxes(table: dict[str, Any], ocr_pred: dict[str, Any]) -> list[list[float]]:
+    for value in (
+        table.get("cell_box_list"),
+        ocr_pred.get("rec_boxes"),
+        ocr_pred.get("rec_polys"),
+        ocr_pred.get("dt_polys"),
+    ):
+        boxes = _bbox_list_from_any(value)
+        if boxes:
+            return boxes
+    return []
+
+
+def _bbox_list_from_any(value: Any) -> list[list[float]]:
+    if not isinstance(value, list):
+        return []
+    boxes: list[list[float]] = []
+    for item in value:
+        try:
+            boxes.append(_bbox_from_any(item))
+        except (TypeError, ValueError):
+            continue
+    return boxes
+
+
+def _string_values(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _float_values(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    floats: list[float] = []
+    for item in value:
+        try:
+            floats.append(float(item))
+        except (TypeError, ValueError):
+            continue
+    return floats
+
+
+def _paddle_table_ref(table: dict[str, Any], table_index: int) -> str:
+    for key in ("table_region_id", "region_id", "layout_region_id", "table_id", "block_id", "id"):
+        value = table.get(key)
+        if value is not None:
+            return str(value)
+    return f"table_res_list:{table_index}"
 
 
 def _normalize_raw_ocr_block(raw: dict[str, Any]) -> dict[str, Any] | None:

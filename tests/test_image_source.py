@@ -126,6 +126,53 @@ def test_image_source_can_seed_text_from_structure_json_blocks(tmp_path: Path) -
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
 
 
+def test_image_source_can_seed_table_cells_from_pp_structure_json(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    structure_payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "table_res_list": [
+                {
+                    "cell_box_list": [
+                        [24, 28, 90, 48],
+                        [180, 28, 246, 48],
+                        [24, 70, 90, 90],
+                        [180, 70, 246, 90],
+                    ],
+                    "table_ocr_pred": {
+                        "rec_texts": ["A", "B", "C", "D"],
+                        "rec_scores": [0.96, 0.95, 0.94, 0.93],
+                    },
+                }
+            ],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, structure_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert [element.source_text for element in sorted(text_elements, key=lambda item: item.reading_order)] == [
+        "A",
+        "B",
+        "C",
+        "D",
+    ]
+    assert {element.type for element in text_elements} == {"table"}
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["structure_evidence"]["region_count"] == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"implicit-table-cell": 4}
+    assert by_text["A"].metadata["external_structure_label"] == "table_cell"
+    assert by_text["A"].metadata["external_structure_order_subindex"] == 1
+    assert by_text["A"].metadata["reading_order_stream_type"] == "table-island"
+    assert by_text["A"].metadata["annotation"]["role"] == "table-cell-text"
+
+
 def test_image_source_roor_json_seeds_text_and_drives_semantic_order(tmp_path: Path) -> None:
     image_path = _make_image(tmp_path / "source.png")
     rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)

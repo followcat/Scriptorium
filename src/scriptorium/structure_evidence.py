@@ -104,10 +104,10 @@ def normalize_structure_evidence(
             continue
         for raw_block in _iter_blocks(page_payload):
             block_order = _extract_order(raw_block)
-            order_source = "explicit" if block_order is not None else None
+            order_source = _extract_order_source(raw_block) if block_order is not None else None
             if block_order is None:
                 block_order = _extract_implicit_order(raw_block)
-                order_source = "implicit-list" if block_order is not None else None
+                order_source = _extract_implicit_order_source(raw_block) if block_order is not None else None
             bbox_info = _extract_bbox(raw_block)
             if bbox_info is None:
                 continue
@@ -1244,6 +1244,8 @@ def _has_blocks(value: dict[str, Any]) -> bool:
         return True
     if isinstance(value.get("elements"), list):
         return True
+    if isinstance(value.get("table_res_list"), list):
+        return True
     layout = value.get("layout_det_res")
     return isinstance(layout, dict) and isinstance(layout.get("boxes"), list)
 
@@ -1282,7 +1284,239 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(block, dict):
                 continue
             add_block(block, list_key="layout_det_res.boxes", orderable=False)
+    blocks.extend(_paddle_table_cell_blocks(page_payload))
     return blocks
+
+
+def _paddle_table_cell_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    table_results = page_payload.get("table_res_list")
+    if not isinstance(table_results, list):
+        return []
+
+    blocks: list[dict[str, Any]] = []
+    for table_index, table in enumerate(table_results):
+        if not isinstance(table, dict):
+            continue
+        cells = _paddle_table_cells(table)
+        if not cells:
+            continue
+        parent_order, parent_order_source = _paddle_table_parent_order(page_payload, table, table_index, cells)
+        cell_positions = _table_cell_positions([bbox for bbox, _text, _score in cells])
+        for cell_index, (bbox, text, score) in enumerate(cells):
+            row_index, col_index, order_subindex = cell_positions[cell_index]
+            block: dict[str, Any] = {
+                "block_label": "table_cell",
+                "block_bbox": bbox.as_list(),
+                "block_content": text,
+                "confidence": score,
+                "_scriptorium_structure_list_key": "table_res_list.table_cells",
+                "_scriptorium_structure_list_position": cell_index + 1,
+                "_scriptorium_structure_order_subindex": order_subindex,
+                "external_structure_table_ref": _paddle_table_ref(table, table_index),
+                "external_structure_table_cell_row": row_index,
+                "external_structure_table_cell_col": col_index,
+                "external_structure_table_cell_index": cell_index,
+            }
+            if parent_order is not None:
+                block["block_order"] = parent_order
+                block["_scriptorium_structure_order_source"] = parent_order_source or "paddle-table-cell"
+            blocks.append(block)
+    return blocks
+
+
+def _paddle_table_cells(table: dict[str, Any]) -> list[tuple[BBox, str, float | None]]:
+    ocr_pred = table.get("table_ocr_pred")
+    ocr_pred = ocr_pred if isinstance(ocr_pred, dict) else {}
+    boxes = _paddle_table_cell_boxes(table, ocr_pred)
+    texts = _string_values(ocr_pred.get("rec_texts"))
+    scores = _float_values(ocr_pred.get("rec_scores"))
+
+    cells: list[tuple[BBox, str, float | None]] = []
+    for index, bbox in enumerate(boxes):
+        text = texts[index] if index < len(texts) else ""
+        score = scores[index] if index < len(scores) else None
+        if not text.strip():
+            continue
+        cells.append((bbox, text.strip(), score))
+    return cells
+
+
+def _paddle_table_cell_boxes(table: dict[str, Any], ocr_pred: dict[str, Any]) -> list[BBox]:
+    for value in (
+        table.get("cell_box_list"),
+        ocr_pred.get("rec_boxes"),
+        ocr_pred.get("rec_polys"),
+        ocr_pred.get("dt_polys"),
+    ):
+        boxes = _bboxes_from_list(value)
+        if boxes:
+            return boxes
+    return []
+
+
+def _bboxes_from_list(value: Any) -> list[BBox]:
+    if not isinstance(value, list):
+        return []
+    boxes: list[BBox] = []
+    for item in value:
+        bbox = _bbox_from_any(item)
+        if bbox is not None and bbox.width > 0 and bbox.height > 0:
+            boxes.append(bbox)
+    return boxes
+
+
+def _string_values(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _float_values(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    floats: list[float] = []
+    for item in value:
+        try:
+            floats.append(float(item))
+        except (TypeError, ValueError):
+            continue
+    return floats
+
+
+def _paddle_table_parent_order(
+    page_payload: dict[str, Any],
+    table: dict[str, Any],
+    table_index: int,
+    cells: list[tuple[BBox, str, float | None]],
+) -> tuple[int | None, str | None]:
+    table_blocks = _paddle_page_table_blocks(page_payload)
+    if not table_blocks:
+        return None, None
+
+    table_ref = _paddle_table_ref(table, table_index)
+    for raw_block in table_blocks:
+        block_keys = {_relation_key(value) for value in _paddle_block_refs(raw_block)}
+        if _relation_key(table_ref) in block_keys:
+            order = _paddle_parent_order(raw_block)
+            return order, "paddle-table-cell" if order is not None else None
+
+    if len(table_blocks) == 1 and len(_table_res_list(page_payload)) == 1:
+        order = _paddle_parent_order(table_blocks[0])
+        return order, "paddle-table-cell" if order is not None else None
+
+    table_bbox = _paddle_table_bbox(table, cells)
+    if table_bbox is None:
+        return None, None
+    best: tuple[float, dict[str, Any]] | None = None
+    for raw_block in table_blocks:
+        block_bbox_info = _extract_bbox(raw_block)
+        if block_bbox_info is None:
+            continue
+        block_bbox, _coordinate_space = block_bbox_info
+        coverage = _bbox_coverage(table_bbox, block_bbox)
+        if best is None or coverage > best[0]:
+            best = (coverage, raw_block)
+    if best is None or best[0] < 0.5:
+        return None, None
+    order = _paddle_parent_order(best[1])
+    return order, "paddle-table-cell" if order is not None else None
+
+
+def _paddle_page_table_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    sequence_index = 0
+    for key in ("parsing_res_list", "blocks", "elements"):
+        value = page_payload.get(key)
+        if not isinstance(value, list):
+            continue
+        for raw_block in value:
+            sequence_index += 1
+            if isinstance(raw_block, dict) and _normalize_structure_label(_extract_label(raw_block)) in {
+                "table",
+                "table_body",
+                "table_content",
+            }:
+                normalized_block = dict(raw_block)
+                normalized_block.setdefault("_scriptorium_structure_list_key", key)
+                normalized_block.setdefault("_scriptorium_structure_list_position", sequence_index)
+                blocks.append(normalized_block)
+    return blocks
+
+
+def _paddle_parent_order(raw_block: dict[str, Any]) -> int | None:
+    order = _extract_order(raw_block)
+    return order if order is not None else _extract_implicit_order(raw_block)
+
+
+def _table_res_list(page_payload: dict[str, Any]) -> list[Any]:
+    value = page_payload.get("table_res_list")
+    return value if isinstance(value, list) else []
+
+
+def _paddle_table_ref(table: dict[str, Any], table_index: int) -> str:
+    for key in ("table_region_id", "region_id", "layout_region_id", "table_id", "block_id", "id"):
+        value = table.get(key)
+        if value is not None:
+            return str(value)
+    return f"table_res_list:{table_index}"
+
+
+def _paddle_block_refs(raw_block: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for key in ("table_region_id", "region_id", "layout_region_id", "table_id", "block_id", "id"):
+        value = raw_block.get(key)
+        if value is not None:
+            refs.append(str(value))
+    return refs
+
+
+def _paddle_table_bbox(table: dict[str, Any], cells: list[tuple[BBox, str, float | None]]) -> BBox | None:
+    for key in ("table_bbox", "bbox", "box", "block_bbox", "layout_bbox"):
+        bbox = _bbox_from_any(table.get(key))
+        if bbox is not None:
+            return bbox
+    return _union_bboxes([bbox for bbox, _text, _score in cells])
+
+
+def _union_bboxes(boxes: list[BBox]) -> BBox | None:
+    if not boxes:
+        return None
+    return BBox(
+        x0=min(box.x0 for box in boxes),
+        y0=min(box.y0 for box in boxes),
+        x1=max(box.x1 for box in boxes),
+        y1=max(box.y1 for box in boxes),
+    )
+
+
+def _table_cell_positions(boxes: list[BBox]) -> list[tuple[int, int, int]]:
+    indexed = list(enumerate(boxes))
+    indexed.sort(key=lambda item: (item[1].y0, item[1].x0, item[0]))
+    heights = sorted(box.height for box in boxes if box.height > 0)
+    median_height = heights[len(heights) // 2] if heights else 1.0
+    row_tolerance = max(1.0, median_height * 0.65)
+    rows: list[list[tuple[int, BBox]]] = []
+    row_centers: list[float] = []
+    for index, bbox in indexed:
+        center_y = _center_y(bbox)
+        target_row: int | None = None
+        for row_index, row_center in enumerate(row_centers):
+            if abs(center_y - row_center) <= row_tolerance:
+                target_row = row_index
+                break
+        if target_row is None:
+            rows.append([(index, bbox)])
+            row_centers.append(center_y)
+        else:
+            rows[target_row].append((index, bbox))
+            row_centers[target_row] = sum(_center_y(box) for _index, box in rows[target_row]) / len(rows[target_row])
+
+    positions: list[tuple[int, int, int]] = [(0, 0, index + 1) for index in range(len(boxes))]
+    max_cols = max((len(row) for row in rows), default=1)
+    for row_index, row in enumerate(rows):
+        for col_index, (original_index, _bbox) in enumerate(sorted(row, key=lambda item: (item[1].x0, item[0]))):
+            positions[original_index] = (row_index, col_index, row_index * max_cols + col_index + 1)
+    return positions
 
 
 def _nested_block_keys() -> tuple[str, ...]:
@@ -1389,12 +1623,23 @@ def _extract_order(raw: dict[str, Any]) -> int | None:
 
 def _extract_implicit_order(raw: dict[str, Any]) -> int | None:
     list_key = str(raw.get("_scriptorium_structure_list_key") or "")
-    if list_key not in {"parsing_res_list", "blocks", "elements", *_nested_block_keys()}:
+    if list_key not in {"parsing_res_list", "blocks", "elements", "table_res_list.table_cells", *_nested_block_keys()}:
         return None
     try:
         return int(raw.get("_scriptorium_structure_list_position"))
     except (TypeError, ValueError):
         return None
+
+
+def _extract_order_source(raw: dict[str, Any]) -> str:
+    value = raw.get("_scriptorium_structure_order_source")
+    return str(value) if value else "explicit"
+
+
+def _extract_implicit_order_source(raw: dict[str, Any]) -> str:
+    if str(raw.get("_scriptorium_structure_list_key") or "") == "table_res_list.table_cells":
+        return "implicit-table-cell"
+    return "implicit-list"
 
 
 def _extract_confidence(raw: dict[str, Any]) -> float | None:
@@ -1788,6 +2033,8 @@ def _apply_external_structure_detail_metadata(element: ElementIR, region: Struct
 
     for raw_key, metadata_key in (
         ("docling_table_ref", "external_structure_table_ref"),
+        ("external_structure_table_ref", "external_structure_table_ref"),
+        ("external_structure_table_cell_index", "external_structure_table_cell_index"),
         ("external_structure_table_cell_row", "external_structure_table_cell_row"),
         ("external_structure_table_cell_col", "external_structure_table_cell_col"),
         ("external_structure_table_cell_row_span", "external_structure_table_cell_row_span"),

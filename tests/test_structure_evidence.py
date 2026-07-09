@@ -567,6 +567,86 @@ def test_docling_table_cells_drive_row_major_table_order() -> None:
     assert by_id["a"].metadata["role"] == "table-cell-text"
 
 
+def test_pp_structure_table_res_cells_inherit_parent_table_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("intro", "Intro", BBox(x0=20, y0=24, x1=62, y1=36), 1),
+            ("b", "B", BBox(x0=60, y0=70, x1=95, y1=82), 2),
+            ("a", "A", BBox(x0=20, y0=70, x1=55, y1=82), 3),
+            ("d", "D", BBox(x0=60, y0=90, x1=95, y1=102), 4),
+            ("c", "C", BBox(x0=20, y0=90, x1=55, y1=102), 5),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("intro", "text", "Intro", 1, document),
+                {
+                    "block_id": "table-1",
+                    "block_label": "table",
+                    "block_bbox": [36, 132, 200, 208],
+                    "block_order": 2,
+                    "block_content": "A B C D",
+                    "confidence": 0.90,
+                },
+            ],
+            "table_res_list": [
+                {
+                    "table_region_id": "table-1",
+                    "cell_box_list": [
+                        [40, 140, 110, 164],
+                        [120, 140, 190, 164],
+                        [40, 180, 110, 204],
+                        [120, 180, 190, 204],
+                    ],
+                    "table_ocr_pred": {
+                        "rec_texts": ["A", "B", "C", "D"],
+                        "rec_scores": [0.96, 0.95, 0.94, 0.93],
+                    },
+                }
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    ordered_text = [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+
+    assert [(region.label, region.order, region.order_source) for region in regions] == [
+        ("text", 1, "explicit"),
+        ("table", 2, "explicit"),
+        ("table_cell", 2, "paddle-table-cell"),
+        ("table_cell", 2, "paddle-table-cell"),
+        ("table_cell", 2, "paddle-table-cell"),
+        ("table_cell", 2, "paddle-table-cell"),
+    ]
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 5
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {
+        "explicit": 2,
+        "paddle-table-cell": 4,
+    }
+    assert ordered_text == ["Intro", "A", "B", "C", "D"]
+    assert by_id["a"].metadata["external_structure_label"] == "table_cell"
+    assert by_id["a"].metadata["external_structure_order"] == 2
+    assert by_id["a"].metadata["external_structure_order_subindex"] == 1
+    assert by_id["b"].metadata["external_structure_order_subindex"] == 2
+    assert by_id["c"].metadata["external_structure_order_subindex"] == 3
+    assert by_id["d"].metadata["external_structure_order_subindex"] == 4
+    assert by_id["a"].metadata["external_structure_table_ref"] == "table-1"
+    assert by_id["a"].metadata["external_structure_table_cell_row"] == 0
+    assert by_id["b"].metadata["external_structure_table_cell_col"] == 1
+    assert by_id["a"].metadata["reading_order_stream_type"] == "table-island"
+    assert by_id["a"].metadata["role"] == "table-cell-text"
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [
