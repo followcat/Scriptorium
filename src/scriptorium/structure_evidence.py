@@ -9,6 +9,7 @@ from typing import Any
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
+from .relation_order import relation_edge_candidate_order
 
 
 @dataclass(frozen=True)
@@ -119,9 +120,10 @@ def normalize_structure_relations(
 ) -> list[StructureRelationEdge]:
     """Normalize external successor/precedence edges from structure JSON.
 
-    These relations are diagnostic evidence. They are not applied as the
-    selected reading order here; benchmark candidates consume the resolved
-    relation metadata after region matching has attached node keys to elements.
+    These relations are first normalized as evidence. After region matching has
+    attached node keys to elements, apply_structure_evidence can resolve the
+    endpoints and use safe acyclic relation chains as the selected semantic
+    order for the page.
     """
 
     edges: list[StructureRelationEdge] = []
@@ -472,6 +474,8 @@ def apply_structure_evidence(
     matched_count = 0
     resolved_relation_count = 0
     reordered_pages = 0
+    relation_reordered_pages = 0
+    order_reordered_pages = 0
     order_source_counts = Counter(str(region.order_source or "none") for region in regions)
     for page in document.pages:
         page_regions = regions_by_page.get(page.page_index, [])
@@ -483,12 +487,18 @@ def apply_structure_evidence(
                 min_text_similarity=min_text_similarity,
             )
             matched_count += page_matches
-            if reorder and _reorder_page_from_regions(page):
-                reordered_pages += 1
         resolved_relation_count += _apply_page_relation_edges(
             page,
             relations_by_page.get(page.page_index, []),
         )
+        if reorder:
+            reorder_source = _reorder_page_from_regions(page)
+            if reorder_source:
+                reordered_pages += 1
+                if reorder_source == "relation":
+                    relation_reordered_pages += 1
+                elif reorder_source == "order":
+                    order_reordered_pages += 1
 
     document.metadata["structure_evidence"] = {
         "version": "v1",
@@ -498,6 +508,8 @@ def apply_structure_evidence(
         "resolved_relation_edge_count": resolved_relation_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
+        "relation_reordered_page_count": relation_reordered_pages,
+        "order_reordered_page_count": order_reordered_pages,
         "order_source_counts": dict(sorted(order_source_counts.items())),
         "regions_by_page": [
             {
@@ -523,6 +535,8 @@ def apply_structure_evidence(
         order_source_counts=dict(sorted(order_source_counts.items())),
         relation_count=len(relations),
         resolved_relation_count=resolved_relation_count,
+        relation_reordered_pages=relation_reordered_pages,
+        order_reordered_pages=order_reordered_pages,
     )
     document.revisions.append(
         RevisionIR(
@@ -534,6 +548,8 @@ def apply_structure_evidence(
                 "resolved_relation_edge_count": resolved_relation_count,
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
+                "relation_reordered_page_count": relation_reordered_pages,
+                "order_reordered_page_count": order_reordered_pages,
                 "order_source_counts": dict(sorted(order_source_counts.items())),
             },
         )
@@ -551,6 +567,8 @@ def _update_semantic_layer_metadata(
     order_source_counts: dict[str, int],
     relation_count: int,
     resolved_relation_count: int,
+    relation_reordered_pages: int,
+    order_reordered_pages: int,
 ) -> None:
     current = document.metadata.get("semantic_layer")
     semantic_layer = dict(current) if isinstance(current, dict) else {}
@@ -563,6 +581,8 @@ def _update_semantic_layer_metadata(
         "order_source_counts": order_source_counts,
         "relation_edge_count": relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
+        "relation_reordered_page_count": relation_reordered_pages,
+        "order_reordered_page_count": order_reordered_pages,
     }
     if document.source_type == "image" and region_count > 0:
         semantic_layer["driver"] = "structure-json"
@@ -1302,36 +1322,120 @@ def _text_similarity(left: str, right: str) -> float:
     return SequenceMatcher(None, left_text, right_text).ratio()
 
 
-def _reorder_page_from_regions(page: PageIR) -> bool:
+def _reorder_page_from_regions(page: PageIR) -> str | None:
     text_elements = [element for element in page.elements if element.source_text.strip()]
+    relation_order, relation_participant_ids = _relation_order_for_elements(text_elements)
+    if relation_order:
+        _apply_reordered_text_order(
+            relation_order,
+            text_elements,
+            strategy="external-structure-relation-fusion-v1",
+            evidence_label="external-structure-relation",
+            participant_ids=relation_participant_ids,
+        )
+        return "relation"
+
     ordered_elements = [element for element in text_elements if element.metadata.get("external_structure_order") is not None]
     distinct_orders = {int(element.metadata["external_structure_order"]) for element in ordered_elements}
     if len(distinct_orders) < 2:
-        return False
+        return None
 
     old_order_by_id = {element.id: element.reading_order for element in text_elements}
-    sorted_text = sorted(
+    ordered_ids = [
+        element.id
+        for element in sorted(
+            text_elements,
+            key=lambda element: (
+                int(element.metadata.get("external_structure_order") or 1_000_000),
+                old_order_by_id[element.id],
+                element.bbox_pdf.y0,
+                element.bbox_pdf.x0,
+            ),
+        )
+    ]
+    _apply_reordered_text_order(
+        ordered_ids,
         text_elements,
-        key=lambda element: (
-            int(element.metadata.get("external_structure_order") or 1_000_000),
-            old_order_by_id[element.id],
-            element.bbox_pdf.y0,
-            element.bbox_pdf.x0,
-        ),
+        strategy="external-structure-fusion-v1",
+        evidence_label="external-structure-order",
+        participant_ids={element.id for element in ordered_elements},
     )
-    for new_order, element in enumerate(sorted_text, start=1):
+    return "order"
+
+
+def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[str], set[str]]:
+    if len(text_elements) < 2:
+        return [], set()
+    id_to_index = {element.id: index for index, element in enumerate(text_elements)}
+    successor_edges: list[tuple[int, int]] = []
+    precedence_edges: list[tuple[int, int]] = []
+    participant_ids: set[str] = set()
+    for source_index, element in enumerate(text_elements):
+        for target_id in _string_list(element.metadata.get("external_structure_successor_ids")):
+            target_index = id_to_index.get(target_id)
+            if target_index is None:
+                continue
+            successor_edges.append((source_index, target_index))
+            participant_ids.update({element.id, target_id})
+        for target_id in _string_list(element.metadata.get("external_structure_precedence_target_ids")):
+            target_index = id_to_index.get(target_id)
+            if target_index is None:
+                continue
+            precedence_edges.append((source_index, target_index))
+            participant_ids.update({element.id, target_id})
+    if not successor_edges and not precedence_edges:
+        return [], set()
+
+    base_order = [
+        index
+        for index, _element in sorted(
+            enumerate(text_elements),
+            key=lambda item: (
+                item[1].reading_order,
+                item[1].bbox_pdf.y0,
+                item[1].bbox_pdf.x0,
+                item[0],
+            ),
+        )
+    ]
+    ordered_indices = relation_edge_candidate_order(
+        item_count=len(text_elements),
+        successor_edges=successor_edges,
+        precedence_edges=precedence_edges,
+        base_order=base_order,
+    )
+    if not ordered_indices:
+        return [], set()
+    return [text_elements[index].id for index in ordered_indices], participant_ids
+
+
+def _apply_reordered_text_order(
+    ordered_ids: list[str],
+    text_elements: list[ElementIR],
+    *,
+    strategy: str,
+    evidence_label: str,
+    participant_ids: set[str],
+) -> None:
+    element_by_id = {element.id: element for element in text_elements}
+    ordered_text = [element_by_id[element_id] for element_id in ordered_ids if element_id in element_by_id]
+    if len(ordered_text) != len(text_elements):
+        return
+
+    old_order_by_id = {element.id: element.reading_order for element in text_elements}
+    for new_order, element in enumerate(ordered_text, start=1):
         previous_order = old_order_by_id[element.id]
         element.metadata.setdefault("native_reading_order", previous_order)
         element.metadata["semantic_order"] = new_order
-        if element.metadata.get("external_structure_order") is not None:
+        if element.id in participant_ids:
             element.metadata.setdefault(
                 "native_reading_order_strategy",
                 element.metadata.get("reading_order_strategy", "unknown"),
             )
-            element.metadata["reading_order_strategy"] = "external-structure-fusion-v1"
+            element.metadata["reading_order_strategy"] = strategy
             evidence = _reading_order_evidence(element)
-            if "external-structure-order" not in evidence:
-                evidence.append("external-structure-order")
+            if evidence_label not in evidence:
+                evidence.append(evidence_label)
             element.metadata["reading_order_evidence"] = evidence
             element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
             element.metadata["reading_order_confidence"] = max(
@@ -1339,7 +1443,6 @@ def _reorder_page_from_regions(page: PageIR) -> bool:
                 float(element.metadata.get("external_structure_confidence") or 0.0),
             )
         element.reading_order = new_order
-    return True
 
 
 def _reading_order_evidence(element: ElementIR) -> list[str]:

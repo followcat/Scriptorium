@@ -125,6 +125,56 @@ def test_image_source_can_seed_text_from_structure_json_blocks(tmp_path: Path) -
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
 
 
+def test_image_source_structure_relations_drive_semantic_order(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    ocr_payload = {
+        "source": "unit-ocr",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {"bbox_px": [24, 28, 90, 48], "text": "A"},
+                    {"bbox_px": [180, 28, 246, 48], "text": "C"},
+                    {"bbox_px": [24, 70, 90, 90], "text": "B"},
+                    {"bbox_px": [180, 70, 246, 90], "text": "D"},
+                ],
+            }
+        ],
+    }
+    structure_payload = {
+        "source": "relation-structure",
+        "res": {
+            "page_index": 0,
+            "layout_det_res": {
+                "boxes": [
+                    {"id": "a", "label": "text", "coordinate": [24, 28, 90, 48], "text": "A"},
+                    {"id": "c", "label": "text", "coordinate": [180, 28, 246, 48], "text": "C"},
+                    {"id": "b", "label": "text", "coordinate": [24, 70, 90, 90], "text": "B"},
+                    {"id": "d", "label": "text", "coordinate": [180, 70, 246, 90], "text": "D"},
+                ]
+            },
+            "successor_edges": [["a", "b"], ["c", "d"]],
+            "precedence_edges": [["b", "d"]],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, ocr_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+
+    assert [element.source_text for element in sorted(text_elements, key=lambda item: item.reading_order)] == [
+        "A",
+        "B",
+        "C",
+        "D",
+    ]
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert text_elements[0].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
+
+
 def _make_image(path: Path) -> Path:
     image = Image.new("RGB", (320, 180), "white")
     draw = ImageDraw.Draw(image)

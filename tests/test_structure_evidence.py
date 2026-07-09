@@ -54,6 +54,8 @@ def test_pp_structure_block_order_can_reorder_native_lines() -> None:
     ]
     assert document.metadata["structure_evidence"]["matched_element_count"] == 4
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 1
     assert document.pages[0].elements[0].metadata["reading_order_strategy"] == "external-structure-fusion-v1"
     assert document.pages[0].elements[0].metadata["structure_evidence"]["source"] == "pp-structurev3"
 
@@ -106,6 +108,8 @@ def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -
     ]
     assert document.metadata["structure_evidence"]["order_source_counts"] == {"implicit-list": 2}
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 1
     assert document.pages[0].elements[0].metadata["external_structure_order_source"] == "implicit-list"
 
 
@@ -146,6 +150,8 @@ def test_layout_detection_boxes_do_not_create_implicit_reading_order() -> None:
     assert {region.order_source for region in regions} == {None}
     assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 2}
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
     assert "external_structure_order" not in document.pages[0].elements[0].metadata
 
 
@@ -186,9 +192,19 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     ]
     assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
+    assert [
+        element.id
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == ["a", "b", "c", "d"]
     assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
     assert by_id["c"].metadata["external_structure_successor_ids"] == ["d"]
     assert by_id["b"].metadata["external_structure_precedence_target_ids"] == ["d"]
+    assert by_id["a"].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
+    assert "external-structure-relation" in by_id["a"].metadata["reading_order_evidence"]
     assert "external_structure_order" not in by_id["a"].metadata
 
 
@@ -301,6 +317,8 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     assert document.metadata["structure_evidence"]["region_count"] == 4
     assert document.metadata["structure_evidence"]["matched_element_count"] == 4
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 1
     assert document.pages[0].elements[2].metadata["external_structure_order"] == 2
     assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
 
