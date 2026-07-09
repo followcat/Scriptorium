@@ -8,14 +8,14 @@ from typing import Any
 from .models import DocumentIR
 
 
-def semantic_ground_truth_path(pdf_path: str | Path) -> Path:
-    return Path(pdf_path).with_suffix(".semantic-order.json")
+def semantic_ground_truth_path(source_path: str | Path) -> Path:
+    return Path(source_path).with_suffix(".semantic-order.json")
 
 
-def semantic_ground_truth_candidates(pdf_path: str | Path) -> list[Path]:
-    source_pdf = Path(pdf_path)
-    adjacent = semantic_ground_truth_path(source_pdf)
-    repo_sidecar_names = _repo_sidecar_names(source_pdf)
+def semantic_ground_truth_candidates(source_path: str | Path) -> list[Path]:
+    source = Path(source_path)
+    adjacent = semantic_ground_truth_path(source)
+    repo_sidecar_names = _repo_sidecar_names(source)
     cwd_sidecar_dir = Path.cwd() / "benchmarks" / "semantic-ground-truth"
     source_sidecar_dir = Path(__file__).resolve().parents[2] / "benchmarks" / "semantic-ground-truth"
     candidates: list[Path] = []
@@ -29,9 +29,9 @@ def semantic_ground_truth_candidates(pdf_path: str | Path) -> list[Path]:
     return candidates
 
 
-def _repo_sidecar_names(pdf_path: Path) -> list[str]:
-    base_name = semantic_ground_truth_path(pdf_path).name
-    parent_name = pdf_path.parent.name.strip()
+def _repo_sidecar_names(source_path: Path) -> list[str]:
+    base_name = semantic_ground_truth_path(source_path).name
+    parent_name = source_path.parent.name.strip()
     names = [base_name]
     if parent_name:
         names.append(f"{parent_name}.{base_name}")
@@ -40,13 +40,13 @@ def _repo_sidecar_names(pdf_path: Path) -> list[str]:
 
 def compare_semantic_reading_order(
     document: DocumentIR,
-    source_pdf: str | Path,
+    source_path: str | Path,
     out_dir: str | Path,
     candidate_orders: dict[str, dict[int, list[str]]] | None = None,
 ) -> dict[str, Any]:
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
-    candidates = semantic_ground_truth_candidates(source_pdf)
+    candidates = semantic_ground_truth_candidates(source_path)
     ground_truth_path = next((path for path in candidates if path.exists()), candidates[0])
 
     if not ground_truth_path.exists():
@@ -91,9 +91,10 @@ def _compare_page(
     candidate_orders: dict[str, dict[int, list[str]]],
 ) -> dict[str, Any]:
     truth_page_index = int(page_truth.get("page_index", 0))
+    label_map = _page_label_map(page_truth)
     expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
-    relation_edges = _page_relation_edges(page_truth)
-    reading_streams = _page_reading_streams(page_truth)
+    relation_edges = _page_relation_edges(page_truth, label_map)
+    reading_streams = _page_reading_streams(page_truth, label_map)
     has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
     has_stream_labels = bool(reading_streams)
     match_mode = str(
@@ -165,24 +166,30 @@ def _document_uses_positional_page_indices(document: DocumentIR) -> bool:
     return all(page.page_index == index for index, page in enumerate(document.pages))
 
 
-def _page_relation_edges(page_truth: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
+def _page_relation_edges(page_truth: dict[str, Any], label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
     return {
         "successor_edges": _relation_edges_from_any(
             _combined_relation_values(
                 page_truth.get("successor_edges"),
                 page_truth.get("successor_relations"),
-            )
+                page_truth.get("ro_linkings"),
+                page_truth.get("reading_order_edges"),
+                page_truth.get("reading_order_relations"),
+                page_truth.get("reading_order_linkings"),
+            ),
+            label_map,
         ),
         "precedence_edges": _relation_edges_from_any(
             _combined_relation_values(
                 page_truth.get("precedence_edges"),
                 page_truth.get("order_edges"),
-            )
+            ),
+            label_map,
         ),
     }
 
 
-def _page_reading_streams(page_truth: dict[str, Any]) -> list[dict[str, Any]]:
+def _page_reading_streams(page_truth: dict[str, Any], label_map: dict[str, str]) -> list[dict[str, Any]]:
     streams: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for raw_stream in _combined_relation_values(
@@ -206,7 +213,8 @@ def _page_reading_streams(page_truth: dict[str, Any]) -> list[dict[str, Any]]:
             raw_stream.get(
                 "text_sequence",
                 raw_stream.get("sequence", raw_stream.get("texts", [])),
-            )
+            ),
+            label_map,
         )
         successor_edges = _dedupe_edges(
             [
@@ -215,7 +223,12 @@ def _page_reading_streams(page_truth: dict[str, Any]) -> list[dict[str, Any]]:
                     _combined_relation_values(
                         raw_stream.get("successor_edges"),
                         raw_stream.get("successor_relations"),
-                    )
+                        raw_stream.get("ro_linkings"),
+                        raw_stream.get("reading_order_edges"),
+                        raw_stream.get("reading_order_relations"),
+                        raw_stream.get("reading_order_linkings"),
+                    ),
+                    label_map,
                 ),
             ]
         )
@@ -226,7 +239,8 @@ def _page_reading_streams(page_truth: dict[str, Any]) -> list[dict[str, Any]]:
                     _combined_relation_values(
                         raw_stream.get("precedence_edges"),
                         raw_stream.get("order_edges"),
-                    )
+                    ),
+                    label_map,
                 ),
             ]
         )
@@ -258,34 +272,132 @@ def _combined_relation_values(*values: Any) -> list[Any]:
     return combined
 
 
-def _texts_from_any(value: Any) -> list[str]:
+def _texts_from_any(value: Any, label_map: dict[str, str] | None = None) -> list[str]:
     if not isinstance(value, list):
         return []
-    return _dedupe_texts([str(text).strip() for text in value if str(text).strip()])
+    labels = label_map or {}
+    texts: list[str] = []
+    for text in value:
+        resolved = _relation_endpoint(text, labels)
+        if resolved:
+            texts.append(resolved)
+    return _dedupe_texts(texts)
 
 
-def _relation_edges_from_any(value: Any) -> list[tuple[str, str]]:
+def _relation_edges_from_any(value: Any, label_map: dict[str, str] | None = None) -> list[tuple[str, str]]:
     if not isinstance(value, list):
         return []
+    labels = label_map or {}
     edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for item in value:
-        source: Any = None
-        target: Any = None
         if isinstance(item, dict):
-            source = item.get("source", item.get("from"))
-            target = item.get("target", item.get("to"))
+            source = _first_present(
+                item,
+                ("source", "from", "src", "before", "head", "source_id", "from_id"),
+            )
+            target = _first_present(
+                item,
+                ("target", "to", "dst", "after", "tail", "target_id", "to_id"),
+            )
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             source = item[0]
             target = item[1]
-        source_text = str(source or "").strip()
-        target_text = str(target or "").strip()
+        else:
+            source = None
+            target = None
+        source_text = _relation_endpoint(source, labels)
+        target_text = _relation_endpoint(target, labels)
         edge = (source_text, target_text)
         if not source_text or not target_text or source_text == target_text or edge in seen:
             continue
         edges.append(edge)
         seen.add(edge)
     return edges
+
+
+def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in value and value[key] is not None:
+            return value[key]
+    return None
+
+
+def _page_label_map(page_truth: dict[str, Any]) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for key in ("document", "elements", "blocks", "parsing_res_list"):
+        value = page_truth.get(key)
+        if isinstance(value, list):
+            for item in value:
+                _collect_label_map(item, labels)
+    layout = page_truth.get("layout_det_res")
+    if isinstance(layout, dict):
+        boxes = layout.get("boxes")
+        if isinstance(boxes, list):
+            for item in boxes:
+                _collect_label_map(item, labels)
+    return labels
+
+
+def _collect_label_map(value: Any, labels: dict[str, str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_label_map(item, labels)
+        return
+    if not isinstance(value, dict):
+        return
+    text = _label_text(value)
+    if text:
+        for key in (
+            "id",
+            "element_id",
+            "block_id",
+            "region_id",
+            "uid",
+            "self_ref",
+            "ref",
+            "docling_ref",
+        ):
+            raw_id = value.get(key)
+            if raw_id is not None:
+                labels.setdefault(str(raw_id).strip(), text)
+    for key in ("children", "child_blocks", "sub_blocks", "sub_regions", "items", "cells", "blocks", "elements"):
+        child = value.get(key)
+        if isinstance(child, (dict, list)):
+            _collect_label_map(child, labels)
+
+
+def _label_text(value: dict[str, Any]) -> str:
+    for key in ("text", "source_text", "block_content", "content", "rec_text", "markdown", "html"):
+        text = value.get(key)
+        if text:
+            return str(text).strip()
+    return ""
+
+
+def _relation_endpoint(value: Any, label_map: dict[str, str]) -> str:
+    if isinstance(value, dict):
+        for key in (
+            "text",
+            "source_text",
+            "block_content",
+            "content",
+            "id",
+            "element_id",
+            "block_id",
+            "region_id",
+            "self_ref",
+            "ref",
+        ):
+            endpoint = value.get(key)
+            if endpoint is not None:
+                raw = str(endpoint).strip()
+                return label_map.get(raw, raw)
+        return ""
+    if value is None:
+        return ""
+    raw = str(value).strip()
+    return label_map.get(raw, raw)
 
 
 def _dedupe_edges(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
