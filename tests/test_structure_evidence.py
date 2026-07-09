@@ -424,6 +424,64 @@ def test_external_card_grid_label_creates_grid_translation_stream() -> None:
     assert by_id["intro"].metadata["reading_order_stream_id"] == "body-main"
 
 
+def test_nested_structure_children_prefer_specific_card_regions_for_ordering() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("intro", "Featured products", BBox(x0=20, y0=20, x1=116, y1=32), 1),
+            ("card-b", "Phone deal", BBox(x0=104, y0=58, x1=164, y1=70), 2),
+            ("card-a", "Camera deal", BBox(x0=24, y0=58, x1=86, y1=70), 3),
+            ("card-d", "Watch deal", BBox(x0=104, y0=92, x1=166, y1=104), 4),
+            ("card-c", "Laptop deal", BBox(x0=24, y0=92, x1=90, y1=104), 5),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("intro", "text", "Featured products", 1, document),
+                {
+                    "block_label": "product_grid",
+                    "block_bbox": [40, 112, 340, 216],
+                    "block_content": "Camera deal Phone deal Laptop deal Watch deal",
+                    "confidence": 0.90,
+                    "children": [
+                        _nested_region("card-a", "product_card", "Camera deal", document),
+                        _nested_region("card-b", "product_card", "Phone deal", document),
+                        _nested_region("card-c", "product_card", "Laptop deal", document),
+                        _nested_region("card-d", "product_card", "Watch deal", document),
+                    ],
+                },
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    ordered_text = [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+
+    assert len(regions) == 6
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"explicit": 1, "implicit-list": 5}
+    assert ordered_text == [
+        "Featured products",
+        "Camera deal",
+        "Phone deal",
+        "Laptop deal",
+        "Watch deal",
+    ]
+    assert by_id["card-a"].metadata["external_structure_label"] == "product_card"
+    assert by_id["card-a"].metadata["external_structure_order_source"] == "implicit-list"
+    assert by_id["card-a"].metadata["structure_evidence"]["text_similarity"] == 1.0
+    assert by_id["card-a"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_id["card-a"].metadata["role"] == "card-text"
+
+
 def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]], page_index: int = 0) -> DocumentIR:
     elements = [
         ElementIR(
@@ -467,4 +525,19 @@ def _pp_region(
         "block_order": order,
         "block_content": text,
         "confidence": 0.95,
+    }
+
+
+def _nested_region(
+    element_id: str,
+    label: str,
+    text: str,
+    document: DocumentIR,
+) -> dict[str, object]:
+    element = next(item for item in document.pages[0].elements if item.id == element_id)
+    return {
+        "block_label": label,
+        "block_bbox": element.bbox_px.as_list(),
+        "block_content": text,
+        "confidence": 0.92,
     }

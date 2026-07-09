@@ -493,25 +493,53 @@ def _has_blocks(value: dict[str, Any]) -> bool:
 
 def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
+    sequence_index = 0
+
+    def add_block(raw_block: dict[str, Any], *, list_key: str, orderable: bool) -> None:
+        nonlocal sequence_index
+        sequence_index += 1
+        normalized_block = dict(raw_block)
+        normalized_block.setdefault("_scriptorium_structure_list_key", list_key)
+        if orderable:
+            normalized_block.setdefault("_scriptorium_structure_list_position", sequence_index)
+        blocks.append(normalized_block)
+        for child_key in _nested_block_keys():
+            child_value = raw_block.get(child_key)
+            if isinstance(child_value, list):
+                for child_block in child_value:
+                    if isinstance(child_block, dict):
+                        add_block(child_block, list_key=child_key, orderable=orderable)
+            elif isinstance(child_value, dict):
+                add_block(child_value, list_key=child_key, orderable=orderable)
+
     for key in ("parsing_res_list", "blocks", "elements"):
         value = page_payload.get(key)
         if isinstance(value, list):
-            for index, block in enumerate(value, start=1):
+            for block in value:
                 if not isinstance(block, dict):
                     continue
-                normalized_block = dict(block)
-                normalized_block.setdefault("_scriptorium_structure_list_key", key)
-                normalized_block.setdefault("_scriptorium_structure_list_position", index)
-                blocks.append(normalized_block)
+                add_block(block, list_key=key, orderable=True)
     layout = page_payload.get("layout_det_res")
     if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
         for block in layout["boxes"]:
             if not isinstance(block, dict):
                 continue
-            normalized_block = dict(block)
-            normalized_block.setdefault("_scriptorium_structure_list_key", "layout_det_res.boxes")
-            blocks.append(normalized_block)
+            add_block(block, list_key="layout_det_res.boxes", orderable=False)
     return blocks
+
+
+def _nested_block_keys() -> tuple[str, ...]:
+    return (
+        "children",
+        "child_blocks",
+        "sub_blocks",
+        "sub_regions",
+        "items",
+        "cells",
+        "blocks",
+        "elements",
+        "parsing_res_list",
+    )
 
 
 def _extract_page_index(payload: dict[str, Any], fallback: int) -> int:
@@ -602,7 +630,7 @@ def _extract_order(raw: dict[str, Any]) -> int | None:
 
 def _extract_implicit_order(raw: dict[str, Any]) -> int | None:
     list_key = str(raw.get("_scriptorium_structure_list_key") or "")
-    if list_key not in {"parsing_res_list", "blocks", "elements"}:
+    if list_key not in {"parsing_res_list", "blocks", "elements", *_nested_block_keys()}:
         return None
     try:
         return int(raw.get("_scriptorium_structure_list_position"))
@@ -811,16 +839,18 @@ def _center_y(bbox: BBox) -> float:
 
 
 def _best_region_match(element: ElementIR, regions: list[StructureRegion]) -> tuple[StructureRegion, float, float] | None:
-    best: tuple[float, StructureRegion, float, float] | None = None
+    best: tuple[float, float, float, StructureRegion, float, float] | None = None
     for region in regions:
         coverage = _bbox_coverage(element.bbox_pdf, region.bbox_pdf)
         text_similarity = _text_similarity(element.source_text, region.text)
         score = coverage * 0.75 + text_similarity * 0.25
-        if best is None or score > best[0]:
-            best = (score, region, coverage, text_similarity)
+        specificity = -max(region.bbox_pdf.width * region.bbox_pdf.height, 1.0)
+        ranking = (score, text_similarity, specificity, region, coverage, text_similarity)
+        if best is None or ranking[:3] > best[:3]:
+            best = ranking
     if best is None:
         return None
-    _score, region, coverage, text_similarity = best
+    _score, _similarity_rank, _specificity, region, coverage, text_similarity = best
     return region, coverage, text_similarity
 
 
