@@ -6,14 +6,15 @@
 
 # External Benchmark Samples
 
-These samples are intentionally kept out of git because `data/` and `outputs/` are ignored. The table records how to recreate the local PDFs and which benchmark reports currently hold the measured results.
+These samples are intentionally kept out of git because `data/` and `outputs/` are ignored. The table records how to recreate the local sources and which benchmark reports currently hold the measured results.
 
 ## Current Samples
 
-| Sample | Local PDF | Source | Purpose |
+| Sample | Local source | Source | Purpose |
 |---|---|---|---|
 | PUMA 2024 Annual Report | `data/external/puma-2024-annual-report.pdf` | `https://annualreports.com/Click/27465` | Public listed-company annual report with dense image, text, table, and shape layout. |
 | BYD 2024 Annual Report | `data/external/byd-2024-annual-report.pdf` | `https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF` | China A-share annual report, 290 Chinese pages, many financial tables and dense vector rules. |
+| JD homepage screenshot PNG | `outputs/external/jd-home/full-page.png` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | First-class image source path for the same ecommerce homepage screenshot. |
 | JD homepage screenshot PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | Full-page ecommerce homepage screenshot converted into an image-only PDF. |
 | Hacker News print PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | Real web-to-PDF portal/list layout with tracked semantic sidecar labels. |
 
@@ -118,6 +119,18 @@ JD screenshot PDF:
   --fidelity-background auto
 ```
 
+JD screenshot PNG as a first-class image source:
+
+```bash
+./.venv/bin/scriptorium benchmark outputs/external/jd-home/full-page.png \
+  --out-dir outputs/external/jd-home-image-source-benchmark-v1 \
+  --dpi 144 \
+  --input-kind image \
+  --image-dpi 96 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
 BYD A-share annual report, first 40 pages:
 
 ```bash
@@ -176,6 +189,9 @@ Translation re-rendering stress run for annual-report, ecommerce screenshot, and
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
 | BYD 2024 Annual Report | 40 | `fidelity/raster` | 0.89780001 | 0.10219999 | 0.05377595 | 9531 | 3015 | 0 | 0 | 1052 | 0 | 0 | 0 | 0 | 0.32890849 | 2496/2975 | 0.09694495 | 981/2975 | 0 | 33 | 97 right | 0.89081217 | 0 | `0.35 / high` |
 | JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+| JD homepage screenshot PNG | 1 | `structured/image-source` | 0.99236799 | 0.00763201 | 0.00763201 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.43833464 | 128/133 | 0.21894288 | 120/133 | 8 | 0 | 0 | 0.77151567 | 0 | `0.35 / high` |
+
+The direct JD PNG run validates the first-class image-source path. It produces the same semantic inventory as the older image-only PDF wrapper path: 135 total elements, 134 editable OCR text anchors, 35 grid-island elements, and the same high reading-risk diagnosis caused by missing semantic sidecar evidence. The visual score is slightly lower because the comparison path renders the source image layer directly instead of comparing against the PDF wrapper rasterization, but page count and page dimensions still match.
 
 BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 

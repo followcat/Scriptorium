@@ -30,7 +30,7 @@
   <a href="#文档">文档</a>
 </p>
 
-Scriptorium 是一个文档到 HTML 的转换与评测引擎。当前主路径覆盖 PDF、PNG/JPEG/TIFF/WebP 图片、网页打印 PDF 和 image-only PDF；图片源会作为一页文档进入 IR，而不是先伪装成 PDF。
+Scriptorium 是一个 source-neutral 的文档到 HTML 转换与评测引擎。当前主路径覆盖 PDF、PNG/JPEG/TIFF/WebP 图片、网页打印 PDF 和 image-only PDF；图片源会作为一页文档进入 IR，而不是先伪装成 PDF。
 
 它会把源文档的文本、图像、矢量形状、OCR 结果和外部结构 JSON 合并到一个 `DocumentIR`，再导出带坐标和结构标记的 HTML。每个可编辑节点都保留来源、bbox、样式、role、reading stream 和编辑/翻译字段，后续可以写回 `edited_text` 或 `translated_text`，再打印或转换回 PDF。
 
@@ -59,13 +59,13 @@ Scriptorium 支持两条路径：
   <tr>
     <td width="50%">
       <img src="docs/assets/readme-webpage-score.png" alt="Web page PDF conversion preview" width="100%"><br>
-      <strong>网页 / 门户页 PDF</strong><br>
-      用 Playwright 打印或截图生成 PDF，再转换成带 OCR/native 锚点的 HTML。
+      <strong>网页 / 门户页 source</strong><br>
+      用 Playwright 打印 PDF 或截图，再转换成带 OCR/native 坐标锚点的 HTML。
     </td>
     <td width="50%">
       <img src="docs/assets/readme-benchmark-score.png" alt="Benchmark score preview" width="100%"><br>
-      <strong>论文 / 年报 / 手册 PDF</strong><br>
-      用相同 benchmark 追踪视觉、语义顺序、候选分歧和翻译回渲染风险。
+      <strong>论文 / 年报 / 手册</strong><br>
+      用相同 benchmark 追踪 PDF 和图片 source 的视觉、语义顺序、候选分歧和翻译回渲染风险。
     </td>
   </tr>
 </table>
@@ -133,7 +133,7 @@ scriptorium convert \
 
 ```mermaid
 flowchart LR
-  A[PDF / Web PDF] --> B[Native PDF Extractor]
+  A[PDF / Web PDF source] --> B[Native PDF Extractor]
   M[Image source] --> C[Render Pages]
   M --> E[OCR / Structure JSON Adapter]
   A --> C[Render Pages]
@@ -170,7 +170,7 @@ flowchart LR
 scriptorium benchmark --out-dir outputs/benchmark-baseline --dpi 192
 ```
 
-对外部 PDF 运行高保真路径选择：
+对外部文档运行高保真路径选择：
 
 ```bash
 scriptorium benchmark path/to/file.pdf \
@@ -221,6 +221,7 @@ scriptorium benchmark path/to/page.png \
 | Transformer-XL | 11 | 双栏论文和复杂页面尺寸 | 0.95679576 | 用于多栏 successor edge 验证。 |
 | BYD 2024 年报 | 40 | 中文年报、表格、密集线框 | 0.89780001 | 当前中文复杂 PDF 压力样本。 |
 | JD 首页截图 PDF | 1 | Image-only 电商首页 | 0.99576887 | 通过 OCR 生成透明编辑锚点。 |
+| JD 首页截图 PNG | 1 | 一等 image source 路径 | 0.99236799 | 与 PDF wrapper 产生同规模 OCR/结构锚点。 |
 
 `visual_similarity = 1 - max_diff_ratio`。报告同时记录页数/尺寸匹配、diff 分布、reading-order risk、candidate disagreement、grid/table/stream 统计和 replacement 风险。
 

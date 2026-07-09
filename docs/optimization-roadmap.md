@@ -8,7 +8,7 @@
 
 This project optimizes two different outcomes:
 
-- visual fidelity: the HTML prints back to a PDF that looks like the source
+- visual fidelity: the HTML prints back to a PDF that looks like the source document or image
 - semantic fidelity: editable/exported text follows human reading order and keeps document structure
 
 ## Current Implemented Path
@@ -31,6 +31,7 @@ This project optimizes two different outcomes:
 - Semantic sidecars now also support relation-style and stream-aware labels: `successor_edges` for local adjacent labelled nodes, `precedence_edges` for partial before/after constraints, and `reading_streams` / `streams` for independent body/sidebar/footnote/caption/table/grid chains. This lets complex pages be labelled as graph relations when a single global sequence would be too brittle.
 - Pure table-like grids use `table-row-major-v1`, so table cells stay row-major without being reported as an unknown visual-order fallback.
 - Native PDF extraction now preserves image blocks, maps common paper fonts to closer browser font families, renders simple line drawings and supported non-rectangular drawing paths as SVG, and uses local raster fallback for dense vector figures.
+- Image sources are first-class inputs: PNG/JPEG/TIFF/WebP/BMP files enter `DocumentIR` with `source_type = "image"`, a full-page source visual layer, image-DPI coordinate mapping, and OCR/structure-JSON-driven editable anchors instead of being wrapped as fake PDFs.
 - Native extraction now has an `image-only` OCR fallback for scanned/screenshot PDFs: textless high-image-coverage pages keep their source image layer and gain transparent `native-ocr` editable anchors.
 - Native PDF extraction exposes benchmarkable font profiles: `browser-default` for stable baseline numbers and `local-urw` for explicit local Nimbus/DejaVu experiments.
 - Benchmark `--font-profile auto` runs both stable and local-URW candidates, records both candidate artifacts, and selects the higher visual-similarity case per PDF.
@@ -59,6 +60,7 @@ This project optimizes two different outcomes:
 - Dense list ordering uses a tighter row bucket so adjacent rows in web-to-PDF pages do not collapse into one reading-order row.
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON can be loaded as external structure evidence and fused into native elements by bbox coverage and text similarity. Docling `body.children` order now becomes `external_structure_order` evidence when its provenance bboxes match native elements, and matched model labels now feed page-artifact, footnote, sidebar, caption, table-island, and explicit card/grid/product/tile `grid-island` reading streams. Plain list labels stay list evidence rather than card-grid evidence.
 - `benchmark-structure-ab` now runs native-only and native-plus-structure reports side by side, then emits `structure_ab_report.json` / `structure_ab_summary.csv` with deltas for visual similarity, reading-order risk, grid-island elements, structure matches, page/stream `needs-structure-evidence`, and semantic successor metrics when labels exist.
+- Benchmark now accepts image sources directly with `--input-kind image`; visual scoring compares the source image layer against the rendered HTML-to-PDF output at `--image-dpi`, while OCR/structure JSON remains the semantic driver.
 - `--translation-stress pseudo-expand` now writes deterministic pseudo-expanded `translated_text` during benchmark runs, making translated replacement risk measurable without coupling the benchmark to any specific translation service.
 - The current JD/PUMA/web-HN translation-stress rerun covers 15 pages with no page-count or dimension mismatches. Mean visual similarity is `0.81899535`; total replacement conflicts remain high at 565/567, making mask/fitting/conflict reduction the next fidelity target.
 - Native PDF and OCR JSON paths share the same `scriptorium.reading_order` module.
@@ -78,6 +80,7 @@ Current benchmark coverage:
 | Hacker News print PDF | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | 0 | partial | 1.0 | 24/24 | 0.9800288 |
 | PUMA 2024 Annual Report, first 12 pages | 217 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 20 | 2 | 36 | 0 | no | n/a | n/a | 0.9795117 |
 | JD homepage screenshot PDF | 0 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0 | 0 | 0 | 134 | no | n/a | n/a | 0.99576887 |
+| JD homepage screenshot PNG | 0 | 0 | 0 | 0 | 0 | 0 | 0.43833464 | 128/133 | 8 | 0 | 0 | 134 | no | n/a | n/a | 0.99236799 |
 
 Current reading-order evidence coverage:
 
@@ -87,6 +90,7 @@ Current reading-order evidence coverage:
 | ACL Transformer-XL first 3 pages | 0.9552648 | 0 | 7 | 0 | 3 figure | 0 | 321 `column-flow`, 321 `repeated-left-edge`, 3 `caption-label`, 1 `cross-column-caption` |
 | PUMA 2024 Annual Report, first 12 pages | 0.82476488 | 0 | 2 | 36 right | 0 | 0 | 36 `sidebar-secondary-flow`, 2 `footnote-secondary-flow`, 20 `page-edge-artifact`, 46 `table-island-row-major` |
 | JD homepage screenshot PDF | 0.83 | 0 | 0 | 0 | 0 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts |
+| JD homepage screenshot PNG | 0.77151567 | 0 | 0 | 0 | 0 | 0 | 134 `recursive-xy-cut`, 134 horizontal/vertical whitespace cuts, direct image-source OCR anchors |
 
 The current built-in and external benchmark set reports 0 `spatial-graph-v1` and 0 `box-flow-v1` elements. That is intentional for this capability pass: both fallbacks are covered by weak-column unit tests and are guarded so they do not replace stronger repeated-anchor, table, sidebar, caption, footnote, or XY-Cut evidence on existing samples.
 

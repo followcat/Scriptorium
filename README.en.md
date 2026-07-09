@@ -30,7 +30,7 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Scriptorium is a document-to-HTML conversion and evaluation engine. The current main path covers PDFs, PNG/JPEG/TIFF/WebP images, web-printed PDFs, and image-only PDFs; image sources enter the IR as one-page documents instead of pretending to be PDFs first.
+Scriptorium is a source-neutral document-to-HTML conversion and evaluation engine. The current main path covers PDFs, PNG/JPEG/TIFF/WebP images, web-printed PDFs, and image-only PDFs; image sources enter the IR as one-page documents instead of pretending to be PDFs first.
 
 It merges source text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
 
@@ -59,13 +59,13 @@ HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style
   <tr>
     <td width="50%">
       <img src="docs/assets/readme-webpage-score.png" alt="Web page PDF conversion preview" width="100%"><br>
-      <strong>Web and portal PDFs</strong><br>
-      Print or capture pages with Playwright, then convert them into HTML with native/OCR coordinate anchors.
+      <strong>Web and portal sources</strong><br>
+      Print PDFs or capture screenshots with Playwright, then convert them into HTML with native/OCR coordinate anchors.
     </td>
     <td width="50%">
       <img src="docs/assets/readme-benchmark-score.png" alt="Benchmark score preview" width="100%"><br>
       <strong>Papers, reports, and manuals</strong><br>
-      Track visual fidelity, semantic order, candidate disagreement, and translation replacement risk with repeatable benchmarks.
+      Track visual fidelity, semantic order, candidate disagreement, and translation replacement risk for PDF and image sources.
     </td>
   </tr>
 </table>
@@ -133,7 +133,7 @@ Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallbac
 
 ```mermaid
 flowchart LR
-  A[PDF / Web PDF] --> B[Native PDF Extractor]
+  A[PDF / Web PDF source] --> B[Native PDF Extractor]
   M[Image source] --> C[Render Pages]
   M --> E[OCR / Structure JSON Adapter]
   A --> C[Render Pages]
@@ -170,7 +170,7 @@ Run the built-in benchmark:
 scriptorium benchmark --out-dir outputs/benchmark-baseline --dpi 192
 ```
 
-Run external PDFs with automatic fidelity path selection:
+Run external documents with automatic fidelity path selection:
 
 ```bash
 scriptorium benchmark path/to/file.pdf \
@@ -221,6 +221,7 @@ Representative current scores are shown below. Exact commands, sources, checksum
 | Transformer-XL | 11 | Two-column paper and page-size variance | 0.95679576 | Used for multi-column successor-edge checks. |
 | BYD 2024 annual report | 40 | Chinese annual report, tables, dense vector rules | 0.89780001 | Current complex Chinese PDF stress sample. |
 | JD homepage screenshot PDF | 1 | Image-only ecommerce homepage | 0.99576887 | OCR adds transparent editable anchors. |
+| JD homepage screenshot PNG | 1 | First-class image source path | 0.99236799 | Matches the PDF wrapper's OCR/structure anchor inventory. |
 
 `visual_similarity = 1 - max_diff_ratio`. Reports also include page/size match, diff distribution, reading-order risk, candidate disagreement, grid/table/stream statistics, and replacement risk.
 
