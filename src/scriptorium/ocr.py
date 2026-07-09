@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import fitz
 from PIL import Image
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox, reading_order_key
@@ -35,6 +36,9 @@ def normalize_ocr_to_ir(
     ocr_payload: dict[str, Any] | None = None,
     crop_dir: str | Path | None = None,
     include_source_image: bool | None = None,
+    ocr_fallback: str = "off",
+    ocr_language: str = "eng+chi_sim",
+    ocr_dpi: int = 144,
 ) -> DocumentIR:
     ocr_payload = ocr_payload or {}
     by_page = _group_ocr_elements_by_page(ocr_payload)
@@ -44,8 +48,40 @@ def normalize_ocr_to_ir(
         crop_root.mkdir(parents=True, exist_ok=True)
 
     pages: list[PageIR] = []
+    page_diagnostics: list[dict[str, Any]] = []
     for rendered_page in rendered.pages:
         raw_elements = by_page.get(rendered_page.page_index, [])
+        ocr_status = "not-needed" if raw_elements else "not-candidate"
+        ocr_language_used: str | None = None
+        ocr_error: str | None = None
+        if rendered.source_type == "image" and not raw_elements:
+            if ocr_fallback == "image-only":
+                raw_elements, ocr_language_used, ocr_error = _ocr_image_raw_elements(
+                    rendered_page,
+                    language=ocr_language,
+                    dpi=ocr_dpi,
+                )
+                if raw_elements:
+                    ocr_status = "applied"
+                elif ocr_error:
+                    ocr_status = "unavailable"
+                else:
+                    ocr_status = "no-text"
+            else:
+                ocr_status = "disabled"
+        page_diagnostics.append(
+            {
+                "page_index": rendered_page.page_index,
+                "source_type": rendered.source_type,
+                "ocr_fallback": ocr_fallback,
+                "ocr_fallback_status": ocr_status,
+                "ocr_language_requested": ocr_language,
+                "ocr_language_used": ocr_language_used,
+                "ocr_dpi": ocr_dpi,
+                "ocr_error": ocr_error,
+                "ocr_text_line_count": len(raw_elements),
+            }
+        )
         default_source = "native-ocr" if rendered.source_type == "image" else "json-fallback"
         elements = _normalize_page_elements(rendered_page, raw_elements, crop_root, default_source=default_source)
         if include_source_image:
@@ -80,6 +116,9 @@ def normalize_ocr_to_ir(
                     "ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty"),
                     "source_type": rendered.source_type,
                     "include_source_image": include_source_image,
+                    "ocr_fallback": ocr_fallback,
+                    "ocr_language": ocr_language,
+                    "ocr_dpi": ocr_dpi,
                 },
             )
         ],
@@ -89,6 +128,10 @@ def normalize_ocr_to_ir(
             "source_path": str(rendered.source),
             "ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty"),
             "image_source_visual_layer": bool(include_source_image),
+            "ocr_fallback": ocr_fallback,
+            "ocr_language": ocr_language,
+            "ocr_dpi": ocr_dpi,
+            "page_extraction": page_diagnostics,
         },
     )
 
@@ -217,6 +260,80 @@ def _extract_page_index(payload: dict[str, Any], fallback: int) -> int:
         except (TypeError, ValueError):
             continue
     return fallback
+
+
+def _ocr_image_raw_elements(
+    page: RenderedPage,
+    *,
+    language: str,
+    dpi: int,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    errors: list[str] = []
+    for candidate in _ocr_language_candidates(language):
+        try:
+            raw_elements = _ocr_image_raw_elements_for_language(page, language=candidate, dpi=dpi)
+        except Exception as exc:  # pragma: no cover - depends on local Tesseract installation.
+            errors.append(f"{candidate}: {type(exc).__name__}: {exc}")
+            continue
+        if raw_elements:
+            return raw_elements, candidate, None
+    return [], None, "; ".join(errors) if errors else None
+
+
+def _ocr_image_raw_elements_for_language(
+    rendered_page: RenderedPage,
+    *,
+    language: str,
+    dpi: int,
+) -> list[dict[str, Any]]:
+    doc = fitz.open()
+    try:
+        page = doc.new_page(width=rendered_page.width_pt, height=rendered_page.height_pt)
+        page.insert_image(page.rect, filename=str(rendered_page.background_image))
+        textpage = page.get_textpage_ocr(language=language, dpi=dpi)
+        text_dict = page.get_text("dict", textpage=textpage)
+    finally:
+        doc.close()
+    return _ocr_elements_from_text_dict(text_dict, language=language, dpi=dpi)
+
+
+def _ocr_elements_from_text_dict(text_dict: dict[str, Any], *, language: str, dpi: int) -> list[dict[str, Any]]:
+    elements: list[dict[str, Any]] = []
+    for block in text_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = [span for span in line.get("spans", []) if span.get("text", "")]
+            if not spans:
+                continue
+            text = "".join(str(span.get("text", "")) for span in spans).strip()
+            if not text:
+                continue
+            try:
+                bbox = BBox.from_any(line.get("bbox"))
+            except (TypeError, ValueError):
+                continue
+            elements.append(
+                {
+                    "type": "text",
+                    "bbox_pdf": bbox.as_list(),
+                    "text": text,
+                    "confidence": 0.72,
+                    "source": "native-ocr",
+                    "ocr_fallback": True,
+                    "ocr_language": language,
+                    "ocr_dpi": dpi,
+                }
+            )
+    return elements
+
+
+def _ocr_language_candidates(language: str) -> tuple[str, ...]:
+    requested = language.strip() or "eng"
+    candidates = [requested]
+    if requested != "eng":
+        candidates.append("eng")
+    return tuple(dict.fromkeys(candidates))
 
 
 def _normalize_page_elements(

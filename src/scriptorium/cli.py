@@ -46,7 +46,7 @@ def make_web_fixture(out_dir: Path = typer.Option(Path("data/web-fixture"), help
 
 @app.command("benchmark")
 def benchmark_command(
-    pdf: Optional[list[Path]] = typer.Argument(
+    sources: Optional[list[Path]] = typer.Argument(
         None,
         help="Optional source PDF/image files. If omitted, built-in PDF fixtures are generated.",
     ),
@@ -65,7 +65,7 @@ def benchmark_command(
     max_pages: Optional[int] = typer.Option(
         None,
         min=1,
-        help="Limit each benchmark PDF to the first N pages for large external documents.",
+        help="Limit each benchmark source to the first N pages for large external documents.",
     ),
     page_ranges: Optional[str] = typer.Option(
         None,
@@ -84,7 +84,7 @@ def benchmark_command(
     ),
     ocr_fallback: OcrFallback = typer.Option(
         "image-only",
-        help="OCR fallback policy for native extraction: off or image-only for textless raster pages.",
+        help="OCR fallback policy: off or image-only for textless raster pages and image sources.",
     ),
     ocr_language: str = typer.Option(
         "eng+chi_sim",
@@ -99,7 +99,7 @@ def benchmark_command(
     html_mode: BenchmarkHtmlMode = typer.Option(
         "structured",
         help=(
-            "HTML mode to score. structured redraws editable PDF elements; "
+            "HTML mode to score. structured redraws editable document elements; "
             "fidelity keeps a source page background as the visible layer and overlays editable coordinates; "
             "auto benchmarks both and keeps the higher visual-similarity result."
         ),
@@ -126,7 +126,7 @@ def benchmark_command(
         readable=True,
         help=(
             "Optional PaddleOCR-VL/PP-StructureV3 style JSON evidence. "
-            "For multiple PDFs, pass files in PDF order or use matching names."
+            "For multiple sources, pass files in source order or use matching names."
         ),
     ),
     translation_stress: BenchmarkTranslationStress = typer.Option(
@@ -135,7 +135,7 @@ def benchmark_command(
     ),
 ) -> None:
     report = run_benchmark(
-        pdf,
+        sources,
         out_dir,
         dpi=dpi,
         input_kind=input_kind,
@@ -187,7 +187,10 @@ def benchmark_command(
 
 @app.command("benchmark-structure-ab")
 def benchmark_structure_ab_command(
-    pdf: list[Path] = typer.Argument(..., help="Source PDF/image files to compare with and without structure evidence."),
+    sources: list[Path] = typer.Argument(
+        ...,
+        help="Source PDF/image files to compare with and without structure evidence.",
+    ),
     out_dir: Path = typer.Option(Path("outputs/structure-ab"), help="A/B benchmark output directory."),
     structure_json: list[Path] = typer.Option(
         ...,
@@ -210,7 +213,7 @@ def benchmark_structure_ab_command(
     max_pages: Optional[int] = typer.Option(
         None,
         min=1,
-        help="Limit each benchmark PDF to the first N pages for large external documents.",
+        help="Limit each benchmark source to the first N pages for large external documents.",
     ),
     page_ranges: Optional[str] = typer.Option(
         None,
@@ -226,7 +229,7 @@ def benchmark_structure_ab_command(
     ),
     ocr_fallback: OcrFallback = typer.Option(
         "image-only",
-        help="OCR fallback policy for native extraction: off or image-only.",
+        help="OCR fallback policy: off or image-only for textless raster pages and image sources.",
     ),
     ocr_language: str = typer.Option(
         "eng+chi_sim",
@@ -260,7 +263,7 @@ def benchmark_structure_ab_command(
     ),
 ) -> None:
     report = run_structure_ab_benchmark(
-        pdf,
+        sources,
         out_dir,
         structure_json,
         dpi=dpi,
@@ -329,7 +332,7 @@ def convert(
     ),
     extract_mode: Literal["auto", "ocr-json", "native"] = typer.Option(
         "auto",
-        help="Extraction mode. auto uses OCR JSON when provided, otherwise native PDF text extraction.",
+        help="Extraction mode. auto uses OCR/structure JSON when provided, native extraction for PDFs, and OCR fallback for image sources.",
     ),
     font_profile: FontProfile = typer.Option(
         "browser-default",
@@ -341,7 +344,7 @@ def convert(
     ),
     ocr_fallback: OcrFallback = typer.Option(
         "image-only",
-        help="OCR fallback policy for native extraction: off or image-only for textless raster pages.",
+        help="OCR fallback policy: off or image-only for textless raster pages and image sources.",
     ),
     ocr_language: str = typer.Option(
         "eng+chi_sim",
@@ -401,7 +404,14 @@ def convert(
         raise typer.BadParameter("native extraction only supports PDF sources; use auto or ocr-json for image sources")
     else:
         ocr_payload = load_ocr_json(ocr_json) if ocr_json else structure_payload
-        document = normalize_ocr_to_ir(rendered, ocr_payload, crop_dir=crops_dir)
+        document = normalize_ocr_to_ir(
+            rendered,
+            ocr_payload,
+            crop_dir=crops_dir,
+            ocr_fallback=ocr_fallback,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
+        )
     if structure_payload:
         apply_structure_evidence(document, structure_payload)
     annotate_document(document)

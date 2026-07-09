@@ -582,7 +582,14 @@ def _run_case(
             ocr_dpi=ocr_dpi,
         )
     else:
-        document = normalize_ocr_to_ir(rendered, structure_payload, crop_dir=out_dir / "crops")
+        document = normalize_ocr_to_ir(
+            rendered,
+            structure_payload,
+            crop_dir=out_dir / "crops",
+            ocr_fallback=ocr_fallback,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
+        )
     if structure_json is not None:
         apply_structure_evidence(document, structure_payload or {}, source=_structure_source_name(structure_json))
     annotate_document(document)
