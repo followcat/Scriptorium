@@ -220,6 +220,55 @@ def test_image_source_structure_relations_drive_semantic_order(tmp_path: Path) -
     assert text_elements[0].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
 
 
+def test_image_source_structure_relations_resolve_raw_ocr_anchor_ids(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    ocr_payload = {
+        "source": "unit-ocr",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {"id": "a", "bbox_px": [24, 28, 90, 48], "text": "A"},
+                    {"id": "c", "bbox_px": [180, 28, 246, 48], "text": "C"},
+                    {"id": "b", "bbox_px": [24, 70, 90, 90], "text": "B"},
+                    {"id": "d", "bbox_px": [180, 70, 246, 90], "text": "D"},
+                ],
+            }
+        ],
+    }
+    structure_payload = {
+        "source": "relation-structure",
+        "res": {
+            "page_index": 0,
+            "ro_linkings": [["a", "b"], ["b", "c"], ["c", "d"]],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, ocr_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert [element.source_text for element in sorted(text_elements, key=lambda item: item.reading_order)] == [
+        "A",
+        "B",
+        "C",
+        "D",
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 0
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["relation_stream_count"] == 1
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert by_text["A"].metadata["external_structure_successor_ids"] == [by_text["B"].id]
+    assert by_text["A"].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
+    assert {element.metadata["reading_order_stream_id"] for element in text_elements} == {
+        "external-relation-body-001-001"
+    }
+
+
 def test_image_source_stream_only_structure_json_drives_semantic_layer(tmp_path: Path) -> None:
     image_path = _make_image(tmp_path / "source.png")
     rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
@@ -263,6 +312,62 @@ def test_image_source_stream_only_structure_json_drives_semantic_layer(tmp_path:
     assert by_text["A"].metadata["reading_order_stream_type"] == "grid-island"
     assert by_text["C"].metadata["reading_order_stream_id"] == "right-rail"
     assert by_text["C"].metadata["reading_order_stream_type"] == "sidebar-right"
+
+
+def test_image_source_stream_linkings_resolve_raw_ocr_anchor_ids(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    ocr_payload = {
+        "source": "unit-ocr",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {"id": "a", "bbox_px": [24, 28, 90, 48], "text": "A"},
+                    {"id": "c", "bbox_px": [180, 28, 246, 48], "text": "C"},
+                    {"id": "b", "bbox_px": [24, 70, 90, 90], "text": "B"},
+                    {"id": "d", "bbox_px": [180, 70, 246, 90], "text": "D"},
+                ],
+            }
+        ],
+    }
+    structure_payload = {
+        "source": "stream-structure",
+        "res": {
+            "page_index": 0,
+            "reading_streams": [
+                {
+                    "id": "product-row",
+                    "stream_type": "product_grid",
+                    "reading_order_linkings": [["a", "b"]],
+                },
+                {
+                    "id": "right-rail",
+                    "stream_type": "right_sidebar",
+                    "ro_linkings": [["c", "d"]],
+                },
+            ],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, ocr_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert document.metadata["structure_evidence"]["region_count"] == 0
+    assert document.metadata["structure_evidence"]["stream_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 2
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert by_text["A"].metadata["reading_order_stream_id"] == "product-row"
+    assert by_text["A"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_text["B"].metadata["reading_order_stream_index"] == 2
+    assert by_text["C"].metadata["reading_order_stream_id"] == "right-rail"
+    assert by_text["C"].metadata["reading_order_stream_type"] == "sidebar-right"
+    assert by_text["D"].metadata["reading_order_stream_index"] == 2
 
 
 def _make_image(path: Path) -> Path:

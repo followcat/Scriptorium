@@ -839,7 +839,14 @@ def _iter_relation_edges(payload: dict[str, Any]) -> list[tuple[str, str, str, d
         edges.extend(
             ("successor", source, target, raw)
             for source, target, raw in _relation_edges_from_any(
-                _combined_relation_values(stream.get("successor_edges"), stream.get("successor_relations"))
+                _combined_relation_values(
+                    stream.get("successor_edges"),
+                    stream.get("successor_relations"),
+                    stream.get("ro_linkings"),
+                    stream.get("reading_order_edges"),
+                    stream.get("reading_order_relations"),
+                    stream.get("reading_order_linkings"),
+                )
             )
         )
         edges.extend(
@@ -880,27 +887,15 @@ def _relation_edges_from_any(values: list[Any]) -> list[tuple[str, str, dict[str
 def _relation_edge_from_any(value: Any) -> tuple[str, str, dict[str, Any]] | None:
     if isinstance(value, dict):
         source = _relation_endpoint(
-            value.get(
-                "source",
-                value.get(
-                    "from",
-                    value.get(
-                        "src",
-                        value.get("before", value.get("head", value.get("source_id", value.get("from_id")))),
-                    ),
-                ),
+            _first_present(
+                value,
+                ("source", "from", "src", "before", "head", "source_id", "from_id"),
             )
         )
         target = _relation_endpoint(
-            value.get(
-                "target",
-                value.get(
-                    "to",
-                    value.get(
-                        "dst",
-                        value.get("after", value.get("tail", value.get("target_id", value.get("to_id")))),
-                    ),
-                ),
+            _first_present(
+                value,
+                ("target", "to", "dst", "after", "tail", "target_id", "to_id"),
             )
         )
         if source and target:
@@ -910,6 +905,13 @@ def _relation_edge_from_any(value: Any) -> tuple[str, str, dict[str, Any]] | Non
         target = _relation_endpoint(value[1])
         if source and target:
             return source, target, {"source": source, "target": target}
+    return None
+
+
+def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in value and value[key] is not None:
+            return value[key]
     return None
 
 
@@ -954,7 +956,14 @@ def _stream_member_refs(stream: dict[str, Any]) -> list[str]:
     for key in ("text_sequence", "sequence", "texts", "elements", "items", "members", "children"):
         members.extend(_texts_from_any(stream.get(key)))
     for source, target, _raw in _relation_edges_from_any(
-        _combined_relation_values(stream.get("successor_edges"), stream.get("successor_relations"))
+        _combined_relation_values(
+            stream.get("successor_edges"),
+            stream.get("successor_relations"),
+            stream.get("ro_linkings"),
+            stream.get("reading_order_edges"),
+            stream.get("reading_order_relations"),
+            stream.get("reading_order_linkings"),
+        )
     ):
         members.extend([source, target])
     for source, target, _raw in _relation_edges_from_any(
@@ -1525,6 +1534,19 @@ def _element_relation_keys(element: ElementIR) -> set[str]:
         _relation_key(element.id),
         _relation_key(element.source_text),
     }
+    for key in (
+        "id",
+        "element_id",
+        "block_id",
+        "region_id",
+        "uid",
+        "self_ref",
+        "ref",
+        "docling_ref",
+    ):
+        value = element.metadata.get(key)
+        if value is not None:
+            keys.add(_relation_key(value))
     node_keys = element.metadata.get("external_structure_node_keys")
     if isinstance(node_keys, list):
         keys.update(_relation_key(item) for item in node_keys)
