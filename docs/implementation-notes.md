@@ -403,7 +403,7 @@ scriptorium benchmark-structure-ab input.pdf \
   --dpi 144
 ```
 
-This writes `native-only/benchmark_report.json`, `native-plus-structure/benchmark_report.json`, `structure_ab_report.json`, and `structure_ab_summary.csv`. The A/B report records deltas for visual similarity, reading-order risk, `grid_island_element_count`, structure-evidence region/match/reorder counts, page/stream `needs-structure-evidence` recommendations, review recommendations, successor-disagreement counts, and semantic successor metrics when sidecars exist.
+This writes `native-only/benchmark_report.json`, `native-plus-structure/benchmark_report.json`, `structure_ab_report.json`, and `structure_ab_summary.csv`. The A/B report records deltas for visual similarity, reading-order risk, `grid_island_element_count`, structure-evidence region/match/reorder counts, page/stream `needs-structure-evidence` recommendations, review recommendations, successor-disagreement counts, semantic successor metrics, and semantic stream-assignment id/type accuracy when sidecars exist.
 
 Image sources use the same benchmark command:
 
@@ -547,6 +547,7 @@ Metrics:
 - `semantic_relation_precedence_accuracy`, `semantic_relation_precedence_correct_count`, and `semantic_relation_precedence_total_count`: explicit before/after relation score from sidecar `precedence_edges`.
 - `semantic_stream_successor_accuracy` and `semantic_stream_precedence_accuracy`: stream-local order scores from sidecar `reading_streams` / `streams`. These measure whether labelled text appears in the expected local successor or before/after relation inside body, sidebar, table, caption, footnote, or grid streams.
 - `semantic_stream_assignment_id_accuracy`, `semantic_stream_assignment_type_accuracy`, and their label/found/missing/correct count fields: assignment scores for the selected IR. These compare sidecar stream membership against each element's `reading_order_stream_id` and normalized `reading_order_stream_type`, so translation re-rendering can verify that OCR/structure JSON produced the expected local streams, not only a plausible global order.
+- `semantic_stream_assignment_id_accuracy_delta` and `semantic_stream_assignment_type_accuracy_delta` in `benchmark-structure-ab`: native-plus-structure minus native-only stream-assignment accuracy. Positive deltas show that structure JSON improved local translation-stream membership, even when visual similarity is mostly unchanged.
 - `semantic_best_candidate_by_relation_successor`: candidate with the highest explicit relation successor accuracy when relation labels are available.
 - `semantic_candidate_order_metrics`: sidecar-scored semantic metrics for benchmark candidate orders such as `visual_yx`, `box_flow`, `relation_graph`, `structure_relation`, `successor_consensus`, and `external_structure`.
 - `semantic_best_candidate_by_successor`: candidate name with the highest labelled successor-edge accuracy, using pairwise accuracy as the tie-breaker.

@@ -155,7 +155,7 @@ scriptorium benchmark-structure-ab input.pdf --structure-json paddle.json --out-
 scriptorium benchmark page.png --input-kind image --structure-json page.structure.json --out-dir outputs/page-image
 ```
 
-`benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 指标。
+`benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 和 semantic stream-assignment id/type accuracy 指标。
 
 这个设计和阅读顺序研究方向保持一致：LayoutReader / ReadingBank 把 reading order 当作文档理解的一等任务；ROOR 把 reading order 建模为 layout element 之间的关系；新的 graph/path-cover 工作也把复杂页面视为多条 successor chain，而不是一个脆弱的视觉扫描序列。Scriptorium 不把模型运行时绑进核心路径，但接收同形态证据：局部 successor edges、precedence edges 和 stream memberships。
 
@@ -257,6 +257,8 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 Stream sidecar 使用同一套形状。`text_sequence`、`sequence` 或 `texts` 会被视为有序序列，并生成 stream-local successor/precedence 检查。`members`、`elements`、`items`、`children` 只用于声明 stream label 和 missing/coverage 诊断，不会单独暗示顺序；stream-local 的 `ro_linkings`、`reading_order_*` 或 typed `relations` 才提供显式顺序约束。
 
 Stream sidecar 现在还会单独评估 IR 的流归属质量。`semantic_stream_successor_accuracy` / `semantic_stream_precedence_accuracy` 只看局部顺序约束；`semantic_stream_assignment_id_accuracy`、`semantic_stream_assignment_type_accuracy` 以及对应的 label/found/missing/correct count 字段，会把 sidecar 的 stream membership 和当前元素的 `reading_order_stream_id`、归一化后的 `reading_order_stream_type` 对比。这样 benchmark 可以判断 OCR/结构 JSON 是否真的把 image/source 文本分进了正确的正文、边栏、表格、caption、脚注或卡片网格翻译流，而不是只得到一个看似可用的全局顺序。候选顺序不会参与 assignment 评分，因为 stream membership/type 是语义层抽取结果，不是候选排序列表本身。
+
+在 `benchmark-structure-ab` 中，`semantic_stream_assignment_id_accuracy_delta` 和 `semantic_stream_assignment_type_accuracy_delta` 表示 native-plus-structure 减去 native-only 的流归属准确率。正向 delta 表示结构 JSON 改善了局部翻译流 membership，即使视觉相似度主要仍由背景层决定。
 
 Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
 
