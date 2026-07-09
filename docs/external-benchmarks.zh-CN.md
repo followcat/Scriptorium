@@ -13,6 +13,7 @@
 | 样本 | 本地 PDF | 来源 | 目的 |
 |---|---|---|---|
 | PUMA 2024 Annual Report | `data/external/puma-2024-annual-report.pdf` | `https://annualreports.com/Click/27465` | 上市公司公开年报，包含密集图片、文本、表格和形状排版。 |
+| 比亚迪 2024 年年度报告 | `data/external/byd-2024-annual-report.pdf` | `https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF` | 中国 A 股上市公司年报，290 页中文公告/财务表格/密集矢量线框。 |
 | JD 首页完整截图 PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` 在当前环境会跳转到 `https://hk.jd.com/` | 电商首页完整截图封装成 image-only PDF，用于考察网页图文混排和 OCR 锚点。 |
 | Hacker News 打印 PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | 真实网页打印 PDF，包含门户/列表式排版，并有已跟踪的 semantic sidecar。 |
 
@@ -23,6 +24,19 @@
 ```bash
 curl --fail --location https://annualreports.com/Click/27465 \
   --output data/external/puma-2024-annual-report.pdf
+```
+
+从巨潮资讯下载比亚迪 A 股年报：
+
+```bash
+curl --fail --location https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF \
+  --output data/external/byd-2024-annual-report.pdf
+```
+
+当前本地校验：
+
+```text
+SHA256 e9c2d7fdd088e151ccb6c8ad3d95587b2b014b10f2c9731508d23ce07fde4de3
 ```
 
 捕获 JD 首页完整截图并封装成 PDF：
@@ -104,6 +118,29 @@ JD 截图 PDF：
   --fidelity-background auto
 ```
 
+比亚迪 A 股年报前 40 页：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-source-smoke-v1 \
+  --dpi 144 \
+  --max-pages 40 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+比亚迪翻译回渲染压力测试前 40 页：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-translation-stress-v1 \
+  --dpi 144 \
+  --max-pages 40 \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand
+```
+
 年报、电商截图和真实门户页的翻译回渲染压力测试：
 
 ```bash
@@ -124,7 +161,10 @@ JD 截图 PDF：
 | 样本 | 评分页数 | 选择路径 | 视觉相似度 | 最大差异 | 平均差异 | 元素 | 可编辑 | OCR 页 | OCR 文本 | 混合表格流 | 表格行优先 | Spatial Graph | Box-Flow 元素 | Caption | Box-Flow Pairwise | Box-Flow Successor | Relation Pairwise | Relation Successor | 页边 Artifact | 脚注 | 边栏 | RO 置信度 | 低置信 RO | 阅读风险 |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
+| 比亚迪 2024 年年度报告 | 40 | `fidelity/raster` | 0.89780001 | 0.10219999 | 0.05377595 | 9531 | 3015 | 0 | 0 | 1052 | 0 | 0 | 0 | 0 | 0.32890849 | 2496/2975 | 0.09694495 | 981/2975 | 0 | 33 | 97 right | 0.89081217 | 0 | `0.35 / high` |
 | JD 首页截图 PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+
+比亚迪是当前复杂中文年报压力样本。本地 PDF 为 290 页、10,092,140 bytes。快速 PyMuPDF profile 显示：前 20 页有 497 个 text blocks 和 1088 个 drawing objects，而 PUMA 同页数只有 257 个 text blocks 和 375 个 drawing objects。全 PDF 中，比亚迪有 50,724 个 drawing objects，并有 101 页 `blocks >= 30`；PUMA 对应为 37,081 个 drawing objects 和 65 页。因此它补上了 PUMA 覆盖不足的中文公告、财务表格、密集线框和翻译回渲染维度。
 
 ## 翻译压力测试结果
 
@@ -141,6 +181,10 @@ JD 截图 PDF：
 同一次运行的页级候选建议为：`keep-selected-low-consensus: 1`、`keep-selected-supported: 5`、`needs-structure-evidence: 7`、`review-disagreement: 2`。流级诊断更关注局部结构：`keep-selected-low-consensus: 5`、`keep-selected-supported: 39`、`needs-structure-evidence: 17`、`review-consensus: 1`、`review-disagreement: 1`。
 
 之前 JD-only 的翻译压力测试暴露了 Chromium 额外尾部空白页：真实页面 diff 是 `0.12536428`，但报告被额外空白导出页主导，导致 case 被记为 `visual_similarity = 0.0`。现在 `print_html_to_pdf()` 只删除超出源页数的尾部空白伪页，因此 JD stress 分数回到 `0.87463572`，而真正有内容的溢出页仍会被保留和评分。
+
+比亚迪 standalone 翻译压力测试记录在 `outputs/external/byd-2024-annual-report-translation-stress-v1`；它比 PUMA/JD/web-HN 三样本 sweep 更重，因此单独跟踪。前 40 页 `visual_similarity = 0.90512026`，`max_diff_ratio = 0.09487974`，`mean_diff_ratio = 0.05402886`，`p95_diff_ratio = 0.07766083`，没有页数或尺寸 mismatch。它产生 2274 个伪译文 replacement，扩展倍率 `3.31871867`，overflow 1182，conflict 1257，冲突目标 764，最小 fit scale `0.62`，平均 fit scale `0.66336636`。
+
+比亚迪也覆盖了 stream-local replacement 诊断。按 stream type 统计的 replacement conflict 为：`body: 648`、`grid-island: 453`、`table-island: 124`、`sidebar-right: 19`、`footnote: 13`。最大的 stream-id 冲突桶为：`body-main: 378`、`grid-island-001: 199`、`grid-island-002: 141`、`body-segment-002: 109`、`table-island-001: 103`，适合后续优化 mask/fitting。
 
 PUMA 目前没有 semantic sidecar，因此高阅读顺序风险是下一步标注工作的有效信号。它的 OCR fallback 为 0，因为采样页已经包含原生 PDF 文本。当前诊断报告显示 5 个 repeated-anchor 页面、最多 3 个锚点、4 个 table-like 页面，并且 table-like visual-yx 页面为 0。混合表格、artifact、sidebar、footnote 路径识别出 99 个直接 column-flow 元素、238 个 mixed-table-flow 元素、20 个页眉 artifact、36 个右侧边栏/旁注元素和 2 个脚注元素。
 

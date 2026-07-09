@@ -181,6 +181,7 @@ Successor-consensus diagnostics vote over adjacent successor edges from visual-y
 | Hacker News live page printed by Playwright | 2 | 162 | 95 | 0.9800288 | yes / yes |
 | arXiv paper: Attention Is All You Need | 15 | 876 | 761 | 0.96840246 | yes / yes |
 | ACL paper: Transformer-XL | 11 | 1558 | 1446 | 0.95679576 | yes / yes |
+| BYD 2024 A-share annual report | 40 | 9531 | 3015 | 0.89780001 | yes / yes |
 | Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 0.9906702 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`. Reports also include `mean_diff_ratio`, `p95_diff_ratio`, `worst_page`, `page_count_match`, and `dimension_match`.

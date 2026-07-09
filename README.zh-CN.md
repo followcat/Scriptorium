@@ -176,6 +176,7 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 | Hacker News live page printed by Playwright | 2 | 162 | 95 | 30 | 37 | 0 | 0.9800288 | 0.0199712 | 0.01032101 | yes / yes |
 | arXiv paper: Attention Is All You Need | 15 | 876 | 761 | 6 | 109 | 163 | 0.96840246 | 0.03159754 | 0.02179977 | yes / yes |
 | ACL paper: Transformer-XL | 11 | 1558 | 1446 | 2 | 110 | 1213 | 0.95679576 | 0.04320424 | 0.0365879 | yes / yes |
+| BYD 2024 A-share annual report | 40 | 9531 | 3015 | 13 | 6503 | 2666 | 0.89780001 | 0.10219999 | 0.05377595 | yes / yes |
 | Built-in benchmark fixtures, mean | 6 pages total | 72 | 53 | 0 | 19 | 20 | 0.9906702 | 0.01160961 | 0.00929831 | yes / yes |
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。

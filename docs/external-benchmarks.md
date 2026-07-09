@@ -13,6 +13,7 @@ These samples are intentionally kept out of git because `data/` and `outputs/` a
 | Sample | Local PDF | Source | Purpose |
 |---|---|---|---|
 | PUMA 2024 Annual Report | `data/external/puma-2024-annual-report.pdf` | `https://annualreports.com/Click/27465` | Public listed-company annual report with dense image, text, table, and shape layout. |
+| BYD 2024 Annual Report | `data/external/byd-2024-annual-report.pdf` | `https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF` | China A-share annual report, 290 Chinese pages, many financial tables and dense vector rules. |
 | JD homepage screenshot PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | Full-page ecommerce homepage screenshot converted into an image-only PDF. |
 | Hacker News print PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | Real web-to-PDF portal/list layout with tracked semantic sidecar labels. |
 
@@ -23,6 +24,19 @@ Download the PUMA annual report:
 ```bash
 curl --fail --location https://annualreports.com/Click/27465 \
   --output data/external/puma-2024-annual-report.pdf
+```
+
+Download the BYD A-share annual report from CNInfo:
+
+```bash
+curl --fail --location https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF \
+  --output data/external/byd-2024-annual-report.pdf
+```
+
+Current local checksum:
+
+```text
+SHA256 e9c2d7fdd088e151ccb6c8ad3d95587b2b014b10f2c9731508d23ce07fde4de3
 ```
 
 Capture the JD homepage as a full-page screenshot and wrap it as a PDF:
@@ -104,6 +118,29 @@ JD screenshot PDF:
   --fidelity-background auto
 ```
 
+BYD A-share annual report, first 40 pages:
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-source-smoke-v1 \
+  --dpi 144 \
+  --max-pages 40 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+BYD translated re-rendering stress, first 40 pages:
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/byd-2024-annual-report.pdf \
+  --out-dir outputs/external/byd-2024-annual-report-translation-stress-v1 \
+  --dpi 144 \
+  --max-pages 40 \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand
+```
+
 Translation re-rendering stress run for annual-report, ecommerce screenshot, and web portal samples:
 
 ```bash
@@ -124,7 +161,10 @@ Translation re-rendering stress run for annual-report, ecommerce screenshot, and
 | Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Box-Flow Elements | Captions | Box-Flow Pairwise | Box-Flow Successor | Relation Pairwise | Relation Successor | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
+| BYD 2024 Annual Report | 40 | `fidelity/raster` | 0.89780001 | 0.10219999 | 0.05377595 | 9531 | 3015 | 0 | 0 | 1052 | 0 | 0 | 0 | 0 | 0.32890849 | 2496/2975 | 0.09694495 | 981/2975 | 0 | 33 | 97 right | 0.89081217 | 0 | `0.35 / high` |
 | JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+
+BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 
 ## Translation Stress Results
 
@@ -141,6 +181,10 @@ Combined summary: mean visual similarity is `0.81899535`, max diff is `0.3238307
 The same run reports page-level candidate recommendations as `keep-selected-low-consensus: 1`, `keep-selected-supported: 5`, `needs-structure-evidence: 7`, and `review-disagreement: 2`. Stream-level diagnostics are stricter on local flows: `keep-selected-low-consensus: 5`, `keep-selected-supported: 39`, `needs-structure-evidence: 17`, `review-consensus: 1`, and `review-disagreement: 1`.
 
 A previous JD-only stress run exposed a Chromium extra blank tail page: the real page diff was `0.12536428`, but the report was dominated by an extra blank exported page and scored the case as `visual_similarity = 0.0`. `print_html_to_pdf()` now removes only trailing blank artifact pages beyond the expected source page count, so the JD stress score is `0.87463572` and real nonblank overflow pages remain measurable.
+
+BYD standalone translation stress is tracked separately in `outputs/external/byd-2024-annual-report-translation-stress-v1` because it is much heavier than the three-sample PUMA/JD/web-HN sweep. The first 40 pages have `visual_similarity = 0.90512026`, `max_diff_ratio = 0.09487974`, `mean_diff_ratio = 0.05402886`, `p95_diff_ratio = 0.07766083`, and no page-count or dimension mismatch. It creates 2274 pseudo-translated replacements with expansion ratio `3.31871867`, 1182 overflows, 1257 conflicts, 764 conflict targets, min fit scale `0.62`, and mean fit scale `0.66336636`.
+
+BYD also exercises the stream-local replacement diagnostics. Replacement conflicts by stream type are `body: 648`, `grid-island: 453`, `table-island: 124`, `sidebar-right: 19`, and `footnote: 13`. The largest stream-id conflict buckets are `body-main: 378`, `grid-island-001: 199`, `grid-island-002: 141`, `body-segment-002: 109`, and `table-island-001: 103`, making it a useful target for future mask/fitting work.
 
 PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 0 table-like visual-yx pages. The current mixed-table/artifact/sidebar/footnote pass reports 99 direct column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, 36 right-side sidebar/marginalia elements, and 2 footnote elements, keeping detected local table islands row-major while surrounding body text can still use column flow.
 
