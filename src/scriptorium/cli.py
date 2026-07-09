@@ -303,6 +303,14 @@ def benchmark_structure_ab_command(
         f"{report['summary'].get('total_stream_needs_structure_evidence_delta')}"
     )
     typer.echo(
+        "Mean semantic stream assignment id delta: "
+        f"{report['summary'].get('mean_semantic_stream_assignment_id_accuracy_delta')}"
+    )
+    typer.echo(
+        "Mean semantic stream assignment type delta: "
+        f"{report['summary'].get('mean_semantic_stream_assignment_type_accuracy_delta')}"
+    )
+    typer.echo(
         "Structure evidence matched elements: "
         f"{report['summary'].get('total_structure_evidence_matched_elements')}"
     )

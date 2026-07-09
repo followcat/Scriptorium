@@ -1125,6 +1125,35 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
 
 def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Path) -> None:
     pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    expected_text = [
+        "Quarterly Engineering Note",
+        "This page is mostly flowing native PDF text.",
+        "The benchmark checks whether text nodes, style marks, and coordinates survive.",
+        "Key points",
+        "1. Extract text spans without using a page screenshot.",
+        "2. Emit editable HTML nodes with stable IDs.",
+        "3. Preserve source text while allowing edited text.",
+    ]
+    pdfs[0].with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "reading_streams": [
+                            {
+                                "id": "grid-island-external-001",
+                                "type": "product_grid",
+                                "members": expected_text,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     structure_json = tmp_path / f"{pdfs[0].stem}.structure.json"
     structure_json.write_text(
         json.dumps(
@@ -1179,9 +1208,17 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
+    assert comparison["semantic_stream_assignment_id_accuracy_delta"] > 0
+    assert comparison["semantic_stream_assignment_type_accuracy_delta"] > 0
+    assert report["summary"]["mean_semantic_stream_assignment_id_accuracy_delta"] > 0
+    assert report["summary"]["mean_semantic_stream_assignment_type_accuracy_delta"] > 0
+    assert report["summary"]["cases_with_stream_assignment_id_improvement"] == 1
+    assert report["summary"]["cases_with_stream_assignment_type_improvement"] == 1
     assert "semantic_external_structure_successor_accuracy" not in csv_text
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
+    assert "semantic_stream_assignment_id_accuracy_delta" in csv_text
+    assert "semantic_stream_assignment_type_accuracy_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
     assert "structure_evidence_relation_edge_count" in csv_text
     assert "structure_evidence_stream_count" in csv_text

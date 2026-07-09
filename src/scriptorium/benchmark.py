@@ -412,6 +412,16 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "semantic_stream_successor_accuracy",
         ),
+        "semantic_stream_assignment_id_accuracy_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_stream_assignment_id_accuracy",
+        ),
+        "semantic_stream_assignment_type_accuracy_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_stream_assignment_type_accuracy",
+        ),
         "native_reading_order_stream_type_counts": native_case["reading_order_stream_type_counts"],
         "structure_reading_order_stream_type_counts": structure_case["reading_order_stream_type_counts"],
         "native_reading_order_candidate_page_recommendation_counts": native_case[
@@ -497,6 +507,18 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         ),
         "total_page_review_delta": sum(int(values["page_review_delta"]) for values in comparisons),
         "total_stream_review_delta": sum(int(values["stream_review_delta"]) for values in comparisons),
+        "mean_semantic_stream_assignment_id_accuracy_delta": _mean_optional(
+            values["semantic_stream_assignment_id_accuracy_delta"] for values in comparisons
+        ),
+        "mean_semantic_stream_assignment_type_accuracy_delta": _mean_optional(
+            values["semantic_stream_assignment_type_accuracy_delta"] for values in comparisons
+        ),
+        "cases_with_stream_assignment_id_improvement": sum(
+            1 for values in comparisons if float(values["semantic_stream_assignment_id_accuracy_delta"] or 0.0) > 0
+        ),
+        "cases_with_stream_assignment_type_improvement": sum(
+            1 for values in comparisons if float(values["semantic_stream_assignment_type_accuracy_delta"] or 0.0) > 0
+        ),
         "cases_with_visual_regression": sum(
             1 for values in comparisons if float(values["visual_similarity_delta"] or 0.0) < 0
         ),
@@ -588,6 +610,8 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "successor_consensus_successor_disagreement_delta",
         "semantic_successor_accuracy_delta",
         "semantic_stream_successor_accuracy_delta",
+        "semantic_stream_assignment_id_accuracy_delta",
+        "semantic_stream_assignment_type_accuracy_delta",
         "native_reading_order_stream_type_counts",
         "structure_reading_order_stream_type_counts",
         "native_reading_order_candidate_page_recommendation_counts",
