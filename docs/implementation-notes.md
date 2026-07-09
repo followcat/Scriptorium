@@ -6,6 +6,26 @@
 
 # Implementation Notes
 
+## Source Boundary
+
+Scriptorium now treats the input as a document source, not as a synonym for PDF. `render_source()` dispatches to the PDF renderer or the image renderer:
+
+- PDF sources keep the native extraction path: PyMuPDF text/images/drawings, optional image-only OCR fallback, and optional structure JSON fusion.
+- Image sources (`PNG`, `JPEG`, `TIFF`, `WebP`, `BMP`) render as one-page `RenderedDocument` objects with `source_type = "image"`.
+- Image coordinates use `--image-dpi` to map source pixels into PDF-point space. The original pixels become the page visual layer, while OCR/structure JSON contributes editable text anchors and reading-stream evidence.
+- `DocumentIR` now carries `source_type` and `source_path`; the old `source_pdf` field remains for compatibility with existing reports and XML.
+- Native PDF extraction explicitly rejects image sources. Image semantics should come from OCR JSON or Paddle/PP-Structure/Docling-style structure JSON, so the semantic layer is model/evidence-driven rather than inferred from a fake PDF wrapper.
+
+Example:
+
+```bash
+scriptorium convert page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json page.structure.json \
+  --out-dir outputs/page-image
+```
+
 ## OCR Backend Boundary
 
 The core pipeline consumes normalized JSON and turns it into `DocumentIR`. This is intentional:
@@ -19,6 +39,7 @@ Current implementation status:
 - `--ocr-json` is the stable tested input for conversion quality work.
 - `PaddleOcrAdapter` is isolated in `scriptorium.ocr` and intentionally lazy-imports `paddleocr`.
 - `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and DoclingDocument JSON, then fuses region bbox, label, content, confidence, and external reading order back into `DocumentIR`.
+- For image sources, `--structure-json` can also seed the initial text anchor layer when no separate `--ocr-json` is provided. Common `parsing_res_list` / `block_bbox` / `block_content` payloads are normalized into `native-ocr` text nodes before structure evidence is fused back onto them.
 - Native extraction has an `image-only` OCR fallback for scanned or screenshot PDFs. It triggers only when a page has no native text and image blocks cover most of the page, then emits `native-ocr` text anchors without replacing the original image element.
 - `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. It also parses Docling `body.children` trees, resolves refs such as `#/texts/0` and `#/groups/0`, reads `prov` bbox/page evidence, and supports both top-left and bottom-left bbox origins. The next model-specific step is running real PaddleOCR-VL, PP-StructureV3, and Docling payloads through this bridge and tracking native-only versus native-plus-structure deltas.
 

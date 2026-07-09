@@ -30,7 +30,7 @@
   <a href="#文档">文档</a>
 </p>
 
-Scriptorium 是一个文档到 HTML 的转换与评测引擎。当前主路径覆盖 PDF、网页打印 PDF 和 image-only PDF；下一阶段会把图片源变成一等输入，而不是继续把它伪装成 PDF。
+Scriptorium 是一个文档到 HTML 的转换与评测引擎。当前主路径覆盖 PDF、PNG/JPEG/TIFF/WebP 图片、网页打印 PDF 和 image-only PDF；图片源会作为一页文档进入 IR，而不是先伪装成 PDF。
 
 它会把源文档的文本、图像、矢量形状、OCR 结果和外部结构 JSON 合并到一个 `DocumentIR`，再导出带坐标和结构标记的 HTML。每个可编辑节点都保留来源、bbox、样式、role、reading stream 和编辑/翻译字段，后续可以写回 `edited_text` 或 `translated_text`，再打印或转换回 PDF。
 
@@ -117,6 +117,16 @@ scriptorium convert \
   --out-dir outputs/with-structure
 ```
 
+图片可以直接作为 source 输入。没有 OCR/结构 JSON 时会得到整页图片 visual layer；有 OCR 或 Paddle/PP-Structure/Docling 结构 JSON 时，会生成透明文本锚点和 reading-stream 证据：
+
+```bash
+scriptorium convert \
+  path/to/page.png \
+  --input-kind image \
+  --structure-json path/to/page.structure.json \
+  --out-dir outputs/image-source
+```
+
 可选 OCR 依赖放在 `requirements-ocr.txt`。Image-only OCR fallback 依赖系统 `tesseract` 和对应语言数据。
 
 ## 核心流程
@@ -124,6 +134,8 @@ scriptorium convert \
 ```mermaid
 flowchart LR
   A[PDF / Web PDF] --> B[Native PDF Extractor]
+  M[Image source] --> C[Render Pages]
+  M --> E[OCR / Structure JSON Adapter]
   A --> C[Render Pages]
   B --> D[Image-only OCR Fallback]
   A --> E[Structure JSON Adapter]

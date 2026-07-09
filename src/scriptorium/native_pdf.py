@@ -40,6 +40,8 @@ def extract_native_pdf_to_ir(
     ocr_language: str = "eng+chi_sim",
     ocr_dpi: int = 144,
 ) -> DocumentIR:
+    if rendered.source_type != "pdf":
+        raise ValueError("native PDF extraction only supports PDF sources")
     pages: list[PageIR] = []
     page_diagnostics: list[dict[str, Any]] = []
     with fitz.open(rendered.source_pdf) as doc:
@@ -74,6 +76,8 @@ def extract_native_pdf_to_ir(
 
     return DocumentIR(
         source_pdf=str(rendered.source_pdf),
+        source_path=str(rendered.source),
+        source_type=rendered.source_type,
         render_dpi=rendered.render_dpi,
         page_count=len(rendered.pages),
         pages=pages,

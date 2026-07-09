@@ -21,7 +21,7 @@ from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import load_ocr_json, normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
-from .pdf_render import render_pdf
+from .pdf_render import SourceKind, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .structure_evidence import apply_structure_evidence, load_structure_json
@@ -287,7 +287,7 @@ def capture_pdf_command(
 
 @app.command()
 def convert(
-    pdf: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF."),
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input source PDF or image."),
     out_dir: Path = typer.Option(Path("outputs/document"), help="Conversion output directory."),
     ocr_json: Optional[Path] = typer.Option(None, exists=True, readable=True, help="Fallback OCR JSON."),
     structure_json: Optional[Path] = typer.Option(
@@ -327,18 +327,36 @@ def convert(
         "--svg-background",
         help="Also export per-page SVG backgrounds for fidelity overlay HTML.",
     ),
+    input_kind: SourceKind = typer.Option(
+        "auto",
+        help="Source type: auto, pdf, or image. Images are rendered as one-page sources.",
+    ),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image pixels into PDF points for image sources.",
+    ),
     font_size_scale: float = typer.Option(
         1.0,
         min=0.9,
         max=1.1,
         help="Global CSS font-size multiplier for native PDF text extraction.",
     ),
-    dpi: int = typer.Option(192, min=72, max=600, help="PDF render DPI."),
+    dpi: int = typer.Option(192, min=72, max=600, help="PDF render DPI. Image sources use --image-dpi."),
 ) -> None:
     pages_dir = out_dir / "pages"
     crops_dir = out_dir / "crops"
-    rendered = render_pdf(pdf, pages_dir, dpi=dpi, include_svg_background=svg_background)
-    if extract_mode == "native" or (extract_mode == "auto" and ocr_json is None):
+    rendered = render_source(
+        source,
+        pages_dir,
+        dpi=dpi,
+        include_svg_background=svg_background,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
+    )
+    structure_payload = load_structure_json(structure_json) if structure_json else None
+    if rendered.source_type == "pdf" and (extract_mode == "native" or (extract_mode == "auto" and ocr_json is None)):
         document = extract_native_pdf_to_ir(
             rendered,
             font_profile=font_profile,
@@ -348,16 +366,19 @@ def convert(
             ocr_language=ocr_language,
             ocr_dpi=ocr_dpi,
         )
+    elif extract_mode == "native":
+        raise typer.BadParameter("native extraction only supports PDF sources; use auto or ocr-json for image sources")
     else:
-        ocr_payload = load_ocr_json(ocr_json) if ocr_json else None
+        ocr_payload = load_ocr_json(ocr_json) if ocr_json else structure_payload
         document = normalize_ocr_to_ir(rendered, ocr_payload, crop_dir=crops_dir)
-    if structure_json:
-        apply_structure_evidence(document, load_structure_json(structure_json))
+    if structure_payload:
+        apply_structure_evidence(document, structure_payload)
     annotate_document(document)
     ir_path = out_dir / "document.ir.json"
     document.save(ir_path)
     typer.echo(f"IR: {ir_path}")
     typer.echo(f"Pages: {len(document.pages)}")
+    typer.echo(f"Source type: {document.source_type}")
 
 
 @app.command("export-html")

@@ -34,9 +34,11 @@ def normalize_ocr_to_ir(
     rendered: RenderedDocument,
     ocr_payload: dict[str, Any] | None = None,
     crop_dir: str | Path | None = None,
+    include_source_image: bool | None = None,
 ) -> DocumentIR:
     ocr_payload = ocr_payload or {}
     by_page = _group_ocr_elements_by_page(ocr_payload)
+    include_source_image = rendered.source_type == "image" if include_source_image is None else include_source_image
     crop_root = Path(crop_dir) if crop_dir is not None else None
     if crop_root is not None:
         crop_root.mkdir(parents=True, exist_ok=True)
@@ -44,7 +46,10 @@ def normalize_ocr_to_ir(
     pages: list[PageIR] = []
     for rendered_page in rendered.pages:
         raw_elements = by_page.get(rendered_page.page_index, [])
-        elements = _normalize_page_elements(rendered_page, raw_elements, crop_root)
+        default_source = "native-ocr" if rendered.source_type == "image" else "json-fallback"
+        elements = _normalize_page_elements(rendered_page, raw_elements, crop_root, default_source=default_source)
+        if include_source_image:
+            elements.insert(0, _source_image_element(rendered_page))
         pages.append(
             PageIR(
                 page_index=rendered_page.page_index,
@@ -63,42 +68,163 @@ def normalize_ocr_to_ir(
 
     return DocumentIR(
         source_pdf=str(rendered.source_pdf),
+        source_path=str(rendered.source),
+        source_type=rendered.source_type,
         render_dpi=rendered.render_dpi,
         page_count=len(rendered.pages),
         pages=pages,
         revisions=[
             RevisionIR(
                 reason="initial-conversion",
-                payload={"ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty")},
+                payload={
+                    "ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty"),
+                    "source_type": rendered.source_type,
+                    "include_source_image": include_source_image,
+                },
             )
         ],
+        metadata={
+            "extraction_mode": "ocr-json",
+            "source_type": rendered.source_type,
+            "source_path": str(rendered.source),
+            "ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty"),
+            "image_source_visual_layer": bool(include_source_image),
+        },
     )
 
 
 def _group_ocr_elements_by_page(payload: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
     grouped: dict[int, list[dict[str, Any]]] = {}
-    pages = payload.get("pages")
-    if isinstance(pages, list):
-        for page in pages:
-            page_index = int(page.get("page_index", page.get("index", 0)))
-            elements = page.get("elements", page.get("blocks", []))
-            if isinstance(elements, list):
-                grouped.setdefault(page_index, []).extend([e for e in elements if isinstance(e, dict)])
-        return grouped
 
-    elements = payload.get("elements", payload.get("blocks", []))
-    if isinstance(elements, list):
-        for element in elements:
-            if isinstance(element, dict):
-                page_index = int(element.get("page_index", element.get("page", 0)))
-                grouped.setdefault(page_index, []).append(element)
+    def add(page_index: int, raw_elements: Any) -> None:
+        if not isinstance(raw_elements, list):
+            return
+        for raw in raw_elements:
+            if not isinstance(raw, dict):
+                continue
+            normalized = _normalize_raw_ocr_block(raw)
+            if normalized is not None:
+                grouped.setdefault(page_index, []).append(normalized)
+
+    def visit(node: Any, fallback_page_index: int = 0) -> None:
+        if isinstance(node, list):
+            for index, item in enumerate(node):
+                visit(item, index)
+            return
+        if not isinstance(node, dict):
+            return
+
+        pages = node.get("pages")
+        if isinstance(pages, list):
+            for index, page in enumerate(pages):
+                if not isinstance(page, dict):
+                    continue
+                page_index = _extract_page_index(page, index)
+                add(page_index, _raw_page_elements(page))
+                for key in ("res", "result"):
+                    if key in page:
+                        visit(page[key], page_index)
+            return
+
+        page_index = _extract_page_index(node, fallback_page_index)
+        add(page_index, _raw_page_elements(node))
+        for key in ("res", "result"):
+            if key in node:
+                visit(node[key], page_index)
+        for key in ("raw_results", "results"):
+            value = node.get(key)
+            if isinstance(value, list):
+                for index, item in enumerate(value):
+                    visit(item, index)
+
+    visit(payload)
     return grouped
+
+
+def _raw_page_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    for key in ("elements", "blocks", "parsing_res_list", "boxes"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            collected.extend(item for item in value if isinstance(item, dict))
+    layout = payload.get("layout_det_res")
+    if isinstance(layout, dict):
+        boxes = layout.get("boxes")
+        if isinstance(boxes, list):
+            collected.extend(item for item in boxes if isinstance(item, dict))
+    return collected
+
+
+def _normalize_raw_ocr_block(raw: dict[str, Any]) -> dict[str, Any] | None:
+    normalized = dict(raw)
+    if "bbox" not in normalized and "bbox_px" not in normalized and "bbox_pdf" not in normalized:
+        for key in ("block_bbox", "coordinate", "poly", "points"):
+            if key in raw:
+                normalized["bbox"] = _bbox_from_any(raw[key])
+                normalized.setdefault("bbox_unit", "px")
+                break
+    if "bbox" not in normalized and "bbox_px" not in normalized and "bbox_pdf" not in normalized:
+        return None
+    if "text" not in normalized:
+        for key in ("block_content", "content", "transcription", "rec_text"):
+            value = raw.get(key)
+            if isinstance(value, str):
+                normalized["text"] = value
+                break
+    if "type" not in normalized and "label" not in normalized:
+        for key in ("block_label", "category", "class_name"):
+            value = raw.get(key)
+            if isinstance(value, str):
+                normalized["type"] = value
+                break
+    normalized.setdefault("source", "native-ocr")
+    return normalized
+
+
+def _bbox_from_any(value: Any) -> list[float]:
+    if isinstance(value, (list, tuple)) and len(value) == 4 and all(isinstance(item, (int, float)) for item in value):
+        return [float(item) for item in value]
+    if isinstance(value, (list, tuple)):
+        points: list[tuple[float, float]] = []
+        for point in value:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                try:
+                    points.append((float(point[0]), float(point[1])))
+                except (TypeError, ValueError):
+                    continue
+        if points:
+            xs = [point[0] for point in points]
+            ys = [point[1] for point in points]
+            return [min(xs), min(ys), max(xs), max(ys)]
+    return BBox.from_any(value).as_list()
+
+
+def _extract_page_index(payload: dict[str, Any], fallback: int) -> int:
+    for key in ("page_index", "index"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    for key in ("page", "page_no", "page_num"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        try:
+            return max(int(value) - 1, 0)
+        except (TypeError, ValueError):
+            continue
+    return fallback
 
 
 def _normalize_page_elements(
     page: RenderedPage,
     raw_elements: list[dict[str, Any]],
     crop_root: Path | None,
+    *,
+    default_source: str = "json-fallback",
 ) -> list[ElementIR]:
     normalized: list[tuple[BBox, dict[str, Any], BBox, BBox]] = []
     for raw in raw_elements:
@@ -126,6 +252,7 @@ def _normalize_page_elements(
         element_type = _normalize_type(raw.get("type") or raw.get("label") or raw.get("category"))
         source_crop = _write_crop(page, bbox_px, crop_root, visual_index + 1) if crop_root is not None else None
         metadata = {k: v for k, v in raw.items() if k not in {"bbox", "bbox_px", "bbox_pdf", "text"}}
+        metadata.setdefault("source", default_source)
         metadata.update(order_assignment.as_metadata())
         elements.append(
             ElementIR(
@@ -145,6 +272,31 @@ def _normalize_page_elements(
             )
         )
     return elements
+
+
+def _source_image_element(page: RenderedPage) -> ElementIR:
+    bbox_px = BBox(x0=0, y0=0, x1=page.width_px, y1=page.height_px)
+    bbox_pdf = BBox(x0=0, y0=0, x1=page.width_pt, y1=page.height_pt)
+    return ElementIR(
+        id=f"p{page.page_index + 1:04d}-source-image",
+        page_index=page.page_index,
+        type="image",
+        bbox_pdf=bbox_pdf,
+        bbox_px=bbox_px,
+        source_text="",
+        reading_order=0,
+        source_crop=str(page.background_image),
+        metadata={
+            "source": "image-source",
+            "source_kind": "image-source",
+            "image_source_visual_layer": True,
+            "semantic_order": 0,
+            "visual_order": 0,
+            "reading_order_strategy": "source-image-background",
+            "reading_order_confidence": 1.0,
+            "reading_order_evidence": ["source-image-visual-layer"],
+        },
+    )
 
 
 def _extract_bboxes(raw: dict[str, Any], page: RenderedPage) -> tuple[BBox, BBox]:

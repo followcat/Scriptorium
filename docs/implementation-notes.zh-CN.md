@@ -6,6 +6,26 @@
 
 # 实现说明
 
+## Source 边界
+
+Scriptorium 现在把输入视为 document source，而不是默认等同于 PDF。`render_source()` 会分发到 PDF renderer 或 image renderer：
+
+- PDF source 继续走原生提取路径：PyMuPDF 文本/图像/drawing、可选 image-only OCR fallback，以及可选结构 JSON 融合。
+- 图片 source（`PNG`、`JPEG`、`TIFF`、`WebP`、`BMP`）会被渲染成一页 `RenderedDocument`，并标记 `source_type = "image"`。
+- 图片坐标用 `--image-dpi` 把源像素映射到 PDF point 坐标。原始像素成为页面 visual layer，OCR/结构 JSON 负责贡献可编辑文本锚点和 reading-stream 证据。
+- `DocumentIR` 现在包含 `source_type` 和 `source_path`；旧的 `source_pdf` 字段保留，用于兼容现有报告和 XML。
+- 原生 PDF 提取会显式拒绝图片 source。图片语义层应来自 OCR JSON 或 Paddle/PP-Structure/Docling 风格结构 JSON，而不是从伪 PDF wrapper 里猜。
+
+示例：
+
+```bash
+scriptorium convert page.png \
+  --input-kind image \
+  --image-dpi 96 \
+  --structure-json page.structure.json \
+  --out-dir outputs/page-image
+```
+
 ## OCR 后端边界
 
 核心 pipeline 只消费归一化 JSON，并把它转换为 `DocumentIR`。这是刻意设计的边界：
@@ -19,6 +39,7 @@
 - `--ocr-json` 是稳定测试入口，适合转换质量工作。
 - `PaddleOcrAdapter` 隔离在 `scriptorium.ocr`，并且延迟导入 `paddleocr`。
 - `--structure-json` 是真实模型输出的轻量桥接入口，支持 PaddleOCR-VL / PP-StructureV3 风格 JSON 和 DoclingDocument JSON。
+- 对图片 source，如果没有单独提供 `--ocr-json`，`--structure-json` 也可以先生成初始文本锚点。常见 `parsing_res_list` / `block_bbox` / `block_content` 会被归一成 `native-ocr` 文本节点，再由结构 evidence 反向融合标签、顺序和置信度。
 - 原生 PDF 提取提供 `image-only` OCR fallback：当页面没有原生文字且图像覆盖面积很高时，生成透明的 `native-ocr` 可编辑锚点，同时保留原始图像元素。
 - `structure_evidence.py` 能解析嵌套 `res`、`raw_results`、`pages`、`parsing_res_list`、`layout_det_res.boxes` 形状，也能解析 Docling `body.children`、`prov` bbox/page 证据和上下坐标原点差异。
 

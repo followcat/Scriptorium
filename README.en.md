@@ -30,7 +30,7 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Scriptorium is a document-to-HTML conversion and evaluation engine. The current main path covers PDFs, web-printed PDFs, and image-only PDFs; the next architecture step is to make image sources first-class instead of pretending they are PDFs.
+Scriptorium is a document-to-HTML conversion and evaluation engine. The current main path covers PDFs, PNG/JPEG/TIFF/WebP images, web-printed PDFs, and image-only PDFs; image sources enter the IR as one-page documents instead of pretending to be PDFs first.
 
 It merges source text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
 
@@ -117,6 +117,16 @@ scriptorium convert \
   --out-dir outputs/with-structure
 ```
 
+Images can be passed as source files directly. Without OCR or structure JSON, the result keeps the full-page image visual layer; with OCR or Paddle/PP-Structure/Docling structure JSON, it gains transparent text anchors and reading-stream evidence:
+
+```bash
+scriptorium convert \
+  path/to/page.png \
+  --input-kind image \
+  --structure-json path/to/page.structure.json \
+  --out-dir outputs/image-source
+```
+
 Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallback also requires the system `tesseract` binary and language data.
 
 ## Core Workflow
@@ -124,6 +134,8 @@ Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallbac
 ```mermaid
 flowchart LR
   A[PDF / Web PDF] --> B[Native PDF Extractor]
+  M[Image source] --> C[Render Pages]
+  M --> E[OCR / Structure JSON Adapter]
   A --> C[Render Pages]
   B --> D[Image-only OCR Fallback]
   A --> E[Structure JSON Adapter]

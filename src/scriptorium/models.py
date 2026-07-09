@@ -21,6 +21,7 @@ ElementType = Literal[
 ]
 
 DisplayMode = Literal["background", "debug", "source", "edited", "translated", "bilingual", "structured", "fidelity"]
+SourceType = Literal["pdf", "image"]
 
 
 class BBox(BaseModel):
@@ -110,6 +111,8 @@ class RevisionIR(BaseModel):
 class DocumentIR(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     source_pdf: str
+    source_path: str | None = None
+    source_type: SourceType = "pdf"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     render_dpi: int
     page_count: int
