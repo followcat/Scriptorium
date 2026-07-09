@@ -350,6 +350,7 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "structure_evidence_region_count": structure_case["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": structure_case["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": structure_case["structure_evidence_reordered_page_count"],
+        "structure_evidence_order_source_counts": structure_case["structure_evidence_order_source_counts"],
         "native_page_needs_structure_evidence_count": native_page_needs,
         "structure_page_needs_structure_evidence_count": structure_page_needs,
         "page_needs_structure_evidence_delta": structure_page_needs - native_page_needs,
@@ -431,6 +432,9 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "total_structure_evidence_reordered_pages": sum(
             int(values["structure_evidence_reordered_page_count"]) for values in comparisons
         ),
+        "structure_evidence_order_source_counts": _sum_count_dicts(
+            values["structure_evidence_order_source_counts"] for values in comparisons
+        ),
         "total_page_needs_structure_evidence_delta": sum(
             int(values["page_needs_structure_evidence_delta"]) for values in comparisons
         ),
@@ -501,6 +505,7 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
+        "structure_evidence_order_source_counts",
         "native_page_needs_structure_evidence_count",
         "structure_page_needs_structure_evidence_count",
         "page_needs_structure_evidence_delta",
@@ -877,6 +882,7 @@ def _run_case(
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": stats["structure_evidence_reordered_page_count"],
+        "structure_evidence_order_source_counts": stats["structure_evidence_order_source_counts"],
         **reading_order_risk,
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
@@ -1263,6 +1269,9 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
         "structure_evidence_reordered_page_count": int(structure_evidence.get("reordered_page_count") or 0),
+        "structure_evidence_order_source_counts": dict(
+            sorted((structure_evidence.get("order_source_counts") or {}).items())
+        ),
     }
 
 
@@ -2495,6 +2504,10 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_structure_evidence_reordered_pages": sum(
             int(case["structure_evidence_reordered_page_count"]) for case in cases
         ),
+        "structure_evidence_order_source_counts": _sum_case_count_dicts(
+            cases,
+            "structure_evidence_order_source_counts",
+        ),
         "mean_reading_order_risk_score": round(
             sum(float(case["reading_order_risk_score"]) for case in cases) / len(cases),
             8,
@@ -2650,6 +2663,7 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "structure_evidence_region_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
+        "structure_evidence_order_source_counts",
         "reading_order_risk_score",
         "reading_order_risk_level",
         "reading_order_column_geometry_page_count",
@@ -3652,9 +3666,12 @@ def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _sum_case_count_dicts(cases: list[dict[str, Any]], key: str) -> dict[str, int]:
+    return _sum_count_dicts(case.get(key) for case in cases)
+
+
+def _sum_count_dicts(values: Any) -> dict[str, int]:
     counts: Counter[str] = Counter()
-    for case in cases:
-        value = case.get(key)
+    for value in values:
         if isinstance(value, dict):
             counts.update({str(item_key): int(item_value) for item_key, item_value in value.items()})
     return dict(sorted(counts.items()))

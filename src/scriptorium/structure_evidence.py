@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -17,6 +18,7 @@ class StructureRegion:
     bbox_px: BBox
     bbox_pdf: BBox
     order: int | None
+    order_source: str | None
     text: str
     confidence: float | None
     source: str
@@ -29,6 +31,7 @@ class StructureRegion:
             "bbox_px": self.bbox_px.as_list(),
             "bbox_pdf": self.bbox_pdf.as_list(),
             "order": self.order,
+            "order_source": self.order_source,
             "text": self.text,
             "confidence": self.confidence,
             "source": self.source,
@@ -61,6 +64,11 @@ def normalize_structure_evidence(
         if page is None:
             continue
         for raw_block in _iter_blocks(page_payload):
+            block_order = _extract_order(raw_block)
+            order_source = "explicit" if block_order is not None else None
+            if block_order is None:
+                block_order = _extract_implicit_order(raw_block)
+                order_source = "implicit-list" if block_order is not None else None
             bbox_info = _extract_bbox(raw_block)
             if bbox_info is None:
                 continue
@@ -74,7 +82,8 @@ def normalize_structure_evidence(
                     label=_extract_label(raw_block),
                     bbox_px=bbox_px,
                     bbox_pdf=bbox_pdf,
-                    order=_extract_order(raw_block),
+                    order=block_order,
+                    order_source=order_source,
                     text=_extract_text(raw_block),
                     confidence=_extract_confidence(raw_block),
                     source=source or _extract_source(payload, raw_block),
@@ -281,6 +290,7 @@ def _docling_item_regions(
                 bbox_px=bbox_px,
                 bbox_pdf=normalized_bbox_pdf,
                 order=order,
+                order_source="docling-body",
                 text=_extract_docling_text(item),
                 confidence=_extract_confidence(item) or _extract_confidence(prov),
                 source=source,
@@ -399,6 +409,7 @@ def apply_structure_evidence(
 
     matched_count = 0
     reordered_pages = 0
+    order_source_counts = Counter(str(region.order_source or "none") for region in regions)
     for page in document.pages:
         page_regions = regions_by_page.get(page.page_index, [])
         if not page_regions:
@@ -419,6 +430,7 @@ def apply_structure_evidence(
         "region_count": len(regions),
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
+        "order_source_counts": dict(sorted(order_source_counts.items())),
         "regions_by_page": [
             {
                 "page_index": page_index,
@@ -435,6 +447,7 @@ def apply_structure_evidence(
                 "region_count": len(regions),
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
+                "order_source_counts": dict(sorted(order_source_counts.items())),
             },
         )
     )
@@ -483,10 +496,21 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("parsing_res_list", "blocks", "elements"):
         value = page_payload.get(key)
         if isinstance(value, list):
-            blocks.extend(block for block in value if isinstance(block, dict))
+            for index, block in enumerate(value, start=1):
+                if not isinstance(block, dict):
+                    continue
+                normalized_block = dict(block)
+                normalized_block.setdefault("_scriptorium_structure_list_key", key)
+                normalized_block.setdefault("_scriptorium_structure_list_position", index)
+                blocks.append(normalized_block)
     layout = page_payload.get("layout_det_res")
     if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
-        blocks.extend(block for block in layout["boxes"] if isinstance(block, dict))
+        for block in layout["boxes"]:
+            if not isinstance(block, dict):
+                continue
+            normalized_block = dict(block)
+            normalized_block.setdefault("_scriptorium_structure_list_key", "layout_det_res.boxes")
+            blocks.append(normalized_block)
     return blocks
 
 
@@ -565,7 +589,7 @@ def _extract_text(raw: dict[str, Any]) -> str:
 
 
 def _extract_order(raw: dict[str, Any]) -> int | None:
-    for key in ("block_order", "order", "reading_order"):
+    for key in ("block_order", "order", "reading_order", "reading_order_index", "order_index"):
         value = raw.get(key)
         if value is None:
             continue
@@ -574,6 +598,16 @@ def _extract_order(raw: dict[str, Any]) -> int | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _extract_implicit_order(raw: dict[str, Any]) -> int | None:
+    list_key = str(raw.get("_scriptorium_structure_list_key") or "")
+    if list_key not in {"parsing_res_list", "blocks", "elements"}:
+        return None
+    try:
+        return int(raw.get("_scriptorium_structure_list_position"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_confidence(raw: dict[str, Any]) -> float | None:
@@ -620,6 +654,7 @@ def _apply_page_regions(
             "source": region.source,
             "label": region.label,
             "order": region.order,
+            "order_source": region.order_source,
             "confidence": region.confidence,
             "bbox_pdf": region.bbox_pdf.as_list(),
             "bbox_px": region.bbox_px.as_list(),
@@ -631,6 +666,8 @@ def _apply_page_regions(
             element.metadata["external_structure_confidence"] = region.confidence
         if region.order is not None:
             element.metadata["external_structure_order"] = region.order
+        if region.order_source is not None:
+            element.metadata["external_structure_order_source"] = region.order_source
         _apply_external_structure_reading_metadata(element, page, region)
         matched_count += 1
     return matched_count

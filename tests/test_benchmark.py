@@ -1040,13 +1040,16 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert case["structure_evidence_source"] == f"structure-json:{structure_json.name}"
     assert case["structure_evidence_region_count"] == 1
     assert case["structure_evidence_matched_element_count"] > 0
+    assert case["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert "text_run_count" in csv_text
     assert "raster_fallback_count" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1
     assert report["summary"]["total_structure_evidence_matched_elements"] == case[
         "structure_evidence_matched_element_count"
     ]
+    assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert "structure_evidence_matched_element_count" in csv_text
+    assert "structure_evidence_order_source_counts" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
 
 
@@ -1092,6 +1095,7 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["structure_report"].endswith("native-plus-structure/benchmark_report.json")
     assert comparison["structure_evidence_region_count"] == 1
     assert comparison["structure_evidence_matched_element_count"] > 0
+    assert comparison["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
@@ -1099,11 +1103,13 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
+    assert "structure_evidence_order_source_counts" in csv_text
     assert "grid_island_element_delta" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1
     assert report["summary"]["total_structure_evidence_matched_elements"] == comparison[
         "structure_evidence_matched_element_count"
     ]
+    assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
 
 
 def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int]]) -> DocumentIR:

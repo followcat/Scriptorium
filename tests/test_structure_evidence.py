@@ -54,6 +54,97 @@ def test_pp_structure_block_order_can_reorder_native_lines() -> None:
     assert document.pages[0].elements[0].metadata["structure_evidence"]["source"] == "pp-structurev3"
 
 
+def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 140, 80],
+                    "block_content": "Left column one. Left column two.",
+                    "confidence": 0.91,
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [220, 20, 340, 80],
+                    "block_content": "Right column one. Right column two.",
+                    "confidence": 0.90,
+                },
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    ordered_text = [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+    assert [region.order for region in regions] == [1, 2]
+    assert {region.order_source for region in regions} == {"implicit-list"}
+    assert ordered_text == [
+        "Left column one.",
+        "Left column two.",
+        "Right column one.",
+        "Right column two.",
+    ]
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"implicit-list": 2}
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
+    assert document.pages[0].elements[0].metadata["external_structure_order_source"] == "implicit-list"
+
+
+def test_layout_detection_boxes_do_not_create_implicit_reading_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "layout-detector",
+        "res": {
+            "page_index": 0,
+            "layout_det_res": {
+                "boxes": [
+                    {
+                        "label": "text",
+                        "coordinate": [20, 20, 140, 80],
+                        "text": "Left column one. Left column two.",
+                    },
+                    {
+                        "label": "text",
+                        "coordinate": [220, 20, 340, 80],
+                        "text": "Right column one. Right column two.",
+                    },
+                ]
+            },
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert [region.order for region in regions] == [None, None]
+    assert {region.order_source for region in regions} == {None}
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 2}
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
+    assert "external_structure_order" not in document.pages[0].elements[0].metadata
+
+
 def test_paddle_nested_structure_label_feeds_annotation_role() -> None:
     document = _document_with_text_boxes(
         [
