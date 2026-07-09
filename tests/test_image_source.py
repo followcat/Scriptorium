@@ -159,7 +159,14 @@ def test_image_source_roor_json_seeds_text_and_drives_semantic_order(tmp_path: P
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
     assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 4}
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["relation_stream_count"] == 1
+    assert document.metadata["structure_evidence"]["resolved_relation_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_stream_conflict_count"] == 0
     assert by_text["A"].metadata["external_structure_successor_ids"] == [by_text["B"].id]
+    assert {element.metadata["reading_order_stream_id"] for element in text_elements} == {
+        "external-relation-body-001-001"
+    }
+    assert "external-structure-relation-stream" in by_text["A"].metadata["reading_order_evidence"]
     assert "external_structure_order" not in by_text["A"].metadata
 
 

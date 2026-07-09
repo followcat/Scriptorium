@@ -1082,6 +1082,9 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert case["structure_evidence_stream_count"] == 0
     assert case["structure_evidence_resolved_stream_member_count"] == 0
     assert case["structure_evidence_stream_conflict_count"] == 0
+    assert case["structure_evidence_relation_stream_count"] == 0
+    assert case["structure_evidence_resolved_relation_stream_member_count"] == 0
+    assert case["structure_evidence_relation_stream_conflict_count"] == 0
     assert case["structure_evidence_matched_element_count"] > 0
     assert case["structure_evidence_relation_reordered_page_count"] == 0
     assert case["structure_evidence_order_reordered_page_count"] >= 0
@@ -1092,6 +1095,9 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert report["summary"]["total_structure_evidence_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_stream_conflicts"] == 0
+    assert report["summary"]["total_structure_evidence_relation_streams"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0
+    assert report["summary"]["total_structure_evidence_relation_stream_conflicts"] == 0
     assert report["summary"]["total_structure_evidence_matched_elements"] == case[
         "structure_evidence_matched_element_count"
     ]
@@ -1101,6 +1107,7 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert "structure_evidence_matched_element_count" in csv_text
     assert "structure_evidence_relation_edge_count" in csv_text
     assert "structure_evidence_stream_count" in csv_text
+    assert "structure_evidence_relation_stream_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
@@ -1152,6 +1159,9 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_evidence_stream_count"] == 0
     assert comparison["structure_evidence_resolved_stream_member_count"] == 0
     assert comparison["structure_evidence_stream_conflict_count"] == 0
+    assert comparison["structure_evidence_relation_stream_count"] == 0
+    assert comparison["structure_evidence_resolved_relation_stream_member_count"] == 0
+    assert comparison["structure_evidence_relation_stream_conflict_count"] == 0
     assert comparison["structure_evidence_matched_element_count"] > 0
     assert comparison["structure_evidence_relation_reordered_page_count"] == 0
     assert comparison["structure_evidence_order_reordered_page_count"] >= 0
@@ -1165,6 +1175,7 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "structure_evidence_matched_element_count" in csv_text
     assert "structure_evidence_relation_edge_count" in csv_text
     assert "structure_evidence_stream_count" in csv_text
+    assert "structure_evidence_relation_stream_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "grid_island_element_delta" in csv_text
@@ -1174,6 +1185,9 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["total_structure_evidence_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_stream_conflicts"] == 0
+    assert report["summary"]["total_structure_evidence_relation_streams"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0
+    assert report["summary"]["total_structure_evidence_relation_stream_conflicts"] == 0
     assert report["summary"]["total_structure_evidence_relation_reordered_pages"] == 0
     assert report["summary"]["total_structure_evidence_order_reordered_pages"] >= 0
     assert report["summary"]["total_structure_evidence_matched_elements"] == comparison[

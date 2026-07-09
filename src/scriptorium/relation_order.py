@@ -8,14 +8,30 @@ def relation_edge_candidate_order(
     precedence_edges: list[tuple[int, int]],
     base_order: list[int],
 ) -> list[int]:
+    ordered, _chains = relation_edge_candidate_path_cover(
+        item_count=item_count,
+        successor_edges=successor_edges,
+        precedence_edges=precedence_edges,
+        base_order=base_order,
+    )
+    return ordered
+
+
+def relation_edge_candidate_path_cover(
+    *,
+    item_count: int,
+    successor_edges: list[tuple[int, int]],
+    precedence_edges: list[tuple[int, int]],
+    base_order: list[int],
+) -> tuple[list[int], list[list[int]]]:
     if item_count < 2:
-        return []
+        return [], []
     normalized_base_order = _normalized_base_order(base_order, item_count)
     base_rank = {index: rank for rank, index in enumerate(normalized_base_order)}
     successor_by_source = _degree_constrained_successors(successor_edges, item_count)
     chains = _successor_chains(item_count, successor_by_source, base_rank)
     if not chains:
-        return []
+        return [], []
 
     chain_by_item = {
         item: chain_index
@@ -34,11 +50,12 @@ def relation_edge_candidate_order(
 
     ordered_chain_indices = _topological_chain_order(chains, chain_edges, base_rank)
     if not ordered_chain_indices:
-        return []
+        return [], []
+    ordered_chains = [chains[chain_index] for chain_index in ordered_chain_indices]
     ordered = [item for chain_index in ordered_chain_indices for item in chains[chain_index]]
     if len(ordered) != item_count or len(set(ordered)) != item_count:
-        return []
-    return ordered
+        return [], []
+    return ordered, ordered_chains
 
 
 def _normalized_base_order(base_order: list[int], item_count: int) -> list[int]:

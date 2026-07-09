@@ -193,6 +193,9 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     ]
     assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["relation_stream_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_relation_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_stream_conflict_count"] == 0
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
@@ -206,6 +209,11 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     assert by_id["b"].metadata["external_structure_precedence_target_ids"] == ["d"]
     assert by_id["a"].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
     assert "external-structure-relation" in by_id["a"].metadata["reading_order_evidence"]
+    assert by_id["a"].metadata["reading_order_stream_id"] == "external-relation-body-001-001"
+    assert by_id["b"].metadata["reading_order_stream_id"] == "external-relation-body-001-001"
+    assert by_id["c"].metadata["reading_order_stream_id"] == "external-relation-body-001-002"
+    assert by_id["d"].metadata["reading_order_stream_id"] == "external-relation-body-001-002"
+    assert "external-structure-relation-stream" in by_id["a"].metadata["reading_order_evidence"]
     assert "external_structure_order" not in by_id["a"].metadata
 
 
@@ -254,9 +262,15 @@ def test_roor_document_relations_drive_order_without_implicit_block_order() -> N
     assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 4}
     assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["relation_stream_count"] == 1
+    assert document.metadata["structure_evidence"]["resolved_relation_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_stream_conflict_count"] == 0
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert "external_structure_order" not in by_id["a"].metadata
     assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
+    assert {element.metadata["reading_order_stream_id"] for element in by_id.values()} == {
+        "external-relation-body-001-001"
+    }
 
 
 def test_structure_reading_streams_attach_to_elements_without_regions() -> None:
@@ -293,6 +307,9 @@ def test_structure_reading_streams_attach_to_elements_without_regions() -> None:
     assert document.metadata["structure_evidence"]["stream_conflict_count"] == 0
     assert document.metadata["structure_evidence"]["relation_edge_count"] == 2
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 2
+    assert document.metadata["structure_evidence"]["relation_stream_count"] == 0
+    assert document.metadata["structure_evidence"]["resolved_relation_stream_member_count"] == 0
+    assert document.metadata["structure_evidence"]["relation_stream_conflict_count"] == 0
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert by_id["a"].metadata["reading_order_stream_id"] == "hero-grid"
     assert by_id["a"].metadata["reading_order_stream_type"] == "grid-island"

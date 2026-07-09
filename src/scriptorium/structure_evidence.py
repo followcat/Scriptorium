@@ -9,7 +9,7 @@ from typing import Any
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
-from .relation_order import relation_edge_candidate_order
+from .relation_order import relation_edge_candidate_path_cover
 
 
 @dataclass(frozen=True)
@@ -555,6 +555,9 @@ def apply_structure_evidence(
     resolved_relation_count = 0
     resolved_stream_member_count = 0
     stream_conflict_count = 0
+    relation_stream_count = 0
+    resolved_relation_stream_member_count = 0
+    relation_stream_conflict_count = 0
     reordered_pages = 0
     relation_reordered_pages = 0
     order_reordered_pages = 0
@@ -579,6 +582,13 @@ def apply_structure_evidence(
         )
         resolved_stream_member_count += page_stream_members
         stream_conflict_count += page_stream_conflicts
+        page_relation_streams, page_relation_stream_members, page_relation_stream_conflicts = _apply_relation_derived_streams(
+            page,
+            source=source_name,
+        )
+        relation_stream_count += page_relation_streams
+        resolved_relation_stream_member_count += page_relation_stream_members
+        relation_stream_conflict_count += page_relation_stream_conflicts
         if reorder:
             reorder_source = _reorder_page_from_regions(page)
             if reorder_source:
@@ -597,6 +607,9 @@ def apply_structure_evidence(
         "stream_count": len(streams),
         "resolved_stream_member_count": resolved_stream_member_count,
         "stream_conflict_count": stream_conflict_count,
+        "relation_stream_count": relation_stream_count,
+        "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
+        "relation_stream_conflict_count": relation_stream_conflict_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "relation_reordered_page_count": relation_reordered_pages,
@@ -636,6 +649,9 @@ def apply_structure_evidence(
         stream_count=len(streams),
         resolved_stream_member_count=resolved_stream_member_count,
         stream_conflict_count=stream_conflict_count,
+        relation_stream_count=relation_stream_count,
+        resolved_relation_stream_member_count=resolved_relation_stream_member_count,
+        relation_stream_conflict_count=relation_stream_conflict_count,
         relation_reordered_pages=relation_reordered_pages,
         order_reordered_pages=order_reordered_pages,
     )
@@ -650,6 +666,9 @@ def apply_structure_evidence(
                 "stream_count": len(streams),
                 "resolved_stream_member_count": resolved_stream_member_count,
                 "stream_conflict_count": stream_conflict_count,
+                "relation_stream_count": relation_stream_count,
+                "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
+                "relation_stream_conflict_count": relation_stream_conflict_count,
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
                 "relation_reordered_page_count": relation_reordered_pages,
@@ -674,6 +693,9 @@ def _update_semantic_layer_metadata(
     stream_count: int,
     resolved_stream_member_count: int,
     stream_conflict_count: int,
+    relation_stream_count: int,
+    resolved_relation_stream_member_count: int,
+    relation_stream_conflict_count: int,
     relation_reordered_pages: int,
     order_reordered_pages: int,
 ) -> None:
@@ -694,6 +716,9 @@ def _update_semantic_layer_metadata(
         "stream_count": stream_count,
         "resolved_stream_member_count": resolved_stream_member_count,
         "stream_conflict_count": stream_conflict_count,
+        "relation_stream_count": relation_stream_count,
+        "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
+        "relation_stream_conflict_count": relation_stream_conflict_count,
         "relation_reordered_page_count": relation_reordered_pages,
         "order_reordered_page_count": order_reordered_pages,
     }
@@ -1328,6 +1353,95 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
     return resolved_count, conflict_count
 
 
+def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, int, int]:
+    text_elements = [element for element in page.elements if element.source_text.strip()]
+    _ordered_ids, _participant_ids, relation_chains = _relation_order_for_elements(text_elements)
+    if not relation_chains:
+        return 0, 0, 0
+
+    stream_count = 0
+    resolved_count = 0
+    conflict_count = 0
+    for chain in relation_chains:
+        stream_members = [
+            element
+            for element in (_element_by_id(text_elements, element_id) for element_id in chain)
+            if element is not None
+        ]
+        if len(stream_members) < 2:
+            continue
+        if any(str(element.metadata.get("external_structure_stream_id") or "").strip() for element in stream_members):
+            continue
+        stream_count += 1
+        stream_type = _relation_derived_stream_type(stream_members)
+        stream = StructureReadingStream(
+            page_index=page.page_index,
+            stream_id=f"external-relation-{stream_type}-{page.page_index + 1:03d}-{stream_count:03d}",
+            stream_type=stream_type,
+            member_refs=tuple(element.id for element in stream_members),
+            source=source,
+            raw={"source": source, "relation_derived": True},
+        )
+        for stream_index, element in enumerate(stream_members, start=1):
+            _apply_external_stream_metadata(element, stream, stream_index)
+            element.metadata["external_structure_stream_relation_derived"] = True
+            evidence = _reading_order_evidence(element)
+            if "external-structure-relation-stream" not in evidence:
+                evidence.append("external-structure-relation-stream")
+            element.metadata["reading_order_evidence"] = evidence
+            element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+            resolved_count += 1
+    return stream_count, resolved_count, conflict_count
+
+
+def _element_by_id(elements: list[ElementIR], element_id: str) -> ElementIR | None:
+    for element in elements:
+        if element.id == element_id:
+            return element
+    return None
+
+
+def _relation_derived_stream_type(elements: list[ElementIR]) -> str:
+    scopes = {str(element.metadata.get("reading_order_scope") or "").strip() for element in elements}
+    scopes.discard("")
+    if scopes == {"footnote"}:
+        return "footnote"
+    if scopes == {"sidebar"}:
+        sidebar_types = {
+            str(element.metadata.get("reading_order_sidebar_type") or "").strip()
+            for element in elements
+        }
+        sidebar_types.discard("")
+        if len(sidebar_types) == 1:
+            return f"sidebar-{next(iter(sidebar_types))}"
+        return "sidebar"
+    if scopes == {"page-artifact"}:
+        artifact_types = {
+            str(element.metadata.get("reading_order_artifact_type") or "").strip()
+            for element in elements
+        }
+        artifact_types.discard("")
+        if len(artifact_types) == 1:
+            return f"page-artifact-{next(iter(artifact_types))}"
+        return "page-artifact"
+
+    spans = {str(element.metadata.get("column_span") or "").strip() for element in elements}
+    spans.discard("")
+    if spans and all("table" in span for span in spans):
+        return "table-island"
+    if spans and all("grid" in span or "card" in span for span in spans):
+        return "grid-island"
+
+    caption_types = {
+        str(element.metadata.get("reading_order_caption_type") or "").strip()
+        for element in elements
+    }
+    caption_types.discard("")
+    if len(caption_types) == 1:
+        return f"caption-{next(iter(caption_types))}"
+    return "body"
+
+
 def _apply_external_stream_metadata(
     element: ElementIR,
     stream: StructureReadingStream,
@@ -1636,7 +1750,7 @@ def _text_similarity(left: str, right: str) -> float:
 
 def _reorder_page_from_regions(page: PageIR) -> str | None:
     text_elements = [element for element in page.elements if element.source_text.strip()]
-    relation_order, relation_participant_ids = _relation_order_for_elements(text_elements)
+    relation_order, relation_participant_ids, _relation_chains = _relation_order_for_elements(text_elements)
     if relation_order:
         _apply_reordered_text_order(
             relation_order,
@@ -1675,9 +1789,9 @@ def _reorder_page_from_regions(page: PageIR) -> str | None:
     return "order"
 
 
-def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[str], set[str]]:
+def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[str], set[str], list[list[str]]]:
     if len(text_elements) < 2:
-        return [], set()
+        return [], set(), []
     id_to_index = {element.id: index for index, element in enumerate(text_elements)}
     successor_edges: list[tuple[int, int]] = []
     precedence_edges: list[tuple[int, int]] = []
@@ -1696,7 +1810,7 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
             precedence_edges.append((source_index, target_index))
             participant_ids.update({element.id, target_id})
     if not successor_edges and not precedence_edges:
-        return [], set()
+        return [], set(), []
 
     base_order = [
         index
@@ -1710,15 +1824,20 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
             ),
         )
     ]
-    ordered_indices = relation_edge_candidate_order(
+    ordered_indices, path_cover_chains = relation_edge_candidate_path_cover(
         item_count=len(text_elements),
         successor_edges=successor_edges,
         precedence_edges=precedence_edges,
         base_order=base_order,
     )
     if not ordered_indices:
-        return [], set()
-    return [text_elements[index].id for index in ordered_indices], participant_ids
+        return [], set(), []
+    stream_chains = [
+        [text_elements[index].id for index in chain]
+        for chain in path_cover_chains
+        if len(chain) >= 2 and any((source, target) in successor_edges for source in chain for target in chain)
+    ]
+    return [text_elements[index].id for index in ordered_indices], participant_ids, stream_chains
 
 
 def _apply_reordered_text_order(
