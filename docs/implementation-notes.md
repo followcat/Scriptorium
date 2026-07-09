@@ -100,6 +100,8 @@ For image-only pages, the native image node remains the visual layer in `structu
 
 Text runs are a source-fidelity layer, not the edit storage model. When `edited_text` or `translated_text` is present, the exporter renders the replacement text as a plain editable node so stale source spans do not distort new content. Translation tools should use `data-scriptorium-translation-stream-id` / `data-scriptorium-translation-stream-type` to batch body, sidebar, footnote, table, and grid-card streams independently, then write replacements into `translated_text` for the same HTML/PDF rendering path.
 
+In `fidelity` mode, edited/translated replacements use `fidelity-replacement-fit-v1`. The exporter expands the local white mask, records `data-scriptorium-replacement-mask-padding`, keeps the replacement text aligned to the original bbox with CSS padding, applies `data-scriptorium-replacement-fit-scale` for long text, and flags `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` with neighboring element ids when the replacement needs review.
+
 ## Native Visual Fidelity Layer
 
 Complex scientific PDFs often lose visual score for reasons unrelated to reading order: embedded figures are image blocks, LaTeX fonts are not named like browser fonts, and dense vector graphics may depend on transparency, clipping, and draw ordering that a simple rectangle exporter cannot reproduce.

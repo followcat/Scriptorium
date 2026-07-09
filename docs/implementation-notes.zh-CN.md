@@ -94,6 +94,7 @@ HTML exporter 会把这些标记落成 DOM 属性，例如：
 - `--font-profile auto`、`--font-size-scale auto`、`--text-fit auto` 会在 benchmark 中运行候选并选择视觉相似度最高的路径。
 - `text_fit = svg` 使用 PDF run bbox、baseline origin、SVG `textLength` / `lengthAdjust="spacingAndGlyphs"` 拟合行宽，同时保留透明编辑代理。
 - `fidelity` HTML 模式用 SVG 或 raster 页面背景保留源视觉，同时叠加透明可编辑坐标节点。打印时未编辑节点隐藏；编辑或翻译节点作为局部白底 replacement overlay 打印。
+- `fidelity` 的 edited/translated replacement 使用 `fidelity-replacement-fit-v1`：导出器会扩展局部白底 mask，记录 `data-scriptorium-replacement-mask-padding`，用 CSS padding 把替换文本对齐回原 bbox，对长文本写入 `data-scriptorium-replacement-fit-scale`，并在仍然溢出或与相邻元素重叠时写入 `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` 和冲突元素 id。
 - `--html-mode auto --fidelity-background auto` 会比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选。
 - 打印后的 PDF page box 会归一到源 PDF 尺寸，避免 Chromium A4 1px 量化误差污染视觉指标。
 - 简单 drawing 输出为 SVG line/path；密集矢量图可以局部 raster fallback，但仍然保留 bbox/source metadata。

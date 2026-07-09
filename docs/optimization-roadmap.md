@@ -190,7 +190,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 4. Refine edit masks and replacement fitting for fidelity mode
 
-   `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. Translation should be applied by `data-scriptorium-translation-stream-id` so body, sidebar, table, and grid-card streams can be replaced independently. `--html-mode auto --fidelity-background auto` makes this the benchmark-selected path for the current complex samples, but editing still needs an edit-aware compositor with better masks, padding derived from glyph extents, automatic font-size fitting for translated text, and overlap/conflict detection when replacements are longer than the source bbox. The compositor should work with both SVG and raster backgrounds so the benchmark can choose visual fidelity without losing edit architecture.
+   `fidelity` mode now preserves source visuals and prints edited/translated nodes as local white-background replacement overlays. Translation should be applied by `data-scriptorium-translation-stream-id` so body, sidebar, table, and grid-card streams can be replaced independently. The first `fidelity-replacement-fit-v1` compositor expands local masks, pads text back to the source coordinate, shrinks long translated text, and exports overflow/conflict diagnostics. The next step is improving this from bbox-level estimates to glyph-extents-aware masks and using conflict counts as benchmark metrics for translated documents.
 
 5. Finer evidence-driven font, scale, and text-fit selection
 

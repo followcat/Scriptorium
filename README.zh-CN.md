@@ -216,6 +216,8 @@ Reading-order 输出现在带有可解释证据和启发式置信度：`reading_
 
 `--html-mode fidelity` 是高保真 overlay 路径：HTML 可见层使用每页 SVG 或 raster 背景，识别出的文本/结构节点仍以透明 `contenteditable` 坐标锚点存在；未编辑时打印只输出背景层，已编辑或已翻译节点会作为局部白底 replacement layer 打印。HTML 还显式暴露 `data-scriptorium-translation-target`、`data-scriptorium-translation-stream-id` 和 `data-scriptorium-translation-stream-type`，翻译流水线可以按正文、边栏、表格岛或卡片网格岛分批翻译，再写回 `translated_text` 进行回渲染。`--html-mode auto --fidelity-background auto` 会同时比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选：
 
+Fidelity replacement 节点现在会导出 `data-scriptorium-replacement-policy`、`data-scriptorium-replacement-fit-scale`、`data-scriptorium-replacement-mask-padding`、`data-scriptorium-replacement-overflow`、`data-scriptorium-replacement-conflict` 和 `data-scriptorium-replacement-conflict-ids`。导出器会为 edited/translated 文本扩展局部白底 mask、用 padding 把文本放回原始坐标、按 bbox 自动缩小长译文，并在 replacement mask 与相邻元素冲突或仍然溢出时标记需要复核。
+
 | Sample | Best structured | SVG fidelity | Raster fidelity | Auto selected | Selected path |
 |---|---:|---:|---:|---:|---|
 | arXiv paper: Attention Is All You Need | 0.96840246 | 0.98809524 | 1.0 | 1.0 | `fidelity/raster` |
