@@ -167,24 +167,35 @@ def _document_uses_positional_page_indices(document: DocumentIR) -> bool:
 
 
 def _page_relation_edges(page_truth: dict[str, Any], label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    typed_edges = _typed_relation_edges_from_any(page_truth.get("relations"), label_map)
     return {
-        "successor_edges": _relation_edges_from_any(
-            _combined_relation_values(
-                page_truth.get("successor_edges"),
-                page_truth.get("successor_relations"),
-                page_truth.get("ro_linkings"),
-                page_truth.get("reading_order_edges"),
-                page_truth.get("reading_order_relations"),
-                page_truth.get("reading_order_linkings"),
-            ),
-            label_map,
+        "successor_edges": _dedupe_edges(
+            [
+                *_relation_edges_from_any(
+                    _combined_relation_values(
+                        page_truth.get("successor_edges"),
+                        page_truth.get("successor_relations"),
+                        page_truth.get("ro_linkings"),
+                        page_truth.get("reading_order_edges"),
+                        page_truth.get("reading_order_relations"),
+                        page_truth.get("reading_order_linkings"),
+                    ),
+                    label_map,
+                ),
+                *typed_edges["successor_edges"],
+            ]
         ),
-        "precedence_edges": _relation_edges_from_any(
-            _combined_relation_values(
-                page_truth.get("precedence_edges"),
-                page_truth.get("order_edges"),
-            ),
-            label_map,
+        "precedence_edges": _dedupe_edges(
+            [
+                *_relation_edges_from_any(
+                    _combined_relation_values(
+                        page_truth.get("precedence_edges"),
+                        page_truth.get("order_edges"),
+                    ),
+                    label_map,
+                ),
+                *typed_edges["precedence_edges"],
+            ]
         ),
     }
 
@@ -209,13 +220,9 @@ def _page_reading_streams(page_truth: dict[str, Any], label_map: dict[str, str])
             continue
         seen.add(key)
 
-        sequence = _texts_from_any(
-            raw_stream.get(
-                "text_sequence",
-                raw_stream.get("sequence", raw_stream.get("texts", [])),
-            ),
-            label_map,
-        )
+        sequence = _stream_ordered_texts(raw_stream, label_map)
+        member_labels = _stream_member_texts(raw_stream, label_map)
+        typed_edges = _typed_relation_edges_from_any(raw_stream.get("relations"), label_map)
         successor_edges = _dedupe_edges(
             [
                 *_adjacent_edges(sequence),
@@ -230,6 +237,7 @@ def _page_reading_streams(page_truth: dict[str, Any], label_map: dict[str, str])
                     ),
                     label_map,
                 ),
+                *typed_edges["successor_edges"],
             ]
         )
         precedence_edges = _dedupe_edges(
@@ -242,11 +250,13 @@ def _page_reading_streams(page_truth: dict[str, Any], label_map: dict[str, str])
                     ),
                     label_map,
                 ),
+                *typed_edges["precedence_edges"],
             ]
         )
         labels = _dedupe_texts(
             [
                 *sequence,
+                *member_labels,
                 *(text for edge in [*successor_edges, *precedence_edges] for text in edge),
             ]
         )
@@ -270,6 +280,21 @@ def _combined_relation_values(*values: Any) -> list[Any]:
         if isinstance(value, list):
             combined.extend(value)
     return combined
+
+
+def _stream_ordered_texts(stream: dict[str, Any], label_map: dict[str, str]) -> list[str]:
+    for key in ("text_sequence", "sequence", "texts"):
+        texts = _texts_from_any(stream.get(key), label_map)
+        if texts:
+            return texts
+    return []
+
+
+def _stream_member_texts(stream: dict[str, Any], label_map: dict[str, str]) -> list[str]:
+    labels: list[str] = []
+    for key in ("elements", "items", "members", "children"):
+        labels.extend(_texts_from_any(stream.get(key), label_map))
+    return _dedupe_texts(labels)
 
 
 def _texts_from_any(value: Any, label_map: dict[str, str] | None = None) -> list[str]:
@@ -314,6 +339,36 @@ def _relation_edges_from_any(value: Any, label_map: dict[str, str] | None = None
         edges.append(edge)
         seen.add(edge)
     return edges
+
+
+def _typed_relation_edges_from_any(value: Any, label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    edges: dict[str, list[tuple[str, str]]] = {"successor_edges": [], "precedence_edges": []}
+    if not isinstance(value, list):
+        return edges
+    for raw in value:
+        if not isinstance(raw, (dict, list, tuple)):
+            continue
+        relation_type = ""
+        if isinstance(raw, dict):
+            relation_type = str(
+                raw.get("relation")
+                or raw.get("type")
+                or raw.get("kind")
+                or raw.get("edge_type")
+                or raw.get("label")
+                or ""
+            ).strip().lower()
+        relation_edges = _relation_edges_from_any([raw], label_map)
+        if not relation_edges:
+            continue
+        if relation_type in {"successor", "successor_edge", "next", "adjacent", "follows"}:
+            edges["successor_edges"].extend(relation_edges)
+        elif relation_type in {"precedence", "precedence_edge", "before", "order", "ordering", "precedes"}:
+            edges["precedence_edges"].extend(relation_edges)
+    return {
+        "successor_edges": _dedupe_edges(edges["successor_edges"]),
+        "precedence_edges": _dedupe_edges(edges["precedence_edges"]),
+    }
 
 
 def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:

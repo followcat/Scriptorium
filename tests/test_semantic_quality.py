@@ -396,6 +396,43 @@ def test_reading_order_relation_aliases_score_through_segment_ids(tmp_path: Path
     assert report["semantic_relation_precedence_accuracy"] == 1
 
 
+def test_typed_relations_score_through_segment_ids(tmp_path: Path) -> None:
+    source_image = tmp_path / "page.png"
+    source_image.write_bytes(b"fake image bytes")
+    source_image.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "document": [
+                            {"id": "title", "text": "Title"},
+                            {"id": "body", "text": "Body"},
+                            {"id": "note", "text": "Note"},
+                        ],
+                        "relations": [
+                            {"type": "successor", "source": "title", "target": "body"},
+                            {"kind": "before", "head": "body", "tail": "note"},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["Title", "Body", "Note"])
+
+    report = compare_semantic_reading_order(document, source_image, tmp_path / "semantic")
+
+    assert report["semantic_relation_successor_correct_count"] == 1
+    assert report["semantic_relation_successor_total_count"] == 1
+    assert report["semantic_relation_successor_accuracy"] == 1
+    assert report["semantic_relation_precedence_correct_count"] == 1
+    assert report["semantic_relation_precedence_total_count"] == 1
+    assert report["semantic_relation_precedence_accuracy"] == 1
+
+
 def test_reading_streams_score_local_successors_independently(tmp_path: Path) -> None:
     source_pdf = tmp_path / "paper.pdf"
     source_pdf.write_bytes(b"%PDF-1.4\n")
@@ -449,6 +486,58 @@ def test_reading_streams_score_local_successors_independently(tmp_path: Path) ->
     assert report["semantic_candidate_order_metrics"]["selected_like"]["semantic_stream_successor_accuracy"] == 1
     assert report["semantic_candidate_order_metrics"]["sidebar_first"]["semantic_stream_successor_accuracy"] == 1
     assert report["semantic_best_candidate_by_stream_successor"] in {"selected_like", "sidebar_first"}
+
+
+def test_reading_stream_member_aliases_and_typed_relations_score_local_streams(tmp_path: Path) -> None:
+    source_image = tmp_path / "page.png"
+    source_image.write_bytes(b"fake image bytes")
+    source_image.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "document": [
+                            {"id": "a", "text": "A"},
+                            {"id": "b", "text": "B"},
+                            {"id": "c", "text": "C"},
+                            {"id": "d", "text": "D"},
+                        ],
+                        "reading_streams": [
+                            {
+                                "id": "product-row",
+                                "type": "product_grid",
+                                "members": ["a", "b"],
+                                "reading_order_linkings": [["a", "b"]],
+                            },
+                            {
+                                "id": "right-rail",
+                                "type": "right_sidebar",
+                                "elements": ["c", "d"],
+                                "relations": [
+                                    {"type": "successor", "source_id": "c", "target_id": "d"},
+                                ],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "C", "B", "D"])
+
+    report = compare_semantic_reading_order(document, source_image, tmp_path / "semantic")
+    page = report["pages"][0]
+
+    assert page["stream_count"] == 2
+    assert page["stream_successor_correct_count"] == 2
+    assert page["stream_successor_total_count"] == 2
+    assert page["stream_successor_accuracy"] == 1
+    assert page["stream_missing_text_count"] == 0
+    assert [stream["label_count"] for stream in page["reading_streams"]] == [2, 2]
+    assert report["semantic_stream_successor_accuracy"] == 1
 
 
 def _document_with_texts(texts: list[str], page_index: int = 0) -> DocumentIR:
