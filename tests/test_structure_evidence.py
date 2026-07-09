@@ -229,6 +229,47 @@ def test_external_structure_labels_feed_reading_stream_scopes() -> None:
     assert by_id["footer"].metadata["role"] == "page-number"
 
 
+def test_external_card_grid_label_creates_grid_translation_stream() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("intro", "Featured products", BBox(x0=20, y0=20, x1=116, y1=32), 1),
+            ("card-a", "Camera deal", BBox(x0=24, y0=58, x1=86, y1=70), 2),
+            ("card-b", "Phone deal", BBox(x0=104, y0=58, x1=164, y1=70), 3),
+            ("card-c", "Laptop deal", BBox(x0=24, y0=92, x1=90, y1=104), 4),
+            ("card-d", "Watch deal", BBox(x0=104, y0=92, x1=166, y1=104), 5),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("intro", "text", "Featured products", 1, document),
+                {
+                    "block_label": "product_grid",
+                    "block_bbox": [40, 112, 340, 216],
+                    "block_order": 2,
+                    "block_content": "Camera deal Phone deal Laptop deal Watch deal",
+                    "confidence": 0.91,
+                },
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    grid_items = [by_id[element_id] for element_id in ("card-a", "card-b", "card-c", "card-d")]
+
+    assert {item.metadata["column_span"] for item in grid_items} == {"grid-external"}
+    assert {item.metadata["reading_order_stream_type"] for item in grid_items} == {"grid-island"}
+    assert {item.metadata["reading_order_stream_id"] for item in grid_items} == {"grid-island-external-002"}
+    assert [item.metadata["reading_order_stream_index"] for item in grid_items] == [1, 2, 3, 4]
+    assert {item.metadata["role"] for item in grid_items} == {"card-text"}
+    assert all("external-structure-grid-island" in item.metadata["reading_order_evidence"] for item in grid_items)
+    assert by_id["intro"].metadata["reading_order_stream_id"] == "body-main"
+
+
 def _document_with_text_boxes(items: list[tuple[str, str, BBox, int]]) -> DocumentIR:
     elements = [
         ElementIR(

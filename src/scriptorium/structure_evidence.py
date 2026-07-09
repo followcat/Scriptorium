@@ -674,6 +674,16 @@ def _apply_external_structure_reading_metadata(
         element.metadata["column_index"] = None
         element.metadata["column_span"] = "table-external"
         element.metadata["reading_order_region_path"] = _external_table_region_path(page, region)
+        return
+
+    if _external_grid_island_type(normalized_label):
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = "grid-external"
+        element.metadata["reading_order_region_path"] = _external_grid_region_path(page, region)
+        if "external-structure-grid-island" not in evidence:
+            evidence.append("external-structure-grid-island")
+            element.metadata["reading_order_evidence"] = evidence
+            element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
 
 
 def _normalize_structure_label(label: str) -> str:
@@ -702,12 +712,37 @@ def _external_caption_type(label: str) -> str | None:
     return None
 
 
+def _external_grid_island_type(label: str) -> str | None:
+    if label in {
+        "card",
+        "card_grid",
+        "content_card",
+        "content_grid",
+        "grid",
+        "grid_area",
+        "grid_block",
+        "menu_grid",
+        "nav_grid",
+        "product",
+        "product_card",
+        "product_grid",
+        "tile",
+        "tile_grid",
+    }:
+        return "grid"
+    return None
+
+
 def _external_region_path(page: PageIR, region: StructureRegion) -> str:
     return f"external-structure/page-{page.page_index + 1:03d}/region-{_external_region_suffix(region)}"
 
 
 def _external_table_region_path(page: PageIR, region: StructureRegion) -> str:
     return f"external-structure/page-{page.page_index + 1:03d}/table-island-external-{_external_region_suffix(region)}"
+
+
+def _external_grid_region_path(page: PageIR, region: StructureRegion) -> str:
+    return f"external-structure/page-{page.page_index + 1:03d}/grid-island-external-{_external_region_suffix(region)}"
 
 
 def _external_region_suffix(region: StructureRegion) -> str:
