@@ -19,6 +19,7 @@ from scriptorium.benchmark import (
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.semantic_quality import semantic_ground_truth_path
+from scriptorium.structure_evidence import apply_structure_evidence
 
 
 def _require_tesseract() -> None:
@@ -527,6 +528,36 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
 
     assert candidates["external_structure"][0] == ["left-one", "left-two", "right-one", "right-two"]
     assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
+
+
+def test_semantic_candidate_orders_include_external_structure_relations() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=70, y1=20), 1, 0),
+            ("c", "C", BBox(x0=110, y0=10, x1=170, y1=20), 2, 0),
+            ("b", "B", BBox(x0=10, y0=30, x1=70, y1=40), 3, 0),
+            ("d", "D", BBox(x0=110, y0=30, x1=170, y1=40), 4, 0),
+        ]
+    )
+    boxes = [
+        {"id": element.id, "label": "text", "bbox": element.bbox_px.as_list(), "text": element.source_text}
+        for element in document.pages[0].elements
+    ]
+    payload = {
+        "source": "relation-model",
+        "res": {
+            "page_index": 0,
+            "layout_det_res": {"boxes": boxes},
+            "successor_edges": [["a", "b"], ["c", "d"]],
+            "precedence_edges": [["b", "d"]],
+        },
+    }
+    apply_structure_evidence(document, payload)
+
+    candidates = _semantic_candidate_orders(document)
+
+    assert candidates["external_structure"][0] == ["a", "b", "c", "d"]
+    assert candidates["successor_consensus"][0] == ["a", "b", "c", "d"]
 
 
 def test_semantic_candidate_orders_include_structure_relation_order() -> None:
@@ -1046,6 +1077,8 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
 
     assert case["structure_evidence_source"] == f"structure-json:{structure_json.name}"
     assert case["structure_evidence_region_count"] == 1
+    assert case["structure_evidence_relation_edge_count"] == 0
+    assert case["structure_evidence_resolved_relation_edge_count"] == 0
     assert case["structure_evidence_matched_element_count"] > 0
     assert case["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert "text_run_count" in csv_text
@@ -1056,6 +1089,7 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     ]
     assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert "structure_evidence_matched_element_count" in csv_text
+    assert "structure_evidence_relation_edge_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
 
@@ -1101,6 +1135,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["native_report"].endswith("native-only/benchmark_report.json")
     assert report["structure_report"].endswith("native-plus-structure/benchmark_report.json")
     assert comparison["structure_evidence_region_count"] == 1
+    assert comparison["structure_evidence_relation_edge_count"] == 0
+    assert comparison["structure_evidence_resolved_relation_edge_count"] == 0
     assert comparison["structure_evidence_matched_element_count"] > 0
     assert comparison["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
@@ -1110,9 +1146,12 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
+    assert "structure_evidence_relation_edge_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "grid_island_element_delta" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1
+    assert report["summary"]["total_structure_evidence_relation_edges"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_relation_edges"] == 0
     assert report["summary"]["total_structure_evidence_matched_elements"] == comparison[
         "structure_evidence_matched_element_count"
     ]

@@ -1,6 +1,10 @@
 from scriptorium.annotations import annotate_document
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
-from scriptorium.structure_evidence import apply_structure_evidence, normalize_structure_evidence
+from scriptorium.structure_evidence import (
+    apply_structure_evidence,
+    normalize_structure_evidence,
+    normalize_structure_relations,
+)
 
 
 def test_pp_structure_block_order_can_reorder_native_lines() -> None:
@@ -143,6 +147,49 @@ def test_layout_detection_boxes_do_not_create_implicit_reading_order() -> None:
     assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 2}
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
     assert "external_structure_order" not in document.pages[0].elements[0].metadata
+
+
+def test_structure_relation_edges_attach_to_matched_elements() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("c", "C", BBox(x0=110, y0=10, x1=140, y1=20), 2),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 3),
+            ("d", "D", BBox(x0=110, y0=30, x1=140, y1=40), 4),
+        ]
+    )
+    boxes = [
+        {"id": element.id, "label": "text", "bbox": element.bbox_px.as_list(), "text": element.source_text}
+        for element in document.pages[0].elements
+    ]
+    payload = {
+        "source": "relation-model",
+        "res": {
+            "page_index": 0,
+            "layout_det_res": {"boxes": boxes},
+            "successor_edges": [
+                {"source": "a", "target": "b"},
+                {"source": "c", "target": "d"},
+            ],
+            "precedence_edges": [["b", "d"]],
+        },
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [(edge.kind, edge.source_ref, edge.target_ref) for edge in relations] == [
+        ("successor", "a", "b"),
+        ("successor", "c", "d"),
+        ("precedence", "b", "d"),
+    ]
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
+    assert by_id["c"].metadata["external_structure_successor_ids"] == ["d"]
+    assert by_id["b"].metadata["external_structure_precedence_target_ids"] == ["d"]
+    assert "external_structure_order" not in by_id["a"].metadata
 
 
 def test_paddle_nested_structure_label_feeds_annotation_role() -> None:

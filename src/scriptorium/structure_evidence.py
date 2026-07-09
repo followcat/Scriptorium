@@ -38,6 +38,25 @@ class StructureRegion:
         }
 
 
+@dataclass(frozen=True)
+class StructureRelationEdge:
+    page_index: int
+    kind: str
+    source_ref: str
+    target_ref: str
+    source: str
+    raw: dict[str, Any]
+
+    def as_metadata(self) -> dict[str, Any]:
+        return {
+            "page_index": self.page_index,
+            "kind": self.kind,
+            "source_ref": self.source_ref,
+            "target_ref": self.target_ref,
+            "source": self.source,
+        }
+
+
 def load_structure_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -91,6 +110,44 @@ def normalize_structure_evidence(
                 )
             )
     return regions
+
+
+def normalize_structure_relations(
+    payload: Any,
+    document: DocumentIR,
+    source: str | None = None,
+) -> list[StructureRelationEdge]:
+    """Normalize external successor/precedence edges from structure JSON.
+
+    These relations are diagnostic evidence. They are not applied as the
+    selected reading order here; benchmark candidates consume the resolved
+    relation metadata after region matching has attached node keys to elements.
+    """
+
+    edges: list[StructureRelationEdge] = []
+    seen: set[tuple[int, str, str, str]] = set()
+    for fallback_page_index, page_payload in enumerate(_collect_relation_payloads(payload)):
+        page_index = _extract_page_index(page_payload, fallback_page_index)
+        page = _document_page_by_evidence_index(document, page_index)
+        if page is None:
+            continue
+        source_name = source or _extract_source(payload, None)
+        for kind, source_ref, target_ref, raw in _iter_relation_edges(page_payload):
+            key = (page.page_index, kind, _relation_key(source_ref), _relation_key(target_ref))
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append(
+                StructureRelationEdge(
+                    page_index=page.page_index,
+                    kind=kind,
+                    source_ref=source_ref,
+                    target_ref=target_ref,
+                    source=source_name,
+                    raw=dict(raw),
+                )
+            )
+    return edges
 
 
 def _normalize_docling_evidence(
@@ -404,31 +461,41 @@ def apply_structure_evidence(
 ) -> DocumentIR:
     source_name = source or _extract_source(payload, None)
     regions = normalize_structure_evidence(payload, document, source=source)
+    relations = normalize_structure_relations(payload, document, source=source)
     regions_by_page: dict[int, list[StructureRegion]] = {}
     for region in regions:
         regions_by_page.setdefault(region.page_index, []).append(region)
+    relations_by_page: dict[int, list[StructureRelationEdge]] = {}
+    for relation in relations:
+        relations_by_page.setdefault(relation.page_index, []).append(relation)
 
     matched_count = 0
+    resolved_relation_count = 0
     reordered_pages = 0
     order_source_counts = Counter(str(region.order_source or "none") for region in regions)
     for page in document.pages:
         page_regions = regions_by_page.get(page.page_index, [])
-        if not page_regions:
-            continue
-        page_matches = _apply_page_regions(
+        if page_regions:
+            page_matches = _apply_page_regions(
+                page,
+                page_regions,
+                min_coverage=min_coverage,
+                min_text_similarity=min_text_similarity,
+            )
+            matched_count += page_matches
+            if reorder and _reorder_page_from_regions(page):
+                reordered_pages += 1
+        resolved_relation_count += _apply_page_relation_edges(
             page,
-            page_regions,
-            min_coverage=min_coverage,
-            min_text_similarity=min_text_similarity,
+            relations_by_page.get(page.page_index, []),
         )
-        matched_count += page_matches
-        if reorder and _reorder_page_from_regions(page):
-            reordered_pages += 1
 
     document.metadata["structure_evidence"] = {
         "version": "v1",
         "source": source_name,
         "region_count": len(regions),
+        "relation_edge_count": len(relations),
+        "resolved_relation_edge_count": resolved_relation_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "order_source_counts": dict(sorted(order_source_counts.items())),
@@ -439,6 +506,13 @@ def apply_structure_evidence(
             }
             for page_index, page_regions in sorted(regions_by_page.items())
         ],
+        "relations_by_page": [
+            {
+                "page_index": page_index,
+                "relations": [relation.as_metadata() for relation in page_relations],
+            }
+            for page_index, page_relations in sorted(relations_by_page.items())
+        ],
     }
     _update_semantic_layer_metadata(
         document,
@@ -447,6 +521,8 @@ def apply_structure_evidence(
         matched_count=matched_count,
         reordered_pages=reordered_pages,
         order_source_counts=dict(sorted(order_source_counts.items())),
+        relation_count=len(relations),
+        resolved_relation_count=resolved_relation_count,
     )
     document.revisions.append(
         RevisionIR(
@@ -454,6 +530,8 @@ def apply_structure_evidence(
             payload={
                 "source": source_name,
                 "region_count": len(regions),
+                "relation_edge_count": len(relations),
+                "resolved_relation_edge_count": resolved_relation_count,
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
                 "order_source_counts": dict(sorted(order_source_counts.items())),
@@ -471,6 +549,8 @@ def _update_semantic_layer_metadata(
     matched_count: int,
     reordered_pages: int,
     order_source_counts: dict[str, int],
+    relation_count: int,
+    resolved_relation_count: int,
 ) -> None:
     current = document.metadata.get("semantic_layer")
     semantic_layer = dict(current) if isinstance(current, dict) else {}
@@ -481,6 +561,8 @@ def _update_semantic_layer_metadata(
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "order_source_counts": order_source_counts,
+        "relation_edge_count": relation_count,
+        "resolved_relation_edge_count": resolved_relation_count,
     }
     if document.source_type == "image" and region_count > 0:
         semantic_layer["driver"] = "structure-json"
@@ -516,6 +598,187 @@ def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:
 
     visit(payload)
     return collected
+
+
+def _collect_relation_payloads(payload: Any) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(value: Any, fallback_page_index: int | None = None) -> None:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                visit(item, index if fallback_page_index is None else fallback_page_index)
+            return
+        if not isinstance(value, dict):
+            return
+        if id(value) in seen:
+            return
+        seen.add(id(value))
+
+        if _has_relation_edges(value):
+            page_payload = dict(value)
+            if fallback_page_index is not None and page_payload.get("page_index") is None:
+                page_payload["page_index"] = fallback_page_index
+            collected.append(page_payload)
+
+        for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
+            child = value.get(key)
+            if child is not None:
+                visit(child, fallback_page_index)
+
+    visit(payload)
+    return collected
+
+
+def _has_relation_edges(value: dict[str, Any]) -> bool:
+    for key in (
+        "successor_edges",
+        "successor_relations",
+        "precedence_edges",
+        "order_edges",
+        "relations",
+        "reading_streams",
+        "streams",
+    ):
+        if isinstance(value.get(key), list):
+            return True
+    return False
+
+
+def _iter_relation_edges(payload: dict[str, Any]) -> list[tuple[str, str, str, dict[str, Any]]]:
+    edges: list[tuple[str, str, str, dict[str, Any]]] = []
+    edges.extend(
+        ("successor", source, target, raw)
+        for source, target, raw in _relation_edges_from_any(
+            _combined_relation_values(payload.get("successor_edges"), payload.get("successor_relations"))
+        )
+    )
+    edges.extend(
+        ("precedence", source, target, raw)
+        for source, target, raw in _relation_edges_from_any(
+            _combined_relation_values(payload.get("precedence_edges"), payload.get("order_edges"))
+        )
+    )
+    edges.extend(_typed_relation_edges_from_any(payload.get("relations")))
+
+    for stream in _combined_relation_values(payload.get("reading_streams"), payload.get("streams")):
+        if not isinstance(stream, dict):
+            continue
+        sequence = _texts_from_any(stream.get("text_sequence", stream.get("sequence", stream.get("texts", []))))
+        for source, target in zip(sequence, sequence[1:], strict=False):
+            edges.append(("successor", source, target, {"source": source, "target": target, "stream": True}))
+        edges.extend(
+            ("successor", source, target, raw)
+            for source, target, raw in _relation_edges_from_any(
+                _combined_relation_values(stream.get("successor_edges"), stream.get("successor_relations"))
+            )
+        )
+        edges.extend(
+            ("precedence", source, target, raw)
+            for source, target, raw in _relation_edges_from_any(
+                _combined_relation_values(stream.get("precedence_edges"), stream.get("order_edges"))
+            )
+        )
+        edges.extend(_typed_relation_edges_from_any(stream.get("relations")))
+    return edges
+
+
+def _combined_relation_values(*values: Any) -> list[Any]:
+    combined: list[Any] = []
+    for value in values:
+        if isinstance(value, list):
+            combined.extend(value)
+    return combined
+
+
+def _relation_edges_from_any(values: list[Any]) -> list[tuple[str, str, dict[str, Any]]]:
+    edges: list[tuple[str, str, dict[str, Any]]] = []
+    for value in values:
+        edge = _relation_edge_from_any(value)
+        if edge is not None:
+            edges.append(edge)
+    return edges
+
+
+def _relation_edge_from_any(value: Any) -> tuple[str, str, dict[str, Any]] | None:
+    if isinstance(value, dict):
+        source = _relation_endpoint(
+            value.get("source", value.get("from", value.get("src", value.get("before"))))
+        )
+        target = _relation_endpoint(
+            value.get("target", value.get("to", value.get("dst", value.get("after"))))
+        )
+        if source and target:
+            return source, target, dict(value)
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        source = _relation_endpoint(value[0])
+        target = _relation_endpoint(value[1])
+        if source and target:
+            return source, target, {"source": source, "target": target}
+    return None
+
+
+def _typed_relation_edges_from_any(value: Any) -> list[tuple[str, str, str, dict[str, Any]]]:
+    edges: list[tuple[str, str, str, dict[str, Any]]] = []
+    if not isinstance(value, list):
+        return edges
+    for raw in value:
+        edge = _relation_edge_from_any(raw)
+        if edge is None:
+            continue
+        source, target, raw_edge = edge
+        relation_type = ""
+        if isinstance(raw, dict):
+            relation_type = str(
+                raw.get("relation")
+                or raw.get("type")
+                or raw.get("kind")
+                or raw.get("edge_type")
+                or raw.get("label")
+                or ""
+            ).strip().lower()
+        if relation_type in {"successor", "successor_edge", "next", "adjacent", "follows"}:
+            edges.append(("successor", source, target, raw_edge))
+        elif relation_type in {"precedence", "precedence_edge", "before", "order", "ordering", "precedes"}:
+            edges.append(("precedence", source, target, raw_edge))
+    return edges
+
+
+def _texts_from_any(value: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            text = _relation_endpoint(item)
+            if text:
+                texts.append(text)
+    return texts
+
+
+def _relation_endpoint(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in (
+            "id",
+            "element_id",
+            "block_id",
+            "region_id",
+            "self_ref",
+            "ref",
+            "text",
+            "source_text",
+            "block_content",
+            "content",
+        ):
+            endpoint = value.get(key)
+            if endpoint is not None:
+                return str(endpoint).strip()
+        return ""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _relation_key(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
 
 
 def _has_blocks(value: dict[str, Any]) -> bool:
@@ -728,6 +991,7 @@ def _apply_page_regions(
             "text_similarity": round(text_similarity, 6),
         }
         element.metadata["external_structure_label"] = region.label
+        element.metadata["external_structure_node_keys"] = _region_node_keys(region)
         if region.confidence is not None:
             element.metadata["external_structure_confidence"] = region.confidence
         if region.order is not None:
@@ -737,6 +1001,134 @@ def _apply_page_regions(
         _apply_external_structure_reading_metadata(element, page, region)
         matched_count += 1
     return matched_count
+
+
+def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEdge]) -> int:
+    if not relations:
+        return 0
+    text_elements = [element for element in page.elements if element.source_text.strip()]
+    if len(text_elements) < 2:
+        return 0
+
+    resolved_count = 0
+    for relation in relations:
+        source_element = _resolve_relation_endpoint_to_element(relation.source_ref, text_elements)
+        target_element = _resolve_relation_endpoint_to_element(relation.target_ref, text_elements)
+        if source_element is None or target_element is None or source_element.id == target_element.id:
+            continue
+        metadata_key = (
+            "external_structure_successor_ids"
+            if relation.kind == "successor"
+            else "external_structure_precedence_target_ids"
+        )
+        target_ids = _string_list(source_element.metadata.get(metadata_key))
+        if target_element.id not in target_ids:
+            target_ids.append(target_element.id)
+        source_element.metadata[metadata_key] = target_ids
+
+        relation_records = source_element.metadata.get("external_structure_relation_edges")
+        if not isinstance(relation_records, list):
+            relation_records = []
+        record = {
+            "kind": relation.kind,
+            "target_id": target_element.id,
+            "source_ref": relation.source_ref,
+            "target_ref": relation.target_ref,
+            "source": relation.source,
+        }
+        if record not in relation_records:
+            relation_records.append(record)
+        source_element.metadata["external_structure_relation_edges"] = relation_records
+        resolved_count += 1
+    return resolved_count
+
+
+def _resolve_relation_endpoint_to_element(
+    endpoint: str,
+    elements: list[ElementIR],
+) -> ElementIR | None:
+    key = _relation_key(endpoint)
+    if not key:
+        return None
+
+    key_matches = [
+        element
+        for element in elements
+        if key in _element_relation_keys(element)
+    ]
+    if len(key_matches) == 1:
+        return key_matches[0]
+    if len(key_matches) > 1:
+        return None
+
+    scored: list[tuple[float, ElementIR]] = []
+    for element in elements:
+        score = _text_similarity(endpoint, element.source_text)
+        if score >= 0.92:
+            scored.append((score, element))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if not scored:
+        return None
+    if len(scored) > 1 and abs(scored[0][0] - scored[1][0]) < 0.02:
+        return None
+    return scored[0][1]
+
+
+def _element_relation_keys(element: ElementIR) -> set[str]:
+    keys = {
+        _relation_key(element.id),
+        _relation_key(element.source_text),
+    }
+    node_keys = element.metadata.get("external_structure_node_keys")
+    if isinstance(node_keys, list):
+        keys.update(_relation_key(item) for item in node_keys)
+    structure = element.metadata.get("structure_evidence")
+    if isinstance(structure, dict):
+        for key in ("text", "label", "order"):
+            if structure.get(key) is not None:
+                keys.add(_relation_key(structure[key]))
+    return {key for key in keys if key}
+
+
+def _region_node_keys(region: StructureRegion) -> list[str]:
+    keys: list[str] = []
+    for key in (
+        "id",
+        "element_id",
+        "block_id",
+        "region_id",
+        "uid",
+        "self_ref",
+        "ref",
+        "docling_ref",
+    ):
+        value = region.raw.get(key)
+        if value is not None:
+            keys.append(str(value).strip())
+    if region.order is not None:
+        keys.extend([str(region.order), f"order:{region.order}"])
+    if region.text:
+        keys.append(region.text)
+    return _dedupe_texts(keys)
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = _relation_key(text)
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(text)
+    return deduped
 
 
 def _apply_external_structure_reading_metadata(
