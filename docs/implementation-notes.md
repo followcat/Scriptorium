@@ -325,7 +325,9 @@ The same evaluator also accepts ROOR/structure-style page payloads. A sidecar ca
 }
 ```
 
-`successor_edges` and ROOR-style linkings score immediate adjacency among labelled nodes, ignoring unlabelled actual text between them. `precedence_edges` only require the source label to appear before the target label. Relation endpoints may be text strings, arrays, or dictionaries using aliases such as `source` / `target`, `from` / `to`, `head` / `tail`, or `source_id` / `target_id`; ids are resolved through the page label map before scoring. If a page has relation edges but no `text_sequence`, `match_mode` defaults to `ordered-subsequence` so the page is not penalized for unlabelled text. Candidate orders receive the same relation metrics as the selected order.
+`successor_edges` and ROOR-style linkings score immediate adjacency among labelled nodes, ignoring unlabelled actual text between them. `precedence_edges` only require the source label to appear before the target label. A generic `relations` list is also accepted when each item explicitly declares a successor or precedence type/kind. Relation endpoints may be text strings, arrays, or dictionaries using aliases such as `source` / `target`, `from` / `to`, `head` / `tail`, or `source_id` / `target_id`; ids are resolved through the page label map before scoring. If a page has relation edges but no `text_sequence`, `match_mode` defaults to `ordered-subsequence` so the page is not penalized for unlabelled text. Candidate orders receive the same relation metrics as the selected order.
+
+Stream sidecars follow the same shape. `text_sequence`, `sequence`, or `texts` are ordered and generate stream-local successor/precedence checks. `members`, `elements`, `items`, and `children` identify stream labels for missing/coverage diagnostics without implying order by themselves; stream-local `ro_linkings`, `reading_order_*`, or typed `relations` provide the explicit ordering constraints.
 
 Supported page match modes:
 

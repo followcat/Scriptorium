@@ -26,7 +26,7 @@
 - `mixed-grid-column-flow-v1` 会识别门户/电商式页面里的非表格重复卡片网格岛，保留局部 row-major 顺序，并导出为 `grid-island` 翻译流。这是通用结构证据，不是针对某个站点调规则；当 fidelity 模式胜出时，视觉相似度仍主要由源背景层保证。
 - 正文 reading streams 现在会在结构断点明确时按 segment 暴露：第一条正文链仍是 `body-main`，后续链会变成 `body-segment-002` 等。这为复杂页面提供局部编辑/翻译流，但不会改变当前选中的全局 semantic order。
 - Semantic sidecar 能直接给 selected、visual-yx、box-flow、relation-graph、structure-relation、successor-consensus、external-structure 候选打分，并输出候选是否值得考虑接管。
-- Semantic sidecar 现在支持关系式和 stream-aware 标签：`successor_edges` / `ro_linkings` / `reading_order_*` 标相邻 labelled 节点，`precedence_edges` 标局部先后约束，`reading_streams` / `streams` 标正文、边栏、脚注、caption、表格岛或卡片网格岛的独立局部链。ROOR 风格 sidecar 可以复用 `document` segment id，并在评分前解析回文本，因此 OCR/结构 JSON 可以同时主导语义层和 benchmark 标签。复杂页面不必被强制写成唯一全局 `text_sequence`。
+- Semantic sidecar 现在支持关系式和 stream-aware 标签：`successor_edges` / `ro_linkings` / `reading_order_*` / typed `relations` 标相邻 labelled 节点，`precedence_edges` 标局部先后约束，`reading_streams` / `streams` 标正文、边栏、脚注、caption、表格岛或卡片网格岛的独立局部链。ROOR 风格 sidecar 可以复用 `document` segment id，并在评分前解析回文本；stream members 也可以先声明成员标签，不会在没有显式 linkings 时强行暗示顺序。因此 OCR/结构 JSON 可以同时主导语义层和 benchmark 标签。复杂页面不必被强制写成唯一全局 `text_sequence`。
 - `table-row-major-v1` 明确保留表格行优先，不把表格误报为未知 visual-yx fallback。
 - `mixed-table-column-flow-v1` 支持混合表格/正文页面：表格岛保持 row-major，周围正文继续按多栏排序。
 - 页边 running header/footer、脚注、边栏/旁注会被标注为 secondary/page-artifact flow，保持可编辑但不污染主体列检测。

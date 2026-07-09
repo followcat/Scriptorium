@@ -252,7 +252,9 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 }
 ```
 
-`successor_edges` 和 ROOR 风格 linkings 会评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。关系端点可以是文本、数组，也可以是使用 `source` / `target`、`from` / `to`、`head` / `tail`、`source_id` / `target_id` 等别名的字典；id 会先通过 page label map 解析成文本再评分。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
+`successor_edges` 和 ROOR 风格 linkings 会评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。通用 `relations` 列表也可以使用，但每个 item 必须显式声明 successor 或 precedence 的 type/kind。关系端点可以是文本、数组，也可以是使用 `source` / `target`、`from` / `to`、`head` / `tail`、`source_id` / `target_id` 等别名的字典；id 会先通过 page label map 解析成文本再评分。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
+
+Stream sidecar 使用同一套形状。`text_sequence`、`sequence` 或 `texts` 会被视为有序序列，并生成 stream-local successor/precedence 检查。`members`、`elements`、`items`、`children` 只用于声明 stream label 和 missing/coverage 诊断，不会单独暗示顺序；stream-local 的 `ro_linkings`、`reading_order_*` 或 typed `relations` 才提供显式顺序约束。
 
 Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
 
