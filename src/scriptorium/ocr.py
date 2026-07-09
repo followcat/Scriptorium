@@ -304,7 +304,104 @@ def _raw_page_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
             collected.extend(item for item in boxes if isinstance(item, dict))
     collected.extend(_paddle_ocr_result_blocks(payload))
     collected.extend(_paddle_table_ocr_blocks(payload))
-    return collected
+    return _dedupe_raw_page_elements(collected)
+
+
+def _dedupe_raw_page_elements(elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    for raw in elements:
+        duplicate_index = _raw_duplicate_index(deduped, raw)
+        if duplicate_index is None:
+            deduped.append(raw)
+            continue
+        if _raw_element_dedupe_rank(raw) > _raw_element_dedupe_rank(deduped[duplicate_index]):
+            deduped[duplicate_index] = raw
+    return deduped
+
+
+def _raw_duplicate_index(elements: list[dict[str, Any]], raw: dict[str, Any]) -> int | None:
+    for index, existing in enumerate(elements):
+        if _raw_elements_are_near_duplicates(existing, raw):
+            return index
+    return None
+
+
+def _raw_elements_are_near_duplicates(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_text = _dedupe_text_key(_extract_text(left))
+    right_text = _dedupe_text_key(_extract_text(right))
+    if not left_text or left_text != right_text:
+        return False
+    left_bbox = _raw_bbox_for_dedupe(left)
+    right_bbox = _raw_bbox_for_dedupe(right)
+    if left_bbox is None or right_bbox is None:
+        return False
+    intersection = _bbox_intersection_area(left_bbox, right_bbox)
+    if intersection <= 0:
+        return False
+    left_area = max(_bbox_area(left_bbox), 1.0)
+    right_area = max(_bbox_area(right_bbox), 1.0)
+    min_coverage = intersection / min(left_area, right_area)
+    area_ratio = min(left_area, right_area) / max(left_area, right_area)
+    return min_coverage >= 0.9 and area_ratio >= 0.25
+
+
+def _raw_element_dedupe_rank(raw: dict[str, Any]) -> tuple[int, int, float, int, float]:
+    label = _dedupe_label_key(raw.get("type") or raw.get("label") or raw.get("category") or raw.get("block_label"))
+    bbox = _raw_bbox_for_dedupe(raw)
+    area = _bbox_area(bbox) if bbox is not None else 1_000_000.0
+    structured = 1 if raw.get("paddle_result_key") is None and any(key in raw for key in ("block_label", "block_order")) else 0
+    label_priority = {
+        "formula": 6,
+        "seal": 5,
+        "stamp": 5,
+        "table_cell": 5,
+        "table": 4,
+        "title": 3,
+        "figure": 3,
+        "image": 2,
+        "text": 1,
+        "paragraph": 1,
+    }.get(label, 0)
+    result_priority = {
+        "formula_res_list": 4,
+        "seal_res_list": 4,
+        "table_res_list": 3,
+        "table_ocr_pred": 3,
+        "text_paragraphs_ocr_res": 2,
+        "overall_ocr_res": 1,
+    }.get(str(raw.get("paddle_result_key") or ""), 0)
+    confidence = _extract_confidence(raw) or 0.0
+    return (label_priority, structured, -area, result_priority, confidence)
+
+
+def _dedupe_text_key(value: str) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _dedupe_label_key(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _raw_bbox_for_dedupe(raw: dict[str, Any]) -> list[float] | None:
+    for key in ("bbox_px", "bbox", "block_bbox", "coordinate", "box", "layout_bbox", "poly", "points"):
+        value = raw.get(key)
+        if value is None:
+            continue
+        try:
+            return _bbox_from_any(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
+def _bbox_intersection_area(left: list[float], right: list[float]) -> float:
+    width = max(0.0, min(left[2], right[2]) - max(left[0], right[0]))
+    height = max(0.0, min(left[3], right[3]) - max(left[1], right[1]))
+    return width * height
 
 
 def _paddle_ocr_result_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:

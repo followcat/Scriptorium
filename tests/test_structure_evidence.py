@@ -712,6 +712,42 @@ def test_pp_structure_ocr_formula_and_seal_results_are_region_evidence() -> None
     assert by_id["seal"].metadata["role"] == "seal-text"
 
 
+def test_pp_structure_ocr_result_regions_are_deduped() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("line", "Repeated text", BBox(x0=12, y0=14, x1=65, y1=24), 1),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Repeated text"],
+                "rec_scores": [0.88],
+            },
+            "text_paragraphs_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Repeated text"],
+                "rec_scores": [0.92],
+            },
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    line = document.pages[0].elements[0]
+
+    assert len(regions) == 1
+    assert regions[0].text == "Repeated text"
+    assert regions[0].confidence == 0.92
+    assert regions[0].raw["_scriptorium_structure_list_key"] == "text_paragraphs_ocr_res"
+    assert document.metadata["structure_evidence"]["region_count"] == 1
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 1
+    assert line.metadata["structure_evidence"]["confidence"] == 0.92
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [

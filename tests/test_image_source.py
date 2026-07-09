@@ -237,6 +237,34 @@ def test_image_source_can_seed_pp_ocr_formula_and_seal_results(tmp_path: Path) -
     assert by_text["Seal"].metadata["annotation"]["role"] == "seal-text"
 
 
+def test_image_source_dedupes_overlapping_pp_ocr_result_anchors(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    structure_payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Repeated text"],
+                "rec_scores": [0.88],
+            },
+            "text_paragraphs_ocr_res": {
+                "rec_boxes": [[24, 28, 130, 48]],
+                "rec_texts": ["Repeated text"],
+                "rec_scores": [0.92],
+            },
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, structure_payload)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+
+    assert [element.source_text for element in text_elements] == ["Repeated text"]
+    assert text_elements[0].metadata["paddle_result_key"] == "text_paragraphs_ocr_res"
+    assert text_elements[0].confidence == 0.92
+
+
 def test_image_source_roor_json_seeds_text_and_drives_semantic_order(tmp_path: Path) -> None:
     image_path = _make_image(tmp_path / "source.png")
     rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)

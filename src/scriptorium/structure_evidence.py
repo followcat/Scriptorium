@@ -1288,7 +1288,88 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
             add_block(block, list_key="layout_det_res.boxes", orderable=False)
     blocks.extend(_paddle_ocr_result_blocks(page_payload))
     blocks.extend(_paddle_table_cell_blocks(page_payload))
-    return blocks
+    return _dedupe_structure_blocks(blocks)
+
+
+def _dedupe_structure_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    for block in blocks:
+        duplicate_index = _structure_duplicate_index(deduped, block)
+        if duplicate_index is None:
+            deduped.append(block)
+            continue
+        if _structure_block_dedupe_rank(block) > _structure_block_dedupe_rank(deduped[duplicate_index]):
+            deduped[duplicate_index] = block
+    return deduped
+
+
+def _structure_duplicate_index(blocks: list[dict[str, Any]], block: dict[str, Any]) -> int | None:
+    for index, existing in enumerate(blocks):
+        if _structure_blocks_are_near_duplicates(existing, block):
+            return index
+    return None
+
+
+def _structure_blocks_are_near_duplicates(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_text = _dedupe_text_key(_extract_text(left))
+    right_text = _dedupe_text_key(_extract_text(right))
+    if not left_text or left_text != right_text:
+        return False
+    left_bbox_info = _extract_bbox(left)
+    right_bbox_info = _extract_bbox(right)
+    if left_bbox_info is None or right_bbox_info is None:
+        return False
+    left_bbox, left_space = left_bbox_info
+    right_bbox, right_space = right_bbox_info
+    if left_space != right_space:
+        return False
+    intersection = _bbox_intersection_area(left_bbox, right_bbox)
+    if intersection <= 0:
+        return False
+    left_area = max(left_bbox.width * left_bbox.height, 1.0)
+    right_area = max(right_bbox.width * right_bbox.height, 1.0)
+    min_coverage = intersection / min(left_area, right_area)
+    area_ratio = min(left_area, right_area) / max(left_area, right_area)
+    return min_coverage >= 0.9 and area_ratio >= 0.25
+
+
+def _structure_block_dedupe_rank(block: dict[str, Any]) -> tuple[int, int, float, int, float]:
+    label = _normalize_structure_label(_extract_label(block))
+    bbox_info = _extract_bbox(block)
+    area = bbox_info[0].width * bbox_info[0].height if bbox_info is not None else 1_000_000.0
+    list_key = str(block.get("_scriptorium_structure_list_key") or "")
+    structured = 1 if list_key in {"parsing_res_list", "blocks", "elements", *_nested_block_keys()} else 0
+    label_priority = {
+        "formula": 6,
+        "seal": 5,
+        "stamp": 5,
+        "table_cell": 5,
+        "table": 4,
+        "title": 3,
+        "figure": 3,
+        "image": 2,
+        "text": 1,
+        "paragraph": 1,
+    }.get(label, 0)
+    list_priority = {
+        "formula_res_list": 4,
+        "seal_res_list": 4,
+        "table_res_list.table_cells": 3,
+        "text_paragraphs_ocr_res": 2,
+        "overall_ocr_res": 1,
+    }.get(list_key, 0)
+    confidence = _extract_confidence(block) or 0.0
+    return (label_priority, structured, -area, list_priority, confidence)
+
+
+def _dedupe_text_key(value: str) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _bbox_intersection_area(left: BBox, right: BBox) -> float:
+    width = max(0.0, min(left.x1, right.x1) - max(left.x0, right.x0))
+    height = max(0.0, min(left.y1, right.y1) - max(left.y0, right.y0))
+    return width * height
 
 
 def _has_paddle_ocr_results(value: dict[str, Any]) -> bool:
