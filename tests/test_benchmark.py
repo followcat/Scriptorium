@@ -202,6 +202,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("semantic_stream_precedence_accuracy" in case for case in report["cases"])
     assert all("semantic_stream_precedence_correct_count" in case for case in report["cases"])
     assert all("semantic_stream_precedence_total_count" in case for case in report["cases"])
+    assert all("semantic_stream_assignment_label_count" in case for case in report["cases"])
+    assert all("semantic_stream_assignment_found_count" in case for case in report["cases"])
+    assert all("semantic_stream_assignment_id_accuracy" in case for case in report["cases"])
+    assert all("semantic_stream_assignment_type_accuracy" in case for case in report["cases"])
     assert all("semantic_visual_yx_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_box_flow_successor_accuracy" in case for case in report["cases"])
     assert all("semantic_relation_graph_successor_accuracy" in case for case in report["cases"])
@@ -319,6 +323,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["total_semantic_relation_successor_count"] == 0
     assert report["summary"]["mean_semantic_stream_successor_accuracy"] is None
     assert report["summary"]["total_semantic_stream_successor_count"] == 0
+    assert report["summary"]["mean_semantic_stream_assignment_id_accuracy"] is None
+    assert report["summary"]["mean_semantic_stream_assignment_type_accuracy"] is None
+    assert report["summary"]["total_semantic_stream_assignment_label_count"] == 0
+    assert report["summary"]["total_semantic_stream_assignment_found_count"] == 0
     assert report["summary"]["mean_semantic_sequence_similarity"] == 1
     assert "total_semantic_successor_correct_count" in report["summary"]
     assert "total_semantic_successor_count" in report["summary"]
@@ -875,6 +883,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "semantic_candidate_stream_successor_delta" in csv_text
     assert "semantic_stream_successor_accuracy" in csv_text
     assert "semantic_stream_precedence_accuracy" in csv_text
+    assert "semantic_stream_assignment_id_accuracy" in csv_text
+    assert "semantic_stream_assignment_type_accuracy" in csv_text
     assert "semantic_relation_graph_stream_successor_accuracy" in csv_text
     assert "semantic_structure_relation_stream_successor_accuracy" in csv_text
     assert "semantic_relation_successor_accuracy" in csv_text

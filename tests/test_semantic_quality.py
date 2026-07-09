@@ -540,6 +540,65 @@ def test_reading_stream_member_aliases_and_typed_relations_score_local_streams(t
     assert report["semantic_stream_successor_accuracy"] == 1
 
 
+def test_reading_stream_assignments_score_ir_stream_metadata(tmp_path: Path) -> None:
+    source_image = tmp_path / "page.png"
+    source_image.write_bytes(b"fake image bytes")
+    source_image.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "reading_streams": [
+                            {
+                                "id": "product-row",
+                                "type": "product_grid",
+                                "members": ["A", "B"],
+                            },
+                            {
+                                "id": "right-rail",
+                                "type": "right_sidebar",
+                                "members": ["C", "D"],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["A", "B", "C", "D"])
+    by_text = {element.source_text: element for element in document.pages[0].elements}
+    by_text["A"].metadata["reading_order_stream_id"] = "product-row"
+    by_text["A"].metadata["reading_order_stream_type"] = "grid-island"
+    by_text["B"].metadata["reading_order_stream_id"] = "product-row"
+    by_text["B"].metadata["reading_order_stream_type"] = "grid-island"
+    by_text["C"].metadata["reading_order_stream_id"] = "wrong"
+    by_text["C"].metadata["reading_order_stream_type"] = "sidebar-right"
+    by_text["D"].metadata["reading_order_stream_id"] = "right-rail"
+    by_text["D"].metadata["reading_order_stream_type"] = "body"
+
+    report = compare_semantic_reading_order(document, source_image, tmp_path / "semantic")
+    page = report["pages"][0]
+
+    assert page["stream_assignment_label_count"] == 4
+    assert page["stream_assignment_found_count"] == 4
+    assert page["stream_assignment_missing_count"] == 0
+    assert page["stream_assignment_id_correct_count"] == 3
+    assert page["stream_assignment_type_correct_count"] == 3
+    assert page["stream_assignment_type_total_count"] == 4
+    assert page["stream_assignment_id_accuracy"] == 0.75
+    assert page["stream_assignment_type_accuracy"] == 0.75
+    assert page["reading_streams"][0]["assignment_id_accuracy"] == 1
+    assert page["reading_streams"][1]["assignment_id_accuracy"] == 0.5
+    assert page["reading_streams"][1]["assignment_type_accuracy"] == 0.5
+    assert report["semantic_stream_assignment_label_count"] == 4
+    assert report["semantic_stream_assignment_found_count"] == 4
+    assert report["semantic_stream_assignment_id_accuracy"] == 0.75
+    assert report["semantic_stream_assignment_type_accuracy"] == 0.75
+
+
 def _document_with_texts(texts: list[str], page_index: int = 0) -> DocumentIR:
     elements = []
     for index, text in enumerate(texts):

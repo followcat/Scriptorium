@@ -129,7 +129,7 @@ def _compare_page(
         )
     )
     page_report.update(_relation_quality(actual_elements, relation_edges))
-    page_report.update(_stream_quality(actual_elements, reading_streams))
+    page_report.update(_stream_quality(actual_elements, reading_streams, include_assignments=True))
 
     candidate_reports: dict[str, Any] = {}
     for candidate_name, page_orders in sorted(candidate_orders.items()):
@@ -537,6 +537,8 @@ def _relation_quality(
 def _stream_quality(
     actual_elements: list[Any],
     reading_streams: list[dict[str, Any]],
+    *,
+    include_assignments: bool = False,
 ) -> dict[str, Any]:
     positions = _first_text_positions([element.source_text.strip() for element in actual_elements])
     stream_reports: list[dict[str, Any]] = []
@@ -544,6 +546,11 @@ def _stream_quality(
     successor_edge_total = 0
     precedence_correct_total = 0
     precedence_edge_total = 0
+    assignment_label_total = 0
+    assignment_found_total = 0
+    assignment_id_correct_total = 0
+    assignment_type_correct_total = 0
+    assignment_type_total = 0
     missing_labels: set[str] = set()
     for stream in reading_streams:
         labels = [str(text).strip() for text in stream.get("labels", []) if str(text).strip()]
@@ -562,6 +569,16 @@ def _stream_quality(
         missing_labels.update(successor_missing)
         missing_labels.update(precedence_missing)
         missing_labels.update(text for text in labels if text not in positions)
+        assignment_report = (
+            _stream_assignment_quality(actual_elements, stream, labels)
+            if include_assignments
+            else {}
+        )
+        assignment_label_total += int(assignment_report.get("assignment_label_count") or 0)
+        assignment_found_total += int(assignment_report.get("assignment_found_count") or 0)
+        assignment_id_correct_total += int(assignment_report.get("assignment_id_correct_count") or 0)
+        assignment_type_correct_total += int(assignment_report.get("assignment_type_correct_count") or 0)
+        assignment_type_total += int(assignment_report.get("assignment_type_total_count") or 0)
         stream_reports.append(
             {
                 "stream_id": stream.get("stream_id"),
@@ -574,10 +591,11 @@ def _stream_quality(
                 "precedence_total_count": len(precedence_edges),
                 "precedence_accuracy": _optional_ratio(precedence_correct, len(precedence_edges)),
                 "missing_text_count": len(successor_missing | precedence_missing | {text for text in labels if text not in positions}),
+                **assignment_report,
             }
         )
 
-    return {
+    report = {
         "stream_count": len(reading_streams),
         "stream_successor_correct_count": successor_correct_total,
         "stream_successor_total_count": successor_edge_total,
@@ -589,6 +607,132 @@ def _stream_quality(
         "stream_missing_texts": sorted(missing_labels),
         "reading_streams": stream_reports,
     }
+    if include_assignments:
+        report.update(
+            {
+                "stream_assignment_label_count": assignment_label_total,
+                "stream_assignment_found_count": assignment_found_total,
+                "stream_assignment_missing_count": assignment_label_total - assignment_found_total,
+                "stream_assignment_id_correct_count": assignment_id_correct_total,
+                "stream_assignment_type_correct_count": assignment_type_correct_total,
+                "stream_assignment_type_total_count": assignment_type_total,
+                "stream_assignment_id_accuracy": _optional_ratio(
+                    assignment_id_correct_total,
+                    assignment_found_total,
+                ),
+                "stream_assignment_type_accuracy": _optional_ratio(
+                    assignment_type_correct_total,
+                    assignment_type_total,
+                ),
+            }
+        )
+    return report
+
+
+def _stream_assignment_quality(
+    actual_elements: list[Any],
+    stream: dict[str, Any],
+    labels: list[str],
+) -> dict[str, Any]:
+    elements_by_text = _first_text_elements(actual_elements)
+    expected_stream_id = str(stream.get("stream_id") or "").strip()
+    expected_stream_type = _normalize_stream_type(stream.get("stream_type"))
+    found_count = 0
+    id_correct_count = 0
+    type_correct_count = 0
+    type_total_count = 0
+    missing_texts: list[str] = []
+    mismatches: list[dict[str, Any]] = []
+    for label in labels:
+        element = elements_by_text.get(label)
+        if element is None:
+            missing_texts.append(label)
+            continue
+        found_count += 1
+        metadata = getattr(element, "metadata", {})
+        actual_stream_id = str(metadata.get("reading_order_stream_id") or "").strip()
+        actual_stream_type = _normalize_stream_type(metadata.get("reading_order_stream_type"))
+        id_correct = bool(expected_stream_id) and actual_stream_id == expected_stream_id
+        if id_correct:
+            id_correct_count += 1
+        type_correct = expected_stream_type != "unknown" and actual_stream_type == expected_stream_type
+        if expected_stream_type != "unknown":
+            type_total_count += 1
+        if type_correct:
+            type_correct_count += 1
+        if not id_correct or (expected_stream_type != "unknown" and not type_correct):
+            mismatches.append(
+                {
+                    "text": label,
+                    "actual_stream_id": actual_stream_id or None,
+                    "actual_stream_type": actual_stream_type or None,
+                    "expected_stream_id": expected_stream_id or None,
+                    "expected_stream_type": expected_stream_type,
+                }
+            )
+    return {
+        "assignment_label_count": len(labels),
+        "assignment_found_count": found_count,
+        "assignment_missing_count": len(missing_texts),
+        "assignment_missing_texts": missing_texts,
+        "assignment_id_correct_count": id_correct_count,
+        "assignment_type_correct_count": type_correct_count,
+        "assignment_type_total_count": type_total_count,
+        "assignment_id_accuracy": _optional_ratio(id_correct_count, found_count),
+        "assignment_type_accuracy": _optional_ratio(type_correct_count, type_total_count),
+        "assignment_mismatches": mismatches,
+    }
+
+
+def _first_text_elements(actual_elements: list[Any]) -> dict[str, Any]:
+    elements: dict[str, Any] = {}
+    for element in actual_elements:
+        text = element.source_text.strip()
+        if text and text not in elements:
+            elements[text] = element
+    return elements
+
+
+def _normalize_stream_type(value: Any) -> str:
+    token = "-".join(str(value or "").strip().lower().replace("_", "-").split())
+    if token in {"main", "body", "text", "paragraph", "content", "list", "article"}:
+        return "body"
+    if token in {
+        "grid",
+        "grid-island",
+        "card",
+        "card-grid",
+        "content-grid",
+        "product",
+        "product-card",
+        "product-grid",
+        "tile",
+        "tile-grid",
+    }:
+        return "grid-island"
+    if token in {"table", "table-island", "table-body", "table-content", "table-grid"}:
+        return "table-island"
+    if token in {"footnote", "footnotes", "note", "notes"}:
+        return "footnote"
+    if token in {"figure-caption", "figure-title", "image-caption"}:
+        return "caption-figure"
+    if token in {"table-caption", "table-title"}:
+        return "caption-table"
+    if token in {"chart-caption", "chart-title"}:
+        return "caption-chart"
+    if token in {"algorithm-caption", "algorithm-title"}:
+        return "caption-algorithm"
+    if token in {"header", "page-header", "running-header"}:
+        return "page-artifact-header"
+    if token in {"footer", "page-footer", "page-number"}:
+        return "page-artifact-footer"
+    if "sidebar" in token or "side-bar" in token or token in {"marginalia", "margin-note"}:
+        if "left" in token:
+            return "sidebar-left"
+        if "right" in token:
+            return "sidebar-right"
+        return "sidebar"
+    return token or "unknown"
 
 
 def _stream_successor_counts(
@@ -907,6 +1051,11 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     stream_successor_total = sum(int(page["stream_successor_total_count"]) for page in pages)
     stream_precedence_correct = sum(int(page["stream_precedence_correct_count"]) for page in pages)
     stream_precedence_total = sum(int(page["stream_precedence_total_count"]) for page in pages)
+    stream_assignment_label_count = sum(int(page.get("stream_assignment_label_count") or 0) for page in pages)
+    stream_assignment_found_count = sum(int(page.get("stream_assignment_found_count") or 0) for page in pages)
+    stream_assignment_id_correct = sum(int(page.get("stream_assignment_id_correct_count") or 0) for page in pages)
+    stream_assignment_type_correct = sum(int(page.get("stream_assignment_type_correct_count") or 0) for page in pages)
+    stream_assignment_type_total = sum(int(page.get("stream_assignment_type_total_count") or 0) for page in pages)
     relation_missing_texts = sorted(
         {
             str(text)
@@ -965,6 +1114,20 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_stream_precedence_accuracy": _optional_ratio(stream_precedence_correct, stream_precedence_total),
         "semantic_stream_missing_text_count": len(stream_missing_texts),
         "semantic_stream_missing_texts": stream_missing_texts,
+        "semantic_stream_assignment_label_count": stream_assignment_label_count,
+        "semantic_stream_assignment_found_count": stream_assignment_found_count,
+        "semantic_stream_assignment_missing_count": stream_assignment_label_count - stream_assignment_found_count,
+        "semantic_stream_assignment_id_correct_count": stream_assignment_id_correct,
+        "semantic_stream_assignment_type_correct_count": stream_assignment_type_correct,
+        "semantic_stream_assignment_type_total_count": stream_assignment_type_total,
+        "semantic_stream_assignment_id_accuracy": _optional_ratio(
+            stream_assignment_id_correct,
+            stream_assignment_found_count,
+        ),
+        "semantic_stream_assignment_type_accuracy": _optional_ratio(
+            stream_assignment_type_correct,
+            stream_assignment_type_total,
+        ),
         "semantic_exact_page_match_rate": _round_ratio(
             sum(1 for page in pages if bool(page["exact_match"])) / len(pages) if pages else 0.0
         ),
