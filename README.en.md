@@ -270,7 +270,7 @@ scriptorium benchmark path/to/paper.pdf \
   --dpi 144
 ```
 
-`--translation-stress pseudo-expand` writes deterministic pseudo-translations to `translated_text` so mask, fit-scale, overflow, and neighbor-conflict metrics can be measured. It is a layout stressor, not a translation-quality score.
+`--translation-stress pseudo-expand` writes deterministic pseudo-translations to `translated_text` so mask, fit-scale, overflow, and neighbor-conflict metrics can be measured. It is a layout stressor, not a translation-quality score. The latest PUMA/JD/web-HN stress report is documented in [External benchmarks](docs/external-benchmarks.md): 15 pages have no page-count or dimension mismatches, mean visual similarity is `0.81899535`, and replacement conflicts remain the main optimization target at 565/567.
 
 External PaddleOCR-VL / PP-Structure / Docling structure evidence can be fused with:
 

@@ -122,6 +122,7 @@ The native PDF path now handles these cases:
 - Benchmark `--fidelity-background auto` evaluates both SVG and raster fidelity backgrounds. On the current three real samples, raster was selected for all three: Attention `0.98809524 -> 1.0`, Transformer-XL `0.97636829 -> 0.98096887`, and web-HN `0.99490923 -> 1.0`.
 - Benchmark `--html-mode auto` evaluates structured redraw candidates and fidelity overlay candidates, then keeps the higher `visual_similarity` result. Fidelity candidates collapse no-op calibration axes (`font-size-scale auto`, `text-fit auto`, and `font-profile auto`) to one browser-default candidate because the visible output comes from the source background rather than redrawn browser text. On the current three real samples, `--html-mode auto --fidelity-background auto` selects `fidelity/raster` for all three and raises the mean from `0.96840901` structured to `0.99365629` auto.
 - Benchmark PDF printing passes known source page sizes into `print_html_to_pdf()`, which normalizes the exported PDF page boxes after Chromium printing. This fixes the previous Transformer-XL A4 width quantization where every rendered comparison page was 1px narrower than the source.
+- When source page count is known, HTML print export also trims browser-added blank tail pages that contain no text, images, or annotations and only empty/white drawings. This keeps translation-stress reports from being dominated by Chromium pagination artifacts while preserving real overflow pages that contain content.
 - Structured text lines keep `white-space: pre` and add `text-align-last: justify` in the default `structured` mode. Each line still uses its extracted PDF bbox, but the browser can expand word spacing to match justified PDF lines more closely. SVG text-fit is now the stronger optional path when browser font metrics are the dominant error.
 - Short mixed text runs with script positioning, such as author footnote marks and compact superscripts, can be rendered as positioned child spans. The gate intentionally excludes long baseline-only citation/body lines because fully absolute run placement caused Transformer-XL page scaling and major visual regressions.
 - `native-drawing`: simple lines render as SVG `<line>`. Supported non-rectangular drawing items (`l`, `c`, `re`, `qu`) render as positioned SVG `<path>` with fill/stroke opacity, avoiding the previous rectangular approximation for polygons and rounded paths.
@@ -338,7 +339,7 @@ scriptorium benchmark input.pdf \
   --dpi 144
 ```
 
-This writes deterministic pseudo-expanded text into `translated_text`, then scores visual similarity plus replacement overflow/conflict/fit-scale metrics. It is useful for JD/PUMA/portal samples where the source page may look perfect with a background layer but translated replacements can still collide locally.
+This writes deterministic pseudo-expanded text into `translated_text`, then scores visual similarity plus replacement overflow/conflict/fit-scale metrics. It is useful for JD/PUMA/portal samples where the source page may look perfect with a background layer but translated replacements can still collide locally. The current JD/PUMA/web-HN stress rerun scores 15 pages with no page-count or dimension mismatches; mean visual similarity is `0.81899535`, but 565/567 replacements still report neighbor conflicts, so conflict reduction remains an active quality target.
 
 External structure evidence can be evaluated with a paired A/B run:
 
@@ -480,7 +481,7 @@ Metrics:
 - `semantic_ignored_text_count`: actual text nodes ignored by partial `ordered-subsequence` labels.
 - `semantic_ignored_text_zone_counts`, `semantic_ignored_text_role_counts`, `semantic_ignored_text_source_counts`: ignored-text diagnostics aggregated across semantic cases.
 
-Benchmark PDF export normalizes page boxes to source dimensions when the `DocumentIR` page sizes are available, so a browser print-unit mismatch is reported as visual content difference only if pixels still differ after the page dimensions match.
+Benchmark PDF export normalizes page boxes to source dimensions when the `DocumentIR` page sizes are available, so a browser print-unit mismatch is reported as visual content difference only if pixels still differ after the page dimensions match. It also removes only trailing blank browser artifact pages beyond the expected source page count; nonblank translated overflow pages remain visible and are scored.
 
 Current baseline artifacts live under `outputs/benchmark-baseline/`, with external sample commands in `docs/external-benchmarks.md`. Future optimizations should report delta against `benchmark_report.json` and `benchmark_summary.csv`.
 

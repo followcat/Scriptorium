@@ -14,6 +14,7 @@ These samples are intentionally kept out of git because `data/` and `outputs/` a
 |---|---|---|---|
 | PUMA 2024 Annual Report | `data/external/puma-2024-annual-report.pdf` | `https://annualreports.com/Click/27465` | Public listed-company annual report with dense image, text, table, and shape layout. |
 | JD homepage screenshot PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | Full-page ecommerce homepage screenshot converted into an image-only PDF. |
+| Hacker News print PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | Real web-to-PDF portal/list layout with tracked semantic sidecar labels. |
 
 ## Recreate Inputs
 
@@ -71,6 +72,15 @@ PY
 
 Chrome may need to run outside the restricted sandbox in local automation environments.
 
+Capture the Hacker News portal/list page through Playwright's print path:
+
+```bash
+./.venv/bin/scriptorium capture-pdf \
+  https://news.ycombinator.com/ \
+  --pdf outputs/external/web-hn/input.pdf \
+  --mode print
+```
+
 ## Benchmark Commands
 
 PUMA annual report, first 12 pages:
@@ -94,12 +104,43 @@ JD screenshot PDF:
   --fidelity-background auto
 ```
 
+Translation re-rendering stress run for annual-report, ecommerce screenshot, and web portal samples:
+
+```bash
+./.venv/bin/scriptorium benchmark \
+  data/external/puma-2024-annual-report.pdf \
+  outputs/external/jd-home/input.pdf \
+  outputs/external/web-hn/input.pdf \
+  --out-dir outputs/external/translation-stress-v3 \
+  --dpi 144 \
+  --max-pages 12 \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand
+```
+
 ## Current Results
 
 | Sample | Pages Scored | Selected Path | Visual Similarity | Max Diff | Mean Diff | Elements | Editable | OCR Pages | OCR Text | Mixed Table Flow | Table Row-Major | Spatial Graph | Box-Flow Elements | Captions | Box-Flow Pairwise | Box-Flow Successor | Relation Pairwise | Relation Successor | Page Artifacts | Footnotes | Sidebars | RO Confidence | Low-Conf RO | Reading Risk |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
 | JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+
+## Translation Stress Results
+
+`outputs/external/translation-stress-v3` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`.
+
+| Sample | Pages | Selected Path | Visual Similarity | Max Diff | Mean Diff | Translation Elements | Expansion | Overflows | Conflicts | Conflict Targets | Min Fit | Mean Fit | Grid Islands | Page/Size Match | Semantic Successor |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67616927 | 0.32383073 | 0.12495262 | 398 | 1.99511484 | 187 | 396 | 637 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.87463572 | 0.12536428 | 0.12536428 | 104 | 6.15817223 | 97 | 104 | 192 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
+| Hacker News print PDF | 2 | `fidelity/raster` | 0.90618105 | 0.09381895 | 0.04962468 | 65 | 2.23526357 | 42 | 65 | 70 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
+
+Combined summary: mean visual similarity is `0.81899535`, max diff is `0.32383073`, mean diff is `0.09998053`, p95 diff is `0.30398408`, total translation elements are `567`, total overflows are `326`, total conflicts are `565`, and total conflict targets are `899`. `grid_island_element_count` totals `66`: 31 from PUMA and 35 from JD.
+
+The same run reports page-level candidate recommendations as `keep-selected-low-consensus: 1`, `keep-selected-supported: 5`, `needs-structure-evidence: 7`, and `review-disagreement: 2`. Stream-level diagnostics are stricter on local flows: `keep-selected-low-consensus: 5`, `keep-selected-supported: 39`, `needs-structure-evidence: 17`, `review-consensus: 1`, and `review-disagreement: 1`.
+
+A previous JD-only stress run exposed a Chromium extra blank tail page: the real page diff was `0.12536428`, but the report was dominated by an extra blank exported page and scored the case as `visual_similarity = 0.0`. `print_html_to_pdf()` now removes only trailing blank artifact pages beyond the expected source page count, so the JD stress score is `0.87463572` and real nonblank overflow pages remain measurable.
 
 PUMA has no semantic sidecar yet, so its high reading-order risk is a useful signal for the next labeling pass. Its OCR fallback counts are 0 because the sampled pages already expose native PDF text. The current diagnostics report 5 repeated-anchor pages, max 3 anchors, 4 table-like pages, and 0 table-like visual-yx pages. The current mixed-table/artifact/sidebar/footnote pass reports 99 direct column-flow elements, 238 mixed-table-flow elements, 20 header artifacts, 36 right-side sidebar/marginalia elements, and 2 footnote elements, keeping detected local table islands row-major while surrounding body text can still use column flow.
 

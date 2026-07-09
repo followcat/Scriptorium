@@ -98,6 +98,7 @@ HTML exporter 会把这些标记落成 DOM 属性，例如：
 - `--translation-stress pseudo-expand` 会在 benchmark 内写入确定性伪译文到 `translated_text`，用于压测翻译回渲染的 mask、fit-scale、overflow 和邻近冲突；它不是翻译质量评测，也不需要外部翻译服务。
 - `--html-mode auto --fidelity-background auto` 会比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选。
 - 打印后的 PDF page box 会归一到源 PDF 尺寸，避免 Chromium A4 1px 量化误差污染视觉指标。
+- 当源页数已知时，HTML 打印导出还会删除浏览器追加的尾部空白伪页；删除条件限定为超出源页数、无文字/图片/批注，且只包含空白或白色 drawing。这样可以避免翻译压力测试被 Chromium 分页伪影主导，同时保留真正有内容的翻译溢出页。
 - 简单 drawing 输出为 SVG line/path；密集矢量图可以局部 raster fallback，但仍然保留 bbox/source metadata。
 
 这是一个明确的保真度和可编辑性权衡：普通文本、表格、分隔线、简单 drawing 和支持的 SVG path 尽量保持结构化；无法可靠结构化的复杂图形先以局部 raster 节点保真。
@@ -159,6 +160,8 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`。源文档无 replacement 时这些字段为 0/`null`；翻译写入 `translated_text` 后，它们用于衡量像素相似度之外的遮罩、压缩和邻近冲突风险。
 
 对应的输入压力统计包括 `translation_stress`、`translation_stress_element_count`、`translation_stress_source_char_count`、`translation_stress_translated_char_count` 和 `translation_stress_char_expansion_ratio`。`pseudo-expand` 会故意拉长源文本，让 JD/PUMA/门户页这类复杂布局能在没有真实翻译服务的情况下先暴露 replacement 风险。
+
+最新 JD/PUMA/web-HN 三样本翻译压力 rerun 覆盖 15 页，没有页数或尺寸 mismatch；平均视觉相似度为 `0.81899535`，但 567 个 replacement 中仍有 565 个报告邻近冲突，所以后续优化重点仍是 mask、fitting、冲突消解和结构流分批翻译，而不是只追背景层像素分。
 
 Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 

@@ -14,6 +14,7 @@
 |---|---|---|---|
 | PUMA 2024 Annual Report | `data/external/puma-2024-annual-report.pdf` | `https://annualreports.com/Click/27465` | 上市公司公开年报，包含密集图片、文本、表格和形状排版。 |
 | JD 首页完整截图 PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` 在当前环境会跳转到 `https://hk.jd.com/` | 电商首页完整截图封装成 image-only PDF，用于考察网页图文混排和 OCR 锚点。 |
+| Hacker News 打印 PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | 真实网页打印 PDF，包含门户/列表式排版，并有已跟踪的 semantic sidecar。 |
 
 ## 重新创建输入
 
@@ -71,6 +72,15 @@ PY
 
 在受限自动化环境里，Chrome 可能需要在沙箱外运行。
 
+通过 Playwright 打印路径捕获 Hacker News 门户/列表页：
+
+```bash
+./.venv/bin/scriptorium capture-pdf \
+  https://news.ycombinator.com/ \
+  --pdf outputs/external/web-hn/input.pdf \
+  --mode print
+```
+
 ## Benchmark 命令
 
 PUMA 年报前 12 页：
@@ -94,12 +104,43 @@ JD 截图 PDF：
   --fidelity-background auto
 ```
 
+年报、电商截图和真实门户页的翻译回渲染压力测试：
+
+```bash
+./.venv/bin/scriptorium benchmark \
+  data/external/puma-2024-annual-report.pdf \
+  outputs/external/jd-home/input.pdf \
+  outputs/external/web-hn/input.pdf \
+  --out-dir outputs/external/translation-stress-v3 \
+  --dpi 144 \
+  --max-pages 12 \
+  --html-mode fidelity \
+  --fidelity-background auto \
+  --translation-stress pseudo-expand
+```
+
 ## 当前结果
 
 | 样本 | 评分页数 | 选择路径 | 视觉相似度 | 最大差异 | 平均差异 | 元素 | 可编辑 | OCR 页 | OCR 文本 | 混合表格流 | 表格行优先 | Spatial Graph | Box-Flow 元素 | Caption | Box-Flow Pairwise | Box-Flow Successor | Relation Pairwise | Relation Successor | 页边 Artifact | 脚注 | 边栏 | RO 置信度 | 低置信 RO | 阅读风险 |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.9795117 | 0.0204883 | 0.01089482 | 815 | 521 | 0 | 0 | 238 | 0 | 0 | 0 | 0 | 0.17460108 | 199/509 | 0.16306211 | 166/509 | 20 | 2 | 36 right | 0.82476488 | 0 | `0.35 / high` |
 | JD 首页截图 PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
+
+## 翻译压力测试结果
+
+`outputs/external/translation-stress-v3` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。
+
+| 样本 | 页数 | 选择路径 | 视觉相似度 | 最大差异 | 平均差异 | 翻译元素 | 扩展倍率 | Overflow | Conflict | 冲突目标 | 最小 Fit | 平均 Fit | Grid Islands | 页数/尺寸匹配 | Semantic Successor |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67616927 | 0.32383073 | 0.12495262 | 398 | 1.99511484 | 187 | 396 | 637 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
+| JD 首页截图 PDF | 1 | `fidelity/raster` | 0.87463572 | 0.12536428 | 0.12536428 | 104 | 6.15817223 | 97 | 104 | 192 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
+| Hacker News 打印 PDF | 2 | `fidelity/raster` | 0.90618105 | 0.09381895 | 0.04962468 | 65 | 2.23526357 | 42 | 65 | 70 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
+
+合并摘要：平均视觉相似度为 `0.81899535`，最大差异为 `0.32383073`，平均差异为 `0.09998053`，p95 差异为 `0.30398408`；总翻译元素 `567`，总 overflow `326`，总 conflict `565`，总冲突目标 `899`。`grid_island_element_count` 合计 `66`，其中 PUMA 为 31，JD 为 35。
+
+同一次运行的页级候选建议为：`keep-selected-low-consensus: 1`、`keep-selected-supported: 5`、`needs-structure-evidence: 7`、`review-disagreement: 2`。流级诊断更关注局部结构：`keep-selected-low-consensus: 5`、`keep-selected-supported: 39`、`needs-structure-evidence: 17`、`review-consensus: 1`、`review-disagreement: 1`。
+
+之前 JD-only 的翻译压力测试暴露了 Chromium 额外尾部空白页：真实页面 diff 是 `0.12536428`，但报告被额外空白导出页主导，导致 case 被记为 `visual_similarity = 0.0`。现在 `print_html_to_pdf()` 只删除超出源页数的尾部空白伪页，因此 JD stress 分数回到 `0.87463572`，而真正有内容的溢出页仍会被保留和评分。
 
 PUMA 目前没有 semantic sidecar，因此高阅读顺序风险是下一步标注工作的有效信号。它的 OCR fallback 为 0，因为采样页已经包含原生 PDF 文本。当前诊断报告显示 5 个 repeated-anchor 页面、最多 3 个锚点、4 个 table-like 页面，并且 table-like visual-yx 页面为 0。混合表格、artifact、sidebar、footnote 路径识别出 99 个直接 column-flow 元素、238 个 mixed-table-flow 元素、20 个页眉 artifact、36 个右侧边栏/旁注元素和 2 个脚注元素。
 

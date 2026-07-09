@@ -180,7 +180,7 @@ Scriptorium 的 `structured` 模式明确避免整页图片：
 
 `visual_similarity = 1 - max_diff_ratio`。`max_diff_ratio` 现在包含页数缺失和页面尺寸不匹配惩罚；报告会同时输出 `mean_diff_ratio`、`p95_diff_ratio`、`worst_page`、`page_count_match` 和 `dimension_match`，避免错误页面被 resize 后看起来“相似”。
 
-Transformer-XL 这类 A4 变体页面曾受 Chromium 打印 1px 宽度量化影响；benchmark 现在会在打印后把导出 PDF 的 page box 归一到源页面尺寸，避免尺寸误差污染后续视觉指标。
+Transformer-XL 这类 A4 变体页面曾受 Chromium 打印 1px 宽度量化影响；benchmark 现在会在打印后把导出 PDF 的 page box 归一到源页面尺寸，并删除浏览器追加的尾部空白伪页，避免尺寸或空白页误差污染后续视觉指标。
 
 内置 fixtures 同时带 `.semantic-order.json` ground truth。当前 `semantic_order_pair_accuracy = 1.0`，`semantic_successor_accuracy = 1.0`，`semantic_sequence_similarity = 1.0`，覆盖 53 个期望文本节点和 47 条相邻后继边；其中 20 个多栏文本节点由 `recursive-xy-cut-v1` 负责排序。arXiv Attention 论文有 repo 内部分人工 sidecar，覆盖 5 页、38 个关键文本点，本轮 successor benchmark 保持 `semantic_order_pair_accuracy = 1.0`、`semantic_successor_accuracy = 1.0`，33/33 条相邻后继边正确。Transformer-XL 论文新增真实双栏 sidecar，覆盖 3 页、44 个关键文本点，本轮 successor benchmark 保持 `semantic_order_pair_accuracy = 1.0`、`semantic_successor_accuracy = 1.0`，41/41 条相邻后继边正确。Hacker News 网页打印 PDF 覆盖 2 页、26 个关键文本点，本轮 successor benchmark 保持 `semantic_order_pair_accuracy = 1.0`、`semantic_successor_accuracy = 1.0`，24/24 条相邻后继边正确。
 
@@ -509,7 +509,7 @@ scriptorium benchmark path/to/paper.pdf \
   --dpi 144
 ```
 
-`--translation-stress pseudo-expand` 会用确定性伪译文写入 `translated_text`，专门压测长译文的 mask、fit-scale、overflow 和邻近冲突。它不评估翻译质量，也不依赖外部翻译服务。
+`--translation-stress pseudo-expand` 会用确定性伪译文写入 `translated_text`，专门压测长译文的 mask、fit-scale、overflow 和邻近冲突。它不评估翻译质量，也不依赖外部翻译服务。最新 PUMA/JD/web-HN 三样本翻译压力基准记录在 [外部基准](docs/external-benchmarks.zh-CN.md)，15 页无页数/尺寸 mismatch，平均视觉相似度 `0.81899535`，但 replacement conflict 仍为 565/567，是下一步优化重点。
 
 native extraction 默认启用 image-only OCR fallback，并且只在页面没有 native text 且图像覆盖率很高时触发：
 

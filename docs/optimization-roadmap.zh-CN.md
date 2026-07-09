@@ -35,10 +35,12 @@
 - `--font-profile auto`、`--font-size-scale auto`、`--text-fit auto` 在 benchmark 中执行可重复候选 sweep。
 - `--html-mode auto --fidelity-background auto` 比较 structured redraw、SVG fidelity 和 raster fidelity，选择最高视觉相似度路径。
 - `fidelity` HTML 模式保留源 SVG/raster 背景，同时叠加透明可编辑坐标节点；编辑/翻译节点打印为局部白底 replacement overlay。
+- HTML 打印会把导出 PDF page box 归一到源页面尺寸；当源页数已知时，还会删除 Chromium 追加的尾部空白伪页，避免空白页污染视觉 benchmark。
 - Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、`grid_island_element_count`、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics、fidelity replacement overflow/conflict/fit-scale 指标和外部结构证据匹配结果。候选诊断现在包括 `reading_order_candidate_page_recommendation_counts` 与 `reading_order_candidate_stream_recommendation_counts`，后者按 `reading_order_stream_id` 与 `stream_type` 做局部复核统计，避免边栏/脚注局部流差异被正文页级分数掩盖。
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据；匹配到的模型 label 也会驱动 page-artifact、footnote、sidebar、caption、table-island，以及明确 card/grid/product/tile 类区域的 `grid-island` reading streams。普通 list label 只作为列表证据，不作为卡片网格证据。
 - `benchmark-structure-ab` 会并行运行 native-only 和 native-plus-structure 报告，并输出 `structure_ab_report.json` / `structure_ab_summary.csv`，对比 visual similarity、reading-order risk、grid-island 元素、结构匹配数、page/stream `needs-structure-evidence`，以及存在 sidecar 时的 semantic successor 指标。
 - `--translation-stress pseudo-expand` 会在 benchmark 中写入确定性伪扩展 `translated_text`，让翻译 replacement 风险可以在不绑定具体翻译服务的情况下被度量。
+- 最新 JD/PUMA/web-HN 三样本翻译压力 rerun 覆盖 15 页，没有页数或尺寸 mismatch；平均视觉相似度为 `0.81899535`，但 567 个 replacement 里仍有 565 个报告邻近冲突，下一步应继续优化 mask、fitting 和冲突消解。
 - Structured HTML 现在暴露 reading-order strategy、region、scope、artifact、sidebar、stream id/type/index、confidence、evidence 和显式 translation target/stream 属性。
 
 ## 当前基准覆盖
