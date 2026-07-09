@@ -159,12 +159,13 @@ PaddleOCR-VL, PP-StructureV3, and Docling are best treated as optional evidence 
 `src/scriptorium/structure_evidence.py` implements the current bridge:
 
 - `normalize_structure_evidence(payload, document)` accepts common Paddle JSON shapes, including `parsing_res_list` blocks with `block_bbox`, `block_label`, `block_content`, and `block_order`.
+- Explicit block order remains the strongest order evidence. When `parsing_res_list`, `blocks`, or `elements` omit `block_order`, their list position is recorded as weak `implicit-list` order; pure `layout_det_res.boxes` detector output does not get implicit order.
 - It also accepts DoclingDocument JSON. The parser traverses `body.children` in order, resolves JSON pointer refs into `texts`, `tables`, `pictures`, `key_value_items`, and `groups`, and turns item `prov` entries into page-local structure regions.
 - Docling bboxes are treated as PDF page coordinates. `coord_origin = TOPLEFT` is used directly; `coord_origin = BOTTOMLEFT` is flipped through the current page height before matching native elements.
 - Pixel bboxes are converted to PDF-point bboxes using the page render scale already stored in `DocumentIR`.
 - `apply_structure_evidence(document, payload)` aligns model regions to native elements by element bbox coverage and text similarity.
-- Matched text elements receive `structure_evidence`, `external_structure_label`, and `external_structure_order` metadata.
-- When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`.
+- Matched text elements receive `structure_evidence`, `external_structure_label`, `external_structure_order`, and `external_structure_order_source` metadata.
+- When at least two external block orders are matched on a page, the text reading order can be reassigned with `reading_order_strategy = external-structure-fusion-v1`. Benchmark reports expose `structure_evidence_order_source_counts`, so A/B runs can distinguish explicit model order, Docling body-tree order, implicit list order, and unordered detector regions.
 - Reordered elements also append `external-structure-order` to `reading_order_evidence` and preserve the model confidence under `reading_order_confidence` when it is stronger than the native heuristic confidence.
 - External labels also feed reading-order scope and stream metadata: header/footer/page-number labels become page artifacts, footnotes and sidebars become secondary local streams, caption labels become caption streams, table labels become table-island streams, and explicit card/grid/product/tile labels become `grid-island` streams for translation/editing. Plain `list` labels remain list-role evidence instead of being promoted to grid streams, so ranked/news pages do not get false card-grid structure.
 - The annotation pass maps external labels into roles, so labels such as `formula`, `header`, `footer`, `table_caption`, and `table` can affect the structured HTML metadata.
