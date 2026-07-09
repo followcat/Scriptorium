@@ -132,6 +132,9 @@ Scriptorium's structured mode keeps page content addressable:
   data-scriptorium-reading-order-stream-index="12"
   data-scriptorium-reading-order-confidence="0.83"
   data-scriptorium-edit-target="edited_text"
+  data-scriptorium-translation-target="translated_text"
+  data-scriptorium-translation-stream-id="body-main"
+  data-scriptorium-translation-stream-type="body"
   data-bbox-pdf="76.99,212.49,117.83,224.22"
   contenteditable="true"
 >
@@ -145,7 +148,9 @@ Each node can be traced back to source evidence, coordinates, style buckets, lay
 
 Scriptorium treats reading order as evidence, not a single y/x sort. The runtime path includes recursive XY-Cut, repeated-anchor column flow, spatial graph fallback, guarded box-flow fallback, table islands, footnotes, sidebars, captions, caption-to-object proximity evidence, and optional external PaddleOCR-VL / PP-Structure / Docling order evidence.
 
-Reading-order output now includes page-local stream metadata: `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index`. The main body is usually `body-main`; footnotes, left/right sidebars, header/footer artifacts, captions, and table islands become separate local streams. This follows the same architectural idea as PDF article threads: complex pages can expose multiple navigable reading paths instead of only one global sequence.
+Reading-order output now includes page-local stream metadata: `reading_order_stream_id`, `reading_order_stream_type`, and `reading_order_stream_index`. The main body is usually `body-main`; footnotes, left/right sidebars, header/footer artifacts, captions, table islands, and non-table card/grid islands become separate local streams. This follows the same architectural idea as PDF article threads: complex pages can expose multiple navigable reading paths instead of only one global sequence.
+
+`mixed-grid-column-flow-v1` adds a lightweight local-structure path for portal/ecommerce-like card grids. It detects repeated non-table grid islands, marks them with `root/grid-island-###`, `grid-island-row-major`, and `local-structure-grid`, and exports them as `grid-island` streams. These streams are translation units as well as reading-order evidence: a translator can process a body stream, sidebar stream, table island, or card grid independently, write replacements to `translated_text`, and let fidelity mode print those replacements over the preserved source page.
 
 Body streams are now segment-aware when the page has real structural breaks. The first continuous body chain stays `body-main`; later body chains become `body-segment-002`, `body-segment-003`, etc. This is only activated when the page has evidence such as full-width flow breaks or multiple recursive XY-Cut regions, so a simple title plus one body flow does not get split unnecessarily.
 
@@ -153,7 +158,7 @@ Caption metadata now goes beyond lexical labels. Figure/table captions can be li
 
 The `structure_relation` semantic candidate combines page artifacts, footnotes, sidebars, caption-target proximity, and relation-graph body ordering into a structure-aware diagnostic order. It is scored by semantic sidecars and exported in benchmark metrics, but it does not replace the runtime selected order.
 
-Semantic sidecars can now use relation-style and stream-aware labels. `successor_edges` score adjacent labelled nodes, `precedence_edges` score local before/after constraints, and `reading_streams` / `streams` describe independent body, sidebar, footnote, caption, or table chains. Complex pages can label only the key local relations without forcing the whole page into one global `text_sequence`.
+Semantic sidecars can now use relation-style and stream-aware labels. `successor_edges` score adjacent labelled nodes, `precedence_edges` score local before/after constraints, and `reading_streams` / `streams` describe independent body, sidebar, footnote, caption, table, or grid chains. Complex pages can label only the key local relations without forcing the whole page into one global `text_sequence`.
 
 Candidate arbitration now also runs at stream scope. `reading_order_candidate_stream_diagnostics`, `reading_order_candidate_stream_count`, and `reading_order_candidate_stream_recommendation_counts` report disagreement and recommendation signals for each `reading_order_stream_id`, so sidebar/footnote-like local flows can be triaged independently from the body flow instead of being diluted in the same page-level score.
 
@@ -288,7 +293,7 @@ Core modules:
 - `src/scriptorium/models.py`: `DocumentIR`, page, and element models
 - `src/scriptorium/native_pdf.py`: native PDF text/drawing/image extraction
 - `src/scriptorium/annotations.py`: role/style/source/bbox annotation pass
-- `src/scriptorium/reading_order.py`: visual order, XY-Cut, column flow, graph candidates, table/footnote/sidebar/caption ordering
+- `src/scriptorium/reading_order.py`: visual order, XY-Cut, column flow, graph candidates, table/grid-island/footnote/sidebar/caption ordering
 - `src/scriptorium/structure_evidence.py`: PaddleOCR-VL / PP-Structure / Docling evidence fusion
 - `src/scriptorium/html_export.py`: standalone HTML export
 - `src/scriptorium/xml_edit.py`: XML node edit round trip
