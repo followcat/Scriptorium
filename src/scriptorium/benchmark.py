@@ -337,6 +337,28 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "fidelity_replacement_conflict_count",
         ),
+        "native_fidelity_replacement_same_stream_conflict_target_count": native_case[
+            "fidelity_replacement_same_stream_conflict_target_count"
+        ],
+        "structure_fidelity_replacement_same_stream_conflict_target_count": structure_case[
+            "fidelity_replacement_same_stream_conflict_target_count"
+        ],
+        "fidelity_replacement_same_stream_conflict_target_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_same_stream_conflict_target_count",
+        ),
+        "native_fidelity_replacement_cross_stream_conflict_target_count": native_case[
+            "fidelity_replacement_cross_stream_conflict_target_count"
+        ],
+        "structure_fidelity_replacement_cross_stream_conflict_target_count": structure_case[
+            "fidelity_replacement_cross_stream_conflict_target_count"
+        ],
+        "fidelity_replacement_cross_stream_conflict_target_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_cross_stream_conflict_target_count",
+        ),
         "native_fidelity_replacement_overflow_count": native_case["fidelity_replacement_overflow_count"],
         "structure_fidelity_replacement_overflow_count": structure_case["fidelity_replacement_overflow_count"],
         "fidelity_replacement_overflow_delta": _numeric_delta(
@@ -452,6 +474,12 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         ),
         "total_fidelity_replacement_conflict_delta": sum(
             int(values["fidelity_replacement_conflict_delta"] or 0) for values in comparisons
+        ),
+        "total_fidelity_replacement_same_stream_conflict_target_delta": sum(
+            int(values["fidelity_replacement_same_stream_conflict_target_delta"] or 0) for values in comparisons
+        ),
+        "total_fidelity_replacement_cross_stream_conflict_target_delta": sum(
+            int(values["fidelity_replacement_cross_stream_conflict_target_delta"] or 0) for values in comparisons
         ),
         "total_fidelity_replacement_overflow_delta": sum(
             int(values["fidelity_replacement_overflow_delta"] or 0) for values in comparisons
@@ -575,6 +603,12 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_fidelity_replacement_conflict_count",
         "structure_fidelity_replacement_conflict_count",
         "fidelity_replacement_conflict_delta",
+        "native_fidelity_replacement_same_stream_conflict_target_count",
+        "structure_fidelity_replacement_same_stream_conflict_target_count",
+        "fidelity_replacement_same_stream_conflict_target_delta",
+        "native_fidelity_replacement_cross_stream_conflict_target_count",
+        "structure_fidelity_replacement_cross_stream_conflict_target_count",
+        "fidelity_replacement_cross_stream_conflict_target_delta",
         "native_fidelity_replacement_overflow_count",
         "structure_fidelity_replacement_overflow_count",
         "fidelity_replacement_overflow_delta",
@@ -952,9 +986,27 @@ def _run_case(
         "fidelity_replacement_conflict_target_count": replacement_stats[
             "fidelity_replacement_conflict_target_count"
         ],
+        "fidelity_replacement_same_stream_conflict_target_count": replacement_stats[
+            "fidelity_replacement_same_stream_conflict_target_count"
+        ],
+        "fidelity_replacement_cross_stream_conflict_target_count": replacement_stats[
+            "fidelity_replacement_cross_stream_conflict_target_count"
+        ],
         "fidelity_replacement_min_fit_scale": replacement_stats["fidelity_replacement_min_fit_scale"],
         "fidelity_replacement_mean_fit_scale": replacement_stats["fidelity_replacement_mean_fit_scale"],
         "fidelity_replacement_policy_counts": replacement_stats["fidelity_replacement_policy_counts"],
+        "fidelity_replacement_conflict_target_stream_type_counts": replacement_stats[
+            "fidelity_replacement_conflict_target_stream_type_counts"
+        ],
+        "fidelity_replacement_conflict_target_stream_id_counts": replacement_stats[
+            "fidelity_replacement_conflict_target_stream_id_counts"
+        ],
+        "fidelity_replacement_conflict_stream_type_pair_counts": replacement_stats[
+            "fidelity_replacement_conflict_stream_type_pair_counts"
+        ],
+        "fidelity_replacement_conflict_stream_id_pair_counts": replacement_stats[
+            "fidelity_replacement_conflict_stream_id_pair_counts"
+        ],
         "fidelity_replacement_stream_diagnostics": replacement_stats[
             "fidelity_replacement_stream_diagnostics"
         ],
@@ -1430,6 +1482,12 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
     stream_id_counts: Counter[str] = Counter()
     stream_id_overflow_counts: Counter[str] = Counter()
     stream_id_conflict_counts: Counter[str] = Counter()
+    conflict_target_stream_type_counts: Counter[str] = Counter()
+    conflict_target_stream_id_counts: Counter[str] = Counter()
+    conflict_stream_type_pair_counts: Counter[str] = Counter()
+    conflict_stream_id_pair_counts: Counter[str] = Counter()
+    same_stream_conflict_target_count = 0
+    cross_stream_conflict_target_count = 0
     for page in document.pages:
         page_geometries = page_replacement_geometries(page, "fidelity")
         elements_by_id = {element.id: element for element in page.elements}
@@ -1462,6 +1520,12 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
                     "overflow_count": 0,
                     "conflict_count": 0,
                     "conflict_target_count": 0,
+                    "same_stream_conflict_target_count": 0,
+                    "cross_stream_conflict_target_count": 0,
+                    "conflict_target_stream_type_counts": Counter(),
+                    "conflict_target_stream_id_counts": Counter(),
+                    "conflict_stream_type_pair_counts": Counter(),
+                    "conflict_stream_id_pair_counts": Counter(),
                     "fit_scales": [],
                 },
             )
@@ -1472,6 +1536,25 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
             if fit_scale_float is not None:
                 group["fit_scales"].append(fit_scale_float)
 
+            for target_id in _replacement_conflict_ids(geometry):
+                target = elements_by_id.get(target_id)
+                target_stream_id, target_stream_type = _replacement_stream_metadata(target)
+                type_pair = f"{stream_type}=>{target_stream_type}"
+                id_pair = f"{stream_id}=>{target_stream_id}"
+                same_stream = stream_id == target_stream_id and stream_type == target_stream_type
+                same_stream_conflict_target_count += int(same_stream)
+                cross_stream_conflict_target_count += int(not same_stream)
+                conflict_target_stream_type_counts[target_stream_type] += 1
+                conflict_target_stream_id_counts[target_stream_id] += 1
+                conflict_stream_type_pair_counts[type_pair] += 1
+                conflict_stream_id_pair_counts[id_pair] += 1
+                group["same_stream_conflict_target_count"] += int(same_stream)
+                group["cross_stream_conflict_target_count"] += int(not same_stream)
+                group["conflict_target_stream_type_counts"][target_stream_type] += 1
+                group["conflict_target_stream_id_counts"][target_stream_id] += 1
+                group["conflict_stream_type_pair_counts"][type_pair] += 1
+                group["conflict_stream_id_pair_counts"][id_pair] += 1
+
     fit_scales = [float(geometry["fit_scale"]) for geometry in geometries if geometry.get("fit_scale") is not None]
     policy_counts = Counter(str(geometry.get("policy") or "unknown") for geometry in geometries)
     conflict_target_count = sum(_replacement_conflict_target_count(geometry) for geometry in geometries)
@@ -1480,9 +1563,21 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
         "fidelity_replacement_overflow_count": sum(1 for geometry in geometries if bool(geometry.get("overflow"))),
         "fidelity_replacement_conflict_count": sum(1 for geometry in geometries if bool(geometry.get("conflict"))),
         "fidelity_replacement_conflict_target_count": conflict_target_count,
+        "fidelity_replacement_same_stream_conflict_target_count": same_stream_conflict_target_count,
+        "fidelity_replacement_cross_stream_conflict_target_count": cross_stream_conflict_target_count,
         "fidelity_replacement_min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
         "fidelity_replacement_mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
         "fidelity_replacement_policy_counts": dict(sorted(policy_counts.items())),
+        "fidelity_replacement_conflict_target_stream_type_counts": dict(
+            sorted(conflict_target_stream_type_counts.items())
+        ),
+        "fidelity_replacement_conflict_target_stream_id_counts": dict(
+            sorted(conflict_target_stream_id_counts.items())
+        ),
+        "fidelity_replacement_conflict_stream_type_pair_counts": dict(
+            sorted(conflict_stream_type_pair_counts.items())
+        ),
+        "fidelity_replacement_conflict_stream_id_pair_counts": dict(sorted(conflict_stream_id_pair_counts.items())),
         "fidelity_replacement_stream_diagnostics": _replacement_stream_diagnostics(stream_groups),
         "fidelity_replacement_stream_type_counts": dict(sorted(stream_type_counts.items())),
         "fidelity_replacement_stream_type_overflow_counts": dict(sorted(stream_type_overflow_counts.items())),
@@ -1499,9 +1594,15 @@ def _empty_fidelity_replacement_stats() -> dict[str, Any]:
         "fidelity_replacement_overflow_count": 0,
         "fidelity_replacement_conflict_count": 0,
         "fidelity_replacement_conflict_target_count": 0,
+        "fidelity_replacement_same_stream_conflict_target_count": 0,
+        "fidelity_replacement_cross_stream_conflict_target_count": 0,
         "fidelity_replacement_min_fit_scale": None,
         "fidelity_replacement_mean_fit_scale": None,
         "fidelity_replacement_policy_counts": {},
+        "fidelity_replacement_conflict_target_stream_type_counts": {},
+        "fidelity_replacement_conflict_target_stream_id_counts": {},
+        "fidelity_replacement_conflict_stream_type_pair_counts": {},
+        "fidelity_replacement_conflict_stream_id_pair_counts": {},
         "fidelity_replacement_stream_diagnostics": [],
         "fidelity_replacement_stream_type_counts": {},
         "fidelity_replacement_stream_type_overflow_counts": {},
@@ -1520,8 +1621,14 @@ def _replacement_stream_metadata(element: ElementIR | None) -> tuple[str, str]:
 
 
 def _replacement_conflict_target_count(geometry: dict[str, object]) -> int:
+    return len(_replacement_conflict_ids(geometry))
+
+
+def _replacement_conflict_ids(geometry: dict[str, object]) -> list[str]:
     conflict_ids = geometry.get("conflict_ids")
-    return len(conflict_ids) if isinstance(conflict_ids, list) else 0
+    if not isinstance(conflict_ids, list):
+        return []
+    return [str(conflict_id) for conflict_id in conflict_ids]
 
 
 def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1537,6 +1644,14 @@ def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], di
                 "overflow_count": int(group["overflow_count"]),
                 "conflict_count": int(group["conflict_count"]),
                 "conflict_target_count": int(group["conflict_target_count"]),
+                "same_stream_conflict_target_count": int(group["same_stream_conflict_target_count"]),
+                "cross_stream_conflict_target_count": int(group["cross_stream_conflict_target_count"]),
+                "conflict_target_stream_type_counts": dict(
+                    sorted(group["conflict_target_stream_type_counts"].items())
+                ),
+                "conflict_target_stream_id_counts": dict(sorted(group["conflict_target_stream_id_counts"].items())),
+                "conflict_stream_type_pair_counts": dict(sorted(group["conflict_stream_type_pair_counts"].items())),
+                "conflict_stream_id_pair_counts": dict(sorted(group["conflict_stream_id_pair_counts"].items())),
                 "min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
                 "mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
             }
@@ -2645,6 +2760,12 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_fidelity_replacement_conflict_targets": sum(
             int(case["fidelity_replacement_conflict_target_count"]) for case in cases
         ),
+        "total_fidelity_replacement_same_stream_conflict_targets": sum(
+            int(case["fidelity_replacement_same_stream_conflict_target_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_cross_stream_conflict_targets": sum(
+            int(case["fidelity_replacement_cross_stream_conflict_target_count"]) for case in cases
+        ),
         "min_fidelity_replacement_fit_scale": _min_optional_case_float(cases, "fidelity_replacement_min_fit_scale"),
         "mean_fidelity_replacement_fit_scale": _weighted_optional_case_mean(
             cases,
@@ -2652,6 +2773,18 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
             weight_key="fidelity_replacement_element_count",
         ),
         "fidelity_replacement_policy_counts": _sum_case_count_dicts(cases, "fidelity_replacement_policy_counts"),
+        "fidelity_replacement_conflict_target_stream_type_counts": _sum_case_count_dicts(
+            cases, "fidelity_replacement_conflict_target_stream_type_counts"
+        ),
+        "fidelity_replacement_conflict_target_stream_id_counts": _sum_case_count_dicts(
+            cases, "fidelity_replacement_conflict_target_stream_id_counts"
+        ),
+        "fidelity_replacement_conflict_stream_type_pair_counts": _sum_case_count_dicts(
+            cases, "fidelity_replacement_conflict_stream_type_pair_counts"
+        ),
+        "fidelity_replacement_conflict_stream_id_pair_counts": _sum_case_count_dicts(
+            cases, "fidelity_replacement_conflict_stream_id_pair_counts"
+        ),
         "fidelity_replacement_stream_type_counts": _sum_case_count_dicts(
             cases, "fidelity_replacement_stream_type_counts"
         ),
@@ -2861,9 +2994,15 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "fidelity_replacement_overflow_count",
         "fidelity_replacement_conflict_count",
         "fidelity_replacement_conflict_target_count",
+        "fidelity_replacement_same_stream_conflict_target_count",
+        "fidelity_replacement_cross_stream_conflict_target_count",
         "fidelity_replacement_min_fit_scale",
         "fidelity_replacement_mean_fit_scale",
         "fidelity_replacement_policy_counts",
+        "fidelity_replacement_conflict_target_stream_type_counts",
+        "fidelity_replacement_conflict_target_stream_id_counts",
+        "fidelity_replacement_conflict_stream_type_pair_counts",
+        "fidelity_replacement_conflict_stream_id_pair_counts",
         "fidelity_replacement_stream_diagnostics",
         "fidelity_replacement_stream_type_counts",
         "fidelity_replacement_stream_type_overflow_counts",

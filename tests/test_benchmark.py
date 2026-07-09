@@ -304,9 +304,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert report["summary"]["total_fidelity_replacement_overflows"] == 0
     assert report["summary"]["total_fidelity_replacement_conflicts"] == 0
     assert report["summary"]["total_fidelity_replacement_conflict_targets"] == 0
+    assert report["summary"]["total_fidelity_replacement_same_stream_conflict_targets"] == 0
+    assert report["summary"]["total_fidelity_replacement_cross_stream_conflict_targets"] == 0
     assert report["summary"]["min_fidelity_replacement_fit_scale"] is None
     assert report["summary"]["mean_fidelity_replacement_fit_scale"] is None
     assert report["summary"]["fidelity_replacement_policy_counts"] == {}
+    assert report["summary"]["fidelity_replacement_conflict_stream_type_pair_counts"] == {}
     assert "layout_region_counts" in report["summary"]
     assert "total_table_regions" in report["summary"]
     assert "total_raster_fallbacks" in report["summary"]
@@ -932,6 +935,9 @@ def test_benchmark_translation_stress_populates_translated_text_and_replacement_
     assert case["translation_stress_char_expansion_ratio"] > 1
     assert case["fidelity_replacement_element_count"] == case["translation_stress_element_count"]
     assert case["fidelity_replacement_mean_fit_scale"] is not None
+    assert "fidelity_replacement_same_stream_conflict_target_count" in case
+    assert "fidelity_replacement_cross_stream_conflict_target_count" in case
+    assert "fidelity_replacement_conflict_stream_type_pair_counts" in case
     assert case["fidelity_replacement_stream_diagnostics"]
     assert case["fidelity_replacement_stream_type_counts"]
     assert case["fidelity_replacement_stream_id_counts"]
@@ -942,9 +948,13 @@ def test_benchmark_translation_stress_populates_translated_text_and_replacement_
     ]
     assert report["summary"]["fidelity_replacement_stream_type_counts"]
     assert report["summary"]["fidelity_replacement_stream_id_counts"]
+    assert "fidelity_replacement_conflict_stream_type_pair_counts" in report["summary"]
     assert any(element.translated_text for page in ir.pages for element in page.elements)
     assert "translation_stress_char_expansion_ratio" in csv_text
     assert "fidelity_replacement_conflict_count" in csv_text
+    assert "fidelity_replacement_same_stream_conflict_target_count" in csv_text
+    assert "fidelity_replacement_cross_stream_conflict_target_count" in csv_text
+    assert "fidelity_replacement_conflict_stream_type_pair_counts" in csv_text
     assert "fidelity_replacement_stream_type_conflict_counts" in csv_text
 
 
@@ -968,6 +978,17 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
         bbox_px=BBox(x0=91, y0=10, x1=130, y1=24),
         source_text="Next",
         style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+        metadata={"reading_order_stream_id": "body-main", "reading_order_stream_type": "body"},
+    )
+    same_stream_neighbor = ElementIR(
+        id="same_neighbor",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=75, y0=10, x1=88, y1=24),
+        bbox_px=BBox(x0=75, y0=10, x1=88, y1=24),
+        source_text="Same",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+        metadata={"reading_order_stream_id": "grid-island-001", "reading_order_stream_type": "grid-island"},
     )
     body_replacement = ElementIR(
         id="body_replace",
@@ -995,7 +1016,7 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
                 scale_x=1,
                 scale_y=1,
                 background_image="page.png",
-                elements=[replacement, neighbor, body_replacement],
+                elements=[replacement, same_stream_neighbor, neighbor, body_replacement],
             )
         ],
     )
@@ -1005,10 +1026,25 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
 
     assert stats["fidelity_replacement_element_count"] == 2
     assert stats["fidelity_replacement_conflict_count"] == 1
-    assert stats["fidelity_replacement_conflict_target_count"] == 1
+    assert stats["fidelity_replacement_conflict_target_count"] == 2
+    assert stats["fidelity_replacement_same_stream_conflict_target_count"] == 1
+    assert stats["fidelity_replacement_cross_stream_conflict_target_count"] == 1
     assert stats["fidelity_replacement_min_fit_scale"] < 1
     assert stats["fidelity_replacement_mean_fit_scale"] > stats["fidelity_replacement_min_fit_scale"]
     assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v1": 2}
+    assert stats["fidelity_replacement_conflict_target_stream_type_counts"] == {"body": 1, "grid-island": 1}
+    assert stats["fidelity_replacement_conflict_target_stream_id_counts"] == {
+        "body-main": 1,
+        "grid-island-001": 1,
+    }
+    assert stats["fidelity_replacement_conflict_stream_type_pair_counts"] == {
+        "grid-island=>body": 1,
+        "grid-island=>grid-island": 1,
+    }
+    assert stats["fidelity_replacement_conflict_stream_id_pair_counts"] == {
+        "grid-island-001=>body-main": 1,
+        "grid-island-001=>grid-island-001": 1,
+    }
     assert stats["fidelity_replacement_stream_type_counts"] == {"body": 1, "grid-island": 1}
     assert stats["fidelity_replacement_stream_type_conflict_counts"] == {"grid-island": 1}
     assert stats["fidelity_replacement_stream_id_counts"] == {"body-main": 1, "grid-island-001": 1}
@@ -1019,7 +1055,14 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
     }
     assert diagnostics["body-main"]["conflict_count"] == 0
     assert diagnostics["grid-island-001"]["conflict_count"] == 1
-    assert diagnostics["grid-island-001"]["conflict_target_count"] == 1
+    assert diagnostics["grid-island-001"]["conflict_target_count"] == 2
+    assert diagnostics["grid-island-001"]["same_stream_conflict_target_count"] == 1
+    assert diagnostics["grid-island-001"]["cross_stream_conflict_target_count"] == 1
+    assert diagnostics["grid-island-001"]["conflict_target_stream_type_counts"] == {"body": 1, "grid-island": 1}
+    assert diagnostics["grid-island-001"]["conflict_stream_type_pair_counts"] == {
+        "grid-island=>body": 1,
+        "grid-island=>grid-island": 1,
+    }
     assert structured_stats["fidelity_replacement_element_count"] == 0
     assert structured_stats["fidelity_replacement_stream_diagnostics"] == []
 
@@ -1226,6 +1269,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "semantic_external_structure_successor_accuracy" not in csv_text
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
+    assert "fidelity_replacement_same_stream_conflict_target_delta" in csv_text
+    assert "fidelity_replacement_cross_stream_conflict_target_delta" in csv_text
     assert "semantic_stream_assignment_id_accuracy_delta" in csv_text
     assert "semantic_stream_assignment_type_accuracy_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
@@ -1246,6 +1291,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["total_structure_evidence_relation_stream_conflicts"] == 0
     assert report["summary"]["total_structure_evidence_relation_reordered_pages"] == 0
     assert report["summary"]["total_structure_evidence_order_reordered_pages"] >= 0
+    assert "total_fidelity_replacement_same_stream_conflict_target_delta" in report["summary"]
+    assert "total_fidelity_replacement_cross_stream_conflict_target_delta" in report["summary"]
     assert report["summary"]["total_structure_evidence_matched_elements"] == comparison[
         "structure_evidence_matched_element_count"
     ]
