@@ -2929,8 +2929,11 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "semantic_stream_assignment_found_count",
         "semantic_stream_assignment_missing_count",
         "semantic_stream_assignment_id_correct_count",
+        "semantic_stream_assignment_id_mismatch_count",
         "semantic_stream_assignment_type_correct_count",
         "semantic_stream_assignment_type_total_count",
+        "semantic_stream_assignment_type_mismatch_count",
+        "semantic_stream_assignment_type_confusion_counts",
         "semantic_stream_assignment_id_accuracy",
         "semantic_stream_assignment_type_accuracy",
         "semantic_candidate_order_metrics",
@@ -3443,6 +3446,11 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         )
         if available
         else 0,
+        "semantic_stream_assignment_id_mismatch_count": report.get(
+            "semantic_stream_assignment_id_mismatch_count"
+        )
+        if available
+        else 0,
         "semantic_stream_assignment_type_correct_count": report.get(
             "semantic_stream_assignment_type_correct_count"
         )
@@ -3453,6 +3461,16 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
         )
         if available
         else 0,
+        "semantic_stream_assignment_type_mismatch_count": report.get(
+            "semantic_stream_assignment_type_mismatch_count"
+        )
+        if available
+        else 0,
+        "semantic_stream_assignment_type_confusion_counts": report.get(
+            "semantic_stream_assignment_type_confusion_counts"
+        )
+        if available
+        else {},
         "semantic_stream_assignment_id_accuracy": report.get("semantic_stream_assignment_id_accuracy")
         if available
         else None,
@@ -3717,8 +3735,11 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             "total_semantic_stream_assignment_found_count": 0,
             "total_semantic_stream_assignment_missing_count": 0,
             "total_semantic_stream_assignment_id_correct_count": 0,
+            "total_semantic_stream_assignment_id_mismatch_count": 0,
             "total_semantic_stream_assignment_type_correct_count": 0,
             "total_semantic_stream_assignment_type_count": 0,
+            "total_semantic_stream_assignment_type_mismatch_count": 0,
+            "semantic_stream_assignment_type_confusion_counts": {},
             "total_semantic_ignored_text_count": 0,
             "total_semantic_ignored_text_zone_counts": {},
             "total_semantic_ignored_text_role_counts": {},
@@ -3826,8 +3847,18 @@ def _summarize_semantic_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             int(case["semantic_stream_assignment_missing_count"]) for case in cases
         ),
         "total_semantic_stream_assignment_id_correct_count": stream_assignment_id_correct,
+        "total_semantic_stream_assignment_id_mismatch_count": sum(
+            int(case["semantic_stream_assignment_id_mismatch_count"]) for case in cases
+        ),
         "total_semantic_stream_assignment_type_correct_count": stream_assignment_type_correct,
         "total_semantic_stream_assignment_type_count": stream_assignment_type_total,
+        "total_semantic_stream_assignment_type_mismatch_count": sum(
+            int(case["semantic_stream_assignment_type_mismatch_count"]) for case in cases
+        ),
+        "semantic_stream_assignment_type_confusion_counts": _sum_case_count_dicts(
+            cases,
+            "semantic_stream_assignment_type_confusion_counts",
+        ),
         "total_semantic_ignored_text_count": sum(int(case["semantic_ignored_text_count"]) for case in cases),
         "total_semantic_ignored_text_zone_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_zone_counts"),
         "total_semantic_ignored_text_role_counts": _sum_case_count_dicts(cases, "semantic_ignored_text_role_counts"),

@@ -551,6 +551,7 @@ def _stream_quality(
     assignment_id_correct_total = 0
     assignment_type_correct_total = 0
     assignment_type_total = 0
+    assignment_type_confusion_counts: Counter[str] = Counter()
     missing_labels: set[str] = set()
     for stream in reading_streams:
         labels = [str(text).strip() for text in stream.get("labels", []) if str(text).strip()]
@@ -579,6 +580,7 @@ def _stream_quality(
         assignment_id_correct_total += int(assignment_report.get("assignment_id_correct_count") or 0)
         assignment_type_correct_total += int(assignment_report.get("assignment_type_correct_count") or 0)
         assignment_type_total += int(assignment_report.get("assignment_type_total_count") or 0)
+        assignment_type_confusion_counts.update(assignment_report.get("assignment_type_confusion_counts") or {})
         stream_reports.append(
             {
                 "stream_id": stream.get("stream_id"),
@@ -614,8 +616,11 @@ def _stream_quality(
                 "stream_assignment_found_count": assignment_found_total,
                 "stream_assignment_missing_count": assignment_label_total - assignment_found_total,
                 "stream_assignment_id_correct_count": assignment_id_correct_total,
+                "stream_assignment_id_mismatch_count": assignment_found_total - assignment_id_correct_total,
                 "stream_assignment_type_correct_count": assignment_type_correct_total,
                 "stream_assignment_type_total_count": assignment_type_total,
+                "stream_assignment_type_mismatch_count": assignment_type_total - assignment_type_correct_total,
+                "stream_assignment_type_confusion_counts": dict(sorted(assignment_type_confusion_counts.items())),
                 "stream_assignment_id_accuracy": _optional_ratio(
                     assignment_id_correct_total,
                     assignment_found_total,
@@ -643,6 +648,7 @@ def _stream_assignment_quality(
     type_total_count = 0
     missing_texts: list[str] = []
     mismatches: list[dict[str, Any]] = []
+    type_confusion_counts: Counter[str] = Counter()
     for label in labels:
         element = elements_by_text.get(label)
         if element is None:
@@ -660,6 +666,8 @@ def _stream_assignment_quality(
             type_total_count += 1
         if type_correct:
             type_correct_count += 1
+        elif expected_stream_type != "unknown":
+            type_confusion_counts[f"{expected_stream_type}=>{actual_stream_type}"] += 1
         if not id_correct or (expected_stream_type != "unknown" and not type_correct):
             mismatches.append(
                 {
@@ -676,8 +684,11 @@ def _stream_assignment_quality(
         "assignment_missing_count": len(missing_texts),
         "assignment_missing_texts": missing_texts,
         "assignment_id_correct_count": id_correct_count,
+        "assignment_id_mismatch_count": found_count - id_correct_count,
         "assignment_type_correct_count": type_correct_count,
         "assignment_type_total_count": type_total_count,
+        "assignment_type_mismatch_count": type_total_count - type_correct_count,
+        "assignment_type_confusion_counts": dict(sorted(type_confusion_counts.items())),
         "assignment_id_accuracy": _optional_ratio(id_correct_count, found_count),
         "assignment_type_accuracy": _optional_ratio(type_correct_count, type_total_count),
         "assignment_mismatches": mismatches,
@@ -1056,6 +1067,7 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
     stream_assignment_id_correct = sum(int(page.get("stream_assignment_id_correct_count") or 0) for page in pages)
     stream_assignment_type_correct = sum(int(page.get("stream_assignment_type_correct_count") or 0) for page in pages)
     stream_assignment_type_total = sum(int(page.get("stream_assignment_type_total_count") or 0) for page in pages)
+    stream_assignment_type_confusion_counts = _sum_page_count_dicts(pages, "stream_assignment_type_confusion_counts")
     relation_missing_texts = sorted(
         {
             str(text)
@@ -1118,8 +1130,11 @@ def _summarize_pages(pages: list[dict[str, Any]]) -> dict[str, Any]:
         "semantic_stream_assignment_found_count": stream_assignment_found_count,
         "semantic_stream_assignment_missing_count": stream_assignment_label_count - stream_assignment_found_count,
         "semantic_stream_assignment_id_correct_count": stream_assignment_id_correct,
+        "semantic_stream_assignment_id_mismatch_count": stream_assignment_found_count - stream_assignment_id_correct,
         "semantic_stream_assignment_type_correct_count": stream_assignment_type_correct,
         "semantic_stream_assignment_type_total_count": stream_assignment_type_total,
+        "semantic_stream_assignment_type_mismatch_count": stream_assignment_type_total - stream_assignment_type_correct,
+        "semantic_stream_assignment_type_confusion_counts": stream_assignment_type_confusion_counts,
         "semantic_stream_assignment_id_accuracy": _optional_ratio(
             stream_assignment_id_correct,
             stream_assignment_found_count,

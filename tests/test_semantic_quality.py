@@ -586,15 +586,22 @@ def test_reading_stream_assignments_score_ir_stream_metadata(tmp_path: Path) -> 
     assert page["stream_assignment_found_count"] == 4
     assert page["stream_assignment_missing_count"] == 0
     assert page["stream_assignment_id_correct_count"] == 3
+    assert page["stream_assignment_id_mismatch_count"] == 1
     assert page["stream_assignment_type_correct_count"] == 3
     assert page["stream_assignment_type_total_count"] == 4
+    assert page["stream_assignment_type_mismatch_count"] == 1
+    assert page["stream_assignment_type_confusion_counts"] == {"sidebar-right=>body": 1}
     assert page["stream_assignment_id_accuracy"] == 0.75
     assert page["stream_assignment_type_accuracy"] == 0.75
     assert page["reading_streams"][0]["assignment_id_accuracy"] == 1
     assert page["reading_streams"][1]["assignment_id_accuracy"] == 0.5
     assert page["reading_streams"][1]["assignment_type_accuracy"] == 0.5
+    assert page["reading_streams"][1]["assignment_type_confusion_counts"] == {"sidebar-right=>body": 1}
     assert report["semantic_stream_assignment_label_count"] == 4
     assert report["semantic_stream_assignment_found_count"] == 4
+    assert report["semantic_stream_assignment_id_mismatch_count"] == 1
+    assert report["semantic_stream_assignment_type_mismatch_count"] == 1
+    assert report["semantic_stream_assignment_type_confusion_counts"] == {"sidebar-right=>body": 1}
     assert report["semantic_stream_assignment_id_accuracy"] == 0.75
     assert report["semantic_stream_assignment_type_accuracy"] == 0.75
 
