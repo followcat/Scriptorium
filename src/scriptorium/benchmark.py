@@ -148,6 +148,296 @@ def run_benchmark(
     return report
 
 
+def run_structure_ab_benchmark(
+    pdfs: list[str | Path],
+    out_dir: str | Path,
+    structure_jsons: list[str | Path],
+    dpi: int = 192,
+    max_pages: int | None = None,
+    font_profile: BenchmarkFontProfile = "browser-default",
+    raster_policy: RasterPolicy = "dense",
+    ocr_fallback: OcrFallback = "image-only",
+    ocr_language: str = "eng+chi_sim",
+    ocr_dpi: int = 144,
+    html_mode: BenchmarkHtmlMode = "structured",
+    font_size_scale: BenchmarkFontSizeScale = 1.0,
+    text_fit: BenchmarkTextFit = "none",
+    fidelity_background: BenchmarkFidelityBackground = "auto",
+) -> dict[str, Any]:
+    """Run native-only and native-plus-structure benchmarks, then compare them."""
+
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    native_dir = target / "native-only"
+    structure_dir = target / "native-plus-structure"
+    native_report = run_benchmark(
+        pdfs,
+        native_dir,
+        dpi=dpi,
+        max_pages=max_pages,
+        font_profile=font_profile,
+        raster_policy=raster_policy,
+        ocr_fallback=ocr_fallback,
+        ocr_language=ocr_language,
+        ocr_dpi=ocr_dpi,
+        html_mode=html_mode,
+        font_size_scale=font_size_scale,
+        text_fit=text_fit,
+        fidelity_background=fidelity_background,
+    )
+    structure_report = run_benchmark(
+        pdfs,
+        structure_dir,
+        dpi=dpi,
+        max_pages=max_pages,
+        structure_jsons=structure_jsons,
+        font_profile=font_profile,
+        raster_policy=raster_policy,
+        ocr_fallback=ocr_fallback,
+        ocr_language=ocr_language,
+        ocr_dpi=ocr_dpi,
+        html_mode=html_mode,
+        font_size_scale=font_size_scale,
+        text_fit=text_fit,
+        fidelity_background=fidelity_background,
+    )
+    comparisons = [
+        _structure_ab_case_comparison(native_case, structure_case)
+        for native_case, structure_case in zip(native_report["cases"], structure_report["cases"], strict=True)
+    ]
+    report = {
+        "version": 1,
+        "dpi": dpi,
+        "max_pages": _max_pages_request(max_pages),
+        "font_profile": font_profile,
+        "raster_policy": raster_policy,
+        "ocr_fallback": ocr_fallback,
+        "ocr_language": ocr_language,
+        "ocr_dpi": ocr_dpi,
+        "html_mode": _html_mode_request(html_mode),
+        "font_size_scale": _font_size_scale_request(font_size_scale),
+        "text_fit": _text_fit_request(text_fit),
+        "fidelity_background": _fidelity_background_request(fidelity_background),
+        "case_count": len(comparisons),
+        "native_report": str(native_dir / "benchmark_report.json"),
+        "native_csv": str(native_dir / "benchmark_summary.csv"),
+        "structure_report": str(structure_dir / "benchmark_report.json"),
+        "structure_csv": str(structure_dir / "benchmark_summary.csv"),
+        "summary": _summarize_structure_ab_comparisons(comparisons),
+        "cases": comparisons,
+    }
+    (target / "structure_ab_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _write_structure_ab_csv(target / "structure_ab_summary.csv", comparisons)
+    return report
+
+
+def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: dict[str, Any]) -> dict[str, Any]:
+    native_page_needs = _recommendation_count(native_case, "reading_order_candidate_page_recommendation_counts")
+    structure_page_needs = _recommendation_count(structure_case, "reading_order_candidate_page_recommendation_counts")
+    native_stream_needs = _recommendation_count(native_case, "reading_order_candidate_stream_recommendation_counts")
+    structure_stream_needs = _recommendation_count(structure_case, "reading_order_candidate_stream_recommendation_counts")
+    native_page_review = _recommendation_count(
+        native_case,
+        "reading_order_candidate_page_recommendation_counts",
+        recommendations=("review-consensus", "review-disagreement"),
+    )
+    structure_page_review = _recommendation_count(
+        structure_case,
+        "reading_order_candidate_page_recommendation_counts",
+        recommendations=("review-consensus", "review-disagreement"),
+    )
+    native_stream_review = _recommendation_count(
+        native_case,
+        "reading_order_candidate_stream_recommendation_counts",
+        recommendations=("review-consensus", "review-disagreement"),
+    )
+    structure_stream_review = _recommendation_count(
+        structure_case,
+        "reading_order_candidate_stream_recommendation_counts",
+        recommendations=("review-consensus", "review-disagreement"),
+    )
+
+    return {
+        "name": structure_case["name"],
+        "source_pdf": structure_case["source_pdf"],
+        "native_ir": native_case["ir"],
+        "structure_ir": structure_case["ir"],
+        "native_visual_similarity": native_case["visual_similarity"],
+        "structure_visual_similarity": structure_case["visual_similarity"],
+        "visual_similarity_delta": _numeric_delta(structure_case, native_case, "visual_similarity"),
+        "native_reading_order_risk_score": native_case["reading_order_risk_score"],
+        "structure_reading_order_risk_score": structure_case["reading_order_risk_score"],
+        "reading_order_risk_score_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_risk_score",
+        ),
+        "native_grid_island_element_count": native_case["grid_island_element_count"],
+        "structure_grid_island_element_count": structure_case["grid_island_element_count"],
+        "grid_island_element_delta": _numeric_delta(structure_case, native_case, "grid_island_element_count"),
+        "structure_evidence_region_count": structure_case["structure_evidence_region_count"],
+        "structure_evidence_matched_element_count": structure_case["structure_evidence_matched_element_count"],
+        "structure_evidence_reordered_page_count": structure_case["structure_evidence_reordered_page_count"],
+        "native_page_needs_structure_evidence_count": native_page_needs,
+        "structure_page_needs_structure_evidence_count": structure_page_needs,
+        "page_needs_structure_evidence_delta": structure_page_needs - native_page_needs,
+        "native_stream_needs_structure_evidence_count": native_stream_needs,
+        "structure_stream_needs_structure_evidence_count": structure_stream_needs,
+        "stream_needs_structure_evidence_delta": structure_stream_needs - native_stream_needs,
+        "native_page_review_count": native_page_review,
+        "structure_page_review_count": structure_page_review,
+        "page_review_delta": structure_page_review - native_page_review,
+        "native_stream_review_count": native_stream_review,
+        "structure_stream_review_count": structure_stream_review,
+        "stream_review_delta": structure_stream_review - native_stream_review,
+        "box_flow_successor_disagreement_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_box_flow_successor_disagreement_count",
+        ),
+        "relation_graph_successor_disagreement_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_relation_graph_successor_disagreement_count",
+        ),
+        "successor_consensus_successor_disagreement_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_successor_consensus_successor_disagreement_count",
+        ),
+        "semantic_successor_accuracy_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_successor_accuracy",
+        ),
+        "semantic_stream_successor_accuracy_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_stream_successor_accuracy",
+        ),
+        "native_reading_order_stream_type_counts": native_case["reading_order_stream_type_counts"],
+        "structure_reading_order_stream_type_counts": structure_case["reading_order_stream_type_counts"],
+        "native_reading_order_candidate_page_recommendation_counts": native_case[
+            "reading_order_candidate_page_recommendation_counts"
+        ],
+        "structure_reading_order_candidate_page_recommendation_counts": structure_case[
+            "reading_order_candidate_page_recommendation_counts"
+        ],
+        "native_reading_order_candidate_stream_recommendation_counts": native_case[
+            "reading_order_candidate_stream_recommendation_counts"
+        ],
+        "structure_reading_order_candidate_stream_recommendation_counts": structure_case[
+            "reading_order_candidate_stream_recommendation_counts"
+        ],
+    }
+
+
+def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "case_count": len(comparisons),
+        "mean_visual_similarity_delta": _mean_optional(values["visual_similarity_delta"] for values in comparisons),
+        "mean_reading_order_risk_score_delta": _mean_optional(
+            values["reading_order_risk_score_delta"] for values in comparisons
+        ),
+        "total_grid_island_element_delta": sum(int(values["grid_island_element_delta"] or 0) for values in comparisons),
+        "total_structure_evidence_regions": sum(int(values["structure_evidence_region_count"]) for values in comparisons),
+        "total_structure_evidence_matched_elements": sum(
+            int(values["structure_evidence_matched_element_count"]) for values in comparisons
+        ),
+        "total_structure_evidence_reordered_pages": sum(
+            int(values["structure_evidence_reordered_page_count"]) for values in comparisons
+        ),
+        "total_page_needs_structure_evidence_delta": sum(
+            int(values["page_needs_structure_evidence_delta"]) for values in comparisons
+        ),
+        "total_stream_needs_structure_evidence_delta": sum(
+            int(values["stream_needs_structure_evidence_delta"]) for values in comparisons
+        ),
+        "total_page_review_delta": sum(int(values["page_review_delta"]) for values in comparisons),
+        "total_stream_review_delta": sum(int(values["stream_review_delta"]) for values in comparisons),
+        "cases_with_visual_regression": sum(
+            1 for values in comparisons if float(values["visual_similarity_delta"] or 0.0) < 0
+        ),
+        "cases_with_risk_improvement": sum(
+            1 for values in comparisons if float(values["reading_order_risk_score_delta"] or 0.0) < 0
+        ),
+        "cases_with_stream_needs_structure_improvement": sum(
+            1 for values in comparisons if int(values["stream_needs_structure_evidence_delta"]) < 0
+        ),
+    }
+
+
+def _recommendation_count(
+    case: dict[str, Any],
+    field: str,
+    recommendations: tuple[str, ...] = ("needs-structure-evidence",),
+) -> int:
+    counts = case.get(field) or {}
+    return sum(int(counts.get(recommendation) or 0) for recommendation in recommendations)
+
+
+def _numeric_delta(left: dict[str, Any], right: dict[str, Any], field: str) -> float | None:
+    left_value = left.get(field)
+    right_value = right.get(field)
+    if left_value is None or right_value is None:
+        return None
+    return round(float(left_value) - float(right_value), 8)
+
+
+def _mean_optional(values: Any) -> float | None:
+    present = [float(value) for value in values if value is not None]
+    if not present:
+        return None
+    return round(sum(present) / len(present), 8)
+
+
+def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> None:
+    fieldnames = [
+        "name",
+        "source_pdf",
+        "native_visual_similarity",
+        "structure_visual_similarity",
+        "visual_similarity_delta",
+        "native_reading_order_risk_score",
+        "structure_reading_order_risk_score",
+        "reading_order_risk_score_delta",
+        "native_grid_island_element_count",
+        "structure_grid_island_element_count",
+        "grid_island_element_delta",
+        "structure_evidence_region_count",
+        "structure_evidence_matched_element_count",
+        "structure_evidence_reordered_page_count",
+        "native_page_needs_structure_evidence_count",
+        "structure_page_needs_structure_evidence_count",
+        "page_needs_structure_evidence_delta",
+        "native_stream_needs_structure_evidence_count",
+        "structure_stream_needs_structure_evidence_count",
+        "stream_needs_structure_evidence_delta",
+        "native_page_review_count",
+        "structure_page_review_count",
+        "page_review_delta",
+        "native_stream_review_count",
+        "structure_stream_review_count",
+        "stream_review_delta",
+        "box_flow_successor_disagreement_delta",
+        "relation_graph_successor_disagreement_delta",
+        "successor_consensus_successor_disagreement_delta",
+        "semantic_successor_accuracy_delta",
+        "semantic_stream_successor_accuracy_delta",
+        "native_reading_order_stream_type_counts",
+        "structure_reading_order_stream_type_counts",
+        "native_reading_order_candidate_page_recommendation_counts",
+        "structure_reading_order_candidate_page_recommendation_counts",
+        "native_reading_order_candidate_stream_recommendation_counts",
+        "structure_reading_order_candidate_stream_recommendation_counts",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for comparison in comparisons:
+            writer.writerow({field: comparison[field] for field in fieldnames})
+
+
 def _run_case(
     pdf_path: Path,
     out_dir: Path,

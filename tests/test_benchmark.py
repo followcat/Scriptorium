@@ -13,6 +13,7 @@ from scriptorium.benchmark import (
     _semantic_candidate_arbitration_metrics,
     _semantic_candidate_orders,
     run_benchmark,
+    run_structure_ab_benchmark,
 )
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
@@ -785,6 +786,60 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     ]
     assert "structure_evidence_matched_element_count" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
+
+
+def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Path) -> None:
+    pdfs = create_benchmark_fixtures(tmp_path / "fixtures")[:1]
+    structure_json = tmp_path / f"{pdfs[0].stem}.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "unit-pp-structure",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "parsing_res_list": [
+                            {
+                                "block_label": "product_grid",
+                                "block_bbox": [0, 0, 10000, 10000],
+                                "block_order": 1,
+                                "block_content": "",
+                                "confidence": 0.9,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_structure_ab_benchmark(
+        pdfs,
+        tmp_path / "structure-ab",
+        [structure_json],
+        dpi=96,
+    )
+    comparison = report["cases"][0]
+    csv_text = (tmp_path / "structure-ab" / "structure_ab_summary.csv").read_text(encoding="utf-8")
+
+    assert report["case_count"] == 1
+    assert (tmp_path / "structure-ab" / "native-only" / "benchmark_report.json").exists()
+    assert (tmp_path / "structure-ab" / "native-plus-structure" / "benchmark_report.json").exists()
+    assert report["native_report"].endswith("native-only/benchmark_report.json")
+    assert report["structure_report"].endswith("native-plus-structure/benchmark_report.json")
+    assert comparison["structure_evidence_region_count"] == 1
+    assert comparison["structure_evidence_matched_element_count"] > 0
+    assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
+    assert "visual_similarity_delta" in comparison
+    assert "stream_needs_structure_evidence_delta" in comparison
+    assert "semantic_external_structure_successor_accuracy" not in csv_text
+    assert "structure_evidence_matched_element_count" in csv_text
+    assert "grid_island_element_delta" in csv_text
+    assert report["summary"]["total_structure_evidence_regions"] == 1
+    assert report["summary"]["total_structure_evidence_matched_elements"] == comparison[
+        "structure_evidence_matched_element_count"
+    ]
 
 
 def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int]]) -> DocumentIR:

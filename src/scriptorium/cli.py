@@ -6,7 +6,14 @@ from typing import Literal, Optional
 import typer
 
 from .annotations import annotate_document
-from .benchmark import BenchmarkFidelityBackground, BenchmarkFontProfile, BenchmarkHtmlMode, BenchmarkTextFit, run_benchmark
+from .benchmark import (
+    BenchmarkFidelityBackground,
+    BenchmarkFontProfile,
+    BenchmarkHtmlMode,
+    BenchmarkTextFit,
+    run_benchmark,
+    run_structure_ab_benchmark,
+)
 from .fixture import create_fixture
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
@@ -144,6 +151,96 @@ def benchmark_command(
     typer.echo(f"OCR text elements: {report['summary'].get('total_ocr_text_elements')}")
     typer.echo(f"Structure evidence regions: {report['summary'].get('total_structure_evidence_regions')}")
     typer.echo(f"Structure evidence matched elements: {report['summary'].get('total_structure_evidence_matched_elements')}")
+
+
+@app.command("benchmark-structure-ab")
+def benchmark_structure_ab_command(
+    pdf: list[Path] = typer.Argument(..., help="PDF files to compare with and without structure evidence."),
+    out_dir: Path = typer.Option(Path("outputs/structure-ab"), help="A/B benchmark output directory."),
+    structure_json: list[Path] = typer.Option(
+        ...,
+        "--structure-json",
+        exists=True,
+        readable=True,
+        help="PaddleOCR-VL/PP-StructureV3/Docling JSON evidence. Pass files in PDF order or use matching names.",
+    ),
+    dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
+    max_pages: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Limit each benchmark PDF to the first N pages for large external documents.",
+    ),
+    font_profile: BenchmarkFontProfile = typer.Option(
+        "browser-default",
+        help="CSS font fallback profile for native PDF text, or auto.",
+    ),
+    raster_policy: RasterPolicy = typer.Option(
+        "dense",
+        help="Native raster fallback policy: none, dense, or tables.",
+    ),
+    ocr_fallback: OcrFallback = typer.Option(
+        "image-only",
+        help="OCR fallback policy for native extraction: off or image-only.",
+    ),
+    ocr_language: str = typer.Option(
+        "eng+chi_sim",
+        help="Tesseract language list for image-only OCR fallback.",
+    ),
+    ocr_dpi: int = typer.Option(
+        144,
+        min=72,
+        max=600,
+        help="OCR render DPI used only by the image-only fallback.",
+    ),
+    html_mode: BenchmarkHtmlMode = typer.Option(
+        "structured",
+        help="HTML mode to score: structured, fidelity, or auto.",
+    ),
+    font_size_scale: str = typer.Option(
+        "1.0",
+        help="Global CSS font-size multiplier for visual calibration experiments, or auto.",
+    ),
+    text_fit: BenchmarkTextFit = typer.Option(
+        "none",
+        help="Structured text fitting strategy: none, svg, or auto.",
+    ),
+    fidelity_background: BenchmarkFidelityBackground = typer.Option(
+        "auto",
+        help="Fidelity background source: svg, raster, or auto.",
+    ),
+) -> None:
+    report = run_structure_ab_benchmark(
+        pdf,
+        out_dir,
+        structure_json,
+        dpi=dpi,
+        max_pages=max_pages,
+        font_profile=font_profile,
+        raster_policy=raster_policy,
+        ocr_fallback=ocr_fallback,
+        ocr_language=ocr_language,
+        ocr_dpi=ocr_dpi,
+        html_mode=html_mode,
+        font_size_scale=font_size_scale,
+        text_fit=text_fit,
+        fidelity_background=fidelity_background,
+    )
+    typer.echo(f"Structure A/B report: {out_dir / 'structure_ab_report.json'}")
+    typer.echo(f"Structure A/B CSV: {out_dir / 'structure_ab_summary.csv'}")
+    typer.echo(f"Native report: {report['native_report']}")
+    typer.echo(f"Native-plus-structure report: {report['structure_report']}")
+    typer.echo(f"Cases: {report['case_count']}")
+    typer.echo(f"Mean visual similarity delta: {report['summary'].get('mean_visual_similarity_delta')}")
+    typer.echo(f"Mean reading-order risk delta: {report['summary'].get('mean_reading_order_risk_score_delta')}")
+    typer.echo(f"Grid-island element delta: {report['summary'].get('total_grid_island_element_delta')}")
+    typer.echo(
+        "Stream needs-structure-evidence delta: "
+        f"{report['summary'].get('total_stream_needs_structure_evidence_delta')}"
+    )
+    typer.echo(
+        "Structure evidence matched elements: "
+        f"{report['summary'].get('total_structure_evidence_matched_elements')}"
+    )
 
 
 @app.command("capture-pdf")
