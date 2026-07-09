@@ -26,6 +26,7 @@ def test_image_source_renders_as_first_class_document_source(tmp_path: Path) -> 
     assert document.source == str(image_path.resolve())
     assert document.source_type == "image"
     assert document.source_path == str(image_path.resolve())
+    assert document.source_pdf is None
     assert document.page_count == 1
     assert document.pages[0].width_px == 320
     assert document.pages[0].width_pt == 240
@@ -123,6 +124,43 @@ def test_image_source_can_seed_text_from_structure_json_blocks(tmp_path: Path) -
     assert text.metadata["annotation"]["source_kind"] == "native-ocr"
     assert document.metadata["semantic_layer"]["driver"] == "structure-json"
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
+
+
+def test_image_source_roor_json_seeds_text_and_drives_semantic_order(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    structure_payload = {
+        "source": "roor",
+        "page_index": 0,
+        "document": [
+            {"id": 0, "box": [24, 28, 90, 48], "text": "A"},
+            {"id": 1, "box": [180, 28, 246, 48], "text": "C"},
+            {"id": 2, "box": [24, 70, 90, 90], "text": "B"},
+            {"id": 3, "box": [180, 70, 246, 90], "text": "D"},
+        ],
+        "ro_linkings": [[0, 2], [2, 1], [1, 3]],
+    }
+
+    document = normalize_ocr_to_ir(rendered, structure_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert [element.source_text for element in sorted(text_elements, key=lambda item: item.reading_order)] == [
+        "A",
+        "B",
+        "C",
+        "D",
+    ]
+    assert {element.type for element in text_elements} == {"text"}
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["semantic_layer"]["payload_kind"] == "structure-json"
+    assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"none": 4}
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert by_text["A"].metadata["external_structure_successor_ids"] == [by_text["B"].id]
+    assert "external_structure_order" not in by_text["A"].metadata
 
 
 def test_image_source_structure_relations_drive_semantic_order(tmp_path: Path) -> None:

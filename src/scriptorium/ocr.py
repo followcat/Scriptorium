@@ -193,6 +193,17 @@ def _semantic_payload_kind(payload: dict[str, Any]) -> str:
             "block_content",
             "block_label",
             "block_order",
+            "document",
+            "ro_linkings",
+            "successor_edges",
+            "successor_relations",
+            "reading_order_edges",
+            "reading_order_relations",
+            "reading_order_linkings",
+            "precedence_edges",
+            "order_edges",
+            "reading_streams",
+            "streams",
             "schema_name",
             "body",
             "prov",
@@ -262,10 +273,18 @@ def _group_ocr_elements_by_page(payload: dict[str, Any]) -> dict[int, list[dict[
 
 def _raw_page_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
-    for key in ("elements", "blocks", "parsing_res_list", "boxes"):
+    for key in ("document", "elements", "blocks", "parsing_res_list", "boxes"):
         value = payload.get(key)
         if isinstance(value, list):
-            collected.extend(item for item in value if isinstance(item, dict))
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                if key == "document":
+                    normalized = dict(item)
+                    normalized.setdefault("type", "text")
+                    collected.append(normalized)
+                else:
+                    collected.append(item)
     layout = payload.get("layout_det_res")
     if isinstance(layout, dict):
         boxes = layout.get("boxes")
@@ -277,7 +296,7 @@ def _raw_page_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def _normalize_raw_ocr_block(raw: dict[str, Any]) -> dict[str, Any] | None:
     normalized = dict(raw)
     if "bbox" not in normalized and "bbox_px" not in normalized and "bbox_pdf" not in normalized:
-        for key in ("block_bbox", "coordinate", "poly", "points"):
+        for key in ("block_bbox", "coordinate", "box", "layout_bbox", "poly", "points"):
             if key in raw:
                 normalized["bbox"] = _bbox_from_any(raw[key])
                 normalized.setdefault("bbox_unit", "px")

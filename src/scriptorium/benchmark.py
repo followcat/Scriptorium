@@ -85,11 +85,11 @@ def run_benchmark(
     text_fit_request = _text_fit_request(text_fit)
     fidelity_background_request = _fidelity_background_request(fidelity_background)
     translation_stress_request = _translation_stress_request(translation_stress)
-    input_pdfs = [Path(pdf) for pdf in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
-    structure_json_by_pdf = _structure_json_by_pdf(input_pdfs, structure_jsons or [])
+    input_sources = [Path(source) for source in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
+    structure_json_by_source = _structure_json_by_source(input_sources, structure_jsons or [])
 
     cases: list[dict[str, Any]] = []
-    for pdf_path in input_pdfs:
+    for source_path in input_sources:
         if (
             font_profile == "auto"
             or html_mode_request == "auto"
@@ -99,15 +99,15 @@ def run_benchmark(
         ):
             cases.append(
                 _run_calibrated_case(
-                    pdf_path,
-                    target / "cases" / pdf_path.stem,
+                    source_path,
+                    target / "cases" / source_path.stem,
                     dpi=dpi,
                     input_kind=input_kind,
                     image_dpi=image_dpi,
                     max_pages=max_pages_request,
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
-                    structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+                    structure_json=structure_json_by_source.get(source_path.resolve()),
                     raster_policy=raster_policy,
                     ocr_fallback=ocr_fallback,
                     ocr_language=ocr_language,
@@ -124,15 +124,15 @@ def run_benchmark(
             case_fidelity_background = _single_fidelity_background(html_mode_request, fidelity_background_request)
             cases.append(
                 _run_case(
-                    pdf_path,
-                    target / "cases" / pdf_path.stem,
+                    source_path,
+                    target / "cases" / source_path.stem,
                     dpi=dpi,
                     input_kind=input_kind,
                     image_dpi=image_dpi,
                     max_pages=max_pages_request,
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
-                    structure_json=structure_json_by_pdf.get(pdf_path.resolve()),
+                    structure_json=structure_json_by_source.get(source_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
                     ocr_fallback=ocr_fallback,
@@ -3239,38 +3239,38 @@ def _ocr_fallback_applied_page_count(document: DocumentIR) -> int:
     return _page_extraction_count(document, "ocr_fallback_status", "applied")
 
 
-def _structure_json_by_pdf(input_pdfs: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:
+def _structure_json_by_source(input_sources: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:
     if not structure_jsons:
         return {}
 
-    pdfs = [pdf.resolve() for pdf in input_pdfs]
+    sources = [source.resolve() for source in input_sources]
     paths = [Path(path).resolve() for path in structure_jsons]
-    if len(paths) == 1 and len(pdfs) == 1:
-        return {pdfs[0]: paths[0]}
-    if len(paths) == len(pdfs):
-        return dict(zip(pdfs, paths))
+    if len(paths) == 1 and len(sources) == 1:
+        return {sources[0]: paths[0]}
+    if len(paths) == len(sources):
+        return dict(zip(sources, paths))
 
-    pdf_keys: dict[str, Path] = {}
-    for pdf in pdfs:
-        pdf_keys[pdf.stem] = pdf
-        if pdf.parent.name:
-            pdf_keys[f"{pdf.parent.name}.{pdf.stem}"] = pdf
+    source_keys: dict[str, Path] = {}
+    for source in sources:
+        source_keys[source.stem] = source
+        if source.parent.name:
+            source_keys[f"{source.parent.name}.{source.stem}"] = source
 
     mapping: dict[Path, Path] = {}
     unmatched: list[Path] = []
     for path in paths:
-        pdf = pdf_keys.get(_structure_match_key(path))
-        if pdf is None:
+        source = source_keys.get(_structure_match_key(path))
+        if source is None:
             unmatched.append(path)
             continue
-        mapping[pdf] = path
+        mapping[source] = path
 
     if unmatched or len(mapping) != len(paths):
         names = ", ".join(str(path) for path in unmatched or paths)
         raise ValueError(
-            "Could not match structure JSON files to PDFs. "
-            "Pass one JSON for one PDF, pass the same number of PDFs and JSON files, "
-            f"or use matching names such as <pdf-stem>.structure.json. Unmatched: {names}"
+            "Could not match structure JSON files to sources. "
+            "Pass one JSON for one source, pass the same number of sources and JSON files, "
+            f"or use matching names such as <source-stem>.structure.json. Unmatched: {names}"
         )
     return mapping
 

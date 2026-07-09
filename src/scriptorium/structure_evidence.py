@@ -767,6 +767,10 @@ def _has_relation_edges(value: dict[str, Any]) -> bool:
     for key in (
         "successor_edges",
         "successor_relations",
+        "ro_linkings",
+        "reading_order_edges",
+        "reading_order_relations",
+        "reading_order_linkings",
         "precedence_edges",
         "order_edges",
         "relations",
@@ -783,7 +787,14 @@ def _iter_relation_edges(payload: dict[str, Any]) -> list[tuple[str, str, str, d
     edges.extend(
         ("successor", source, target, raw)
         for source, target, raw in _relation_edges_from_any(
-            _combined_relation_values(payload.get("successor_edges"), payload.get("successor_relations"))
+            _combined_relation_values(
+                payload.get("successor_edges"),
+                payload.get("successor_relations"),
+                payload.get("ro_linkings"),
+                payload.get("reading_order_edges"),
+                payload.get("reading_order_relations"),
+                payload.get("reading_order_linkings"),
+            )
         )
     )
     edges.extend(
@@ -844,10 +855,28 @@ def _relation_edges_from_any(values: list[Any]) -> list[tuple[str, str, dict[str
 def _relation_edge_from_any(value: Any) -> tuple[str, str, dict[str, Any]] | None:
     if isinstance(value, dict):
         source = _relation_endpoint(
-            value.get("source", value.get("from", value.get("src", value.get("before"))))
+            value.get(
+                "source",
+                value.get(
+                    "from",
+                    value.get(
+                        "src",
+                        value.get("before", value.get("head", value.get("source_id", value.get("from_id")))),
+                    ),
+                ),
+            )
         )
         target = _relation_endpoint(
-            value.get("target", value.get("to", value.get("dst", value.get("after"))))
+            value.get(
+                "target",
+                value.get(
+                    "to",
+                    value.get(
+                        "dst",
+                        value.get("after", value.get("tail", value.get("target_id", value.get("to_id")))),
+                    ),
+                ),
+            )
         )
         if source and target:
             return source, target, dict(value)
@@ -992,6 +1021,8 @@ def _slug_text(value: Any) -> str:
 
 
 def _has_blocks(value: dict[str, Any]) -> bool:
+    if isinstance(value.get("document"), list):
+        return True
     if isinstance(value.get("parsing_res_list"), list):
         return True
     if isinstance(value.get("blocks"), list):
@@ -1023,13 +1054,13 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
             elif isinstance(child_value, dict):
                 add_block(child_value, list_key=child_key, orderable=orderable)
 
-    for key in ("parsing_res_list", "blocks", "elements"):
+    for key in ("document", "parsing_res_list", "blocks", "elements"):
         value = page_payload.get(key)
         if isinstance(value, list):
             for block in value:
                 if not isinstance(block, dict):
                     continue
-                add_block(block, list_key=key, orderable=True)
+                add_block(block, list_key=key, orderable=key != "document")
     layout = page_payload.get("layout_det_res")
     if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
         for block in layout["boxes"]:
@@ -1116,6 +1147,8 @@ def _extract_label(raw: dict[str, Any]) -> str:
         value = raw.get(key)
         if value:
             return str(value)
+    if raw.get("_scriptorium_structure_list_key") == "document":
+        return "text"
     return "unknown"
 
 

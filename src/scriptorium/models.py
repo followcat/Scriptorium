@@ -131,14 +131,15 @@ class DocumentIR(BaseModel):
         if source is not None:
             data.setdefault("source", source)
             data.setdefault("source_path", source)
-            data.setdefault("source_pdf", source)
+            if data.get("source_type", "pdf") != "image":
+                data.setdefault("source_pdf", source)
         return data
 
     @model_validator(mode="after")
     def _sync_source_aliases(self) -> "DocumentIR":
         if self.source_path is None:
             self.source_path = self.source
-        if self.source_pdf is None:
+        if self.source_pdf is None and self.source_type == "pdf":
             self.source_pdf = self.source
         return self
 
