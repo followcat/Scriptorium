@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -160,6 +161,12 @@ def has_replacement_text(element: ElementIR, display_mode: DisplayMode) -> bool:
     return display_mode == "fidelity" and bool((element.translated_text or element.edited_text or "").strip())
 
 
+def replacement_geometry(element: ElementIR, page: PageIR, display_mode: DisplayMode) -> dict[str, object] | None:
+    if not has_replacement_text(element, display_mode):
+        return None
+    return _replacement_geometry_for_page(element, page, _replacement_candidates(page, display_mode))
+
+
 def _run_script(run: dict[str, object]) -> str:
     script = str(run.get("script") or "").strip()
     if script:
@@ -175,8 +182,10 @@ def _should_render_source_runs(element: ElementIR, display_mode: DisplayMode) ->
         return False
     if display_mode == "source":
         return True
-    if display_mode in {"structured", "edited", "fidelity"}:
+    if display_mode in {"structured", "edited"}:
         return element.edited_text is None
+    if display_mode == "fidelity":
+        return element.edited_text is None and element.translated_text is None
     if display_mode == "translated":
         return element.translated_text is None and element.edited_text is None
     return False
@@ -282,6 +291,7 @@ def _prepare_page_assets(
             shutil.copy2(background_source, background_target)
         background_rel = background_target.relative_to(assets_dir.parent).as_posix()
 
+    replacements = _replacement_candidates(page, display_mode)
     elements: list[dict[str, object]] = []
     for element in page.elements:
         crop_rel: str | None = None
@@ -293,7 +303,13 @@ def _prepare_page_assets(
                 if crop_source.resolve() != crop_target.resolve():
                     shutil.copy2(crop_source, crop_target)
                 crop_rel = crop_target.relative_to(assets_dir.parent).as_posix()
-        elements.append({"ir": element, "crop": crop_rel})
+        elements.append(
+            {
+                "ir": element,
+                "crop": crop_rel,
+                "replacement": _replacement_geometry_for_page(element, page, replacements),
+            }
+        )
 
     return {
         "ir": page,
@@ -312,3 +328,194 @@ def _background_source(
         if svg_source.exists():
             return svg_source
     return Path(page.background_image)
+
+
+def _replacement_candidates(page: PageIR, display_mode: DisplayMode) -> dict[str, dict[str, object]]:
+    if display_mode != "fidelity":
+        return {}
+
+    geometries: dict[str, dict[str, object]] = {}
+    for element in page.elements:
+        if not has_replacement_text(element, display_mode):
+            continue
+        geometry = _base_replacement_geometry(element, page)
+        if geometry is not None:
+            geometries[element.id] = geometry
+
+    for element in page.elements:
+        geometry = geometries.get(element.id)
+        if geometry is None:
+            continue
+        conflict_ids = _replacement_conflict_ids(element, page.elements, geometry["mask_bbox"])
+        geometry["conflict_ids"] = conflict_ids
+        geometry["conflict"] = bool(conflict_ids or geometry["overflow"])
+        geometry["conflict_summary"] = ",".join(conflict_ids)
+    return geometries
+
+
+def _replacement_geometry_for_page(
+    element: ElementIR,
+    page: PageIR,
+    replacements: dict[str, dict[str, object]],
+) -> dict[str, object] | None:
+    if not replacements:
+        return None
+    return replacements.get(element.id)
+
+
+def _base_replacement_geometry(element: ElementIR, page: PageIR) -> dict[str, object] | None:
+    text = (element.translated_text or element.edited_text or "").strip()
+    box = element.bbox_px
+    if not text or box.width <= 0 or box.height <= 0:
+        return None
+
+    font_size = _replacement_font_size_px(element, box)
+    line_height = _replacement_line_height(element)
+    pad_x = _clamp(font_size * 0.18, 1.0, 6.0)
+    pad_y = _clamp(font_size * 0.12, 1.0, 5.0)
+    x0 = max(0.0, box.x0 - pad_x)
+    y0 = max(0.0, box.y0 - pad_y)
+    x1 = min(float(page.width_px), box.x1 + pad_x)
+    y1 = min(float(page.height_px), box.y1 + pad_y)
+    inner_width = max(1.0, x1 - x0 - (box.x0 - x0) - (x1 - box.x1))
+    inner_height = max(1.0, y1 - y0 - (box.y0 - y0) - (y1 - box.y1))
+
+    text_width = _estimated_replacement_text_width(text, font_size)
+    width_scale = min(1.0, inner_width / text_width) if text_width > 0 else 1.0
+    scale = max(0.62, width_scale)
+    soft_line_count = _estimated_replacement_line_count(text, font_size, inner_width, scale)
+    height_scale = min(1.0, inner_height / max(1.0, soft_line_count * font_size * line_height))
+    scale = round(max(0.62, min(scale, height_scale)), 4)
+    fitted_line_count = _estimated_replacement_line_count(text, font_size, inner_width, scale)
+    fitted_width = text_width * scale
+    fitted_height = fitted_line_count * font_size * line_height * scale
+    overflow = fitted_width > inner_width * 1.05 or fitted_height > inner_height * 1.08
+
+    return {
+        "mask_bbox": {
+            "x0": round(x0, 4),
+            "y0": round(y0, 4),
+            "x1": round(x1, 4),
+            "y1": round(y1, 4),
+            "width": round(max(0.0, x1 - x0), 4),
+            "height": round(max(0.0, y1 - y0), 4),
+        },
+        "padding_top": round(box.y0 - y0, 4),
+        "padding_right": round(x1 - box.x1, 4),
+        "padding_bottom": round(y1 - box.y1, 4),
+        "padding_left": round(box.x0 - x0, 4),
+        "fit_scale": scale,
+        "overflow": overflow,
+        "estimated_text_width": round(text_width, 4),
+        "estimated_text_height": round(fitted_height, 4),
+        "estimated_line_count": fitted_line_count,
+        "policy": "fidelity-replacement-fit-v1",
+        "conflict": overflow,
+        "conflict_ids": [],
+        "conflict_summary": "",
+    }
+
+
+def _replacement_conflict_ids(
+    element: ElementIR,
+    page_elements: list[ElementIR],
+    mask_bbox: dict[str, object],
+) -> list[str]:
+    conflicts: list[str] = []
+    mask = _bbox_from_mapping(mask_bbox)
+    if mask.width <= 0 or mask.height <= 0:
+        return conflicts
+    mask_area = mask.width * mask.height
+    for other in page_elements:
+        if other.id == element.id or not other.visibility:
+            continue
+        other_box = other.bbox_px
+        if other_box.width <= 0 or other_box.height <= 0:
+            continue
+        overlap = _intersection_area(mask, other_box)
+        if overlap <= 0:
+            continue
+        other_area = other_box.width * other_box.height
+        threshold = max(4.0, min(mask_area, other_area) * 0.02)
+        if overlap > threshold:
+            conflicts.append(other.id)
+    return conflicts
+
+
+def _bbox_from_mapping(value: dict[str, object]) -> BBox:
+    return BBox(
+        x0=float(value["x0"]),
+        y0=float(value["y0"]),
+        x1=float(value["x1"]),
+        y1=float(value["y1"]),
+    )
+
+
+def _intersection_area(first: BBox, second: BBox) -> float:
+    x0 = max(first.x0, second.x0)
+    y0 = max(first.y0, second.y0)
+    x1 = min(first.x1, second.x1)
+    y1 = min(first.y1, second.y1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    return (x1 - x0) * (y1 - y0)
+
+
+def _replacement_font_size_px(element: ElementIR, box: BBox) -> float:
+    value = element.style_hint.get("font_size_px")
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    return _clamp(box.height * 0.72, 8.0, 24.0)
+
+
+def _replacement_line_height(element: ElementIR) -> float:
+    value = element.style_hint.get("line_height")
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    return 1.15
+
+
+def _estimated_replacement_text_width(text: str, font_size: float) -> float:
+    return max((_estimated_line_width(line, font_size) for line in text.splitlines()), default=0.0)
+
+
+def _estimated_replacement_line_count(text: str, font_size: float, width: float, scale: float) -> int:
+    total = 0
+    available = max(1.0, width)
+    for line in text.splitlines() or [text]:
+        line_width = _estimated_line_width(line, font_size) * scale
+        total += max(1, int(math.ceil(line_width / available)))
+    return max(1, total)
+
+
+def _estimated_line_width(text: str, font_size: float) -> float:
+    return sum(_glyph_width_factor(character) * font_size for character in text)
+
+
+def _glyph_width_factor(character: str) -> float:
+    if character.isspace():
+        return 0.34
+    if _is_cjk(character):
+        return 1.0
+    if character in "ilI.,'`|!":
+        return 0.3
+    if character in "mwMW@#%&":
+        return 0.82
+    if character.isdigit():
+        return 0.56
+    return 0.58
+
+
+def _is_cjk(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        0x3400 <= codepoint <= 0x4DBF
+        or 0x4E00 <= codepoint <= 0x9FFF
+        or 0xF900 <= codepoint <= 0xFAFF
+        or 0x3040 <= codepoint <= 0x30FF
+        or 0xAC00 <= codepoint <= 0xD7AF
+    )
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
