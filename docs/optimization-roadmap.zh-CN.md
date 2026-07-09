@@ -31,16 +31,17 @@
 - `mixed-table-column-flow-v1` 支持混合表格/正文页面：表格岛保持 row-major，周围正文继续按多栏排序。
 - 页边 running header/footer、脚注、边栏/旁注会被标注为 secondary/page-artifact flow，保持可编辑但不污染主体列检测。
 - Native PDF extraction 保留 image block、font profile、inline text run、SVG line/path、dense vector local raster fallback。
-- 图片 source 是一等输入：PNG/JPEG/TIFF/WebP/BMP 会以 `source_type = "image"` 进入 `DocumentIR`，保留整页源 visual layer，用 `--image-dpi` 做坐标映射，并由 OCR/结构 JSON 生成可编辑语义锚点，而不是先封装成伪 PDF。
+- 图片 source 是一等输入：PNG/JPEG/TIFF/WebP/BMP 会以 `source_type = "image"` 进入 `DocumentIR.source`，保留整页源 visual layer，用 `--image-dpi` 做坐标映射，并由 OCR/结构 JSON 生成可编辑语义锚点，而不是先封装成伪 PDF。
+- `DocumentIR.metadata.semantic_layer` 会记录语义层来自 native PDF、结构 JSON、OCR JSON、OCR fallback 还是只有源 visual layer；benchmark 会把这些值输出为 `semantic_layer_driver`、`semantic_layer_payload_kind` 和 `semantic_layer_structure_role`。
 - Image-only OCR fallback 为扫描/截图 PDF 增加透明 `native-ocr` 可编辑锚点。
 - `--font-profile auto`、`--font-size-scale auto`、`--text-fit auto` 在 benchmark 中执行可重复候选 sweep。
 - `--html-mode auto --fidelity-background auto` 比较 structured redraw、SVG fidelity 和 raster fidelity，选择最高视觉相似度路径。
 - `fidelity` HTML 模式保留源 SVG/raster 背景，同时叠加透明可编辑坐标节点；编辑/翻译节点打印为局部白底 replacement overlay。
 - HTML 打印会把导出 PDF page box 归一到源页面尺寸；当源页数已知时，还会删除 Chromium 追加的尾部空白伪页，避免空白页污染视觉 benchmark。
-- Benchmark 输出 visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、`grid_island_element_count`、reading-order stream counts、risk diagnostics、OCR fallback count、candidate diagnostics、fidelity replacement overflow/conflict/fit-scale 指标、stream-local replacement 诊断和外部结构证据匹配结果。候选诊断现在包括 `reading_order_candidate_page_recommendation_counts` 与 `reading_order_candidate_stream_recommendation_counts`，后者按 `reading_order_stream_id` 与 `stream_type` 做局部复核统计，避免边栏/脚注局部流差异被正文页级分数掩盖。
+- Benchmark 输出 source-neutral `source`、兼容列 `source_pdf`、visual similarity、diff 分布、page/size match、semantic order、successor accuracy、reading-order strategy counts、`grid_island_element_count`、reading-order stream counts、risk diagnostics、OCR fallback count、semantic-layer driver counts、candidate diagnostics、fidelity replacement overflow/conflict/fit-scale 指标、stream-local replacement 诊断和外部结构证据匹配结果。候选诊断现在包括 `reading_order_candidate_page_recommendation_counts` 与 `reading_order_candidate_stream_recommendation_counts`，后者按 `reading_order_stream_id` 与 `stream_type` 做局部复核统计，避免边栏/脚注局部流差异被正文页级分数掩盖。
 - PaddleOCR-VL / PP-StructureV3 / Docling JSON 可以通过 `--structure-json` 融合进 native IR，作为 role/order/table/formula 证据；显式 block order、Docling `body.children`、结构化 parsing-list 位置和嵌套子 block 顺序都可以在 bbox 匹配后成为 `external_structure_order`，但无序 `layout_det_res.boxes` 只作为 label/region 证据。更具体的子区域会在同分时优先于父区域，因此匹配到的模型 label 可以驱动 page-artifact、footnote、sidebar、caption、table-island，以及明确 card/grid/product/tile 类区域的 `grid-island` reading streams。普通 list label 只作为列表证据，不作为卡片网格证据。
 - `benchmark-structure-ab` 会并行运行 native-only 和 native-plus-structure 报告，并输出 `structure_ab_report.json` / `structure_ab_summary.csv`，对比 visual similarity、reading-order risk、grid-island 元素、结构匹配数、page/stream `needs-structure-evidence`，以及存在 sidecar 时的 semantic successor 指标。
-- Benchmark 已经可以用 `--input-kind image` 直接接收图片 source；视觉评分会按 `--image-dpi` 比较源图片 visual layer 和 HTML 打印结果，而 OCR/结构 JSON 继续主导语义层。
+- Benchmark 已经可以用 `--input-kind image` 直接接收图片 source；视觉评分会按 `--image-dpi` 比较源图片 visual layer 和 HTML 打印结果，而 OCR/结构 JSON 继续主导语义层，并通过 `semantic_layer_*` case/summary 字段显式记录。
 - `--translation-stress pseudo-expand` 会在 benchmark 中写入确定性伪扩展 `translated_text`，让翻译 replacement 风险可以在不绑定具体翻译服务的情况下被度量。
 - 最新 JD/PUMA/web-HN 三样本翻译压力 rerun 覆盖 15 页，没有页数或尺寸 mismatch；平均视觉相似度为 `0.81899535`，但 567 个 replacement 里仍有 565 个报告邻近冲突，下一步应继续优化 mask、fitting 和冲突消解。
 - Structured HTML 现在暴露 reading-order strategy、region、scope、artifact、sidebar、stream id/type/index、confidence、evidence 和显式 translation target/stream 属性。

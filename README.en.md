@@ -30,7 +30,7 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Scriptorium is a source-neutral document-to-HTML conversion and evaluation engine. The current main path covers PDFs, PNG/JPEG/TIFF/WebP images, web-printed PDFs, and image-only PDFs; image sources enter the IR as one-page documents instead of pretending to be PDFs first.
+Scriptorium is a source-neutral document-to-HTML conversion and evaluation engine. The current main path covers PNG/JPEG/TIFF/WebP images, PDFs, web-printed PDFs, and image-only PDFs; image sources enter the IR as first-class sources instead of pretending to be PDFs first.
 
 It merges source text, images, vector drawings, OCR output, and external structure JSON into a single `DocumentIR`, then exports coordinate-aware HTML. Each editable node keeps its source, bbox, style, role, reading stream, and edit/translation fields, so downstream tools can write `edited_text` or `translated_text` and print the result back to PDF.
 
@@ -38,7 +38,7 @@ It merges source text, images, vector drawings, OCR output, and external structu
 
 | Use case | What Scriptorium provides |
 |---|---|
-| PDF editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
+| Document editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
 | Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, mask/fit/overflow/conflict diagnostics. |
 | Papers, annual reports, and portal pages | Multi-column body flow, table islands, card grids, footnotes, sidebars, page artifacts, and local reading streams. |
 | OCR/layout-model validation | PaddleOCR-VL, PP-Structure, and Docling-style JSON fusion with native-only vs native-plus-structure A/B benchmarks. |
@@ -46,7 +46,7 @@ It merges source text, images, vector drawings, OCR output, and external structu
 
 ## Why Not Just Screenshots
 
-Many PDF-to-HTML tools render a whole page image and overlay a hidden text layer. That can look close, but it leaves little structure for local editing, translation, or reading-order analysis.
+Many PDF-to-HTML / OCR-to-HTML tools render a whole page image and overlay a hidden text layer. That can look close, but it leaves little structure for local editing, translation, or reading-order analysis.
 
 Scriptorium supports two output paths:
 
@@ -65,7 +65,7 @@ HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style
     <td width="50%">
       <img src="docs/assets/readme-benchmark-score.png" alt="Benchmark score preview" width="100%"><br>
       <strong>Papers, reports, and manuals</strong><br>
-      Track visual fidelity, semantic order, candidate disagreement, and translation replacement risk for PDF and image sources.
+      Track visual fidelity, semantic order, candidate disagreement, and translation replacement risk across source types.
     </td>
   </tr>
 </table>
@@ -108,11 +108,12 @@ scriptorium compare-pdf \
   --out-dir outputs/sample/pdf-quality
 ```
 
-External OCR/layout models are optional. If structure JSON already exists, it can be fused into the pipeline:
+External OCR/layout models are optional. If an image, scan, or screenshot already has structure JSON, it can be used as the semantic-layer input:
 
 ```bash
 scriptorium convert \
-  path/to/input.pdf \
+  path/to/page.png \
+  --input-kind image \
   --structure-json path/to/structure.json \
   --out-dir outputs/with-structure
 ```
@@ -133,15 +134,18 @@ Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallbac
 
 ```mermaid
 flowchart LR
-  A[PDF / Web PDF source] --> B[Native PDF Extractor]
-  M[Image source] --> C[Render Pages]
-  M --> E[OCR / Structure JSON Adapter]
-  A --> C[Render Pages]
+  S[Document source] --> A{Source kind}
+  A -->|PDF| B[Native PDF Extractor]
+  A -->|Image| C[Image Renderer]
+  A --> C2[Render Pages]
+  C --> E[OCR / Structure JSON Adapter]
+  C2 --> E
   B --> D[Image-only OCR Fallback]
-  A --> E[Structure JSON Adapter]
+  B --> E[Structure JSON Adapter]
   E --> F[Structure Evidence Fusion]
   B --> G[DocumentIR]
   C --> G
+  C2 --> G
   D --> G
   F --> G
   G --> H[Annotation + Reading Streams]
@@ -158,6 +162,7 @@ Main modules:
 |---|---|
 | `native_pdf.py` | Extract native text, images, drawings, and page geometry. |
 | `structure_evidence.py` | Normalize PaddleOCR-VL / PP-Structure / Docling-style structure evidence. |
+| `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source. |
 | `reading_order.py` | Build multi-column flow, table islands, card grids, footnotes, sidebars, captions, and reading streams. |
 | `html_export.py` | Export structured/fidelity HTML with edit and translation anchors. |
 | `benchmark.py` | Run visual, semantic-order, structure A/B, and translation re-rendering benchmarks. |
@@ -184,8 +189,8 @@ Compare native-only against native-plus-structure:
 
 ```bash
 scriptorium benchmark-structure-ab \
-  path/to/input.pdf \
-  --structure-json path/to/input.structure.json \
+  path/to/source.pdf \
+  --structure-json path/to/source.structure.json \
   --out-dir outputs/structure-ab \
   --dpi 144
 ```
@@ -201,7 +206,7 @@ scriptorium benchmark path/to/file.pdf \
   --dpi 144
 ```
 
-Image sources can be benchmarked directly. Visual scoring compares the source image visual layer against the rendered HTML-to-PDF output; structure JSON first seeds OCR/text anchors, then participates in reading-stream and structure-evidence fusion:
+Image sources can be benchmarked directly. Visual scoring compares the source image visual layer against the rendered HTML-to-PDF output; structure JSON first seeds OCR/text anchors, then participates in reading-stream and structure-evidence fusion. Reports also expose `semantic_layer_driver`:
 
 ```bash
 scriptorium benchmark path/to/page.png \
@@ -221,7 +226,7 @@ Representative current scores are shown below. Exact commands, sources, checksum
 | Transformer-XL | 11 | Two-column paper and page-size variance | 0.95679576 | Used for multi-column successor-edge checks. |
 | BYD 2024 annual report | 40 | Chinese annual report, tables, dense vector rules | 0.89780001 | Current complex Chinese PDF stress sample. |
 | JD homepage screenshot PDF | 1 | Image-only ecommerce homepage | 0.99576887 | OCR adds transparent editable anchors. |
-| JD homepage screenshot PNG | 1 | First-class image source path | 0.99236799 | Matches the PDF wrapper's OCR/structure anchor inventory. |
+| JD homepage screenshot PNG | 1 | First-class image source path | 0.99236799 | Matches the image-only PDF compatibility path's OCR/structure anchor inventory. |
 
 `visual_similarity = 1 - max_diff_ratio`. Reports also include page/size match, diff distribution, reading-order risk, candidate disagreement, grid/table/stream statistics, and replacement risk.
 
@@ -235,14 +240,14 @@ Translation re-rendering currently focuses on three hard problems:
 - Masking source text without damaging neighboring elements.
 - Translating multi-column body flows, table islands, card grids, and sidebars as separate reading streams.
 
-This is not a full end-user PDF editor yet. It is a measurable conversion core that exposes the right risks for a future UI, review workflow, or stronger model-based structure evidence.
+This is not a full end-user document editor yet. It is a measurable conversion core that exposes the right risks for a future UI, review workflow, or stronger model-based structure evidence.
 
 ## Current Boundaries
 
 - Complex-page visual fidelity can be high with fidelity backgrounds; semantic order, local flow structure, and translated replacement conflicts are the harder parts.
 - Without structure priors, portal pages, product grids, report tables, and OCR-heavy pages can have genuinely ambiguous reading order.
 - PaddleOCR-VL / PP-Structure / Docling JSON can already be fused as evidence, but model runtimes remain optional.
-- The project is a research prototype for conversion, evaluation, and architecture work, not a desktop PDF editor for end users.
+- The project is a research prototype for conversion, evaluation, and architecture work, not a desktop document editor for end users.
 
 ## Documentation
 

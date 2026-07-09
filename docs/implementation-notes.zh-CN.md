@@ -10,10 +10,10 @@
 
 Scriptorium 现在把输入视为 document source，而不是默认等同于 PDF。`render_source()` 会分发到 PDF renderer 或 image renderer：
 
-- PDF source 继续走原生提取路径：PyMuPDF 文本/图像/drawing、可选 image-only OCR fallback，以及可选结构 JSON 融合。
 - 图片 source（`PNG`、`JPEG`、`TIFF`、`WebP`、`BMP`）会被渲染成一页 `RenderedDocument`，并标记 `source_type = "image"`。
+- PDF source 继续走原生提取路径：PyMuPDF 文本/图像/drawing、可选 image-only OCR fallback，以及可选结构 JSON 融合。
 - 图片坐标用 `--image-dpi` 把源像素映射到 PDF point 坐标。原始像素成为页面 visual layer，OCR/结构 JSON 负责贡献可编辑文本锚点和 reading-stream 证据。
-- `DocumentIR` 现在包含 `source_type` 和 `source_path`；旧的 `source_pdf` 字段保留，用于兼容现有报告和 XML。
+- `DocumentIR.source` 是 source-neutral 主字段。`source_path` 为旧调用方保留镜像；旧的 `source_pdf` 字段仅作为兼容别名，用于读取既有 JSON、报告和 XML。
 - 原生 PDF 提取会显式拒绝图片 source。图片语义层应来自 OCR JSON 或 Paddle/PP-Structure/Docling 风格结构 JSON，而不是从伪 PDF wrapper 里猜。
 
 示例：
@@ -40,6 +40,7 @@ scriptorium convert page.png \
 - `PaddleOcrAdapter` 隔离在 `scriptorium.ocr`，并且延迟导入 `paddleocr`。
 - `--structure-json` 是真实模型输出的轻量桥接入口，支持 PaddleOCR-VL / PP-StructureV3 风格 JSON 和 DoclingDocument JSON。
 - 对图片 source，如果没有单独提供 `--ocr-json`，`--structure-json` 也可以先生成初始文本锚点。常见 `parsing_res_list` / `block_bbox` / `block_content` 会被归一成 `native-ocr` 文本节点，再由结构 evidence 反向融合标签、顺序和置信度。
+- `DocumentIR.metadata.semantic_layer` 会记录当前语义层驱动。图片 case 会报告 `structure-json`、`ocr-json`、`ocr-fallback` 或 `visual-only`；原生 PDF case 报告 `native-pdf`，结构 JSON 默认作为增强证据。
 - 原生 PDF 提取提供 `image-only` OCR fallback：当页面没有原生文字且图像覆盖面积很高时，生成透明的 `native-ocr` 可编辑锚点，同时保留原始图像元素。
 - `structure_evidence.py` 能解析嵌套 `res`、`raw_results`、`pages`、`parsing_res_list`、`layout_det_res.boxes` 形状，也能解析 Docling `body.children`、`prov` bbox/page 证据和上下坐标原点差异。
 
@@ -147,6 +148,7 @@ scriptorium convert input.pdf --out-dir outputs/native
 scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
 scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/benchmark-native-plus-structure
 scriptorium benchmark-structure-ab input.pdf --structure-json paddle.json --out-dir outputs/structure-ab
+scriptorium benchmark page.png --input-kind image --structure-json page.structure.json --out-dir outputs/page-image
 ```
 
 `benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 指标。
@@ -164,7 +166,7 @@ scriptorium benchmark page.png \
 
 视觉比较会按 `image_dpi` 渲染导出的 PDF，让源图片 visual layer 和打印输出在相同像素尺寸下比较。结构 JSON 可以先生成 `native-ocr` 初始锚点层，再由 structure evidence 反向融合标签、顺序和置信度。
 
-报告会记录 `source_type_counts`、`input_kind` 和 `image_dpi`，用于区分 PDF case 与 image case，并复现图片像素到 PDF point 的坐标映射。
+报告会记录 `source`、兼容列 `source_pdf`、`source_type_counts`、`input_kind`、`image_dpi`、`semantic_layer_driver`、`semantic_layer_payload_kind` 和 `semantic_layer_structure_role`，用于区分 PDF case 与 image case、复现图片像素到 PDF point 的坐标映射，并确认语义层来自 native PDF、结构 JSON、OCR JSON、OCR fallback 还是仅有 visual layer。
 
 长文档可以用 `--page-ranges` 按源页码抽样，例如 `--page-ranges 1-12,136-160,220`。页码是 1-based，且不能和 `--max-pages` 同时使用。渲染后的 `DocumentIR.pages[*].page_index` 仍保留原始源页索引，所以 semantic sidecar 和 Paddle/PP-Structure/Docling 结构 JSON 可以继续按源页码对齐，而不是按抽样后的列表位置误匹配。报告会记录 `page_ranges` 和 `sampled_page_numbers`，便于复现实验。
 

@@ -191,7 +191,7 @@ JD 截图 PNG 一等 image source 路径：
 | JD 首页截图 PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 | JD 首页截图 PNG | 1 | `structured/image-source` | 0.99236799 | 0.00763201 | 0.00763201 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.43833464 | 128/133 | 0.21894288 | 120/133 | 8 | 0 | 0 | 0.77151567 | 0 | `0.35 / high` |
 
-JD PNG 直接输入验证了 image source 一等路径。它和旧的 image-only PDF wrapper 路径产生相同语义规模：135 个总元素、134 个可编辑 OCR 文本锚点、35 个 grid-island 元素，并且同样因为缺少 semantic sidecar evidence 而保持 high 阅读风险。视觉分数略低，是因为评分路径直接比较 source image visual layer 与 HTML 打印结果，而不是和 PDF wrapper 的 rasterization 比较；页数和页面尺寸仍然匹配。
+JD PNG 直接输入验证了 image source 一等路径。它和 image-only PDF 兼容路径产生相同语义规模：135 个总元素、134 个可编辑 OCR 文本锚点、35 个 grid-island 元素，并且同样因为缺少 semantic sidecar evidence 而保持 high 阅读风险。视觉分数略低，是因为评分路径直接比较 source image visual layer 与 HTML 打印结果，而不是和 image-only PDF rasterization 比较；页数和页面尺寸仍然匹配。当前 benchmark 也会输出 `semantic_layer_driver`，用于区分结构 JSON、OCR JSON、OCR fallback 和 visual-only 图片运行。
 
 比亚迪是当前复杂中文年报压力样本。本地 PDF 为 290 页、10,092,140 bytes。快速 PyMuPDF profile 显示：前 20 页有 497 个 text blocks 和 1088 个 drawing objects，而 PUMA 同页数只有 257 个 text blocks 和 375 个 drawing objects。全 PDF 中，比亚迪有 50,724 个 drawing objects，并有 101 页 `blocks >= 30`；PUMA 对应为 37,081 个 drawing objects 和 65 页。因此它补上了 PUMA 覆盖不足的中文公告、财务表格、密集线框和翻译回渲染维度。
 

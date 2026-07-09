@@ -10,10 +10,10 @@
 
 Scriptorium now treats the input as a document source, not as a synonym for PDF. `render_source()` dispatches to the PDF renderer or the image renderer:
 
-- PDF sources keep the native extraction path: PyMuPDF text/images/drawings, optional image-only OCR fallback, and optional structure JSON fusion.
 - Image sources (`PNG`, `JPEG`, `TIFF`, `WebP`, `BMP`) render as one-page `RenderedDocument` objects with `source_type = "image"`.
+- PDF sources keep the native extraction path: PyMuPDF text/images/drawings, optional image-only OCR fallback, and optional structure JSON fusion.
 - Image coordinates use `--image-dpi` to map source pixels into PDF-point space. The original pixels become the page visual layer, while OCR/structure JSON contributes editable text anchors and reading-stream evidence.
-- `DocumentIR` now carries `source_type` and `source_path`; the old `source_pdf` field remains for compatibility with existing reports and XML.
+- `DocumentIR.source` is the source-neutral primary path. `source_path` mirrors it for older callers, and the old `source_pdf` field remains as a compatibility alias for existing JSON, reports, and XML.
 - Native PDF extraction explicitly rejects image sources. Image semantics should come from OCR JSON or Paddle/PP-Structure/Docling-style structure JSON, so the semantic layer is model/evidence-driven rather than inferred from a fake PDF wrapper.
 
 Example:
@@ -40,6 +40,7 @@ Current implementation status:
 - `PaddleOcrAdapter` is isolated in `scriptorium.ocr` and intentionally lazy-imports `paddleocr`.
 - `--structure-json` is the stable lightweight bridge for real model output. It accepts PaddleOCR-VL / PP-StructureV3 style JSON and DoclingDocument JSON, then fuses region bbox, label, content, confidence, and external reading order back into `DocumentIR`.
 - For image sources, `--structure-json` can also seed the initial text anchor layer when no separate `--ocr-json` is provided. Common `parsing_res_list` / `block_bbox` / `block_content` payloads are normalized into `native-ocr` text nodes before structure evidence is fused back onto them.
+- `DocumentIR.metadata.semantic_layer` records the active semantic driver. Image cases report `structure-json`, `ocr-json`, `ocr-fallback`, or `visual-only`; native PDF cases report `native-pdf` and treat structure JSON as augmenting evidence unless the source itself is image-based.
 - Native extraction has an `image-only` OCR fallback for scanned or screenshot PDFs. It triggers only when a page has no native text and image blocks cover most of the page, then emits `native-ocr` text anchors without replacing the original image element.
 - `structure_evidence.py` parses nested `res`, `raw_results`, `pages`, `parsing_res_list`, and `layout_det_res.boxes` shapes. It also parses Docling `body.children` trees, resolves refs such as `#/texts/0` and `#/groups/0`, reads `prov` bbox/page evidence, and supports both top-left and bottom-left bbox origins. The next model-specific step is running real PaddleOCR-VL, PP-StructureV3, and Docling payloads through this bridge and tracking native-only versus native-plus-structure deltas.
 
@@ -178,6 +179,7 @@ scriptorium convert input.pdf --out-dir outputs/native
 scriptorium convert input.pdf --structure-json paddle.json --out-dir outputs/native-plus-structure
 scriptorium benchmark input.pdf --structure-json paddle.json --out-dir outputs/benchmark-native-plus-structure
 scriptorium benchmark input.pdf --font-profile local-urw --out-dir outputs/benchmark-local-urw
+scriptorium benchmark page.png --input-kind image --structure-json page.structure.json --out-dir outputs/page-image
 ```
 
 The benchmark command accepts one or more `--structure-json` files, matched by argument order or by names such as `<pdf-stem>.structure.json` and `<parent-dir>.<pdf-stem>.structure.json`. The next quality step is to run real PaddleOCR-VL 1.6, PP-StructureV3, or Docling payloads and compare `native` versus `native-plus-structure` with the same benchmark reports. For scanned PDFs, the model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
@@ -390,9 +392,11 @@ The visual comparison renders the exported PDF at `image_dpi` so the source imag
 
 Metrics:
 
+- `source`: source-neutral input path for each case. `source_pdf` remains in reports/CSV as a compatibility column.
 - `source_type_counts`: count of `pdf` and `image` cases in a benchmark run.
 - `input_kind`: requested source detection mode, `auto`, `pdf`, or `image`.
 - `image_dpi`: pixel density used to map image source pixels into PDF-point coordinates and to render the exported PDF for image-source visual scoring.
+- `semantic_layer_driver`, `semantic_layer_payload_kind`, and `semantic_layer_structure_role`: case-level diagnostics that show whether the semantic layer came from native PDF extraction, structure JSON, OCR JSON, OCR fallback, or only the visual layer.
 - `max_pages`: optional first-N-pages benchmark limit. The source document remains intact; render, extraction, print, visual comparison, and semantic sidecar matching operate on the sampled pages only.
 - `page_ranges`: optional explicit 1-based source page sampling such as `1-12,136-160,220`. It is mutually exclusive with `max_pages`. Rendered pages keep their original source `page_index`, so semantic sidecars and Paddle/PP-Structure/Docling structure JSON can still align by source page number instead of the sampled list position.
 - `sampled_page_numbers`: the exact 1-based source page numbers scored by the run when `page_ranges` is used.
