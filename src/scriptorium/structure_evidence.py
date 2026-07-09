@@ -58,6 +58,25 @@ class StructureRelationEdge:
         }
 
 
+@dataclass(frozen=True)
+class StructureReadingStream:
+    page_index: int
+    stream_id: str
+    stream_type: str
+    member_refs: tuple[str, ...]
+    source: str
+    raw: dict[str, Any]
+
+    def as_metadata(self) -> dict[str, Any]:
+        return {
+            "page_index": self.page_index,
+            "stream_id": self.stream_id,
+            "stream_type": self.stream_type,
+            "member_refs": list(self.member_refs),
+            "source": self.source,
+        }
+
+
 def load_structure_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -150,6 +169,41 @@ def normalize_structure_relations(
                 )
             )
     return edges
+
+
+def normalize_structure_streams(
+    payload: Any,
+    document: DocumentIR,
+    source: str | None = None,
+) -> list[StructureReadingStream]:
+    streams: list[StructureReadingStream] = []
+    seen: set[tuple[int, str, tuple[str, ...]]] = set()
+    for fallback_page_index, page_payload in enumerate(_collect_relation_payloads(payload)):
+        page_index = _extract_page_index(page_payload, fallback_page_index)
+        page = _document_page_by_evidence_index(document, page_index)
+        if page is None:
+            continue
+        source_name = source or _extract_source(payload, None)
+        for stream_index, raw_stream in enumerate(_iter_structure_streams(page_payload), start=1):
+            member_refs = tuple(_stream_member_refs(raw_stream))
+            if not member_refs:
+                continue
+            stream_id = _extract_stream_id(raw_stream, page.page_index, stream_index)
+            key = (page.page_index, stream_id, tuple(_relation_key(ref) for ref in member_refs))
+            if key in seen:
+                continue
+            seen.add(key)
+            streams.append(
+                StructureReadingStream(
+                    page_index=page.page_index,
+                    stream_id=stream_id,
+                    stream_type=_extract_stream_type(raw_stream),
+                    member_refs=member_refs,
+                    source=source_name,
+                    raw=dict(raw_stream),
+                )
+            )
+    return streams
 
 
 def _normalize_docling_evidence(
@@ -464,15 +518,21 @@ def apply_structure_evidence(
     source_name = source or _extract_source(payload, None)
     regions = normalize_structure_evidence(payload, document, source=source)
     relations = normalize_structure_relations(payload, document, source=source)
+    streams = normalize_structure_streams(payload, document, source=source)
     regions_by_page: dict[int, list[StructureRegion]] = {}
     for region in regions:
         regions_by_page.setdefault(region.page_index, []).append(region)
     relations_by_page: dict[int, list[StructureRelationEdge]] = {}
     for relation in relations:
         relations_by_page.setdefault(relation.page_index, []).append(relation)
+    streams_by_page: dict[int, list[StructureReadingStream]] = {}
+    for stream in streams:
+        streams_by_page.setdefault(stream.page_index, []).append(stream)
 
     matched_count = 0
     resolved_relation_count = 0
+    resolved_stream_member_count = 0
+    stream_conflict_count = 0
     reordered_pages = 0
     relation_reordered_pages = 0
     order_reordered_pages = 0
@@ -491,6 +551,12 @@ def apply_structure_evidence(
             page,
             relations_by_page.get(page.page_index, []),
         )
+        page_stream_members, page_stream_conflicts = _apply_page_streams(
+            page,
+            streams_by_page.get(page.page_index, []),
+        )
+        resolved_stream_member_count += page_stream_members
+        stream_conflict_count += page_stream_conflicts
         if reorder:
             reorder_source = _reorder_page_from_regions(page)
             if reorder_source:
@@ -506,6 +572,9 @@ def apply_structure_evidence(
         "region_count": len(regions),
         "relation_edge_count": len(relations),
         "resolved_relation_edge_count": resolved_relation_count,
+        "stream_count": len(streams),
+        "resolved_stream_member_count": resolved_stream_member_count,
+        "stream_conflict_count": stream_conflict_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "relation_reordered_page_count": relation_reordered_pages,
@@ -525,6 +594,13 @@ def apply_structure_evidence(
             }
             for page_index, page_relations in sorted(relations_by_page.items())
         ],
+        "streams_by_page": [
+            {
+                "page_index": page_index,
+                "streams": [stream.as_metadata() for stream in page_streams],
+            }
+            for page_index, page_streams in sorted(streams_by_page.items())
+        ],
     }
     _update_semantic_layer_metadata(
         document,
@@ -535,6 +611,9 @@ def apply_structure_evidence(
         order_source_counts=dict(sorted(order_source_counts.items())),
         relation_count=len(relations),
         resolved_relation_count=resolved_relation_count,
+        stream_count=len(streams),
+        resolved_stream_member_count=resolved_stream_member_count,
+        stream_conflict_count=stream_conflict_count,
         relation_reordered_pages=relation_reordered_pages,
         order_reordered_pages=order_reordered_pages,
     )
@@ -546,6 +625,9 @@ def apply_structure_evidence(
                 "region_count": len(regions),
                 "relation_edge_count": len(relations),
                 "resolved_relation_edge_count": resolved_relation_count,
+                "stream_count": len(streams),
+                "resolved_stream_member_count": resolved_stream_member_count,
+                "stream_conflict_count": stream_conflict_count,
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
                 "relation_reordered_page_count": relation_reordered_pages,
@@ -567,24 +649,33 @@ def _update_semantic_layer_metadata(
     order_source_counts: dict[str, int],
     relation_count: int,
     resolved_relation_count: int,
+    stream_count: int,
+    resolved_stream_member_count: int,
+    stream_conflict_count: int,
     relation_reordered_pages: int,
     order_reordered_pages: int,
 ) -> None:
     current = document.metadata.get("semantic_layer")
     semantic_layer = dict(current) if isinstance(current, dict) else {}
+    structure_drives_image_semantics = document.source_type == "image" and (
+        region_count > 0 or relation_count > 0 or stream_count > 0
+    )
     semantic_layer["structure_json"] = {
         "source": source,
-        "role": "semantic-driver" if document.source_type == "image" and region_count > 0 else "augmenting-evidence",
+        "role": "semantic-driver" if structure_drives_image_semantics else "augmenting-evidence",
         "region_count": region_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "order_source_counts": order_source_counts,
         "relation_edge_count": relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
+        "stream_count": stream_count,
+        "resolved_stream_member_count": resolved_stream_member_count,
+        "stream_conflict_count": stream_conflict_count,
         "relation_reordered_page_count": relation_reordered_pages,
         "order_reordered_page_count": order_reordered_pages,
     }
-    if document.source_type == "image" and region_count > 0:
+    if structure_drives_image_semantics:
         semantic_layer["driver"] = "structure-json"
         semantic_layer["payload_kind"] = "structure-json"
         semantic_layer["source_visual_layer_role"] = "visual-fidelity-only"
@@ -703,6 +794,14 @@ def _iter_relation_edges(payload: dict[str, Any]) -> list[tuple[str, str, str, d
     return edges
 
 
+def _iter_structure_streams(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    streams: list[dict[str, Any]] = []
+    for value in _combined_relation_values(payload.get("reading_streams"), payload.get("streams")):
+        if isinstance(value, dict):
+            streams.append(value)
+    return streams
+
+
 def _combined_relation_values(*values: Any) -> list[Any]:
     combined: list[Any] = []
     for value in values:
@@ -774,6 +873,70 @@ def _texts_from_any(value: Any) -> list[str]:
     return texts
 
 
+def _stream_member_refs(stream: dict[str, Any]) -> list[str]:
+    members: list[str] = []
+    for key in ("text_sequence", "sequence", "texts", "elements", "items", "members", "children"):
+        members.extend(_texts_from_any(stream.get(key)))
+    for source, target, _raw in _relation_edges_from_any(
+        _combined_relation_values(stream.get("successor_edges"), stream.get("successor_relations"))
+    ):
+        members.extend([source, target])
+    for source, target, _raw in _relation_edges_from_any(
+        _combined_relation_values(stream.get("precedence_edges"), stream.get("order_edges"))
+    ):
+        members.extend([source, target])
+    for _kind, source, target, _raw in _typed_relation_edges_from_any(stream.get("relations")):
+        members.extend([source, target])
+    return _dedupe_texts(members)
+
+
+def _extract_stream_id(stream: dict[str, Any], page_index: int, stream_index: int) -> str:
+    for key in ("stream_id", "id", "uid", "name", "ref", "self_ref"):
+        value = stream.get(key)
+        if value:
+            return _slug_text(value)
+    return f"external-{_extract_stream_type(stream)}-{page_index + 1:03d}-{stream_index:03d}"
+
+
+def _extract_stream_type(stream: dict[str, Any]) -> str:
+    for key in ("stream_type", "type", "role", "label", "kind"):
+        value = stream.get(key)
+        if value:
+            return _normalize_external_stream_type(value)
+    return "body"
+
+
+def _normalize_external_stream_type(value: Any) -> str:
+    token = _slug_text(value).replace("_", "-")
+    if token in {"main", "body", "text", "paragraph", "content", "list", "article"}:
+        return "body"
+    if token in {"grid", "grid-island", "card", "card-grid", "content-grid", "product", "product-card", "product-grid", "tile", "tile-grid"}:
+        return "grid-island"
+    if token in {"table", "table-island", "table-body", "table-content", "table-grid"}:
+        return "table-island"
+    if token in {"footnote", "footnotes", "note", "notes"}:
+        return "footnote"
+    if token in {"figure-caption", "figure-title", "image-caption"}:
+        return "caption-figure"
+    if token in {"table-caption", "table-title"}:
+        return "caption-table"
+    if token in {"chart-caption", "chart-title"}:
+        return "caption-chart"
+    if token in {"algorithm-caption", "algorithm-title"}:
+        return "caption-algorithm"
+    if token in {"header", "page-header", "running-header"}:
+        return "page-artifact-header"
+    if token in {"footer", "page-footer", "page-number"}:
+        return "page-artifact-footer"
+    if "sidebar" in token or "side-bar" in token or token in {"marginalia", "margin-note"}:
+        if "left" in token:
+            return "sidebar-left"
+        if "right" in token:
+            return "sidebar-right"
+        return "sidebar"
+    return token or "body"
+
+
 def _relation_endpoint(value: Any) -> str:
     if isinstance(value, dict):
         for key in (
@@ -799,6 +962,11 @@ def _relation_endpoint(value: Any) -> str:
 
 def _relation_key(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _slug_text(value: Any) -> str:
+    text = "-".join(str(value or "").strip().lower().replace("_", "-").split())
+    return "".join(char for char in text if char.isalnum() or char in {"-", "."}).strip("-") or "unknown"
 
 
 def _has_blocks(value: dict[str, Any]) -> bool:
@@ -1061,6 +1229,95 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
         source_element.metadata["external_structure_relation_edges"] = relation_records
         resolved_count += 1
     return resolved_count
+
+
+def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> tuple[int, int]:
+    if not streams:
+        return 0, 0
+    text_elements = [element for element in page.elements if element.source_text.strip()]
+    if not text_elements:
+        return 0, 0
+
+    resolved_count = 0
+    conflict_count = 0
+    for stream in streams:
+        stream_members: list[ElementIR] = []
+        seen_member_ids: set[str] = set()
+        for ref in stream.member_refs:
+            element = _resolve_relation_endpoint_to_element(ref, text_elements)
+            if element is None or element.id in seen_member_ids:
+                continue
+            seen_member_ids.add(element.id)
+            stream_members.append(element)
+        if not stream_members:
+            continue
+        for stream_index, element in enumerate(stream_members, start=1):
+            existing_stream_id = str(element.metadata.get("external_structure_stream_id") or "").strip()
+            if existing_stream_id and existing_stream_id != stream.stream_id:
+                conflicts = element.metadata.get("external_structure_stream_conflicts")
+                if not isinstance(conflicts, list):
+                    conflicts = []
+                conflicts.append(
+                    {
+                        "existing_stream_id": existing_stream_id,
+                        "stream_id": stream.stream_id,
+                        "stream_type": stream.stream_type,
+                        "source": stream.source,
+                    }
+                )
+                element.metadata["external_structure_stream_conflicts"] = conflicts
+                conflict_count += 1
+                continue
+            _apply_external_stream_metadata(element, stream, stream_index)
+            resolved_count += 1
+    return resolved_count, conflict_count
+
+
+def _apply_external_stream_metadata(
+    element: ElementIR,
+    stream: StructureReadingStream,
+    stream_index: int,
+) -> None:
+    for key in ("reading_order_stream_id", "reading_order_stream_type", "reading_order_stream_index"):
+        if key in element.metadata:
+            element.metadata.setdefault(f"native_{key}", element.metadata.get(key))
+    element.metadata["external_structure_stream_id"] = stream.stream_id
+    element.metadata["external_structure_stream_type"] = stream.stream_type
+    element.metadata["external_structure_stream_index"] = stream_index
+    element.metadata["external_structure_stream_source"] = stream.source
+    element.metadata["reading_order_stream_id"] = stream.stream_id
+    element.metadata["reading_order_stream_type"] = stream.stream_type
+    element.metadata["reading_order_stream_index"] = stream_index
+
+    _apply_external_stream_scope_metadata(element, stream.stream_type)
+    evidence = _reading_order_evidence(element)
+    if "external-structure-stream" not in evidence:
+        evidence.append("external-structure-stream")
+    element.metadata["reading_order_evidence"] = evidence
+    element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+
+
+def _apply_external_stream_scope_metadata(element: ElementIR, stream_type: str) -> None:
+    if stream_type == "footnote":
+        element.metadata["reading_order_scope"] = "footnote"
+        element.metadata["column_span"] = "footnote"
+    elif stream_type.startswith("sidebar-"):
+        element.metadata["reading_order_scope"] = "sidebar"
+        element.metadata["reading_order_sidebar_type"] = stream_type.removeprefix("sidebar-")
+        element.metadata["column_span"] = stream_type
+    elif stream_type.startswith("page-artifact-"):
+        element.metadata["reading_order_scope"] = "page-artifact"
+        element.metadata["reading_order_artifact_type"] = stream_type.removeprefix("page-artifact-")
+        element.metadata["column_span"] = stream_type
+    elif stream_type.startswith("caption-"):
+        element.metadata["reading_order_caption_type"] = stream_type.removeprefix("caption-")
+        element.metadata["column_span"] = stream_type
+    elif stream_type == "table-island":
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = "table-external"
+    elif stream_type == "grid-island":
+        element.metadata["column_index"] = None
+        element.metadata["column_span"] = "grid-external"
 
 
 def _resolve_relation_endpoint_to_element(

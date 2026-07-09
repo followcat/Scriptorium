@@ -175,6 +175,51 @@ def test_image_source_structure_relations_drive_semantic_order(tmp_path: Path) -
     assert text_elements[0].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
 
 
+def test_image_source_stream_only_structure_json_drives_semantic_layer(tmp_path: Path) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    ocr_payload = {
+        "source": "unit-ocr",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {"bbox_px": [24, 28, 90, 48], "text": "A"},
+                    {"bbox_px": [180, 28, 246, 48], "text": "C"},
+                    {"bbox_px": [24, 70, 90, 90], "text": "B"},
+                    {"bbox_px": [180, 70, 246, 90], "text": "D"},
+                ],
+            }
+        ],
+    }
+    structure_payload = {
+        "source": "stream-structure",
+        "res": {
+            "page_index": 0,
+            "reading_streams": [
+                {"id": "product-row", "stream_type": "product_grid", "text_sequence": ["A", "B"]},
+                {"id": "right-rail", "stream_type": "right_sidebar", "text_sequence": ["C", "D"]},
+            ],
+        },
+    }
+
+    document = normalize_ocr_to_ir(rendered, ocr_payload)
+    apply_structure_evidence(document, structure_payload)
+    annotate_document(document)
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
+    assert document.metadata["structure_evidence"]["region_count"] == 0
+    assert document.metadata["structure_evidence"]["stream_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert by_text["A"].metadata["reading_order_stream_id"] == "product-row"
+    assert by_text["A"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_text["C"].metadata["reading_order_stream_id"] == "right-rail"
+    assert by_text["C"].metadata["reading_order_stream_type"] == "sidebar-right"
+
+
 def _make_image(path: Path) -> Path:
     image = Image.new("RGB", (320, 180), "white")
     draw = ImageDraw.Draw(image)

@@ -4,6 +4,7 @@ from scriptorium.structure_evidence import (
     apply_structure_evidence,
     normalize_structure_evidence,
     normalize_structure_relations,
+    normalize_structure_streams,
 )
 
 
@@ -206,6 +207,50 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     assert by_id["a"].metadata["reading_order_strategy"] == "external-structure-relation-fusion-v1"
     assert "external-structure-relation" in by_id["a"].metadata["reading_order_evidence"]
     assert "external_structure_order" not in by_id["a"].metadata
+
+
+def test_structure_reading_streams_attach_to_elements_without_regions() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("c", "C", BBox(x0=110, y0=10, x1=140, y1=20), 2),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 3),
+            ("d", "D", BBox(x0=110, y0=30, x1=140, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "stream-model",
+        "res": {
+            "page_index": 0,
+            "reading_streams": [
+                {"id": "hero-grid", "stream_type": "product_grid", "text_sequence": ["A", "B"]},
+                {"id": "right-rail", "stream_type": "right_sidebar", "text_sequence": ["C", "D"]},
+            ],
+        },
+    }
+
+    streams = normalize_structure_streams(payload, document)
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [(stream.stream_id, stream.stream_type, list(stream.member_refs)) for stream in streams] == [
+        ("hero-grid", "grid-island", ["A", "B"]),
+        ("right-rail", "sidebar-right", ["C", "D"]),
+    ]
+    assert document.metadata["structure_evidence"]["region_count"] == 0
+    assert document.metadata["structure_evidence"]["stream_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["stream_conflict_count"] == 0
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 2
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 2
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert by_id["a"].metadata["reading_order_stream_id"] == "hero-grid"
+    assert by_id["a"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_id["b"].metadata["reading_order_stream_index"] == 2
+    assert by_id["c"].metadata["reading_order_stream_id"] == "right-rail"
+    assert by_id["c"].metadata["reading_order_scope"] == "sidebar"
+    assert by_id["c"].metadata["reading_order_sidebar_type"] == "right"
+    assert "external-structure-stream" in by_id["a"].metadata["reading_order_evidence"]
 
 
 def test_paddle_nested_structure_label_feeds_annotation_role() -> None:

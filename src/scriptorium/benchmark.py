@@ -354,6 +354,11 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "structure_evidence_resolved_relation_edge_count": structure_case[
             "structure_evidence_resolved_relation_edge_count"
         ],
+        "structure_evidence_stream_count": structure_case["structure_evidence_stream_count"],
+        "structure_evidence_resolved_stream_member_count": structure_case[
+            "structure_evidence_resolved_stream_member_count"
+        ],
+        "structure_evidence_stream_conflict_count": structure_case["structure_evidence_stream_conflict_count"],
         "structure_evidence_matched_element_count": structure_case["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": structure_case["structure_evidence_reordered_page_count"],
         "structure_evidence_relation_reordered_page_count": structure_case[
@@ -444,6 +449,15 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "total_structure_evidence_resolved_relation_edges": sum(
             int(values["structure_evidence_resolved_relation_edge_count"]) for values in comparisons
         ),
+        "total_structure_evidence_streams": sum(
+            int(values["structure_evidence_stream_count"]) for values in comparisons
+        ),
+        "total_structure_evidence_resolved_stream_members": sum(
+            int(values["structure_evidence_resolved_stream_member_count"]) for values in comparisons
+        ),
+        "total_structure_evidence_stream_conflicts": sum(
+            int(values["structure_evidence_stream_conflict_count"]) for values in comparisons
+        ),
         "total_structure_evidence_matched_elements": sum(
             int(values["structure_evidence_matched_element_count"]) for values in comparisons
         ),
@@ -530,6 +544,9 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "structure_evidence_region_count",
         "structure_evidence_relation_edge_count",
         "structure_evidence_resolved_relation_edge_count",
+        "structure_evidence_stream_count",
+        "structure_evidence_resolved_stream_member_count",
+        "structure_evidence_stream_conflict_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
         "structure_evidence_relation_reordered_page_count",
@@ -920,6 +937,11 @@ def _run_case(
         "structure_evidence_resolved_relation_edge_count": stats[
             "structure_evidence_resolved_relation_edge_count"
         ],
+        "structure_evidence_stream_count": stats["structure_evidence_stream_count"],
+        "structure_evidence_resolved_stream_member_count": stats[
+            "structure_evidence_resolved_stream_member_count"
+        ],
+        "structure_evidence_stream_conflict_count": stats["structure_evidence_stream_conflict_count"],
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": stats["structure_evidence_reordered_page_count"],
         "structure_evidence_relation_reordered_page_count": stats[
@@ -1320,6 +1342,11 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "structure_evidence_resolved_relation_edge_count": int(
             structure_evidence.get("resolved_relation_edge_count") or 0
         ),
+        "structure_evidence_stream_count": int(structure_evidence.get("stream_count") or 0),
+        "structure_evidence_resolved_stream_member_count": int(
+            structure_evidence.get("resolved_stream_member_count") or 0
+        ),
+        "structure_evidence_stream_conflict_count": int(structure_evidence.get("stream_conflict_count") or 0),
         "structure_evidence_matched_element_count": int(structure_evidence.get("matched_element_count") or 0),
         "structure_evidence_reordered_page_count": int(structure_evidence.get("reordered_page_count") or 0),
         "structure_evidence_relation_reordered_page_count": int(
@@ -2601,6 +2628,13 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_structure_evidence_resolved_relation_edges": sum(
             int(case["structure_evidence_resolved_relation_edge_count"]) for case in cases
         ),
+        "total_structure_evidence_streams": sum(int(case["structure_evidence_stream_count"]) for case in cases),
+        "total_structure_evidence_resolved_stream_members": sum(
+            int(case["structure_evidence_resolved_stream_member_count"]) for case in cases
+        ),
+        "total_structure_evidence_stream_conflicts": sum(
+            int(case["structure_evidence_stream_conflict_count"]) for case in cases
+        ),
         "total_structure_evidence_matched_elements": sum(
             int(case["structure_evidence_matched_element_count"]) for case in cases
         ),
@@ -2775,6 +2809,9 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "structure_evidence_region_count",
         "structure_evidence_relation_edge_count",
         "structure_evidence_resolved_relation_edge_count",
+        "structure_evidence_stream_count",
+        "structure_evidence_resolved_stream_member_count",
+        "structure_evidence_stream_conflict_count",
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
         "structure_evidence_relation_reordered_page_count",

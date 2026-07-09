@@ -144,3 +144,37 @@ def test_grid_island_uses_region_path_as_translation_stream_id() -> None:
     assert [item["reading_order_stream_type"] for item in metadata_items] == ["grid-island", "grid-island"]
     assert [item["reading_order_stream_id"] for item in metadata_items] == ["grid-island-003", "grid-island-003"]
     assert [item["reading_order_stream_index"] for item in metadata_items] == [1, 2]
+
+
+def test_external_structure_stream_metadata_is_preserved() -> None:
+    metadata_items = [
+        {
+            "semantic_order": 1,
+            "visual_order": 1,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_span": "grid-external",
+            "external_structure_stream_id": "product-row",
+            "external_structure_stream_type": "grid-island",
+            "external_structure_stream_index": 2,
+        },
+        {
+            "semantic_order": 2,
+            "visual_order": 2,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_span": "grid-external",
+            "external_structure_stream_id": "product-row",
+            "external_structure_stream_type": "grid-island",
+            "external_structure_stream_index": 1,
+        },
+    ]
+
+    assign_reading_streams_to_metadata(
+        metadata_items,
+        order_key=lambda item: (item["semantic_order"], item["visual_order"]),
+    )
+
+    assert [item["reading_order_stream_type"] for item in metadata_items] == ["grid-island", "grid-island"]
+    assert [item["reading_order_stream_id"] for item in metadata_items] == ["product-row", "product-row"]
+    assert [item["reading_order_stream_index"] for item in metadata_items] == [2, 1]

@@ -16,6 +16,17 @@ def assign_reading_streams_to_metadata(
     body_stream_ids = _body_segment_stream_ids(ordered_items)
     stream_counts: Counter[str] = Counter()
     for metadata in ordered_items:
+        explicit_stream_id = _text(metadata.get("external_structure_stream_id"))
+        explicit_stream_type = _text(metadata.get("external_structure_stream_type"))
+        if explicit_stream_id and explicit_stream_type:
+            stream_counts[explicit_stream_id] += 1
+            metadata["reading_order_stream_type"] = explicit_stream_type
+            metadata["reading_order_stream_id"] = explicit_stream_id
+            metadata["reading_order_stream_index"] = _int_or_none(
+                metadata.get("external_structure_stream_index")
+            ) or stream_counts[explicit_stream_id]
+            continue
+
         stream_type = reading_order_stream_type(metadata)
         stream_id = body_stream_ids.get(id(metadata)) or reading_order_stream_id(
             metadata,
