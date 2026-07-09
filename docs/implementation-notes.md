@@ -346,6 +346,7 @@ Metrics:
 - `p95_diff_ratio`: 95th percentile diff ratio for the compared page set.
 - `worst_page`: 1-based page number with the largest effective diff ratio.
 - `visual_similarity`: `1 - max_diff_ratio`; higher is better.
+- `fidelity_replacement_element_count`, `fidelity_replacement_overflow_count`, `fidelity_replacement_conflict_count`, `fidelity_replacement_conflict_target_count`, `fidelity_replacement_min_fit_scale`, `fidelity_replacement_mean_fit_scale`, and `fidelity_replacement_policy_counts`: replacement-risk diagnostics for edited/translated nodes in fidelity mode. These fields stay zero/`null` for source-only runs and become the primary non-visual quality signal for translated HTML-to-PDF round trips.
 - `page_count_match`: whether expected and actual PDFs have the same page count.
 - `dimension_match`: whether every reported page has matching render dimensions.
 - `total_seconds`: wall-clock time for render, extraction, annotation, HTML export, PDF print, and comparison.

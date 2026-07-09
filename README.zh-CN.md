@@ -218,6 +218,8 @@ Reading-order 输出现在带有可解释证据和启发式置信度：`reading_
 
 Fidelity replacement 节点现在会导出 `data-scriptorium-replacement-policy`、`data-scriptorium-replacement-fit-scale`、`data-scriptorium-replacement-mask-padding`、`data-scriptorium-replacement-overflow`、`data-scriptorium-replacement-conflict` 和 `data-scriptorium-replacement-conflict-ids`。导出器会为 edited/translated 文本扩展局部白底 mask、用 padding 把文本放回原始坐标、按 bbox 自动缩小长译文，并在 replacement mask 与相邻元素冲突或仍然溢出时标记需要复核。
 
+Benchmark 会同步输出 `fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`，用于在翻译写回后量化“看起来像原 PDF”之外的 replacement 风险。
+
 | Sample | Best structured | SVG fidelity | Raster fidelity | Auto selected | Selected path |
 |---|---:|---:|---:|---:|---|
 | arXiv paper: Attention Is All You Need | 0.96840246 | 0.98809524 | 1.0 | 1.0 | `fidelity/raster` |

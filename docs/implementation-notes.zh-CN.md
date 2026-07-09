@@ -155,6 +155,8 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 
 此外，新增加了流内候选诊断：`reading_order_candidate_stream_diagnostics` 会按 `reading_order_stream_id` 记录局部文档流内 selected 与候选共识的分歧与推荐，`reading_order_candidate_stream_count` 给出当次 case 的流内候选数量，`reading_order_candidate_stream_recommendation_counts` 则用于 case/summary/CSV 的流级 triage 统计，避免将边栏/脚注与正文流混到同一页级分数。Benchmark 也会记录 `grid_island_element_count`，用于观察复杂卡片/门户布局是否被识别为可翻译局部流。
 
+翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`。源文档无 replacement 时这些字段为 0/`null`；翻译写入 `translated_text` 后，它们用于衡量像素相似度之外的遮罩、压缩和邻近冲突风险。
+
 Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 
 ```json
