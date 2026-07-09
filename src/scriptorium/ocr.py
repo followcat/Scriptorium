@@ -102,8 +102,15 @@ def normalize_ocr_to_ir(
             )
         )
 
+    semantic_layer = _semantic_layer_metadata(
+        rendered,
+        ocr_payload,
+        page_diagnostics,
+        include_source_image=include_source_image,
+    )
     return DocumentIR(
-        source_pdf=str(rendered.source_pdf),
+        source=str(rendered.source),
+        source_pdf=str(rendered.source_pdf) if rendered.source_pdf is not None else None,
         source_path=str(rendered.source),
         source_type=rendered.source_type,
         render_dpi=rendered.render_dpi,
@@ -124,16 +131,85 @@ def normalize_ocr_to_ir(
         ],
         metadata={
             "extraction_mode": "ocr-json",
+            "source": str(rendered.source),
             "source_type": rendered.source_type,
             "source_path": str(rendered.source),
             "ocr_source": ocr_payload.get("source", "json-fallback" if ocr_payload else "empty"),
             "image_source_visual_layer": bool(include_source_image),
+            "semantic_layer": semantic_layer,
             "ocr_fallback": ocr_fallback,
             "ocr_language": ocr_language,
             "ocr_dpi": ocr_dpi,
             "page_extraction": page_diagnostics,
         },
     )
+
+
+def _semantic_layer_metadata(
+    rendered: RenderedDocument,
+    ocr_payload: dict[str, Any],
+    page_diagnostics: list[dict[str, Any]],
+    *,
+    include_source_image: bool,
+) -> dict[str, Any]:
+    payload_source = str(ocr_payload.get("source") or ocr_payload.get("model") or "").strip() if ocr_payload else ""
+    has_payload = bool(ocr_payload)
+    has_payload_text = any(int(page.get("ocr_text_line_count") or 0) > 0 for page in page_diagnostics)
+    has_ocr_fallback = any(page.get("ocr_fallback_status") == "applied" for page in page_diagnostics)
+    payload_kind = _semantic_payload_kind(ocr_payload) if has_payload else None
+
+    if payload_kind == "structure-json" and has_payload_text:
+        driver = "structure-json"
+    elif has_payload and has_payload_text:
+        driver = "ocr-json"
+    elif has_ocr_fallback:
+        driver = "ocr-fallback"
+    elif rendered.source_type == "image":
+        driver = "visual-only"
+    else:
+        driver = "json-fallback"
+
+    return {
+        "driver": driver,
+        "payload_kind": payload_kind,
+        "payload_source": payload_source or None,
+        "source_type": rendered.source_type,
+        "source_visual_layer": bool(include_source_image),
+        "text_anchor_count": sum(int(page.get("ocr_text_line_count") or 0) for page in page_diagnostics),
+        "ocr_fallback_applied_page_count": sum(
+            1 for page in page_diagnostics if page.get("ocr_fallback_status") == "applied"
+        ),
+        "priority": ["structure-json", "ocr-json", "ocr-fallback", "source-visual-layer"],
+    }
+
+
+def _semantic_payload_kind(payload: dict[str, Any]) -> str:
+    if _payload_contains_any_key(
+        payload,
+        {
+            "parsing_res_list",
+            "layout_det_res",
+            "block_bbox",
+            "block_content",
+            "block_label",
+            "block_order",
+            "schema_name",
+            "body",
+            "prov",
+        },
+    ):
+        return "structure-json"
+    return "ocr-json"
+
+
+def _payload_contains_any_key(value: Any, keys: set[str]) -> bool:
+    if isinstance(value, list):
+        return any(_payload_contains_any_key(item, keys) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if any(key in value for key in keys):
+        return True
+    return any(_payload_contains_any_key(child, keys) for child in value.values() if isinstance(child, (dict, list)))
 
 
 def _group_ocr_elements_by_page(payload: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:

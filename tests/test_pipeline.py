@@ -31,6 +31,42 @@ def test_fixture_pipeline_exports_html(tmp_path: Path) -> None:
     assert "page_0001.png" in html
 
 
+def test_document_ir_keeps_legacy_source_pdf_compatibility(tmp_path: Path) -> None:
+    background = tmp_path / "page.png"
+    background.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000a49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082"
+        )
+    )
+    document = DocumentIR(
+        source_pdf="legacy.pdf",
+        render_dpi=72,
+        page_count=1,
+        pages=[
+            PageIR(
+                page_index=0,
+                width_pt=100,
+                height_pt=100,
+                width_px=100,
+                height_px=100,
+                render_dpi=72,
+                scale_x=1,
+                scale_y=1,
+                background_image=str(background),
+            )
+        ],
+    )
+
+    ir_path = tmp_path / "legacy.ir.json"
+    document.save(ir_path)
+    reloaded = DocumentIR.load(ir_path)
+
+    assert reloaded.source == "legacy.pdf"
+    assert reloaded.source_path == "legacy.pdf"
+    assert reloaded.source_pdf == "legacy.pdf"
+
+
 def test_fidelity_html_keeps_background_with_editable_overlay(tmp_path: Path) -> None:
     pdf_path, ocr_path = create_fixture(tmp_path / "fixture")
     rendered = render_pdf(pdf_path, tmp_path / "pages", dpi=144, include_svg_background=True)

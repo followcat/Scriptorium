@@ -305,6 +305,7 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
 
     return {
         "name": structure_case["name"],
+        "source": structure_case.get("source") or structure_case.get("source_path") or structure_case["source_pdf"],
         "source_pdf": structure_case["source_pdf"],
         "native_ir": native_case["ir"],
         "structure_ir": structure_case["ir"],
@@ -482,6 +483,7 @@ def _mean_optional(values: Any) -> float | None:
 def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> None:
     fieldnames = [
         "name",
+        "source",
         "source_pdf",
         "native_visual_similarity",
         "structure_visual_similarity",
@@ -649,6 +651,12 @@ def _run_case(
     stats = _document_stats(document)
     replacement_stats = _fidelity_replacement_stats(document, html_mode)
     reading_order_risk = _reading_order_risk_metrics(document, semantic_quality)
+    semantic_layer = document.metadata.get("semantic_layer") if isinstance(document.metadata, dict) else {}
+    if not isinstance(semantic_layer, dict):
+        semantic_layer = {}
+    structure_semantic_layer = semantic_layer.get("structure_json")
+    if not isinstance(structure_semantic_layer, dict):
+        structure_semantic_layer = {}
     max_diff_ratio = float(quality["max_diff_ratio"])
     mean_diff_ratio = float(quality["mean_diff_ratio"])
     p95_diff_ratio = float(quality["p95_diff_ratio"])
@@ -656,6 +664,7 @@ def _run_case(
     total_seconds = round(sum(timings.values()), 6)
     return {
         "name": pdf_path.stem,
+        "source": str(pdf_path),
         "source_pdf": str(pdf_path),
         "source_path": str(pdf_path),
         "source_type": rendered.source_type,
@@ -883,6 +892,9 @@ def _run_case(
         "structure_evidence_matched_element_count": stats["structure_evidence_matched_element_count"],
         "structure_evidence_reordered_page_count": stats["structure_evidence_reordered_page_count"],
         "structure_evidence_order_source_counts": stats["structure_evidence_order_source_counts"],
+        "semantic_layer_driver": semantic_layer.get("driver"),
+        "semantic_layer_payload_kind": semantic_layer.get("payload_kind"),
+        "semantic_layer_structure_role": structure_semantic_layer.get("role"),
         **reading_order_risk,
         "max_diff_ratio": max_diff_ratio,
         "mean_diff_ratio": mean_diff_ratio,
@@ -2215,6 +2227,9 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "worst_case": worst_case["name"],
         "worst_page": worst_case["worst_page"],
         "source_type_counts": dict(Counter(str(case.get("source_type") or "pdf") for case in cases)),
+        "semantic_layer_driver_counts": _sum_case_values(cases, "semantic_layer_driver"),
+        "semantic_layer_payload_kind_counts": _sum_case_values(cases, "semantic_layer_payload_kind"),
+        "semantic_layer_structure_role_counts": _sum_case_values(cases, "semantic_layer_structure_role"),
         "dimension_match_rate": round(
             sum(1 for case in cases if bool(case["dimension_match"])) / len(cases),
             8,
@@ -2539,6 +2554,9 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
 def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
     fieldnames = [
         "name",
+        "source",
+        "source_pdf",
+        "source_path",
         "source_type",
         "input_kind",
         "image_dpi",
@@ -2664,6 +2682,9 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "structure_evidence_matched_element_count",
         "structure_evidence_reordered_page_count",
         "structure_evidence_order_source_counts",
+        "semantic_layer_driver",
+        "semantic_layer_payload_kind",
+        "semantic_layer_structure_role",
         "reading_order_risk_score",
         "reading_order_risk_level",
         "reading_order_column_geometry_page_count",

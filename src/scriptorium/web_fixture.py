@@ -43,8 +43,8 @@ def create_web_fixture(out_dir: str | Path) -> Path:
   </style>
 </head>
 <body>
-  <h1>Scriptorium Native PDF</h1>
-  <p>This PDF is printed by Playwright from structured HTML.</p>
+  <h1>Scriptorium Web Fixture</h1>
+  <p>This document source is printed by Playwright from structured HTML.</p>
   <p>The result must become editable text nodes, not one page screenshot.</p>
   <table>
     <tr><th>Layer</th><th>Purpose</th><th>Status</th></tr>

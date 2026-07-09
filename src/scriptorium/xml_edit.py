@@ -17,7 +17,9 @@ def export_document_xml(
         "scriptorium-document",
         {
             "id": document.id,
-            "source-pdf": document.source_pdf,
+            "source": document.source,
+            "source-type": document.source_type,
+            "source-pdf": document.source_pdf or document.source,
             "page-count": str(document.page_count),
         },
     )

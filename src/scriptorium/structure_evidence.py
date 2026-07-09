@@ -402,6 +402,7 @@ def apply_structure_evidence(
     min_text_similarity: float = 0.45,
     reorder: bool = True,
 ) -> DocumentIR:
+    source_name = source or _extract_source(payload, None)
     regions = normalize_structure_evidence(payload, document, source=source)
     regions_by_page: dict[int, list[StructureRegion]] = {}
     for region in regions:
@@ -426,7 +427,7 @@ def apply_structure_evidence(
 
     document.metadata["structure_evidence"] = {
         "version": "v1",
-        "source": source or _extract_source(payload, None),
+        "source": source_name,
         "region_count": len(regions),
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
@@ -439,11 +440,19 @@ def apply_structure_evidence(
             for page_index, page_regions in sorted(regions_by_page.items())
         ],
     }
+    _update_semantic_layer_metadata(
+        document,
+        source=source_name,
+        region_count=len(regions),
+        matched_count=matched_count,
+        reordered_pages=reordered_pages,
+        order_source_counts=dict(sorted(order_source_counts.items())),
+    )
     document.revisions.append(
         RevisionIR(
             reason="structure-evidence-fusion",
             payload={
-                "source": source or _extract_source(payload, None),
+                "source": source_name,
                 "region_count": len(regions),
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
@@ -452,6 +461,35 @@ def apply_structure_evidence(
         )
     )
     return document
+
+
+def _update_semantic_layer_metadata(
+    document: DocumentIR,
+    *,
+    source: str,
+    region_count: int,
+    matched_count: int,
+    reordered_pages: int,
+    order_source_counts: dict[str, int],
+) -> None:
+    current = document.metadata.get("semantic_layer")
+    semantic_layer = dict(current) if isinstance(current, dict) else {}
+    semantic_layer["structure_json"] = {
+        "source": source,
+        "role": "semantic-driver" if document.source_type == "image" and region_count > 0 else "augmenting-evidence",
+        "region_count": region_count,
+        "matched_element_count": matched_count,
+        "reordered_page_count": reordered_pages,
+        "order_source_counts": order_source_counts,
+    }
+    if document.source_type == "image" and region_count > 0:
+        semantic_layer["driver"] = "structure-json"
+        semantic_layer["payload_kind"] = "structure-json"
+        semantic_layer["source_visual_layer_role"] = "visual-fidelity-only"
+    else:
+        semantic_layer.setdefault("driver", "native-pdf" if document.source_type == "pdf" else "ocr-json")
+        semantic_layer.setdefault("source_visual_layer_role", "visual-fidelity")
+    document.metadata["semantic_layer"] = semantic_layer
 
 
 def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:

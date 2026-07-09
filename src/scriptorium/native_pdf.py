@@ -44,7 +44,7 @@ def extract_native_pdf_to_ir(
         raise ValueError("native PDF extraction only supports PDF sources")
     pages: list[PageIR] = []
     page_diagnostics: list[dict[str, Any]] = []
-    with fitz.open(rendered.source_pdf) as doc:
+    with fitz.open(rendered.pdf_source) as doc:
         for rendered_page in rendered.pages:
             page = doc[rendered_page.page_index]
             extraction = _extract_page_text_elements(
@@ -75,7 +75,8 @@ def extract_native_pdf_to_ir(
             )
 
     return DocumentIR(
-        source_pdf=str(rendered.source_pdf),
+        source=str(rendered.source),
+        source_pdf=str(rendered.pdf_source),
         source_path=str(rendered.source),
         source_type=rendered.source_type,
         render_dpi=rendered.render_dpi,
@@ -97,9 +98,15 @@ def extract_native_pdf_to_ir(
         ],
         metadata={
             "extraction_mode": "native",
+            "source": str(rendered.source),
             "font_profile": font_profile,
             "raster_policy": raster_policy,
             "font_size_scale": font_size_scale,
+            "semantic_layer": {
+                "driver": "native-pdf",
+                "source": "pymupdf-text-dict",
+                "structure_json_role": "augmenting-evidence",
+            },
             "ocr_fallback": ocr_fallback,
             "ocr_language": ocr_language,
             "ocr_dpi": ocr_dpi,

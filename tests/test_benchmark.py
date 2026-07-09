@@ -459,7 +459,12 @@ def test_benchmark_can_score_image_source_with_structure_json(tmp_path: Path) ->
     assert report["input_kind"] == "image"
     assert report["image_dpi"] == 96
     assert report["summary"]["source_type_counts"] == {"image": 1}
+    assert report["summary"]["semantic_layer_driver_counts"] == {"structure-json": 1}
     assert case["source_type"] == "image"
+    assert case["source"] == str(image_path)
+    assert case["semantic_layer_driver"] == "structure-json"
+    assert case["semantic_layer_payload_kind"] == "structure-json"
+    assert case["semantic_layer_structure_role"] == "semantic-driver"
     assert case["image_dpi"] == 96
     assert case["page_count"] == 1
     assert case["image_count"] == 1
@@ -470,7 +475,9 @@ def test_benchmark_can_score_image_source_with_structure_json(tmp_path: Path) ->
     assert quality["expected_page_count"] == 1
     assert quality["actual_page_count"] == 1
     assert quality["dimension_match"] is True
+    assert "source" in csv_text
     assert "source_type" in csv_text
+    assert "semantic_layer_driver" in csv_text
     assert "image_dpi" in csv_text
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 ElementType = Literal[
@@ -110,8 +110,9 @@ class RevisionIR(BaseModel):
 
 class DocumentIR(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
-    source_pdf: str
+    source: str
     source_path: str | None = None
+    source_pdf: str | None = None
     source_type: SourceType = "pdf"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     render_dpi: int
@@ -119,6 +120,27 @@ class DocumentIR(BaseModel):
     pages: list[PageIR]
     revisions: list[RevisionIR] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_source_aliases(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        source = data.get("source") or data.get("source_path") or data.get("source_pdf")
+        if source is not None:
+            data.setdefault("source", source)
+            data.setdefault("source_path", source)
+            data.setdefault("source_pdf", source)
+        return data
+
+    @model_validator(mode="after")
+    def _sync_source_aliases(self) -> "DocumentIR":
+        if self.source_path is None:
+            self.source_path = self.source
+        if self.source_pdf is None:
+            self.source_pdf = self.source
+        return self
 
     def save(self, path: str | Path) -> None:
         target = Path(path)

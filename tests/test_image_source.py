@@ -23,6 +23,7 @@ def test_image_source_renders_as_first_class_document_source(tmp_path: Path) -> 
     annotate_document(document)
 
     assert rendered.source_type == "image"
+    assert document.source == str(image_path.resolve())
     assert document.source_type == "image"
     assert document.source_path == str(image_path.resolve())
     assert document.page_count == 1
@@ -66,6 +67,8 @@ def test_image_source_uses_ocr_json_as_text_anchor_layer(tmp_path: Path) -> None
     assert elements[1].metadata["annotation"]["source_kind"] == "native-ocr"
     assert elements[1].metadata["annotation"]["editable"] is True
     assert document.metadata["image_source_visual_layer"] is True
+    assert document.metadata["semantic_layer"]["driver"] == "ocr-json"
+    assert document.metadata["semantic_layer"]["payload_kind"] == "ocr-json"
 
 
 def test_image_source_can_apply_tesseract_ocr_fallback(tmp_path: Path) -> None:
@@ -83,6 +86,7 @@ def test_image_source_can_apply_tesseract_ocr_fallback(tmp_path: Path) -> None:
     text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
 
     assert document.metadata["page_extraction"][0]["ocr_fallback_status"] == "applied"
+    assert document.metadata["semantic_layer"]["driver"] == "ocr-fallback"
     assert text_elements
     assert {element.metadata["annotation"]["source_kind"] for element in text_elements} == {"native-ocr"}
     assert all(element.metadata["ocr_fallback"] is True for element in text_elements)
@@ -117,6 +121,8 @@ def test_image_source_can_seed_text_from_structure_json_blocks(tmp_path: Path) -
     assert text.metadata["external_structure_order"] == 1
     assert text.metadata["structure_evidence"]["source"] == "pp-structurev3"
     assert text.metadata["annotation"]["source_kind"] == "native-ocr"
+    assert document.metadata["semantic_layer"]["driver"] == "structure-json"
+    assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
 
 
 def _make_image(path: Path) -> Path:

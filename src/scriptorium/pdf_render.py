@@ -30,15 +30,21 @@ class RenderedPage:
 
 @dataclass(frozen=True)
 class RenderedDocument:
-    source_pdf: Path
+    source_path: Path
     render_dpi: int
     pages: list[RenderedPage]
     source_type: RenderedSourceType = "pdf"
-    source_path: Path | None = None
+    source_pdf: Path | None = None
 
     @property
     def source(self) -> Path:
-        return self.source_path or self.source_pdf
+        return self.source_path
+
+    @property
+    def pdf_source(self) -> Path:
+        if self.source_pdf is None:
+            raise ValueError("PDF source is only available for PDF-rendered documents")
+        return self.source_pdf
 
 
 def render_source(
@@ -120,7 +126,7 @@ def render_pdf(
                 )
             )
 
-    return RenderedDocument(source_pdf=source, source_path=source, source_type="pdf", render_dpi=dpi, pages=pages)
+    return RenderedDocument(source_path=source, source_pdf=source, source_type="pdf", render_dpi=dpi, pages=pages)
 
 
 def render_image(
@@ -147,7 +153,6 @@ def render_image(
     pages: list[RenderedPage] = []
     if not selected_indices:
         return RenderedDocument(
-            source_pdf=source,
             source_path=source,
             source_type="image",
             render_dpi=image_dpi,
@@ -181,7 +186,6 @@ def render_image(
         )
     )
     return RenderedDocument(
-        source_pdf=source,
         source_path=source,
         source_type="image",
         render_dpi=image_dpi,
@@ -210,7 +214,7 @@ def _selected_page_indices(page_count: int, page_indices: Sequence[int] | None) 
     for raw_index in page_indices:
         index = int(raw_index)
         if index < 0 or index >= page_count:
-            raise ValueError(f"page index {index} is outside PDF page range 0-{page_count - 1}")
+            raise ValueError(f"page index {index} is outside source page range 0-{page_count - 1}")
         if index in seen:
             continue
         selected.append(index)
