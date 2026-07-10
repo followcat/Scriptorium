@@ -712,6 +712,60 @@ def test_pp_structure_ocr_formula_and_seal_results_are_region_evidence() -> None
     assert by_id["seal"].metadata["role"] == "seal-text"
 
 
+def test_pp_structure_region_ids_resolve_relations_and_stream_members() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("formula", "E=mc^2", BBox(x0=12, y0=42, x1=55, y1=52), 1),
+            ("seal", "Seal", BBox(x0=90, y0=42, x1=123, y1=52), 2),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "formula_res_list": [
+                {
+                    "formula_region_id": "formula-1",
+                    "rec_formula": "E=mc^2",
+                    "rec_polys": [[24, 84], [110, 84], [110, 104], [24, 104]],
+                    "rec_score": 0.89,
+                }
+            ],
+            "seal_res_list": [
+                {
+                    "seal_region_id": "seal-1",
+                    "rec_boxes": [[180, 84, 246, 104]],
+                    "rec_texts": ["Seal"],
+                    "rec_scores": [0.88],
+                }
+            ],
+            "reading_streams": [
+                {
+                    "id": "stamp-flow",
+                    "stream_type": "body",
+                    "members": ["formula-1", "seal-1"],
+                    "successor_edges": [["formula-1", "seal-1"]],
+                }
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["formula"].metadata["external_structure_node_keys"] == ["formula-1", "E=mc^2"]
+    assert by_id["seal"].metadata["external_structure_node_keys"] == ["seal-1", "Seal"]
+    assert by_id["formula"].metadata["external_structure_successor_ids"] == ["seal"]
+    assert by_id["formula"].metadata["reading_order_stream_id"] == "stamp-flow"
+    assert by_id["formula"].metadata["reading_order_stream_index"] == 1
+    assert by_id["seal"].metadata["reading_order_stream_id"] == "stamp-flow"
+    assert by_id["seal"].metadata["reading_order_stream_index"] == 2
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 1
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 1
+    assert document.metadata["structure_evidence"]["stream_count"] == 1
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 2
+
+
 def test_pp_structure_ocr_result_regions_are_deduped() -> None:
     document = _document_with_text_boxes(
         [

@@ -12,6 +12,28 @@ from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
 from .relation_order import relation_edge_candidate_path_cover
 
 
+STRUCTURE_REF_KEYS = (
+    "id",
+    "element_id",
+    "block_id",
+    "region_id",
+    "layout_region_id",
+    "table_region_id",
+    "table_id",
+    "formula_region_id",
+    "seal_region_id",
+    "cell_id",
+    "text_id",
+    "line_id",
+    "paragraph_id",
+    "uid",
+    "self_ref",
+    "ref",
+    "docling_ref",
+    "external_structure_table_ref",
+)
+
+
 @dataclass(frozen=True)
 class StructureRegion:
     page_index: int
@@ -1214,12 +1236,7 @@ def _normalize_external_stream_type(value: Any) -> str:
 def _relation_endpoint(value: Any) -> str:
     if isinstance(value, dict):
         for key in (
-            "id",
-            "element_id",
-            "block_id",
-            "region_id",
-            "self_ref",
-            "ref",
+            *STRUCTURE_REF_KEYS,
             "text",
             "source_text",
             "block_content",
@@ -2195,16 +2212,7 @@ def _element_relation_keys(element: ElementIR) -> set[str]:
         _relation_key(element.id),
         _relation_key(element.source_text),
     }
-    for key in (
-        "id",
-        "element_id",
-        "block_id",
-        "region_id",
-        "uid",
-        "self_ref",
-        "ref",
-        "docling_ref",
-    ):
+    for key in STRUCTURE_REF_KEYS:
         value = element.metadata.get(key)
         if value is not None:
             keys.add(_relation_key(value))
@@ -2221,16 +2229,7 @@ def _element_relation_keys(element: ElementIR) -> set[str]:
 
 def _region_node_keys(region: StructureRegion) -> list[str]:
     keys: list[str] = []
-    for key in (
-        "id",
-        "element_id",
-        "block_id",
-        "region_id",
-        "uid",
-        "self_ref",
-        "ref",
-        "docling_ref",
-    ):
+    for key in STRUCTURE_REF_KEYS:
         value = region.raw.get(key)
         if value is not None:
             keys.append(str(value).strip())
