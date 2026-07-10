@@ -330,6 +330,8 @@ def test_roor_document_relations_and_streams_resolve_list_indices_without_ids() 
     assert "2" in by_id["b"].metadata["external_structure_node_keys"]
     assert by_id["a"].metadata["reading_order_stream_id"] == "body-chain"
     assert by_id["a"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_id["a"].metadata["external_structure_stream_resolved_via_alias"] is False
+    assert by_id["a"].metadata["external_structure_stream_member_ref"] == "0"
     assert by_id["b"].metadata["reading_order_stream_index"] == 2
 
 
@@ -381,6 +383,22 @@ def test_roor_text_only_document_relations_resolve_list_indices_as_aliases() -> 
         "2": "B",
         "3": "D",
     }
+    assert document.metadata["structure_evidence"]["relations_by_page"][0]["relations"][0] == {
+        "page_index": 0,
+        "kind": "successor",
+        "source_ref": "0",
+        "target_ref": "2",
+        "source": "roor",
+        "source_alias": "A",
+        "target_alias": "B",
+        "has_endpoint_alias": True,
+    }
+    assert document.metadata["structure_evidence"]["streams_by_page"][0]["streams"][0]["member_aliases"] == {
+        "0": "A",
+        "1": "C",
+        "2": "B",
+        "3": "D",
+    }
     assert [
         element.source_text
         for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
@@ -393,8 +411,14 @@ def test_roor_text_only_document_relations_resolve_list_indices_as_aliases() -> 
     assert document.metadata["structure_evidence"]["resolved_stream_alias_member_count"] == 4
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
+    assert by_id["a"].metadata["external_structure_relation_edges"][0]["resolved_via_alias"] is True
+    assert by_id["a"].metadata["external_structure_relation_edges"][0]["source_alias"] == "A"
+    assert by_id["a"].metadata["external_structure_relation_edges"][0]["target_alias"] == "B"
     assert by_id["a"].metadata["reading_order_stream_id"] == "body-chain"
     assert by_id["a"].metadata["reading_order_stream_type"] == "body"
+    assert by_id["a"].metadata["external_structure_stream_resolved_via_alias"] is True
+    assert by_id["a"].metadata["external_structure_stream_member_ref"] == "0"
+    assert by_id["a"].metadata["external_structure_stream_member_alias"] == "A"
     assert by_id["b"].metadata["reading_order_stream_index"] == 2
 
 

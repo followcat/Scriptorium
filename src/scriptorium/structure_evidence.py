@@ -79,13 +79,22 @@ class StructureRelationEdge:
     raw: dict[str, Any]
 
     def as_metadata(self) -> dict[str, Any]:
-        return {
+        metadata = {
             "page_index": self.page_index,
             "kind": self.kind,
             "source_ref": self.source_ref,
             "target_ref": self.target_ref,
             "source": self.source,
         }
+        source_alias = self.raw.get("_scriptorium_source_alias")
+        target_alias = self.raw.get("_scriptorium_target_alias")
+        if source_alias:
+            metadata["source_alias"] = str(source_alias)
+        if target_alias:
+            metadata["target_alias"] = str(target_alias)
+        if source_alias or target_alias:
+            metadata["has_endpoint_alias"] = True
+        return metadata
 
 
 @dataclass(frozen=True)
@@ -98,13 +107,17 @@ class StructureReadingStream:
     raw: dict[str, Any]
 
     def as_metadata(self) -> dict[str, Any]:
-        return {
+        metadata = {
             "page_index": self.page_index,
             "stream_id": self.stream_id,
             "stream_type": self.stream_type,
             "member_refs": list(self.member_refs),
             "source": self.source,
         }
+        member_aliases = self.raw.get("_scriptorium_member_aliases")
+        if isinstance(member_aliases, dict) and member_aliases:
+            metadata["member_aliases"] = dict(sorted((str(key), str(value)) for key, value in member_aliases.items()))
+        return metadata
 
 
 def load_structure_json(path: str | Path) -> dict[str, Any]:
@@ -2154,6 +2167,12 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             "target_ref": relation.target_ref,
             "source": relation.source,
         }
+        if source_alias_used:
+            record["source_alias"] = str(relation.raw.get("_scriptorium_source_alias") or "")
+        if target_alias_used:
+            record["target_alias"] = str(relation.raw.get("_scriptorium_target_alias") or "")
+        if source_alias_used or target_alias_used:
+            record["resolved_via_alias"] = True
         if record not in relation_records:
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
@@ -2174,29 +2193,30 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
     conflict_count = 0
     alias_resolved_count = 0
     for stream in streams:
-        stream_members: list[ElementIR] = []
+        stream_members: list[tuple[ElementIR, str, str, bool]] = []
         seen_member_ids: set[str] = set()
         member_aliases = stream.raw.get("_scriptorium_member_aliases")
         if not isinstance(member_aliases, dict):
             member_aliases = {}
         for ref in stream.member_refs:
+            ref_text = str(ref)
+            alias_text = ""
             element = _resolve_relation_endpoint_to_element(ref, text_elements)
             alias_used = False
             if element is None:
+                alias_text = str(member_aliases.get(_relation_key(ref)) or "")
                 element = _resolve_relation_endpoint_to_element(
-                    member_aliases.get(_relation_key(ref)),
+                    alias_text,
                     text_elements,
                 )
                 alias_used = element is not None
             if element is None or element.id in seen_member_ids:
                 continue
             seen_member_ids.add(element.id)
-            stream_members.append(element)
-            if alias_used:
-                alias_resolved_count += 1
+            stream_members.append((element, ref_text, alias_text, alias_used))
         if not stream_members:
             continue
-        for stream_index, element in enumerate(stream_members, start=1):
+        for stream_index, (element, ref_text, alias_text, alias_used) in enumerate(stream_members, start=1):
             existing_stream_id = str(element.metadata.get("external_structure_stream_id") or "").strip()
             if existing_stream_id and existing_stream_id != stream.stream_id:
                 conflicts = element.metadata.get("external_structure_stream_conflicts")
@@ -2214,6 +2234,11 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
                 conflict_count += 1
                 continue
             _apply_external_stream_metadata(element, stream, stream_index)
+            element.metadata["external_structure_stream_member_ref"] = ref_text
+            element.metadata["external_structure_stream_resolved_via_alias"] = alias_used
+            if alias_used:
+                element.metadata["external_structure_stream_member_alias"] = alias_text
+                alias_resolved_count += 1
             resolved_count += 1
     return resolved_count, conflict_count, alias_resolved_count
 
