@@ -1260,17 +1260,29 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
+    assert "semantic_relation_missing_text_delta" in comparison
+    assert "semantic_stream_missing_text_delta" in comparison
+    assert "semantic_stream_assignment_missing_delta" in comparison
     assert comparison["semantic_stream_assignment_id_accuracy_delta"] > 0
     assert comparison["semantic_stream_assignment_type_accuracy_delta"] > 0
+    assert report["summary"]["total_semantic_relation_missing_text_delta"] == 0
+    assert report["summary"]["total_semantic_stream_missing_text_delta"] == 0
+    assert report["summary"]["total_semantic_stream_assignment_missing_delta"] == 0
     assert report["summary"]["mean_semantic_stream_assignment_id_accuracy_delta"] > 0
     assert report["summary"]["mean_semantic_stream_assignment_type_accuracy_delta"] > 0
     assert report["summary"]["cases_with_stream_assignment_id_improvement"] == 1
     assert report["summary"]["cases_with_stream_assignment_type_improvement"] == 1
+    assert report["summary"]["cases_with_relation_missing_text_improvement"] == 0
+    assert report["summary"]["cases_with_stream_missing_text_improvement"] == 0
+    assert report["summary"]["cases_with_stream_assignment_missing_improvement"] == 0
     assert "semantic_external_structure_successor_accuracy" not in csv_text
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
     assert "fidelity_replacement_same_stream_conflict_target_delta" in csv_text
     assert "fidelity_replacement_cross_stream_conflict_target_delta" in csv_text
+    assert "semantic_relation_missing_text_delta" in csv_text
+    assert "semantic_stream_missing_text_delta" in csv_text
+    assert "semantic_stream_assignment_missing_delta" in csv_text
     assert "semantic_stream_assignment_id_accuracy_delta" in csv_text
     assert "semantic_stream_assignment_type_accuracy_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text

@@ -434,6 +434,31 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "semantic_stream_successor_accuracy",
         ),
+        "native_semantic_relation_missing_text_count": native_case["semantic_relation_missing_text_count"],
+        "structure_semantic_relation_missing_text_count": structure_case["semantic_relation_missing_text_count"],
+        "semantic_relation_missing_text_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_relation_missing_text_count",
+        ),
+        "native_semantic_stream_missing_text_count": native_case["semantic_stream_missing_text_count"],
+        "structure_semantic_stream_missing_text_count": structure_case["semantic_stream_missing_text_count"],
+        "semantic_stream_missing_text_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_stream_missing_text_count",
+        ),
+        "native_semantic_stream_assignment_missing_count": native_case[
+            "semantic_stream_assignment_missing_count"
+        ],
+        "structure_semantic_stream_assignment_missing_count": structure_case[
+            "semantic_stream_assignment_missing_count"
+        ],
+        "semantic_stream_assignment_missing_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "semantic_stream_assignment_missing_count",
+        ),
         "semantic_stream_assignment_id_accuracy_delta": _numeric_delta(
             structure_case,
             native_case,
@@ -535,6 +560,15 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         ),
         "total_page_review_delta": sum(int(values["page_review_delta"]) for values in comparisons),
         "total_stream_review_delta": sum(int(values["stream_review_delta"]) for values in comparisons),
+        "total_semantic_relation_missing_text_delta": sum(
+            int(values["semantic_relation_missing_text_delta"] or 0) for values in comparisons
+        ),
+        "total_semantic_stream_missing_text_delta": sum(
+            int(values["semantic_stream_missing_text_delta"] or 0) for values in comparisons
+        ),
+        "total_semantic_stream_assignment_missing_delta": sum(
+            int(values["semantic_stream_assignment_missing_delta"] or 0) for values in comparisons
+        ),
         "mean_semantic_stream_assignment_id_accuracy_delta": _mean_optional(
             values["semantic_stream_assignment_id_accuracy_delta"] for values in comparisons
         ),
@@ -546,6 +580,15 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         ),
         "cases_with_stream_assignment_type_improvement": sum(
             1 for values in comparisons if float(values["semantic_stream_assignment_type_accuracy_delta"] or 0.0) > 0
+        ),
+        "cases_with_relation_missing_text_improvement": sum(
+            1 for values in comparisons if int(values["semantic_relation_missing_text_delta"] or 0) < 0
+        ),
+        "cases_with_stream_missing_text_improvement": sum(
+            1 for values in comparisons if int(values["semantic_stream_missing_text_delta"] or 0) < 0
+        ),
+        "cases_with_stream_assignment_missing_improvement": sum(
+            1 for values in comparisons if int(values["semantic_stream_assignment_missing_delta"] or 0) < 0
         ),
         "cases_with_visual_regression": sum(
             1 for values in comparisons if float(values["visual_similarity_delta"] or 0.0) < 0
@@ -644,6 +687,15 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "successor_consensus_successor_disagreement_delta",
         "semantic_successor_accuracy_delta",
         "semantic_stream_successor_accuracy_delta",
+        "native_semantic_relation_missing_text_count",
+        "structure_semantic_relation_missing_text_count",
+        "semantic_relation_missing_text_delta",
+        "native_semantic_stream_missing_text_count",
+        "structure_semantic_stream_missing_text_count",
+        "semantic_stream_missing_text_delta",
+        "native_semantic_stream_assignment_missing_count",
+        "structure_semantic_stream_assignment_missing_count",
+        "semantic_stream_assignment_missing_delta",
         "semantic_stream_assignment_id_accuracy_delta",
         "semantic_stream_assignment_type_accuracy_delta",
         "native_reading_order_stream_type_counts",
