@@ -781,7 +781,9 @@ def apply_structure_evidence(
 
     matched_count = 0
     resolved_relation_count = 0
+    resolved_relation_alias_count = 0
     resolved_stream_member_count = 0
+    resolved_stream_alias_member_count = 0
     stream_conflict_count = 0
     relation_stream_count = 0
     resolved_relation_stream_member_count = 0
@@ -800,15 +802,18 @@ def apply_structure_evidence(
                 min_text_similarity=min_text_similarity,
             )
             matched_count += page_matches
-        resolved_relation_count += _apply_page_relation_edges(
+        page_relation_count, page_relation_alias_count = _apply_page_relation_edges(
             page,
             relations_by_page.get(page.page_index, []),
         )
-        page_stream_members, page_stream_conflicts = _apply_page_streams(
+        resolved_relation_count += page_relation_count
+        resolved_relation_alias_count += page_relation_alias_count
+        page_stream_members, page_stream_conflicts, page_stream_alias_members = _apply_page_streams(
             page,
             streams_by_page.get(page.page_index, []),
         )
         resolved_stream_member_count += page_stream_members
+        resolved_stream_alias_member_count += page_stream_alias_members
         stream_conflict_count += page_stream_conflicts
         page_relation_streams, page_relation_stream_members, page_relation_stream_conflicts = _apply_relation_derived_streams(
             page,
@@ -832,8 +837,10 @@ def apply_structure_evidence(
         "region_count": len(regions),
         "relation_edge_count": len(relations),
         "resolved_relation_edge_count": resolved_relation_count,
+        "resolved_relation_alias_edge_count": resolved_relation_alias_count,
         "stream_count": len(streams),
         "resolved_stream_member_count": resolved_stream_member_count,
+        "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
         "stream_conflict_count": stream_conflict_count,
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -874,8 +881,10 @@ def apply_structure_evidence(
         order_source_counts=dict(sorted(order_source_counts.items())),
         relation_count=len(relations),
         resolved_relation_count=resolved_relation_count,
+        resolved_relation_alias_count=resolved_relation_alias_count,
         stream_count=len(streams),
         resolved_stream_member_count=resolved_stream_member_count,
+        resolved_stream_alias_member_count=resolved_stream_alias_member_count,
         stream_conflict_count=stream_conflict_count,
         relation_stream_count=relation_stream_count,
         resolved_relation_stream_member_count=resolved_relation_stream_member_count,
@@ -891,8 +900,10 @@ def apply_structure_evidence(
                 "region_count": len(regions),
                 "relation_edge_count": len(relations),
                 "resolved_relation_edge_count": resolved_relation_count,
+                "resolved_relation_alias_edge_count": resolved_relation_alias_count,
                 "stream_count": len(streams),
                 "resolved_stream_member_count": resolved_stream_member_count,
+                "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
                 "stream_conflict_count": stream_conflict_count,
                 "relation_stream_count": relation_stream_count,
                 "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -918,8 +929,10 @@ def _update_semantic_layer_metadata(
     order_source_counts: dict[str, int],
     relation_count: int,
     resolved_relation_count: int,
+    resolved_relation_alias_count: int,
     stream_count: int,
     resolved_stream_member_count: int,
+    resolved_stream_alias_member_count: int,
     stream_conflict_count: int,
     relation_stream_count: int,
     resolved_relation_stream_member_count: int,
@@ -941,8 +954,10 @@ def _update_semantic_layer_metadata(
         "order_source_counts": order_source_counts,
         "relation_edge_count": relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
+        "resolved_relation_alias_edge_count": resolved_relation_alias_count,
         "stream_count": stream_count,
         "resolved_stream_member_count": resolved_stream_member_count,
+        "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
         "stream_conflict_count": stream_conflict_count,
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -2091,27 +2106,32 @@ def _apply_page_regions(
     return matched_count
 
 
-def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEdge]) -> int:
+def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEdge]) -> tuple[int, int]:
     if not relations:
-        return 0
+        return 0, 0
     text_elements = [element for element in page.elements if element.source_text.strip()]
     if len(text_elements) < 2:
-        return 0
+        return 0, 0
 
     resolved_count = 0
+    alias_resolved_count = 0
     for relation in relations:
         source_element = _resolve_relation_endpoint_to_element(relation.source_ref, text_elements)
+        source_alias_used = False
         if source_element is None:
             source_element = _resolve_relation_endpoint_to_element(
                 relation.raw.get("_scriptorium_source_alias"),
                 text_elements,
             )
+            source_alias_used = source_element is not None
         target_element = _resolve_relation_endpoint_to_element(relation.target_ref, text_elements)
+        target_alias_used = False
         if target_element is None:
             target_element = _resolve_relation_endpoint_to_element(
                 relation.raw.get("_scriptorium_target_alias"),
                 text_elements,
             )
+            target_alias_used = target_element is not None
         if source_element is None or target_element is None or source_element.id == target_element.id:
             continue
         metadata_key = (
@@ -2138,18 +2158,21 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
         resolved_count += 1
-    return resolved_count
+        if source_alias_used or target_alias_used:
+            alias_resolved_count += 1
+    return resolved_count, alias_resolved_count
 
 
-def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> tuple[int, int]:
+def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> tuple[int, int, int]:
     if not streams:
-        return 0, 0
+        return 0, 0, 0
     text_elements = [element for element in page.elements if element.source_text.strip()]
     if not text_elements:
-        return 0, 0
+        return 0, 0, 0
 
     resolved_count = 0
     conflict_count = 0
+    alias_resolved_count = 0
     for stream in streams:
         stream_members: list[ElementIR] = []
         seen_member_ids: set[str] = set()
@@ -2158,15 +2181,19 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
             member_aliases = {}
         for ref in stream.member_refs:
             element = _resolve_relation_endpoint_to_element(ref, text_elements)
+            alias_used = False
             if element is None:
                 element = _resolve_relation_endpoint_to_element(
                     member_aliases.get(_relation_key(ref)),
                     text_elements,
                 )
+                alias_used = element is not None
             if element is None or element.id in seen_member_ids:
                 continue
             seen_member_ids.add(element.id)
             stream_members.append(element)
+            if alias_used:
+                alias_resolved_count += 1
         if not stream_members:
             continue
         for stream_index, element in enumerate(stream_members, start=1):
@@ -2188,7 +2215,7 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
                 continue
             _apply_external_stream_metadata(element, stream, stream_index)
             resolved_count += 1
-    return resolved_count, conflict_count
+    return resolved_count, conflict_count, alias_resolved_count
 
 
 def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, int, int]:

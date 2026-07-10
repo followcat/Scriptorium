@@ -1141,8 +1141,10 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert case["structure_evidence_region_count"] == 1
     assert case["structure_evidence_relation_edge_count"] == 0
     assert case["structure_evidence_resolved_relation_edge_count"] == 0
+    assert case["structure_evidence_resolved_relation_alias_edge_count"] == 0
     assert case["structure_evidence_stream_count"] == 0
     assert case["structure_evidence_resolved_stream_member_count"] == 0
+    assert case["structure_evidence_resolved_stream_alias_member_count"] == 0
     assert case["structure_evidence_stream_conflict_count"] == 0
     assert case["structure_evidence_relation_stream_count"] == 0
     assert case["structure_evidence_resolved_relation_stream_member_count"] == 0
@@ -1154,8 +1156,10 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert "text_run_count" in csv_text
     assert "raster_fallback_count" in csv_text
     assert report["summary"]["total_structure_evidence_regions"] == 1
+    assert report["summary"]["total_structure_evidence_resolved_relation_alias_edges"] == 0
     assert report["summary"]["total_structure_evidence_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_stream_members"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_stream_alias_members"] == 0
     assert report["summary"]["total_structure_evidence_stream_conflicts"] == 0
     assert report["summary"]["total_structure_evidence_relation_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0
@@ -1168,7 +1172,9 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert "structure_evidence_matched_element_count" in csv_text
     assert "structure_evidence_relation_edge_count" in csv_text
+    assert "structure_evidence_resolved_relation_alias_edge_count" in csv_text
     assert "structure_evidence_stream_count" in csv_text
+    assert "structure_evidence_resolved_stream_alias_member_count" in csv_text
     assert "structure_evidence_relation_stream_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
@@ -1247,8 +1253,10 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_evidence_region_count"] == 1
     assert comparison["structure_evidence_relation_edge_count"] == 0
     assert comparison["structure_evidence_resolved_relation_edge_count"] == 0
+    assert comparison["structure_evidence_resolved_relation_alias_edge_count"] == 0
     assert comparison["structure_evidence_stream_count"] == 0
     assert comparison["structure_evidence_resolved_stream_member_count"] == 0
+    assert comparison["structure_evidence_resolved_stream_alias_member_count"] == 0
     assert comparison["structure_evidence_stream_conflict_count"] == 0
     assert comparison["structure_evidence_relation_stream_count"] == 0
     assert comparison["structure_evidence_resolved_relation_stream_member_count"] == 0
@@ -1287,7 +1295,9 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "semantic_stream_assignment_type_accuracy_delta" in csv_text
     assert "structure_evidence_matched_element_count" in csv_text
     assert "structure_evidence_relation_edge_count" in csv_text
+    assert "structure_evidence_resolved_relation_alias_edge_count" in csv_text
     assert "structure_evidence_stream_count" in csv_text
+    assert "structure_evidence_resolved_stream_alias_member_count" in csv_text
     assert "structure_evidence_relation_stream_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
@@ -1295,8 +1305,10 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["total_structure_evidence_regions"] == 1
     assert report["summary"]["total_structure_evidence_relation_edges"] == 0
     assert report["summary"]["total_structure_evidence_resolved_relation_edges"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_relation_alias_edges"] == 0
     assert report["summary"]["total_structure_evidence_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_stream_members"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_stream_alias_members"] == 0
     assert report["summary"]["total_structure_evidence_stream_conflicts"] == 0
     assert report["summary"]["total_structure_evidence_relation_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0

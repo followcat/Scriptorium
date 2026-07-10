@@ -322,7 +322,9 @@ def test_roor_document_relations_and_streams_resolve_list_indices_without_ids() 
     ] == ["A", "B", "C", "D"]
     assert document.metadata["structure_evidence"]["matched_element_count"] == 4
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["resolved_relation_alias_edge_count"] == 0
     assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["resolved_stream_alias_member_count"] == 0
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert "0" in by_id["a"].metadata["external_structure_node_keys"]
     assert "2" in by_id["b"].metadata["external_structure_node_keys"]
@@ -386,7 +388,9 @@ def test_roor_text_only_document_relations_resolve_list_indices_as_aliases() -> 
     ] == ["A", "B", "C", "D"]
     assert document.metadata["structure_evidence"]["matched_element_count"] == 0
     assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["resolved_relation_alias_edge_count"] == 3
     assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["resolved_stream_alias_member_count"] == 4
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
     assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
     assert by_id["a"].metadata["reading_order_stream_id"] == "body-chain"
