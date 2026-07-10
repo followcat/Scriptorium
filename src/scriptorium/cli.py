@@ -24,6 +24,7 @@ from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
+from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
@@ -428,6 +429,25 @@ def convert(
     typer.echo(f"IR: {ir_path}")
     typer.echo(f"Pages: {len(document.pages)}")
     typer.echo(f"Source type: {document.source_type}")
+
+
+@app.command("propose-reading-sidecar")
+def propose_reading_sidecar(
+    ir_json: Path = typer.Argument(..., exists=True, readable=True, help="Annotated DocumentIR JSON."),
+    sidecar: Path = typer.Option(
+        Path("outputs/reading-order.sidecar.proposal.json"),
+        help="Reviewable local successor-edge and reading-stream sidecar JSON.",
+    ),
+) -> None:
+    """Generate a reviewable local reading-order sidecar without modifying the IR."""
+
+    payload = write_reading_order_sidecar(DocumentIR.load(ir_json), sidecar)
+    summary = reading_order_sidecar_summary(payload)
+    typer.echo(f"Reading-order sidecar proposal: {sidecar}")
+    typer.echo(f"Streams: {summary['stream_count']}")
+    typer.echo(f"Successor edges: {summary['successor_edge_count']}")
+    typer.echo(f"Review successor edges: {summary['review_successor_edge_count']}")
+    typer.echo(f"Review transitions: {summary['review_transition_count']}")
 
 
 @app.command("export-html")

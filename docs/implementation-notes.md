@@ -199,6 +199,20 @@ For the local CPU runtime used in those runs, install `requirements-ocr.txt`, co
 
 The design follows the direction of reading-order research: LayoutReader / ReadingBank treats reading order as a first-class document understanding task, ROOR models reading order as relations over layout elements, and recent graph/path-cover work frames complex pages as multiple successor chains rather than one fragile visual scan. The implementation keeps the model runtime optional but accepts the same evidence shape: local successor edges, precedence edges, and stream memberships.
 
+### Reviewable Reading-Order Sidecar
+
+Every benchmark case now writes `reading-order.sidecar.proposal.json`. It is a `ScriptoriumReadingOrderSidecar` proposal rather than an automatically accepted order repair: `reading_streams` preserve local body, table, grid, sidebar, caption, and artifact membership; only confident local relations are emitted as `successor_edges`; weak local relations remain in `review_successor_edges`; and every cross-stream handoff is kept as a non-executable `review_transitions` record.
+
+```bash
+scriptorium propose-reading-sidecar \
+  outputs/sample/document.ir.json \
+  --sidecar outputs/sample/reading-order.sidecar.proposal.json
+```
+
+`sidecar_status: "proposal"` is deliberately ignored by `apply_structure_evidence()` and records a `proposal-skipped` revision. A reviewer or a future relation model must explicitly change it to `accepted` before its strict local edges can affect the IR. The sidecar's `document` nodes also make image/OCR seeding reproducible, but are tagged as references and never overwrite stronger region/table metadata during structure fusion.
+
+When a semantic ground-truth sidecar exists, benchmark writes `semantic/reading_order_sidecar_proposal_quality_report.json` and reports strict-edge precision/coverage separately from review-edge precision/coverage. `reading_order_proposal_semantic_reviewable_successor_coverage` is the combined coverage of strict plus review edges, so an evidence threshold can move a correct edge into review without being mistaken for a semantic regression. Unlabelled pages retain raw stream/edge/transition counts only; those counts are triage signals, not correctness claims.
+
 ## Reading Order Layer
 
 PDF text is positioned drawing evidence, not guaranteed semantic text order. The current implementation keeps visual element IDs stable, then writes semantic ordering metadata:

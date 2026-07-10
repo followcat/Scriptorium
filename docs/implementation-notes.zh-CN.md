@@ -169,6 +169,20 @@ scriptorium benchmark page.png --input-kind image --structure-json page.structur
 
 这个设计和阅读顺序研究方向保持一致：LayoutReader / ReadingBank 把 reading order 当作文档理解的一等任务；ROOR 把 reading order 建模为 layout element 之间的关系；新的 graph/path-cover 工作也把复杂页面视为多条 successor chain，而不是一个脆弱的视觉扫描序列。Scriptorium 不把模型运行时绑进核心路径，但接收同形态证据：局部 successor edges、precedence edges 和 stream memberships。
 
+### 可审查的阅读顺序 Sidecar
+
+每个 benchmark case 现在都会写入 `reading-order.sidecar.proposal.json`。它是 `ScriptoriumReadingOrderSidecar` 提案，不是自动接受的顺序修复：`reading_streams` 保留正文、表格、网格、边栏、caption 和 artifact 的局部 membership；只有高置信局部关系进入 `successor_edges`；较弱的局部关系保留在 `review_successor_edges`；所有跨 stream handoff 都作为不可执行的 `review_transitions` 记录。
+
+```bash
+scriptorium propose-reading-sidecar \
+  outputs/sample/document.ir.json \
+  --sidecar outputs/sample/reading-order.sidecar.proposal.json
+```
+
+`sidecar_status: "proposal"` 会被 `apply_structure_evidence()` 有意忽略，并记录 `proposal-skipped` revision。只有人工审查或后续 relation model 显式改为 `accepted` 后，严格的局部边才会影响 IR。Sidecar 的 `document` 节点也能让 image/OCR anchor seeding 可复现，但它们被标为 reference，在结构融合时不会覆盖更强的 region/table metadata。
+
+若存在 semantic ground-truth sidecar，benchmark 会写入 `semantic/reading_order_sidecar_proposal_quality_report.json`，并分别报告 strict edge 与 review edge 的 precision/coverage。`reading_order_proposal_semantic_reviewable_successor_coverage` 表示 strict 加 review 边的合并覆盖，因此证据阈值把正确边移入 review 时，不会被误判为语义回退。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
+
 图片 source 使用同一个 benchmark 命令：
 
 ```bash

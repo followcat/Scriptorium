@@ -19,6 +19,7 @@ from .ocr import normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, render_source
 from .quality import compare_source_to_pdf_rendering
+from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
 from .reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
@@ -28,7 +29,7 @@ from .reading_order import (
     successor_consensus_diagnostics,
 )
 from .relation_order import relation_edge_candidate_order
-from .semantic_quality import compare_semantic_reading_order
+from .semantic_quality import compare_reading_order_sidecar_proposal, compare_semantic_reading_order
 from .structure_evidence import (
     apply_structure_evidence,
     external_structure_partial_order_for_elements,
@@ -465,6 +466,28 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "semantic_stream_successor_accuracy",
         ),
+        "native_reading_order_proposal_semantic_successor_coverage": native_case[
+            "reading_order_proposal_semantic_successor_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_successor_coverage": structure_case[
+            "reading_order_proposal_semantic_successor_coverage"
+        ],
+        "reading_order_proposal_semantic_successor_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_successor_coverage",
+        ),
+        "native_reading_order_proposal_semantic_reviewable_successor_coverage": native_case[
+            "reading_order_proposal_semantic_reviewable_successor_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_reviewable_successor_coverage": structure_case[
+            "reading_order_proposal_semantic_reviewable_successor_coverage"
+        ],
+        "reading_order_proposal_semantic_reviewable_successor_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_reviewable_successor_coverage",
+        ),
         "native_semantic_relation_missing_text_count": native_case["semantic_relation_missing_text_count"],
         "structure_semantic_relation_missing_text_count": structure_case["semantic_relation_missing_text_count"],
         "semantic_relation_missing_text_delta": _numeric_delta(
@@ -633,6 +656,12 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "mean_semantic_stream_assignment_type_accuracy_delta": _mean_optional(
             values["semantic_stream_assignment_type_accuracy_delta"] for values in comparisons
         ),
+        "mean_reading_order_proposal_semantic_successor_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_successor_coverage_delta"] for values in comparisons
+        ),
+        "mean_reading_order_proposal_semantic_reviewable_successor_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_reviewable_successor_coverage_delta"] for values in comparisons
+        ),
         "cases_with_stream_assignment_id_improvement": sum(
             1 for values in comparisons if float(values["semantic_stream_assignment_id_accuracy_delta"] or 0.0) > 0
         ),
@@ -754,6 +783,12 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "successor_consensus_successor_disagreement_delta",
         "semantic_successor_accuracy_delta",
         "semantic_stream_successor_accuracy_delta",
+        "native_reading_order_proposal_semantic_successor_coverage",
+        "structure_reading_order_proposal_semantic_successor_coverage",
+        "reading_order_proposal_semantic_successor_coverage_delta",
+        "native_reading_order_proposal_semantic_reviewable_successor_coverage",
+        "structure_reading_order_proposal_semantic_reviewable_successor_coverage",
+        "reading_order_proposal_semantic_reviewable_successor_coverage_delta",
         "native_semantic_relation_missing_text_count",
         "structure_semantic_relation_missing_text_count",
         "semantic_relation_missing_text_delta",
@@ -840,6 +875,9 @@ def _run_case(
     if structure_json is not None:
         apply_structure_evidence(document, structure_payload or {}, source=_structure_source_name(structure_json))
     annotate_document(document)
+    reading_order_sidecar_path = out_dir / "reading-order.sidecar.proposal.json"
+    reading_order_sidecar = write_reading_order_sidecar(document, reading_order_sidecar_path)
+    reading_order_sidecar_stats = reading_order_sidecar_summary(reading_order_sidecar)
     translation_stress_stats = _apply_translation_stress(document, translation_stress)
     ir_path = out_dir / "document.ir.json"
     document.save(ir_path)
@@ -886,6 +924,12 @@ def _run_case(
         out_dir / "semantic",
         candidate_orders=_semantic_candidate_orders(document),
     )
+    reading_order_proposal_semantic_quality = compare_reading_order_sidecar_proposal(
+        document,
+        pdf_path,
+        out_dir / "semantic",
+        reading_order_sidecar,
+    )
     timings["semantic_compare_seconds"] = _elapsed(start)
 
     stats = _document_stats(document)
@@ -918,6 +962,10 @@ def _run_case(
         "exported_pdf": str(exported_pdf),
         "quality_report": str(out_dir / "quality" / quality_report_name),
         "semantic_report": str(out_dir / "semantic" / "semantic_quality_report.json"),
+        "reading_order_sidecar_proposal": str(reading_order_sidecar_path),
+        "reading_order_sidecar_proposal_semantic_report": str(
+            out_dir / "semantic" / "reading_order_sidecar_proposal_quality_report.json"
+        ),
         "page_count": stats["page_count"],
         "element_count": stats["element_count"],
         "editable_element_count": stats["editable_element_count"],
@@ -947,6 +995,15 @@ def _run_case(
         "reading_order_stream_count": stats["reading_order_stream_count"],
         "reading_order_stream_type_counts": stats["reading_order_stream_type_counts"],
         "reading_order_stream_id_counts": stats["reading_order_stream_id_counts"],
+        "reading_order_proposal_stream_count": reading_order_sidecar_stats["stream_count"],
+        "reading_order_proposal_member_count": reading_order_sidecar_stats["member_count"],
+        "reading_order_proposal_successor_edge_count": reading_order_sidecar_stats["successor_edge_count"],
+        "reading_order_proposal_review_successor_edge_count": reading_order_sidecar_stats[
+            "review_successor_edge_count"
+        ],
+        "reading_order_proposal_review_transition_count": reading_order_sidecar_stats["review_transition_count"],
+        "reading_order_proposal_stream_type_counts": reading_order_sidecar_stats["stream_type_counts"],
+        "reading_order_proposal_stream_origin_counts": reading_order_sidecar_stats["stream_origin_counts"],
         "reading_order_caption_element_count": stats["reading_order_caption_element_count"],
         "reading_order_caption_counts": stats["reading_order_caption_counts"],
         "reading_order_caption_targeted_element_count": stats[
@@ -1213,6 +1270,7 @@ def _run_case(
         "unmatched_page_count": int(quality["unmatched_page_count"]),
         "visual_similarity": similarity,
         **_semantic_case_metrics(semantic_quality),
+        **_reading_order_proposal_semantic_case_metrics(reading_order_proposal_semantic_quality),
         "total_seconds": total_seconds,
         "timings": timings,
     }
@@ -2632,6 +2690,11 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     durations = [float(case["total_seconds"]) for case in cases]
     worst_case = max(cases, key=lambda case: float(case["max_diff_ratio"]))
     semantic_cases = [case for case in cases if bool(case["semantic_ground_truth_available"])]
+    proposal_semantic_cases = [
+        case
+        for case in cases
+        if bool(case["reading_order_proposal_semantic_ground_truth_available"])
+    ]
     return {
         "mean_visual_similarity": round(sum(similarities) / len(similarities), 8),
         "min_visual_similarity": round(min(similarities), 8),
@@ -2688,6 +2751,100 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_streams": sum(int(case["reading_order_stream_count"]) for case in cases),
         "reading_order_stream_type_counts": _sum_case_count_dicts(cases, "reading_order_stream_type_counts"),
         "reading_order_stream_id_counts": _sum_case_count_dicts(cases, "reading_order_stream_id_counts"),
+        "total_reading_order_proposal_streams": sum(
+            int(case["reading_order_proposal_stream_count"]) for case in cases
+        ),
+        "total_reading_order_proposal_members": sum(
+            int(case["reading_order_proposal_member_count"]) for case in cases
+        ),
+        "total_reading_order_proposal_successor_edges": sum(
+            int(case["reading_order_proposal_successor_edge_count"]) for case in cases
+        ),
+        "total_reading_order_proposal_review_successor_edges": sum(
+            int(case["reading_order_proposal_review_successor_edge_count"]) for case in cases
+        ),
+        "total_reading_order_proposal_review_transitions": sum(
+            int(case["reading_order_proposal_review_transition_count"]) for case in cases
+        ),
+        "reading_order_proposal_stream_type_counts": _sum_case_count_dicts(
+            cases,
+            "reading_order_proposal_stream_type_counts",
+        ),
+        "reading_order_proposal_stream_origin_counts": _sum_case_count_dicts(
+            cases,
+            "reading_order_proposal_stream_origin_counts",
+        ),
+        "reading_order_proposal_semantic_case_count": len(proposal_semantic_cases),
+        "total_reading_order_proposal_semantic_expected_successor_edges": sum(
+            int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_successor_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_successor_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_successor_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_successor_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_successor_precision": _optional_case_ratio(
+            sum(int(case["reading_order_proposal_semantic_successor_correct_count"]) for case in proposal_semantic_cases),
+            sum(int(case["reading_order_proposal_semantic_successor_labelled_edge_count"]) for case in proposal_semantic_cases),
+        ),
+        "reading_order_proposal_semantic_successor_coverage": _optional_case_ratio(
+            sum(int(case["reading_order_proposal_semantic_successor_correct_count"]) for case in proposal_semantic_cases),
+            sum(int(case["reading_order_proposal_semantic_expected_successor_edge_count"]) for case in proposal_semantic_cases),
+        ),
+        "total_reading_order_proposal_semantic_review_successor_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_review_successor_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_review_successor_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_review_successor_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_review_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_review_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_review_successor_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_review_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_review_successor_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_review_successor_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_review_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_reviewable_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_reviewable_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_reviewable_successor_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_reviewable_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
         "total_reading_order_caption_elements": sum(int(case["reading_order_caption_element_count"]) for case in cases),
         "reading_order_caption_counts": _sum_case_count_dicts(cases, "reading_order_caption_counts"),
         "total_reading_order_caption_targeted_elements": sum(
@@ -3076,6 +3233,29 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_stream_count",
         "reading_order_stream_type_counts",
         "reading_order_stream_id_counts",
+        "reading_order_proposal_stream_count",
+        "reading_order_proposal_member_count",
+        "reading_order_proposal_successor_edge_count",
+        "reading_order_proposal_review_successor_edge_count",
+        "reading_order_proposal_review_transition_count",
+        "reading_order_proposal_stream_type_counts",
+        "reading_order_proposal_stream_origin_counts",
+        "reading_order_proposal_semantic_ground_truth_available",
+        "reading_order_proposal_semantic_expected_successor_edge_count",
+        "reading_order_proposal_semantic_successor_candidate_edge_count",
+        "reading_order_proposal_semantic_successor_labelled_edge_count",
+        "reading_order_proposal_semantic_successor_unlabelled_edge_count",
+        "reading_order_proposal_semantic_successor_correct_count",
+        "reading_order_proposal_semantic_successor_precision",
+        "reading_order_proposal_semantic_successor_coverage",
+        "reading_order_proposal_semantic_review_successor_candidate_edge_count",
+        "reading_order_proposal_semantic_review_successor_labelled_edge_count",
+        "reading_order_proposal_semantic_review_successor_unlabelled_edge_count",
+        "reading_order_proposal_semantic_review_successor_correct_count",
+        "reading_order_proposal_semantic_review_successor_precision",
+        "reading_order_proposal_semantic_review_successor_coverage",
+        "reading_order_proposal_semantic_reviewable_successor_correct_count",
+        "reading_order_proposal_semantic_reviewable_successor_coverage",
         "reading_order_caption_element_count",
         "reading_order_caption_counts",
         "reading_order_caption_targeted_element_count",
@@ -3820,6 +4000,43 @@ def _semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
             candidate_metrics=candidate_metrics,
         ),
         **_semantic_candidate_case_metrics(candidate_metrics),
+    }
+
+
+def _reading_order_proposal_semantic_case_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    available = bool(report.get("ground_truth_available"))
+
+    def count(name: str) -> int:
+        return int(report.get(name) or 0) if available else 0
+
+    def ratio(name: str) -> float | None:
+        return report.get(name) if available else None
+
+    return {
+        "reading_order_proposal_semantic_ground_truth_available": available,
+        "reading_order_proposal_semantic_expected_successor_edge_count": count("expected_successor_edge_count"),
+        "reading_order_proposal_semantic_successor_candidate_edge_count": count("successor_candidate_edge_count"),
+        "reading_order_proposal_semantic_successor_labelled_edge_count": count("successor_labelled_edge_count"),
+        "reading_order_proposal_semantic_successor_unlabelled_edge_count": count("successor_unlabelled_edge_count"),
+        "reading_order_proposal_semantic_successor_correct_count": count("successor_correct_count"),
+        "reading_order_proposal_semantic_successor_precision": ratio("successor_precision"),
+        "reading_order_proposal_semantic_successor_coverage": ratio("successor_coverage"),
+        "reading_order_proposal_semantic_review_successor_candidate_edge_count": count(
+            "review_successor_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_successor_labelled_edge_count": count(
+            "review_successor_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_successor_unlabelled_edge_count": count(
+            "review_successor_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_successor_correct_count": count("review_successor_correct_count"),
+        "reading_order_proposal_semantic_review_successor_precision": ratio("review_successor_precision"),
+        "reading_order_proposal_semantic_review_successor_coverage": ratio("review_successor_coverage"),
+        "reading_order_proposal_semantic_reviewable_successor_correct_count": count(
+            "reviewable_successor_correct_count"
+        ),
+        "reading_order_proposal_semantic_reviewable_successor_coverage": ratio("reviewable_successor_coverage"),
     }
 
 

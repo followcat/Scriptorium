@@ -209,6 +209,19 @@ Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-st
 
 This is evidence that block order is useful but incomplete: model block order can refine candidate successors, while translation needs explicit local `successor_edges` and `reading_streams` to resolve portal cards, image captions, sidebars, and repeated text safely.
 
+### Reading-order sidecar proposal v3
+
+Each benchmark branch now emits a reviewable `reading-order.sidecar.proposal.json`. The counts below are intentionally split into strict executable local edges, review-only local edges, and review-only cross-stream transitions. They are not semantic accuracy scores on samples without human labels.
+
+| Sample | Native proposal: streams / strict / review / transitions | Structure proposal: streams / strict / review / transitions | Interpretation |
+|---|---:|---:|---|
+| Transformer-XL pp. 1-3 | 18 / 299 / 4 / 15 | 18 / 287 / 16 / 25 | Structure evidence moves a small number of local edges from automatic execution to review instead of inventing a cross-column global order. |
+| JD homepage p. 1 | 10 / 39 / 85 / 11 | 16 / 39 / 79 / 24 | Model blocks add local stream boundaries and grid/body partitions while preserving the same strict edge count. |
+| PUMA p. 5 | 2 / 1 / 22 / 1 | 2 / 1 / 22 / 1 | The local-stream guard correctly prevents generic model text blocks from fragmenting a stable native flow. |
+| BYD financial report p. 136 | 17 / 17 / 0 / 16 | 17 / 17 / 0 / 16 | Table evidence changes one stream's type to `table-island`; the confident local chains remain stable. |
+
+Transformer-XL is the labelled check for this proposal layer. In `outputs/external/transformer-xl-ppstructurev3-ab-pages-1-3-sidecar-proposal-v3`, native-only strict edges have `17/17` labelled precision and cover `17/41` labelled successors (`0.41463415`). Native-plus-structure has `15/15` strict precision and covers `15/41` (`0.36585366`); its two moved review edges are both correct, so strict-plus-review coverage remains `17/41` (`0.41463415`). The A/B delta is therefore a conservative confidence reclassification, not evidence of a semantic-order loss. Future model or algorithm changes must improve strict or reviewable coverage on labelled documents before being promoted.
+
 The BYD page-136 pseudo-translation A/B leaves the total at 17 overflows and 17 conflicts, so table structure alone is not a fidelity fix. It does, however, move 10 replacements into `table-island` and attributes 9 conflicts to that one local stream instead of the body streams. That is the measurable target for table-aware mask padding and text fitting.
 
 ## Translation Stress Results

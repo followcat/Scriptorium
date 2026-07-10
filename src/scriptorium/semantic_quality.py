@@ -106,6 +106,200 @@ def compare_semantic_reading_order(
     return report
 
 
+def compare_reading_order_sidecar_proposal(
+    document: DocumentIR,
+    source_path: str | Path,
+    out_dir: str | Path,
+    proposal: dict[str, Any],
+) -> dict[str, Any]:
+    """Score executable and review-only proposal edges against semantic labels.
+
+    A proposal is intentionally not an accepted reading-order truth. This report
+    therefore measures only the locally labelled successor edges it covers:
+    precision is calculated over proposed edges whose endpoints are labelled,
+    while coverage is calculated against labelled successor edges. Review-only
+    edges are reported separately so a confidence-threshold change cannot hide
+    behind a combined score.
+    """
+
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    candidates = semantic_ground_truth_candidates(source_path)
+    ground_truth_path = next((path for path in candidates if path.exists()), candidates[0])
+    report_path = target / "reading_order_sidecar_proposal_quality_report.json"
+
+    if not ground_truth_path.exists():
+        report = {
+            "ground_truth_available": False,
+            "ground_truth": str(ground_truth_path),
+            "ground_truth_candidates": [str(path) for path in candidates],
+            "sidecar_status": proposal.get("sidecar_status"),
+            "pages": [],
+        }
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        return report
+
+    ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
+    proposal_pages = _reading_order_sidecar_pages_by_index(proposal)
+    page_reports = [
+        _compare_reading_order_sidecar_proposal_page(
+            page_truth,
+            proposal_pages.get(_payload_page_index(page_truth, 0)),
+        )
+        for page_truth in _semantic_page_truths(ground_truth)
+        if _page_truth_in_document(document, page_truth)
+    ]
+    report = {
+        "ground_truth_available": True,
+        "ground_truth": str(ground_truth_path),
+        "version": ground_truth.get("version", 1),
+        "sidecar_status": proposal.get("sidecar_status"),
+        "pages": page_reports,
+    }
+    report.update(_summarize_reading_order_sidecar_proposal_pages(page_reports))
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
+
+
+def _reading_order_sidecar_pages_by_index(proposal: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    pages: dict[int, dict[str, Any]] = {}
+    raw_pages = proposal.get("pages")
+    if not isinstance(raw_pages, list):
+        return pages
+    for raw_page in raw_pages:
+        if not isinstance(raw_page, dict):
+            continue
+        try:
+            page_index = _payload_page_index(raw_page, 0)
+        except (TypeError, ValueError):
+            continue
+        pages.setdefault(page_index, raw_page)
+    return pages
+
+
+def _compare_reading_order_sidecar_proposal_page(
+    page_truth: dict[str, Any],
+    proposal_page: dict[str, Any] | None,
+) -> dict[str, Any]:
+    truth_page_index = _payload_page_index(page_truth, 0)
+    page_payloads = _page_truth_payloads(page_truth, truth_page_index)
+    label_map = _page_label_map(page_payloads)
+    expected_sequence = _page_expected_texts(page_payloads, label_map)
+    relation_edges = _page_relation_edges(page_payloads, label_map)
+    reading_streams = _page_reading_streams(page_payloads, label_map)
+    expected_edges = _dedupe_edges(
+        [
+            *_adjacent_edges(expected_sequence),
+            *relation_edges["successor_edges"],
+            *(edge for stream in reading_streams for edge in stream["successor_edges"]),
+        ]
+    )
+    proposal_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=False)
+    review_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=True)
+    return {
+        "page_index": truth_page_index,
+        "expected_successor_edge_count": len(expected_edges),
+        "successor_edges": _proposal_successor_edge_quality(proposal_edges, expected_edges),
+        "review_successor_edges": _proposal_successor_edge_quality(review_edges, expected_edges),
+    }
+
+
+def _reading_order_sidecar_page_edges(
+    page_payload: dict[str, Any],
+    *,
+    review_only: bool,
+) -> list[tuple[str, str]]:
+    text_by_id: dict[str, str] = {}
+    raw_document = page_payload.get("document")
+    if isinstance(raw_document, list):
+        for raw_element in raw_document:
+            if not isinstance(raw_element, dict):
+                continue
+            element_id = str(raw_element.get("id") or "").strip()
+            text = str(raw_element.get("text") or "").strip()
+            if element_id and text:
+                text_by_id[element_id] = text
+
+    edge_key = "review_successor_edges" if review_only else "successor_edges"
+    edges: list[tuple[str, str]] = []
+    raw_streams = page_payload.get("reading_streams")
+    if not isinstance(raw_streams, list):
+        return edges
+    for raw_stream in raw_streams:
+        if not isinstance(raw_stream, dict):
+            continue
+        raw_edges = raw_stream.get(edge_key)
+        if not isinstance(raw_edges, list):
+            continue
+        for raw_edge in raw_edges:
+            if not isinstance(raw_edge, dict):
+                continue
+            source = text_by_id.get(str(raw_edge.get("source") or "").strip())
+            target = text_by_id.get(str(raw_edge.get("target") or "").strip())
+            if source and target and source != target:
+                edges.append((source, target))
+    return _dedupe_edges(edges)
+
+
+def _proposal_successor_edge_quality(
+    proposal_edges: list[tuple[str, str]],
+    expected_edges: list[tuple[str, str]],
+) -> dict[str, Any]:
+    expected_set = set(expected_edges)
+    expected_labels = {text for edge in expected_edges for text in edge}
+    labelled_edges = [
+        edge
+        for edge in proposal_edges
+        if edge[0] in expected_labels and edge[1] in expected_labels
+    ]
+    correct_count = sum(1 for edge in labelled_edges if edge in expected_set)
+    return {
+        "candidate_edge_count": len(proposal_edges),
+        "labelled_edge_count": len(labelled_edges),
+        "unlabelled_edge_count": len(proposal_edges) - len(labelled_edges),
+        "correct_count": correct_count,
+        "precision": _optional_ratio(correct_count, len(labelled_edges)),
+        "coverage": _optional_ratio(correct_count, len(expected_edges)),
+    }
+
+
+def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    expected_edge_count = sum(int(page["expected_successor_edge_count"]) for page in page_reports)
+
+    def totals(key: str) -> dict[str, int]:
+        return {
+            metric: sum(int(page[key][metric]) for page in page_reports)
+            for metric in (
+                "candidate_edge_count",
+                "labelled_edge_count",
+                "unlabelled_edge_count",
+                "correct_count",
+            )
+        }
+
+    successor = totals("successor_edges")
+    review = totals("review_successor_edges")
+    reviewable_correct_count = successor["correct_count"] + review["correct_count"]
+    return {
+        "page_count": len(page_reports),
+        "expected_successor_edge_count": expected_edge_count,
+        "successor_candidate_edge_count": successor["candidate_edge_count"],
+        "successor_labelled_edge_count": successor["labelled_edge_count"],
+        "successor_unlabelled_edge_count": successor["unlabelled_edge_count"],
+        "successor_correct_count": successor["correct_count"],
+        "successor_precision": _optional_ratio(successor["correct_count"], successor["labelled_edge_count"]),
+        "successor_coverage": _optional_ratio(successor["correct_count"], expected_edge_count),
+        "review_successor_candidate_edge_count": review["candidate_edge_count"],
+        "review_successor_labelled_edge_count": review["labelled_edge_count"],
+        "review_successor_unlabelled_edge_count": review["unlabelled_edge_count"],
+        "review_successor_correct_count": review["correct_count"],
+        "review_successor_precision": _optional_ratio(review["correct_count"], review["labelled_edge_count"]),
+        "review_successor_coverage": _optional_ratio(review["correct_count"], expected_edge_count),
+        "reviewable_successor_correct_count": reviewable_correct_count,
+        "reviewable_successor_coverage": _optional_ratio(reviewable_correct_count, expected_edge_count),
+    }
+
+
 def _semantic_page_truths(ground_truth: Any) -> list[dict[str, Any]]:
     page_truths: list[dict[str, Any]] = []
     seen: set[int] = set()

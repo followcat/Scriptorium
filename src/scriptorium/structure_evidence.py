@@ -10,6 +10,7 @@ from typing import Any
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
+from .reading_order_sidecar import is_unaccepted_reading_order_sidecar
 from .relation_order import relation_edge_candidate_path_cover
 
 
@@ -908,6 +909,20 @@ def apply_structure_evidence(
     reorder: bool = True,
 ) -> DocumentIR:
     source_name = source or _extract_source(payload, None)
+    if is_unaccepted_reading_order_sidecar(payload):
+        document.metadata["structure_evidence_proposal"] = {
+            "source": source_name,
+            "status": "proposal-skipped",
+            "schema_name": str(payload.get("schema_name") or ""),
+            "instruction": "Review local edges, then set sidecar_status to accepted before applying it.",
+        }
+        document.revisions.append(
+            RevisionIR(
+                reason="structure-evidence-proposal-skipped",
+                payload={"source": source_name},
+            )
+        )
+        return document
     regions = normalize_structure_evidence(payload, document, source=source)
     relations = normalize_structure_relations(payload, document, source=source)
     streams = normalize_structure_streams(payload, document, source=source)
@@ -1639,6 +1654,8 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
         list_index: int | None = None,
     ) -> None:
         nonlocal sequence_index
+        if raw_block.get("_scriptorium_sidecar_reference") is True:
+            return
         sequence_index += 1
         normalized_block = dict(raw_block)
         normalized_block.setdefault("_scriptorium_structure_list_key", list_key)

@@ -124,6 +124,13 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_stream_count" in case for case in report["cases"])
     assert all("reading_order_stream_type_counts" in case for case in report["cases"])
     assert all("reading_order_stream_id_counts" in case for case in report["cases"])
+    assert all("reading_order_sidecar_proposal" in case for case in report["cases"])
+    assert all(Path(case["reading_order_sidecar_proposal"]).exists() for case in report["cases"])
+    assert all("reading_order_sidecar_proposal_semantic_report" in case for case in report["cases"])
+    assert all(Path(case["reading_order_sidecar_proposal_semantic_report"]).exists() for case in report["cases"])
+    assert all("reading_order_proposal_stream_count" in case for case in report["cases"])
+    assert all("reading_order_proposal_successor_edge_count" in case for case in report["cases"])
+    assert all("reading_order_proposal_semantic_successor_precision" in case for case in report["cases"])
     assert all("reading_order_caption_element_count" in case for case in report["cases"])
     assert all("reading_order_caption_counts" in case for case in report["cases"])
     assert all("reading_order_caption_targeted_element_count" in case for case in report["cases"])
@@ -247,6 +254,12 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_streams" in report["summary"]
     assert "reading_order_stream_type_counts" in report["summary"]
     assert "reading_order_stream_id_counts" in report["summary"]
+    assert "total_reading_order_proposal_streams" in report["summary"]
+    assert "total_reading_order_proposal_successor_edges" in report["summary"]
+    assert "total_reading_order_proposal_review_transitions" in report["summary"]
+    assert "reading_order_proposal_stream_type_counts" in report["summary"]
+    assert "total_reading_order_proposal_semantic_successor_correct_edges" in report["summary"]
+    assert "reading_order_proposal_semantic_successor_coverage" in report["summary"]
     assert "total_reading_order_caption_elements" in report["summary"]
     assert "reading_order_caption_counts" in report["summary"]
     assert "total_reading_order_caption_targeted_elements" in report["summary"]
@@ -894,6 +907,11 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_stream_count" in csv_text
     assert "reading_order_stream_type_counts" in csv_text
     assert "reading_order_stream_id_counts" in csv_text
+    assert "reading_order_proposal_stream_count" in csv_text
+    assert "reading_order_proposal_successor_edge_count" in csv_text
+    assert "reading_order_proposal_review_transition_count" in csv_text
+    assert "reading_order_proposal_semantic_successor_precision" in csv_text
+    assert "reading_order_proposal_semantic_review_successor_coverage" in csv_text
     assert "reading_order_caption_element_count" in csv_text
     assert "reading_order_caption_counts" in csv_text
     assert "reading_order_caption_targeted_element_count" in csv_text
@@ -1297,6 +1315,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "stream_needs_structure_evidence_delta" in comparison
     assert "semantic_relation_missing_text_delta" in comparison
     assert "semantic_stream_missing_text_delta" in comparison
+    assert "reading_order_proposal_semantic_successor_coverage_delta" in comparison
+    assert "reading_order_proposal_semantic_reviewable_successor_coverage_delta" in comparison
     assert "semantic_stream_assignment_missing_delta" in comparison
     assert comparison["semantic_stream_assignment_id_accuracy_delta"] > 0
     assert comparison["semantic_stream_assignment_type_accuracy_delta"] > 0
@@ -1316,6 +1336,7 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "fidelity_replacement_same_stream_conflict_target_delta" in csv_text
     assert "fidelity_replacement_cross_stream_conflict_target_delta" in csv_text
     assert "semantic_relation_missing_text_delta" in csv_text
+    assert "reading_order_proposal_semantic_successor_coverage_delta" in csv_text
     assert "semantic_stream_missing_text_delta" in csv_text
     assert "semantic_stream_assignment_missing_delta" in csv_text
     assert "semantic_stream_assignment_id_accuracy_delta" in csv_text
