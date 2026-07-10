@@ -181,7 +181,9 @@ scriptorium propose-reading-sidecar \
 
 `sidecar_status: "proposal"` 会被 `apply_structure_evidence()` 有意忽略，并记录 `proposal-skipped` revision。只有人工审查或后续 relation model 显式改为 `accepted` 后，严格的局部边才会影响 IR。Sidecar 的 `document` 节点也能让 image/OCR anchor seeding 可复现，但它们被标为 reference，在结构融合时不会覆盖更强的 region/table metadata。
 
-若存在 semantic ground-truth sidecar，benchmark 会写入 `semantic/reading_order_sidecar_proposal_quality_report.json`，并分别报告 strict edge 与 review edge 的 precision/coverage。`reading_order_proposal_semantic_reviewable_successor_coverage` 表示 strict 加 review 边的合并覆盖，因此证据阈值把正确边移入 review 时，不会被误判为语义回退。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
+若存在 semantic ground-truth sidecar，benchmark 会写入 `semantic/reading_order_sidecar_proposal_quality_report.json`，并分别报告 strict edge 与 review edge 的 precision/coverage。`reading_order_proposal_semantic_reviewable_successor_coverage` 表示 strict 加 review 边的合并覆盖，因此证据阈值把正确边移入 review 时，不会被误判为语义回退。
+
+对于带有 `match_mode: "ordered-subsequence"` 的页面，报告还会区分 direct edge 和相邻标注锚点之间的 graph path。`strict_anchor_path_coverage` 只沿可执行局部边；`local_reviewable_anchor_path_coverage` 额外允许 review-only 局部边；`reviewable_anchor_path_coverage` 还允许 review-only 的跨 stream transition。若路径穿过另一个已标注锚点就会被拒绝，因此不会把乱序锚点误判为正确。这只是评测视图：review transition 在单独 accepted 前仍不可执行。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
 
 图片 source 使用同一个 benchmark 命令：
 

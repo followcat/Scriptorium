@@ -138,6 +138,122 @@ def test_low_confidence_local_edges_stay_review_only() -> None:
     assert reading_order_sidecar_summary(proposal)["review_successor_edge_count"] == 1
 
 
+def test_proposal_semantic_quality_tracks_multihop_strict_anchor_paths(tmp_path) -> None:
+    source_path = tmp_path / "anchor-path.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["First anchor", "Last anchor"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("first", "First anchor", 1, 10, 20, column_index=0),
+            _element("middle", "Unlabelled middle", 2, 10, 40, column_index=0),
+            _element("last", "Last anchor", 3, 10, 60, column_index=0),
+        ]
+    )
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+
+    assert report["expected_successor_edge_count"] == 1
+    assert report["successor_correct_count"] == 0
+    assert report["successor_coverage"] == 0.0
+    assert report["anchor_transition_count"] == 1
+    assert report["strict_anchor_path_correct_count"] == 1
+    assert report["strict_anchor_path_coverage"] == 1.0
+    assert report["local_reviewable_anchor_path_coverage"] == 1.0
+    assert report["reviewable_anchor_path_coverage"] == 1.0
+
+
+def test_proposal_semantic_quality_tracks_review_transition_anchor_paths(tmp_path) -> None:
+    source_path = tmp_path / "transition-path.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["Left anchor", "Right anchor"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("left", "Left anchor", 1, 10, 20, column_index=0),
+            _element("right", "Right anchor", 2, 120, 20, column_index=1),
+        ]
+    )
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+
+    assert report["strict_anchor_path_coverage"] == 0.0
+    assert report["local_reviewable_anchor_path_coverage"] == 0.0
+    assert report["review_transition_anchor_path_correct_count"] == 1
+    assert report["reviewable_anchor_path_coverage"] == 1.0
+
+
+def test_proposal_anchor_path_does_not_skip_another_label(tmp_path) -> None:
+    source_path = tmp_path / "interloper-path.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["A", "B", "C"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("a", "A", 1, 10, 20, column_index=0),
+            _element("c", "C", 2, 10, 40, column_index=0),
+            _element("b", "B", 3, 10, 60, column_index=0),
+        ]
+    )
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+
+    assert report["strict_anchor_path_correct_count"] == 0
+    assert report["reviewable_anchor_path_correct_count"] == 0
+    assert report["unresolved_anchor_transition_count"] == 2
+
+
 def test_textual_structure_blocks_become_reviewable_local_streams() -> None:
     first = _element("first", "First", 1, 10, 20, confidence=0.9)
     second = _element("second", "Second", 2, 10, 40, confidence=0.9)

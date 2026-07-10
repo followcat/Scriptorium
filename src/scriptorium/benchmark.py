@@ -488,6 +488,39 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "reading_order_proposal_semantic_reviewable_successor_coverage",
         ),
+        "native_reading_order_proposal_semantic_strict_anchor_path_coverage": native_case[
+            "reading_order_proposal_semantic_strict_anchor_path_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_strict_anchor_path_coverage": structure_case[
+            "reading_order_proposal_semantic_strict_anchor_path_coverage"
+        ],
+        "reading_order_proposal_semantic_strict_anchor_path_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_strict_anchor_path_coverage",
+        ),
+        "native_reading_order_proposal_semantic_local_reviewable_anchor_path_coverage": native_case[
+            "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_local_reviewable_anchor_path_coverage": structure_case[
+            "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage"
+        ],
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage",
+        ),
+        "native_reading_order_proposal_semantic_reviewable_anchor_path_coverage": native_case[
+            "reading_order_proposal_semantic_reviewable_anchor_path_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_reviewable_anchor_path_coverage": structure_case[
+            "reading_order_proposal_semantic_reviewable_anchor_path_coverage"
+        ],
+        "reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_reviewable_anchor_path_coverage",
+        ),
         "native_semantic_relation_missing_text_count": native_case["semantic_relation_missing_text_count"],
         "structure_semantic_relation_missing_text_count": structure_case["semantic_relation_missing_text_count"],
         "semantic_relation_missing_text_delta": _numeric_delta(
@@ -662,6 +695,17 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "mean_reading_order_proposal_semantic_reviewable_successor_coverage_delta": _mean_optional(
             values["reading_order_proposal_semantic_reviewable_successor_coverage_delta"] for values in comparisons
         ),
+        "mean_reading_order_proposal_semantic_strict_anchor_path_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_strict_anchor_path_coverage_delta"] for values in comparisons
+        ),
+        "mean_reading_order_proposal_semantic_local_reviewable_anchor_path_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_local_reviewable_anchor_path_coverage_delta"]
+            for values in comparisons
+        ),
+        "mean_reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta"]
+            for values in comparisons
+        ),
         "cases_with_stream_assignment_id_improvement": sum(
             1 for values in comparisons if float(values["semantic_stream_assignment_id_accuracy_delta"] or 0.0) > 0
         ),
@@ -789,6 +833,15 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_reading_order_proposal_semantic_reviewable_successor_coverage",
         "structure_reading_order_proposal_semantic_reviewable_successor_coverage",
         "reading_order_proposal_semantic_reviewable_successor_coverage_delta",
+        "native_reading_order_proposal_semantic_strict_anchor_path_coverage",
+        "structure_reading_order_proposal_semantic_strict_anchor_path_coverage",
+        "reading_order_proposal_semantic_strict_anchor_path_coverage_delta",
+        "native_reading_order_proposal_semantic_local_reviewable_anchor_path_coverage",
+        "structure_reading_order_proposal_semantic_local_reviewable_anchor_path_coverage",
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage_delta",
+        "native_reading_order_proposal_semantic_reviewable_anchor_path_coverage",
+        "structure_reading_order_proposal_semantic_reviewable_anchor_path_coverage",
+        "reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta",
         "native_semantic_relation_missing_text_count",
         "structure_semantic_relation_missing_text_count",
         "semantic_relation_missing_text_delta",
@@ -2845,6 +2898,64 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
                 for case in proposal_semantic_cases
             ),
         ),
+        "total_reading_order_proposal_semantic_anchor_transitions": sum(
+            int(case["reading_order_proposal_semantic_anchor_transition_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_anchor_transition_missing_texts": sum(
+            int(case["reading_order_proposal_semantic_anchor_transition_missing_text_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_strict_anchor_path_correct": sum(
+            int(case["reading_order_proposal_semantic_strict_anchor_path_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_strict_anchor_path_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_strict_anchor_path_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_anchor_transition_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_local_reviewable_anchor_path_correct": sum(
+            int(case["reading_order_proposal_semantic_local_reviewable_anchor_path_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_reviewable_anchor_path_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_anchor_transition_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_review_transition_anchor_path_correct": sum(
+            int(case["reading_order_proposal_semantic_review_transition_anchor_path_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_reviewable_anchor_path_correct": sum(
+            int(case["reading_order_proposal_semantic_reviewable_anchor_path_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_reviewable_anchor_path_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_reviewable_anchor_path_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_anchor_transition_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_unresolved_anchor_transitions": sum(
+            int(case["reading_order_proposal_semantic_unresolved_anchor_transition_count"])
+            for case in proposal_semantic_cases
+        ),
         "total_reading_order_caption_elements": sum(int(case["reading_order_caption_element_count"]) for case in cases),
         "reading_order_caption_counts": _sum_case_count_dicts(cases, "reading_order_caption_counts"),
         "total_reading_order_caption_targeted_elements": sum(
@@ -3256,6 +3367,16 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_proposal_semantic_review_successor_coverage",
         "reading_order_proposal_semantic_reviewable_successor_correct_count",
         "reading_order_proposal_semantic_reviewable_successor_coverage",
+        "reading_order_proposal_semantic_anchor_transition_count",
+        "reading_order_proposal_semantic_anchor_transition_missing_text_count",
+        "reading_order_proposal_semantic_strict_anchor_path_correct_count",
+        "reading_order_proposal_semantic_strict_anchor_path_coverage",
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_correct_count",
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage",
+        "reading_order_proposal_semantic_review_transition_anchor_path_correct_count",
+        "reading_order_proposal_semantic_reviewable_anchor_path_correct_count",
+        "reading_order_proposal_semantic_reviewable_anchor_path_coverage",
+        "reading_order_proposal_semantic_unresolved_anchor_transition_count",
         "reading_order_caption_element_count",
         "reading_order_caption_counts",
         "reading_order_caption_targeted_element_count",
@@ -4037,6 +4158,32 @@ def _reading_order_proposal_semantic_case_metrics(report: dict[str, Any]) -> dic
             "reviewable_successor_correct_count"
         ),
         "reading_order_proposal_semantic_reviewable_successor_coverage": ratio("reviewable_successor_coverage"),
+        "reading_order_proposal_semantic_anchor_transition_count": count("anchor_transition_count"),
+        "reading_order_proposal_semantic_anchor_transition_missing_text_count": count(
+            "anchor_transition_missing_text_count"
+        ),
+        "reading_order_proposal_semantic_strict_anchor_path_correct_count": count(
+            "strict_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_strict_anchor_path_coverage": ratio("strict_anchor_path_coverage"),
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_correct_count": count(
+            "local_reviewable_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage": ratio(
+            "local_reviewable_anchor_path_coverage"
+        ),
+        "reading_order_proposal_semantic_review_transition_anchor_path_correct_count": count(
+            "review_transition_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_reviewable_anchor_path_correct_count": count(
+            "reviewable_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_reviewable_anchor_path_coverage": ratio(
+            "reviewable_anchor_path_coverage"
+        ),
+        "reading_order_proposal_semantic_unresolved_anchor_transition_count": count(
+            "unresolved_anchor_transition_count"
+        ),
     }
 
 

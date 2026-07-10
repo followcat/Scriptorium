@@ -115,11 +115,13 @@ def compare_reading_order_sidecar_proposal(
     """Score executable and review-only proposal edges against semantic labels.
 
     A proposal is intentionally not an accepted reading-order truth. This report
-    therefore measures only the locally labelled successor edges it covers:
-    precision is calculated over proposed edges whose endpoints are labelled,
-    while coverage is calculated against labelled successor edges. Review-only
-    edges are reported separately so a confidence-threshold change cannot hide
-    behind a combined score.
+    therefore measures direct locally labelled successor edges separately from
+    ordered-subsequence anchor paths. Direct-edge precision is calculated over
+    proposed edges whose endpoints are labelled. Anchor-path coverage allows
+    intentionally unlabelled text between two ordered anchors, while keeping
+    strict local paths, local review paths, and cross-stream review paths
+    distinct. This prevents partial semantic labels from understating a valid
+    local stream chain or hiding an unsafe global handoff.
     """
 
     target = Path(out_dir)
@@ -187,6 +189,13 @@ def _compare_reading_order_sidecar_proposal_page(
     expected_sequence = _page_expected_texts(page_payloads, label_map)
     relation_edges = _page_relation_edges(page_payloads, label_map)
     reading_streams = _page_reading_streams(page_payloads, label_map)
+    has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
+    match_mode = str(
+        page_truth.get(
+            "match_mode",
+            "ordered-subsequence" if (has_relation_edges or reading_streams) and not expected_sequence else "full-sequence",
+        )
+    ).strip().lower()
     expected_edges = _dedupe_edges(
         [
             *_adjacent_edges(expected_sequence),
@@ -196,12 +205,20 @@ def _compare_reading_order_sidecar_proposal_page(
     )
     proposal_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=False)
     review_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=True)
-    return {
+    report = {
         "page_index": truth_page_index,
+        "match_mode": match_mode,
         "expected_successor_edge_count": len(expected_edges),
         "successor_edges": _proposal_successor_edge_quality(proposal_edges, expected_edges),
         "review_successor_edges": _proposal_successor_edge_quality(review_edges, expected_edges),
     }
+    report.update(
+        _reading_order_sidecar_anchor_path_quality(
+            proposal_page or {},
+            expected_sequence if match_mode == "ordered-subsequence" else [],
+        )
+    )
+    return report
 
 
 def _reading_order_sidecar_page_edges(
@@ -239,6 +256,190 @@ def _reading_order_sidecar_page_edges(
             if source and target and source != target:
                 edges.append((source, target))
     return _dedupe_edges(edges)
+
+
+def _reading_order_sidecar_anchor_path_quality(
+    page_payload: dict[str, Any],
+    expected_sequence: list[str],
+) -> dict[str, Any]:
+    """Score ordered-subsequence anchors through the proposal relation graph.
+
+    Text sequences in partial semantic sidecars deliberately omit most page
+    nodes. Their adjacent labels therefore express an ordered anchor relation,
+    not necessarily a literal single IR edge. A valid path may traverse
+    unlabelled nodes, but it may not pass through another labelled anchor: that
+    would otherwise turn ``A -> C -> B`` into a false positive for expected
+    ``A -> B`` when ``C`` is also labelled.
+    """
+
+    transition_count = max(0, len(expected_sequence) - 1)
+    empty = {
+        "anchor_transition_count": transition_count,
+        "anchor_transition_missing_text_count": 0,
+        "anchor_transition_missing_texts": [],
+        "strict_anchor_path_correct_count": 0,
+        "strict_anchor_path_coverage": _optional_ratio(0, transition_count),
+        "local_reviewable_anchor_path_correct_count": 0,
+        "local_reviewable_anchor_path_coverage": _optional_ratio(0, transition_count),
+        "review_transition_anchor_path_correct_count": 0,
+        "review_transition_anchor_path_coverage": _optional_ratio(0, transition_count),
+        "reviewable_anchor_path_correct_count": 0,
+        "reviewable_anchor_path_coverage": _optional_ratio(0, transition_count),
+        "unresolved_anchor_transition_count": transition_count,
+    }
+    if not expected_sequence:
+        return empty
+
+    nodes_by_text, strict_edges, review_edges, transition_edges = _reading_order_sidecar_graph(page_payload)
+    anchor_ids, missing_texts = _sidecar_anchor_node_ids(expected_sequence, nodes_by_text)
+    anchor_node_ids = {node_id for node_id in anchor_ids if node_id}
+    strict_count = 0
+    local_reviewable_count = 0
+    reviewable_count = 0
+    for source_id, target_id in zip(anchor_ids, anchor_ids[1:], strict=False):
+        if not source_id or not target_id:
+            continue
+        forbidden_ids = anchor_node_ids - {source_id, target_id}
+        strict_path = _sidecar_path_exists(strict_edges, source_id, target_id, forbidden_ids)
+        local_reviewable_path = strict_path or _sidecar_path_exists(
+            [*strict_edges, *review_edges],
+            source_id,
+            target_id,
+            forbidden_ids,
+        )
+        reviewable_path = local_reviewable_path or _sidecar_path_exists(
+            [*strict_edges, *review_edges, *transition_edges],
+            source_id,
+            target_id,
+            forbidden_ids,
+        )
+        strict_count += int(strict_path)
+        local_reviewable_count += int(local_reviewable_path)
+        reviewable_count += int(reviewable_path)
+
+    review_transition_count = reviewable_count - local_reviewable_count
+    return {
+        "anchor_transition_count": transition_count,
+        "anchor_transition_missing_text_count": len(missing_texts),
+        "anchor_transition_missing_texts": sorted(missing_texts),
+        "strict_anchor_path_correct_count": strict_count,
+        "strict_anchor_path_coverage": _optional_ratio(strict_count, transition_count),
+        "local_reviewable_anchor_path_correct_count": local_reviewable_count,
+        "local_reviewable_anchor_path_coverage": _optional_ratio(local_reviewable_count, transition_count),
+        "review_transition_anchor_path_correct_count": review_transition_count,
+        "review_transition_anchor_path_coverage": _optional_ratio(review_transition_count, transition_count),
+        "reviewable_anchor_path_correct_count": reviewable_count,
+        "reviewable_anchor_path_coverage": _optional_ratio(reviewable_count, transition_count),
+        "unresolved_anchor_transition_count": transition_count - reviewable_count,
+    }
+
+
+def _reading_order_sidecar_graph(
+    page_payload: dict[str, Any],
+) -> tuple[dict[str, deque[str]], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
+    nodes_by_text: dict[str, deque[str]] = defaultdict(deque)
+    known_ids: set[str] = set()
+    raw_document = page_payload.get("document")
+    if isinstance(raw_document, list):
+        for raw_element in raw_document:
+            if not isinstance(raw_element, dict):
+                continue
+            element_id = str(raw_element.get("id") or "").strip()
+            text = str(raw_element.get("text") or "").strip()
+            if not element_id or not text:
+                continue
+            known_ids.add(element_id)
+            nodes_by_text[text].append(element_id)
+
+    strict_edges: list[tuple[str, str]] = []
+    review_edges: list[tuple[str, str]] = []
+    raw_streams = page_payload.get("reading_streams")
+    if isinstance(raw_streams, list):
+        for raw_stream in raw_streams:
+            if not isinstance(raw_stream, dict):
+                continue
+            strict_edges.extend(_sidecar_id_edges(raw_stream.get("successor_edges"), known_ids))
+            review_edges.extend(_sidecar_id_edges(raw_stream.get("review_successor_edges"), known_ids))
+    transition_edges = _sidecar_id_edges(page_payload.get("review_transitions"), known_ids)
+    return (
+        nodes_by_text,
+        _dedupe_id_edges(strict_edges),
+        _dedupe_id_edges(review_edges),
+        _dedupe_id_edges(transition_edges),
+    )
+
+
+def _sidecar_id_edges(value: Any, known_ids: set[str]) -> list[tuple[str, str]]:
+    if not isinstance(value, list):
+        return []
+    edges: list[tuple[str, str]] = []
+    for raw_edge in value:
+        if not isinstance(raw_edge, dict):
+            continue
+        source_id = str(raw_edge.get("source") or "").strip()
+        target_id = str(raw_edge.get("target") or "").strip()
+        if (
+            not source_id
+            or not target_id
+            or source_id == target_id
+            or source_id not in known_ids
+            or target_id not in known_ids
+        ):
+            continue
+        edges.append((source_id, target_id))
+    return edges
+
+
+def _dedupe_id_edges(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for edge in edges:
+        if edge in seen:
+            continue
+        seen.add(edge)
+        deduped.append(edge)
+    return deduped
+
+
+def _sidecar_anchor_node_ids(
+    expected_sequence: list[str],
+    nodes_by_text: dict[str, deque[str]],
+) -> tuple[list[str | None], set[str]]:
+    available = {text: deque(node_ids) for text, node_ids in nodes_by_text.items()}
+    node_ids: list[str | None] = []
+    missing_texts: set[str] = set()
+    for text in expected_sequence:
+        candidates = available.get(text)
+        node_id = candidates.popleft() if candidates else None
+        node_ids.append(node_id)
+        if node_id is None:
+            missing_texts.add(text)
+    return node_ids, missing_texts
+
+
+def _sidecar_path_exists(
+    edges: list[tuple[str, str]],
+    source_id: str,
+    target_id: str,
+    forbidden_ids: set[str],
+) -> bool:
+    if source_id == target_id:
+        return False
+    children_by_source: dict[str, list[str]] = defaultdict(list)
+    for source, target in edges:
+        children_by_source[source].append(target)
+    pending: deque[str] = deque([source_id])
+    visited = {source_id}
+    while pending:
+        current = pending.popleft()
+        for target in children_by_source.get(current, []):
+            if target == target_id:
+                return True
+            if target in forbidden_ids or target in visited:
+                continue
+            visited.add(target)
+            pending.append(target)
+    return False
 
 
 def _proposal_successor_edge_quality(
@@ -280,6 +481,17 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
     successor = totals("successor_edges")
     review = totals("review_successor_edges")
     reviewable_correct_count = successor["correct_count"] + review["correct_count"]
+    anchor_transition_count = sum(int(page["anchor_transition_count"]) for page in page_reports)
+    strict_anchor_path_correct_count = sum(int(page["strict_anchor_path_correct_count"]) for page in page_reports)
+    local_reviewable_anchor_path_correct_count = sum(
+        int(page["local_reviewable_anchor_path_correct_count"]) for page in page_reports
+    )
+    review_transition_anchor_path_correct_count = sum(
+        int(page["review_transition_anchor_path_correct_count"]) for page in page_reports
+    )
+    reviewable_anchor_path_correct_count = sum(
+        int(page["reviewable_anchor_path_correct_count"]) for page in page_reports
+    )
     return {
         "page_count": len(page_reports),
         "expected_successor_edge_count": expected_edge_count,
@@ -297,6 +509,28 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
         "review_successor_coverage": _optional_ratio(review["correct_count"], expected_edge_count),
         "reviewable_successor_correct_count": reviewable_correct_count,
         "reviewable_successor_coverage": _optional_ratio(reviewable_correct_count, expected_edge_count),
+        "anchor_transition_count": anchor_transition_count,
+        "anchor_transition_missing_text_count": sum(
+            int(page["anchor_transition_missing_text_count"]) for page in page_reports
+        ),
+        "strict_anchor_path_correct_count": strict_anchor_path_correct_count,
+        "strict_anchor_path_coverage": _optional_ratio(strict_anchor_path_correct_count, anchor_transition_count),
+        "local_reviewable_anchor_path_correct_count": local_reviewable_anchor_path_correct_count,
+        "local_reviewable_anchor_path_coverage": _optional_ratio(
+            local_reviewable_anchor_path_correct_count,
+            anchor_transition_count,
+        ),
+        "review_transition_anchor_path_correct_count": review_transition_anchor_path_correct_count,
+        "review_transition_anchor_path_coverage": _optional_ratio(
+            review_transition_anchor_path_correct_count,
+            anchor_transition_count,
+        ),
+        "reviewable_anchor_path_correct_count": reviewable_anchor_path_correct_count,
+        "reviewable_anchor_path_coverage": _optional_ratio(
+            reviewable_anchor_path_correct_count,
+            anchor_transition_count,
+        ),
+        "unresolved_anchor_transition_count": anchor_transition_count - reviewable_anchor_path_correct_count,
     }
 
 
