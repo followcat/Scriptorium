@@ -209,6 +209,25 @@ Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-st
 
 This is evidence that block order is useful but incomplete: model block order can refine candidate successors, while translation needs explicit local `successor_edges` and `reading_streams` to resolve portal cards, image captions, sidebars, and repeated text safely.
 
+## PaddleOCR-VL 1.6 A/B
+
+The first real PaddleOCR-VL replay uses PUMA annual-report p. 5. The model ran
+on a 96-DPI `794 x 1123` page image, then the exact raw JSON was replayed in
+`benchmark-structure-ab` at both 96 and 144 DPI. This is a coordinate-contract
+test: the model result records the input canvas, while the benchmark is free to
+render the PDF at another DPI.
+
+| Sample | Model regions / matched elements | Benchmark DPI | Visual similarity | Reading-risk delta | Selected-order / candidate delta | Model relation evidence |
+|---|---:|---:|---:|---:|---|---|
+| PUMA p. 5 | 11 / 24 | 96 and 144 | `0.95767110` | `0.0` | No selected reorder; stream needs and all successor-disagreement deltas are `0` | None: no relation or stream edges |
+
+The corrected structure branch produces three local sidecar streams with 13
+strict edges, 9 review edges, and 2 review transitions. These are proposal
+evidence, not an accuracy claim: PUMA still has no semantic order sidecar. The
+important result is DPI-invariant region alignment; without it, a 96-DPI model
+bbox replayed against a 144-DPI page can falsely attach a paragraph to another
+text region and manufacture an order regression.
+
 ## Docling Body-Tree A/B
 
 Docling now contributes only bounded same-page sibling runs rather than a serialized whole-page body order. Root-body runs stop at geometry boundaries and split again at stronger native local streams. On concrete native columns, their membership and edges remain reviewable secondary evidence rather than primary translation streams or executable page-level reorder constraints. The latest reruns use the blank-PDF-checked Chromium path; native-only and structure branches therefore print the same nonblank visual layer before their semantic metrics are compared.

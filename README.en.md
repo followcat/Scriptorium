@@ -102,6 +102,10 @@ scriptorium export-html \
   --display-mode fidelity
 ```
 
+Saved PaddleOCR-VL JSON retains the model input canvas. Scriptorium maps its
+pixel boxes through that saved `width`/`height`, so one model run can be
+replayed safely at a different conversion or benchmark DPI.
+
 The built-in PDF fixture is still useful for a fully runnable smoke test:
 
 ```bash

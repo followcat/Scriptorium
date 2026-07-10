@@ -337,6 +337,7 @@ def normalize_structure_evidence(
         page = _document_page_by_evidence_index(document, page_index)
         if page is None:
             continue
+        pixel_reference_size = _structure_payload_pixel_size(page_payload)
         for raw_block in _iter_blocks(page_payload):
             block_order = _extract_order(raw_block)
             order_source = _extract_order_source(raw_block) if block_order is not None else None
@@ -347,7 +348,12 @@ def normalize_structure_evidence(
             if bbox_info is None:
                 continue
             bbox, coordinate_space = bbox_info
-            bbox_px, bbox_pdf = _normalize_region_bbox(bbox, coordinate_space, page)
+            bbox_px, bbox_pdf = _normalize_region_bbox(
+                bbox,
+                coordinate_space,
+                page,
+                pixel_reference_size=pixel_reference_size,
+            )
             if bbox_px.width <= 0 or bbox_px.height <= 0:
                 continue
             regions.append(
@@ -1509,28 +1515,81 @@ def _update_semantic_layer_metadata(
     document.metadata["semantic_layer"] = semantic_layer
 
 
+def _structure_payload_pixel_size(payload: dict[str, Any]) -> tuple[float, float] | None:
+    """Return the raster canvas used by an external structure model.
+
+    A replayed PaddleOCR-VL result is bound to the PNG passed to the model,
+    while conversion may render the same PDF at another DPI.  Treating model
+    pixels as current render pixels shifts every region whenever those DPIs
+    differ.  Paddle writes ``width`` and ``height`` on each result; a few
+    compatible producers use explicit image names instead.
+    """
+
+    for width_key, height_key in (
+        ("_scriptorium_structure_pixel_width", "_scriptorium_structure_pixel_height"),
+        ("image_width", "image_height"),
+        ("input_width", "input_height"),
+        ("width", "height"),
+    ):
+        dimensions = _positive_pixel_dimensions(payload.get(width_key), payload.get(height_key))
+        if dimensions is not None:
+            return dimensions
+
+    for key in ("image_size", "input_size", "page_image_size"):
+        value = payload.get(key)
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            continue
+        dimensions = _positive_pixel_dimensions(value[0], value[1])
+        if dimensions is not None:
+            return dimensions
+    return None
+
+
+def _positive_pixel_dimensions(width: Any, height: Any) -> tuple[float, float] | None:
+    try:
+        normalized_width = float(width)
+        normalized_height = float(height)
+    except (TypeError, ValueError):
+        return None
+    if normalized_width <= 0 or normalized_height <= 0:
+        return None
+    return normalized_width, normalized_height
+
+
 def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
 
-    def visit(value: Any, fallback_page_index: int | None = None) -> None:
+    def visit(
+        value: Any,
+        fallback_page_index: int | None = None,
+        inherited_pixel_size: tuple[float, float] | None = None,
+    ) -> None:
         if isinstance(value, list):
             for index, item in enumerate(value):
-                visit(item, index if fallback_page_index is None else fallback_page_index)
+                visit(
+                    item,
+                    index if fallback_page_index is None else fallback_page_index,
+                    inherited_pixel_size,
+                )
             return
         if not isinstance(value, dict):
             return
 
         child_fallback_page_index = _payload_page_index(value, fallback_page_index)
+        pixel_size = _structure_payload_pixel_size(value) or inherited_pixel_size
         if _has_blocks(value):
             page_payload = dict(value)
             if child_fallback_page_index is not None and page_payload.get("page_index") is None:
                 page_payload["page_index"] = child_fallback_page_index
+            if pixel_size is not None and _structure_payload_pixel_size(page_payload) is None:
+                page_payload["_scriptorium_structure_pixel_width"] = pixel_size[0]
+                page_payload["_scriptorium_structure_pixel_height"] = pixel_size[1]
             collected.append(page_payload)
 
         for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
             child = value.get(key)
             if child is not None:
-                visit(child, child_fallback_page_index)
+                visit(child, child_fallback_page_index, pixel_size)
 
     visit(payload)
     return collected
@@ -2585,11 +2644,43 @@ def _bbox_from_any(value: Any) -> BBox | None:
     return None
 
 
-def _normalize_region_bbox(bbox: BBox, coordinate_space: str, page: PageIR) -> tuple[BBox, BBox]:
+def _normalize_region_bbox(
+    bbox: BBox,
+    coordinate_space: str,
+    page: PageIR,
+    *,
+    pixel_reference_size: tuple[float, float] | None = None,
+) -> tuple[BBox, BBox]:
     if coordinate_space == "pdf":
         bbox_pdf = clamp_bbox(bbox, page.width_pt, page.height_pt)
         bbox_px = clamp_bbox(pdf_to_px_bbox(bbox_pdf, page.scale_x, page.scale_y), page.width_px, page.height_px)
         return bbox_px, bbox_pdf
+
+    if pixel_reference_size is not None:
+        source_width, source_height = pixel_reference_size
+        source_bbox = clamp_bbox(bbox, source_width, source_height)
+        bbox_pdf = clamp_bbox(
+            BBox(
+                x0=source_bbox.x0 * page.width_pt / source_width,
+                y0=source_bbox.y0 * page.height_pt / source_height,
+                x1=source_bbox.x1 * page.width_pt / source_width,
+                y1=source_bbox.y1 * page.height_pt / source_height,
+            ),
+            page.width_pt,
+            page.height_pt,
+        )
+        bbox_px = clamp_bbox(
+            BBox(
+                x0=source_bbox.x0 * page.width_px / source_width,
+                y0=source_bbox.y0 * page.height_px / source_height,
+                x1=source_bbox.x1 * page.width_px / source_width,
+                y1=source_bbox.y1 * page.height_px / source_height,
+            ),
+            page.width_px,
+            page.height_px,
+        )
+        return bbox_px, bbox_pdf
+
     bbox_px = clamp_bbox(bbox, page.width_px, page.height_px)
     bbox_pdf = clamp_bbox(px_to_pdf_bbox(bbox_px, page.scale_x, page.scale_y), page.width_pt, page.height_pt)
     return bbox_px, bbox_pdf
@@ -3753,9 +3844,21 @@ def _text_similarity(left: str, right: str) -> float:
     right_text = " ".join(right.split()).lower()
     if not left_text or not right_text:
         return 0.0
+    if left_text == right_text:
+        return 1.0
+    # A punctuation-only or one-token fragment must not inherit a model
+    # paragraph merely because it happens to occur inside its text. Exact
+    # single-character table cells and headings remain valid above; this guard
+    # only rejects weak non-exact substring/fuzzy matches.
+    if min(_meaningful_text_length(left_text), _meaningful_text_length(right_text)) < 2:
+        return 0.0
     if left_text in right_text or right_text in left_text:
         return 1.0
     return SequenceMatcher(None, left_text, right_text).ratio()
+
+
+def _meaningful_text_length(value: str) -> int:
+    return sum(character.isalnum() for character in value)
 
 
 def external_structure_partial_order_for_elements(elements: list[Any]) -> list[int]:

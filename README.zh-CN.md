@@ -102,6 +102,10 @@ scriptorium export-html \
   --display-mode fidelity
 ```
 
+保存的 PaddleOCR-VL JSON 会保留模型输入画布尺寸。Scriptorium 会通过其中的
+`width`/`height` 映射像素 bbox，因此同一次模型运行可以安全地在不同转换或
+benchmark DPI 下重放。
+
 也可以用内置 PDF fixture 快速跑通完整链路：
 
 ```bash

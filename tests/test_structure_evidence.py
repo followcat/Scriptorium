@@ -61,6 +61,78 @@ def test_pp_structure_block_order_can_reorder_native_lines() -> None:
     assert document.pages[0].elements[0].metadata["structure_evidence"]["source"] == "pp-structurev3"
 
 
+def test_structure_evidence_scales_paddle_input_pixels_across_render_dpi() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("title", "Model input dimensions", BBox(x0=10, y0=20, x1=110, y1=32), 1),
+        ]
+    )
+    # The document is currently rendered at 400x400 px (144 DPI), while the
+    # model saw a 200x200 px input. The wrapper shape matches Paddle's saved
+    # result form, where the canvas dimensions live beside a nested ``res``.
+    payload = {
+        "source": "paddleocr-vl",
+        "raw_results": [
+            {
+                "page_index": 0,
+                "width": 200,
+                "height": 200,
+                "res": {
+                    "page_index": 0,
+                    "parsing_res_list": [
+                        {
+                            "block_label": "doc_title",
+                            "block_bbox": [10, 20, 110, 32],
+                            "block_content": "Model input dimensions",
+                            "block_order": 1,
+                            "confidence": 0.96,
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    assert len(regions) == 1
+    assert regions[0].bbox_pdf == BBox(x0=10, y0=20, x1=110, y1=32)
+    assert regions[0].bbox_px == BBox(x0=20, y0=40, x1=220, y1=64)
+
+    apply_structure_evidence(document, payload)
+    evidence = document.pages[0].elements[0].metadata["structure_evidence"]
+    assert evidence["coverage"] == 1.0
+    assert evidence["text_similarity"] == 1.0
+
+
+def test_structure_evidence_does_not_match_punctuation_to_unrelated_model_text() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("heading", "DEAR SHAREHOLDERS,", BBox(x0=10, y0=20, x1=150, y1=32), 1),
+            ("stray-punctuation", ".", BBox(x0=10, y0=170, x1=14, y1=180), 2),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "paragraph_title",
+                    "block_bbox": [20, 40, 300, 64],
+                    "block_content": "DEAR SHAREHOLDERS.",
+                    "block_order": 1,
+                }
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["heading"].metadata["structure_evidence"]["text_similarity"] > 0.9
+    assert "structure_evidence" not in by_id["stray-punctuation"].metadata
+
+
 def test_partial_structure_order_keeps_unmatched_text_in_native_flow() -> None:
     document = _document_with_text_boxes(
         [
