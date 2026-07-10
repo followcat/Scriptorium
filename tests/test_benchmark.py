@@ -494,6 +494,7 @@ def test_benchmark_can_score_image_source_with_structure_json(tmp_path: Path) ->
         input_kind="image",
         image_dpi=96,
         structure_jsons=[structure_json],
+        ocr_fallback="off",
         html_mode="structured",
         fidelity_background="raster",
     )

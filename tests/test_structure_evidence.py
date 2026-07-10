@@ -149,6 +149,47 @@ def test_generic_structure_text_order_does_not_flatten_native_grid_island() -> N
     assert by_id["card"].metadata["reading_order_strategy"] == "visual-yx"
 
 
+def test_dense_image_grid_keeps_generic_structure_order_diagnostic_only() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("right", "Right body", BBox(x0=112, y0=12, x1=176, y1=22), 1),
+            ("left", "Left body", BBox(x0=12, y0=12, x1=76, y1=22), 2),
+            ("grid-a", "Grid A", BBox(x0=12, y0=52, x1=66, y1=62), 3),
+            ("grid-b", "Grid B", BBox(x0=76, y0=52, x1=130, y1=62), 4),
+            ("grid-c", "Grid C", BBox(x0=12, y0=70, x1=66, y1=80), 5),
+            ("grid-d", "Grid D", BBox(x0=76, y0=70, x1=130, y1=80), 6),
+            ("grid-e", "Grid E", BBox(x0=12, y0=88, x1=66, y1=98), 7),
+            ("grid-f", "Grid F", BBox(x0=76, y0=88, x1=130, y1=98), 8),
+        ]
+    )
+    document.source_type = "image"
+    for element in document.pages[0].elements:
+        if element.id.startswith("grid-"):
+            element.metadata["column_span"] = "grid-full"
+    payload = {
+        "source": "layout-model",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("left", "text", "Left body", 1, document),
+                _pp_region("right", "text", "Right body", 2, document),
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [
+        element.id
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ][:2] == ["right", "left"]
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
+    assert by_id["left"].metadata["external_structure_order_diagnostic_only"] is True
+    assert "external-structure-order-diagnostic-only" in by_id["left"].metadata["reading_order_evidence"]
+
+
 def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -> None:
     document = _document_with_text_boxes(
         [

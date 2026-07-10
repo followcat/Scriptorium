@@ -34,6 +34,32 @@ TYPE_ALIASES = {
 }
 
 
+# When a dense OCR layer already exists, generic model text regions are useful
+# evidence but not safe extra anchors: they commonly describe page chrome,
+# decorative cards, or a merged paragraph. Specific semantic regions can fill
+# a genuine OCR hole without multiplying overlapping editable text nodes.
+STRUCTURE_COMPLETION_LABELS = frozenset(
+    {
+        "abstract",
+        "algorithm",
+        "code",
+        "doc_title",
+        "equation",
+        "formula",
+        "list",
+        "list_item",
+        "paragraph_title",
+        "section_header",
+        "section_title",
+        "table",
+        "table_body",
+        "table_cell",
+        "table_content",
+        "title",
+    }
+)
+
+
 def load_ocr_json(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     normalized = normalize_paddleocr_vl_payload(payload)
@@ -60,6 +86,7 @@ def normalize_ocr_to_ir(
 ) -> DocumentIR:
     ocr_payload = ocr_payload or {}
     by_page = _group_ocr_elements_by_page(ocr_payload)
+    payload_kind = _semantic_payload_kind(ocr_payload) if ocr_payload else None
     include_source_image = rendered.source_type == "image" if include_source_image is None else include_source_image
     crop_root = Path(crop_dir) if crop_dir is not None else None
     if crop_root is not None:
@@ -68,24 +95,42 @@ def normalize_ocr_to_ir(
     pages: list[PageIR] = []
     page_diagnostics: list[dict[str, Any]] = []
     for rendered_page in rendered.pages:
-        raw_elements = by_page.get(rendered_page.page_index, [])
-        ocr_status = "not-needed" if raw_elements else "not-candidate"
+        raw_elements = list(by_page.get(rendered_page.page_index, []))
+        payload_text_anchor_count = _raw_text_anchor_count(raw_elements)
+        structure_anchor_count = payload_text_anchor_count if payload_kind == "structure-json" else 0
+        completion_stats = _empty_anchor_completion_stats()
+        ocr_status = "not-needed" if payload_text_anchor_count else "not-candidate"
         ocr_language_used: str | None = None
         ocr_error: str | None = None
-        if rendered.source_type == "image" and not raw_elements:
+        if rendered.source_type == "image":
             if ocr_fallback == "image-only":
-                raw_elements, ocr_language_used, ocr_error = _ocr_image_raw_elements(
-                    rendered_page,
-                    language=ocr_language,
-                    dpi=ocr_dpi,
-                )
-                if raw_elements:
-                    ocr_status = "applied"
-                elif ocr_error:
-                    ocr_status = "unavailable"
-                else:
-                    ocr_status = "no-text"
-            else:
+                should_complete_structure = payload_kind == "structure-json" and bool(raw_elements)
+                if not payload_text_anchor_count or should_complete_structure:
+                    fallback_elements, ocr_language_used, ocr_error = _ocr_image_raw_elements(
+                        rendered_page,
+                        language=ocr_language,
+                        dpi=ocr_dpi,
+                    )
+                    if fallback_elements:
+                        if should_complete_structure:
+                            raw_elements, completion_stats = _fuse_structure_anchors_with_fallback(
+                                raw_elements,
+                                fallback_elements,
+                                rendered_page,
+                            )
+                        else:
+                            raw_elements.extend(fallback_elements)
+                            completion_stats = {
+                                **_empty_anchor_completion_stats(),
+                                "fallback_anchor_count": _raw_text_anchor_count(fallback_elements),
+                                "added_anchor_count": _raw_text_anchor_count(fallback_elements),
+                            }
+                        ocr_status = "applied"
+                    elif ocr_error:
+                        ocr_status = "unavailable"
+                    else:
+                        ocr_status = "no-text"
+            elif not payload_text_anchor_count:
                 ocr_status = "disabled"
         page_diagnostics.append(
             {
@@ -97,7 +142,17 @@ def normalize_ocr_to_ir(
                 "ocr_language_used": ocr_language_used,
                 "ocr_dpi": ocr_dpi,
                 "ocr_error": ocr_error,
-                "ocr_text_line_count": len(raw_elements),
+                "ocr_text_line_count": _raw_text_anchor_count(raw_elements),
+                "structure_text_anchor_count": structure_anchor_count,
+                "ocr_fallback_anchor_count": completion_stats["fallback_anchor_count"],
+                "ocr_fallback_added_anchor_count": completion_stats["added_anchor_count"],
+                "ocr_fallback_suppressed_duplicate_count": completion_stats["suppressed_duplicate_count"],
+                "ocr_fallback_conflict_count": completion_stats["conflict_count"],
+                "structure_anchor_overlap_count": completion_stats["structure_overlap_anchor_count"],
+                "structure_anchor_completion_count": completion_stats["structure_completion_anchor_count"],
+                "structure_generic_completion_suppressed_count": completion_stats[
+                    "structure_generic_completion_suppressed_count"
+                ],
             }
         )
         default_source = "native-ocr" if rendered.source_type == "image" else "json-fallback"
@@ -177,7 +232,10 @@ def _semantic_layer_metadata(
     payload_kind = _semantic_payload_kind(ocr_payload) if has_payload else None
 
     if payload_kind == "structure-json" and has_payload_text:
-        driver = "structure-json"
+        completion_anchor_count = sum(
+            int(page.get("ocr_fallback_added_anchor_count") or 0) for page in page_diagnostics
+        )
+        driver = "structure-plus-ocr-fallback" if completion_anchor_count else "structure-json"
     elif has_payload and has_payload_text:
         driver = "ocr-json"
     elif has_ocr_fallback:
@@ -194,11 +252,145 @@ def _semantic_layer_metadata(
         "source_type": rendered.source_type,
         "source_visual_layer": bool(include_source_image),
         "text_anchor_count": sum(int(page.get("ocr_text_line_count") or 0) for page in page_diagnostics),
+        "structure_text_anchor_count": sum(
+            int(page.get("structure_text_anchor_count") or 0) for page in page_diagnostics
+        ),
+        "ocr_fallback_anchor_count": sum(
+            int(page.get("ocr_fallback_anchor_count") or 0) for page in page_diagnostics
+        ),
+        "ocr_fallback_completion_anchor_count": sum(
+            int(page.get("ocr_fallback_added_anchor_count") or 0) for page in page_diagnostics
+        ),
+        "ocr_fallback_conflict_count": sum(
+            int(page.get("ocr_fallback_conflict_count") or 0) for page in page_diagnostics
+        ),
+        "structure_anchor_overlap_count": sum(
+            int(page.get("structure_anchor_overlap_count") or 0) for page in page_diagnostics
+        ),
+        "structure_anchor_completion_count": sum(
+            int(page.get("structure_anchor_completion_count") or 0) for page in page_diagnostics
+        ),
+        "structure_generic_completion_suppressed_count": sum(
+            int(page.get("structure_generic_completion_suppressed_count") or 0)
+            for page in page_diagnostics
+        ),
         "ocr_fallback_applied_page_count": sum(
             1 for page in page_diagnostics if page.get("ocr_fallback_status") == "applied"
         ),
-        "priority": ["structure-json", "ocr-json", "ocr-fallback", "source-visual-layer"],
+        "priority": [
+            "structure-json",
+            "ocr-fallback-completion",
+            "ocr-json",
+            "source-visual-layer",
+        ],
     }
+
+
+def _raw_text_anchor_count(raw_elements: list[dict[str, Any]]) -> int:
+    return sum(1 for raw in raw_elements if _extract_text(raw).strip())
+
+
+def _empty_anchor_completion_stats() -> dict[str, int]:
+    return {
+        "fallback_anchor_count": 0,
+        "added_anchor_count": 0,
+        "suppressed_duplicate_count": 0,
+        "conflict_count": 0,
+        "structure_overlap_anchor_count": 0,
+        "structure_completion_anchor_count": 0,
+        "structure_generic_completion_suppressed_count": 0,
+    }
+
+
+def _fuse_structure_anchors_with_fallback(
+    structure_elements: list[dict[str, Any]],
+    fallback_elements: list[dict[str, Any]],
+    page: RenderedPage,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Keep fine OCR anchors, then add only structure text with no OCR peer.
+
+    Image documents often combine a layout-aware parser that recognizes fewer,
+    larger blocks with OCR that recognizes small card, menu, or product labels.
+    Feeding both sets into one geometry inference step duplicates overlapping
+    text and can erase stable grid/card islands. Use OCR as the fine-grained
+    anchor base when it is available. The model remains the semantic authority
+    because its regions, labels, and order are applied afterwards; it only adds
+    text anchors for geometry that OCR did not see at all.
+    """
+
+    completed: list[dict[str, Any]] = []
+    stats = _empty_anchor_completion_stats()
+    stats["fallback_anchor_count"] = _raw_text_anchor_count(fallback_elements)
+    for fallback in fallback_elements:
+        if not _extract_text(fallback).strip():
+            continue
+        if _raw_duplicate_index(completed, fallback) is not None:
+            stats["suppressed_duplicate_count"] += 1
+            continue
+        completion = dict(fallback)
+        completion["ocr_anchor_origin"] = "ocr-fallback-completion"
+        completion["structure_anchor_completion"] = True
+        completed.append(completion)
+        stats["added_anchor_count"] += 1
+
+    for structure in structure_elements:
+        if not _extract_text(structure).strip():
+            continue
+        if _structure_anchor_has_fallback_peer(structure, completed, page):
+            stats["structure_overlap_anchor_count"] += 1
+            continue
+        if not _structure_anchor_is_completion_eligible(structure):
+            stats["structure_generic_completion_suppressed_count"] += 1
+            continue
+        if _raw_duplicate_index(completed, structure) is not None:
+            stats["suppressed_duplicate_count"] += 1
+            continue
+        completion = dict(structure)
+        completion["ocr_anchor_origin"] = "structure-anchor-completion"
+        completion["structure_anchor_completion"] = True
+        completed.append(completion)
+        stats["structure_completion_anchor_count"] += 1
+    return completed, stats
+
+
+def _structure_anchor_has_fallback_peer(
+    structure: dict[str, Any],
+    fallback_elements: list[dict[str, Any]],
+    page: RenderedPage,
+) -> bool:
+    """Return whether a model text block intersects an existing OCR anchor."""
+
+    try:
+        structure_bbox, _structure_pdf = _extract_bboxes(structure, page)
+    except (TypeError, ValueError):
+        return False
+    for fallback in fallback_elements:
+        if not _extract_text(fallback).strip():
+            continue
+        try:
+            fallback_bbox, _fallback_pdf = _extract_bboxes(fallback, page)
+        except (TypeError, ValueError):
+            continue
+        if max(
+            _bbox_inner_coverage(structure_bbox, fallback_bbox),
+            _bbox_inner_coverage(fallback_bbox, structure_bbox),
+        ) >= 0.6:
+            return True
+    return False
+
+
+def _structure_anchor_is_completion_eligible(raw: dict[str, Any]) -> bool:
+    label = str(raw.get("type") or raw.get("label") or raw.get("block_label") or "")
+    normalized = label.strip().lower().replace("-", "_").replace(" ", "_")
+    return normalized in STRUCTURE_COMPLETION_LABELS
+
+
+def _bbox_inner_coverage(inner: BBox, outer: BBox) -> float:
+    intersection_width = max(0.0, min(inner.x1, outer.x1) - max(inner.x0, outer.x0))
+    intersection_height = max(0.0, min(inner.y1, outer.y1) - max(inner.y0, outer.y0))
+    intersection = intersection_width * intersection_height
+    area = max(inner.width * inner.height, 1.0)
+    return max(0.0, min(1.0, intersection / area))
 
 
 def _semantic_payload_kind(payload: dict[str, Any]) -> str:

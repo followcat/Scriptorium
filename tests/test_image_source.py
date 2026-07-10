@@ -126,6 +126,76 @@ def test_image_source_can_seed_text_from_structure_json_blocks(tmp_path: Path) -
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
 
 
+def test_image_source_completes_structure_anchors_with_ocr_fallback(tmp_path: Path, monkeypatch) -> None:
+    image_path = _make_image(tmp_path / "source.png")
+    rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)
+    structure_payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [24, 28, 132, 48],
+                    "block_order": 1,
+                    "block_content": "Model anchor",
+                    "confidence": 0.94,
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 116, 140, 136],
+                    "block_order": 2,
+                    "block_content": "Unpaired generic model text",
+                    "confidence": 0.9,
+                },
+            ],
+        },
+    }
+
+    def fake_fallback(*_args, **_kwargs):
+        return (
+            [
+                {
+                    "type": "text",
+                    "bbox_px": [24, 28, 132, 48],
+                    "text": "Model anchor",
+                    "confidence": 0.72,
+                    "source": "native-ocr",
+                },
+                {
+                    "type": "text",
+                    "bbox_px": [182, 70, 282, 90],
+                    "text": "Fallback card label",
+                    "confidence": 0.72,
+                    "source": "native-ocr",
+                },
+            ],
+            "eng",
+            None,
+        )
+
+    monkeypatch.setattr("scriptorium.ocr._ocr_image_raw_elements", fake_fallback)
+    document = normalize_ocr_to_ir(rendered, structure_payload, ocr_fallback="image-only")
+    text_elements = [element for element in document.pages[0].elements if element.source_text.strip()]
+    by_text = {element.source_text: element for element in text_elements}
+    diagnostics = document.metadata["page_extraction"][0]
+
+    assert set(by_text) == {"Model anchor", "Fallback card label"}
+    assert by_text["Model anchor"].metadata["ocr_anchor_origin"] == "ocr-fallback-completion"
+    assert by_text["Fallback card label"].metadata["ocr_anchor_origin"] == "ocr-fallback-completion"
+    assert diagnostics["structure_text_anchor_count"] == 2
+    assert diagnostics["ocr_fallback_anchor_count"] == 2
+    assert diagnostics["ocr_fallback_added_anchor_count"] == 2
+    assert diagnostics["ocr_fallback_suppressed_duplicate_count"] == 0
+    assert diagnostics["structure_anchor_overlap_count"] == 1
+    assert diagnostics["structure_anchor_completion_count"] == 0
+    assert diagnostics["structure_generic_completion_suppressed_count"] == 1
+    assert diagnostics["ocr_fallback_status"] == "applied"
+    assert document.metadata["semantic_layer"]["driver"] == "structure-plus-ocr-fallback"
+    assert document.metadata["semantic_layer"]["structure_text_anchor_count"] == 2
+    assert document.metadata["semantic_layer"]["ocr_fallback_completion_anchor_count"] == 2
+
+
 def test_image_source_can_seed_table_cells_from_pp_structure_json(tmp_path: Path) -> None:
     image_path = _make_image(tmp_path / "source.png")
     rendered = render_source(image_path, tmp_path / "pages", input_kind="image", image_dpi=96)

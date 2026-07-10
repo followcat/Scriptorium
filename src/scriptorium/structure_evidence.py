@@ -96,6 +96,21 @@ IMPLICIT_ORDERABLE_LABELS = frozenset(
 )
 
 
+GENERIC_STRUCTURE_ORDER_LABELS = frozenset(
+    {
+        "abstract",
+        "body",
+        "body_text",
+        "paragraph",
+        "paragraph_text",
+        "reference",
+        "references",
+        "text",
+        "text_block",
+    }
+)
+
+
 @dataclass(frozen=True)
 class StructureRegion:
     page_index: int
@@ -1254,6 +1269,8 @@ def apply_structure_evidence(
                 min_text_similarity=min_text_similarity,
             )
             matched_count += page_matches
+        if document.source_type == "image":
+            _mark_generic_structure_order_diagnostic_only_on_dense_image_page(page)
         page_relation_stats = _apply_page_relation_edges(
             page,
             relations_by_page.get(page.page_index, []),
@@ -1482,7 +1499,8 @@ def _update_semantic_layer_metadata(
         "order_reordered_page_count": order_reordered_pages,
     }
     if structure_drives_image_semantics:
-        semantic_layer["driver"] = "structure-json"
+        if semantic_layer.get("driver") != "structure-plus-ocr-fallback":
+            semantic_layer["driver"] = "structure-json"
         semantic_layer["payload_kind"] = "structure-json"
         semantic_layer["source_visual_layer_role"] = "visual-fidelity-only"
     else:
@@ -3853,6 +3871,8 @@ def _external_structure_order_participates(element: ElementIR) -> bool:
     metadata = element.metadata
     if _optional_int(metadata.get("external_structure_order")) is None:
         return False
+    if metadata.get("external_structure_order_diagnostic_only") is True:
+        return False
     # Docling's full body traversal is useful region evidence, but only its
     # same-container local runs become executable relation edges.  Do not turn
     # a depth-first sequence across groups or pages into a global fallback.
@@ -3873,6 +3893,38 @@ def _external_structure_order_participates(element: ElementIR) -> bool:
     if column_span.startswith(("grid", "table", "artifact", "footnote", "sidebar")):
         return False
     return True
+
+
+def _mark_generic_structure_order_diagnostic_only_on_dense_image_page(page: PageIR) -> None:
+    """Keep generic model order diagnostic on image pages with dense islands.
+
+    Product grids, tables, and card collections have stronger local flow than
+    a layout model's generic ``text`` enumeration. A block list that lacks
+    explicit successor edges or streams is valuable for inspection, but using
+    it as global precedence fragments the surrounding body and page chrome.
+    Specific model labels (table, grid, title, formula, and so on) continue to
+    participate normally.
+    """
+
+    text_elements = [element for element in page.elements if element.source_text.strip()]
+    dense_island_members = sum(
+        str(element.metadata.get("column_span") or "").strip().startswith(("grid", "table"))
+        for element in text_elements
+    )
+    if dense_island_members < 6:
+        return
+    for element in text_elements:
+        label = _normalize_structure_label(str(element.metadata.get("external_structure_label") or ""))
+        if label not in GENERIC_STRUCTURE_ORDER_LABELS:
+            continue
+        if _optional_int(element.metadata.get("external_structure_order")) is None:
+            continue
+        element.metadata["external_structure_order_diagnostic_only"] = True
+        evidence = _reading_order_evidence(element)
+        if "external-structure-order-diagnostic-only" not in evidence:
+            evidence.append("external-structure-order-diagnostic-only")
+        element.metadata["reading_order_evidence"] = evidence
+        element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
 
 
 def _reorder_page_from_regions(page: PageIR) -> str | None:
