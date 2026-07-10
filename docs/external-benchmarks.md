@@ -202,7 +202,7 @@ Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-st
 | Sample page | Structure regions / matched elements | Visual similarity | Labelled semantic result | Structure-order result |
 |---|---:|---:|---|---|
 | Attention p. 1 | 78 / 56 | `0.95231377` | Pair `1.0`, successor `1.0` | No selected reorder; the prior sparse-order regression is gone. |
-| Transformer-XL p. 1 | 116 / 99 | `0.94267969` | Pair `1.0`, successor `1.0` | Native column flow is retained; model order adds no labelled regression. |
+| Transformer-XL pp. 1-3 | 458 / 321 | `0.93853503` | Pair `1.0`, successor `1.0` | Native column flow is retained; stream needs decrease by 1 and consensus successor disagreement by 26. |
 | JD homepage p. 1 | 160 / 128 | `0.99536129` | No semantic sidecar | Successor-consensus disagreement improves by 62; native grid streams remain protected and stream `needs-structure-evidence` stays at baseline. |
 | PUMA p. 5 | 42 / 25 | `0.95767110` | No semantic sidecar | The implicit-image guard leaves selected order and review diagnostics at the native baseline. |
 
