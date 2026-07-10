@@ -106,6 +106,13 @@ Saved PaddleOCR-VL JSON retains the model input canvas. Scriptorium maps its
 pixel boxes through that saved `width`/`height`, so one model run can be
 replayed safely at a different conversion or benchmark DPI.
 
+When a model supplies explicit `block_order` for a body/paragraph block and
+all matched native lines stay in one selected flow segment and column,
+Scriptorium promotes them to an `external-block-body-*` local translation
+stream. This does not reorder the page or bridge tables, grids, captions,
+page artifacts, footnotes, or sidebars; it is a paragraph-level batching
+boundary for translation and editing, not a whole-page reading-order claim.
+
 The built-in PDF fixture is still useful for a fully runnable smoke test:
 
 ```bash

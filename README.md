@@ -106,6 +106,12 @@ scriptorium export-html \
 `width`/`height` 映射像素 bbox，因此同一次模型运行可以安全地在不同转换或
 benchmark DPI 下重放。
 
+当模型给出显式 `block_order` 的正文/段落 block，且匹配到的 native 行全部位于同一
+已选 flow segment 和列中时，Scriptorium 会把它们提升为 `external-block-body-*`
+本地翻译流。这个边界不会重排页面，也不会跨越 table、grid、caption、页眉页脚、
+脚注或边栏；它用于让翻译和编辑按真实段落分批处理，而不是把 model block 当成全页
+阅读顺序。
+
 也可以用内置 PDF fixture 快速跑通完整链路：
 
 ```bash

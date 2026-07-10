@@ -228,6 +228,28 @@ important result is DPI-invariant region alignment; without it, a 96-DPI model
 bbox replayed against a 144-DPI page can falsely attach a paragraph to another
 text region and manufacture an order regression.
 
+### Explicit model-block translation streams
+
+Some layout providers expose ordered paragraph blocks but no relation edges or
+`reading_streams`. The block-stream bridge uses those boundaries only after
+native matching: every member must be body text in one selected flow segment
+and column, with coverage at least `0.5`. It then keeps native local order and
+creates a primary `external-block-body-*` stream; it never turns block order
+into a page-wide permutation or crosses a stronger table/grid/caption/artifact
+stream.
+
+| Sample | Derived block streams / members | Selected-order result | Sidecar proposal result | Translation-stress result |
+|---|---:|---|---|---|
+| PUMA annual report p. 5 | 4 / 17 | No reorder; visual `0.95767110` at the coordinate A/B baseline | `7 / 12 / 6 / 7` streams / strict / review / transitions | 23 replacements, 22 conflicts, 6 overflows; grouping improves attribution but not totals yet. |
+| Transformer-XL p. 1 | 6 / 85 | Labelled successor accuracy remains `1.0` | `13 / 81 / 5 / 13` | Not used as a claim about translated visual fidelity. |
+| JD homepage p. 1 | 0 / 0 | All 35 native grid-island members remain protected | No generic block stream is created | The dense card/page structure still needs explicit model relations or streams. |
+
+This is intentionally a local semantic improvement rather than a score
+shortcut: PUMA and JD do not yet have human relation labels, so the stream and
+proposal counts are diagnostic evidence only. The PUMA stress result also
+shows why the next fidelity work must constrain masks and fitting inside these
+streams instead of treating a new stream id as a conflict reduction by itself.
+
 ## Docling Body-Tree A/B
 
 Docling now contributes only bounded same-page sibling runs rather than a serialized whole-page body order. Root-body runs stop at geometry boundaries and split again at stronger native local streams. On concrete native columns, their membership and edges remain reviewable secondary evidence rather than primary translation streams or executable page-level reorder constraints. The latest reruns use the blank-PDF-checked Chromium path; native-only and structure branches therefore print the same nonblank visual layer before their semantic metrics are compared.

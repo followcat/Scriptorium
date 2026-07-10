@@ -133,6 +133,120 @@ def test_structure_evidence_does_not_match_punctuation_to_unrelated_model_text()
     assert "structure_evidence" not in by_id["stray-punctuation"].metadata
 
 
+def test_explicit_structure_blocks_derive_local_translation_streams() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("first-a", "First paragraph line A", BBox(x0=10, y0=20, x1=150, y1=30), 1),
+            ("first-b", "First paragraph line B", BBox(x0=10, y0=32, x1=150, y1=42), 2),
+            ("second-a", "Second paragraph line A", BBox(x0=10, y0=70, x1=150, y1=80), 3),
+            ("second-b", "Second paragraph line B", BBox(x0=10, y0=82, x1=150, y1=92), 4),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 40, 300, 84],
+                    "block_content": "First paragraph line A First paragraph line B",
+                    "block_order": 1,
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 140, 300, 184],
+                    "block_content": "Second paragraph line A Second paragraph line B",
+                    "block_order": 2,
+                },
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert document.metadata["structure_evidence"]["derived_block_stream_count"] == 2
+    assert document.metadata["structure_evidence"]["derived_block_stream_member_count"] == 4
+    assert [by_id[element_id].reading_order for element_id in ("first-a", "first-b", "second-a", "second-b")] == [1, 2, 3, 4]
+    assert {by_id[element_id].metadata["reading_order_stream_id"] for element_id in ("first-a", "first-b")} == {
+        "external-block-body-001-001"
+    }
+    assert {by_id[element_id].metadata["reading_order_stream_id"] for element_id in ("second-a", "second-b")} == {
+        "external-block-body-001-002"
+    }
+    assert all(
+        by_id[element_id].metadata["external_structure_stream_block_derived"] is True
+        for element_id in ("first-a", "first-b", "second-a", "second-b")
+    )
+
+
+def test_derived_block_stream_does_not_bridge_native_columns() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left", "Left column text", BBox(x0=10, y0=20, x1=80, y1=30), 1),
+            ("right", "Right column text", BBox(x0=110, y0=20, x1=180, y1=30), 2),
+        ]
+    )
+    for element in document.pages[0].elements:
+        element.metadata["column_count"] = 2
+        element.metadata["column_span"] = "column"
+    document.pages[0].elements[0].metadata["column_index"] = 0
+    document.pages[0].elements[1].metadata["column_index"] = 1
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 40, 360, 60],
+                    "block_content": "Left column text Right column text",
+                    "block_order": 1,
+                }
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+
+    assert document.metadata["structure_evidence"]["derived_block_stream_count"] == 0
+    assert all(
+        "external_structure_stream_id" not in element.metadata for element in document.pages[0].elements
+    )
+
+
+def test_derived_block_stream_requires_model_text_boundary() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("first", "First body line", BBox(x0=10, y0=20, x1=150, y1=30), 1),
+            ("second", "Second body line", BBox(x0=10, y0=32, x1=150, y1=42), 2),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [0, 0, 400, 400],
+                    "block_order": 1,
+                    "block_content": "",
+                }
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+
+    assert document.metadata["structure_evidence"]["derived_block_stream_count"] == 0
+    assert all(
+        "external_structure_stream_id" not in element.metadata for element in document.pages[0].elements
+    )
+
+
 def test_partial_structure_order_keeps_unmatched_text_in_native_flow() -> None:
     document = _document_with_text_boxes(
         [

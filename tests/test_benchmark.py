@@ -1234,6 +1234,8 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert case["structure_evidence_relation_stream_count"] == 0
     assert case["structure_evidence_resolved_relation_stream_member_count"] == 0
     assert case["structure_evidence_relation_stream_conflict_count"] == 0
+    assert case["structure_evidence_derived_block_stream_count"] == 0
+    assert case["structure_evidence_derived_block_stream_member_count"] == 0
     assert case["structure_evidence_matched_element_count"] > 0
     assert case["structure_evidence_relation_reordered_page_count"] == 0
     assert case["structure_evidence_order_reordered_page_count"] >= 0
@@ -1249,6 +1251,8 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert report["summary"]["total_structure_evidence_relation_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_relation_stream_conflicts"] == 0
+    assert report["summary"]["total_structure_evidence_derived_block_streams"] == 0
+    assert report["summary"]["total_structure_evidence_derived_block_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_matched_elements"] == case[
         "structure_evidence_matched_element_count"
     ]
@@ -1261,6 +1265,8 @@ def test_benchmark_can_score_structure_evidence_fusion(tmp_path: Path) -> None:
     assert "structure_evidence_stream_count" in csv_text
     assert "structure_evidence_resolved_stream_alias_member_count" in csv_text
     assert "structure_evidence_relation_stream_count" in csv_text
+    assert "structure_evidence_derived_block_stream_count" in csv_text
+    assert "structure_evidence_derived_block_stream_member_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "semantic_external_structure_successor_accuracy" in csv_text
@@ -1346,6 +1352,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_evidence_relation_stream_count"] == 0
     assert comparison["structure_evidence_resolved_relation_stream_member_count"] == 0
     assert comparison["structure_evidence_relation_stream_conflict_count"] == 0
+    assert comparison["structure_evidence_derived_block_stream_count"] == 0
+    assert comparison["structure_evidence_derived_block_stream_member_count"] == 0
     assert comparison["structure_evidence_matched_element_count"] > 0
     assert comparison["structure_evidence_relation_reordered_page_count"] == 0
     assert comparison["structure_evidence_order_reordered_page_count"] >= 0
@@ -1391,6 +1399,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "structure_evidence_stream_count" in csv_text
     assert "structure_evidence_resolved_stream_alias_member_count" in csv_text
     assert "structure_evidence_relation_stream_count" in csv_text
+    assert "structure_evidence_derived_block_stream_count" in csv_text
+    assert "structure_evidence_derived_block_stream_member_count" in csv_text
     assert "structure_evidence_relation_reordered_page_count" in csv_text
     assert "structure_evidence_order_source_counts" in csv_text
     assert "grid_island_element_delta" in csv_text
@@ -1405,6 +1415,8 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["total_structure_evidence_relation_streams"] == 0
     assert report["summary"]["total_structure_evidence_resolved_relation_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_relation_stream_conflicts"] == 0
+    assert report["summary"]["total_structure_evidence_derived_block_streams"] == 0
+    assert report["summary"]["total_structure_evidence_derived_block_stream_members"] == 0
     assert report["summary"]["total_structure_evidence_relation_reordered_pages"] == 0
     assert report["summary"]["total_structure_evidence_order_reordered_pages"] >= 0
     assert "total_fidelity_replacement_same_stream_conflict_target_delta" in report["summary"]
@@ -1413,6 +1425,48 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
         "structure_evidence_matched_element_count"
     ]
     assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
+
+
+def test_benchmark_reports_explicit_block_derived_stream_metrics(tmp_path: Path) -> None:
+    pdf_path = create_benchmark_fixtures(tmp_path / "fixtures")[0]
+    structure_json = tmp_path / f"{pdf_path.stem}.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "unit-explicit-block-stream",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "parsing_res_list": [
+                            {
+                                "block_label": "text",
+                                "bbox_pdf": [60, 110, 570, 175],
+                                "block_order": 1,
+                                "block_content": (
+                                    "This page is mostly flowing native PDF text. "
+                                    "The benchmark checks whether text nodes, style marks, and coordinates survive."
+                                ),
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_benchmark(
+        [pdf_path],
+        tmp_path / "benchmark-explicit-block-stream",
+        dpi=96,
+        structure_jsons=[structure_json],
+    )
+    case = report["cases"][0]
+
+    assert case["structure_evidence_derived_block_stream_count"] == 1
+    assert case["structure_evidence_derived_block_stream_member_count"] == 2
+    assert report["summary"]["total_structure_evidence_derived_block_streams"] == 1
+    assert report["summary"]["total_structure_evidence_derived_block_stream_members"] == 2
 
 
 def test_structure_ab_benchmark_reports_block_group_relation_metrics(tmp_path: Path) -> None:

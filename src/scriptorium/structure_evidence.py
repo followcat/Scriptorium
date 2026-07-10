@@ -111,6 +111,24 @@ GENERIC_STRUCTURE_ORDER_LABELS = frozenset(
 )
 
 
+# Explicit text-block boundaries can provide useful translation-local streams
+# even when the model does not expose successor edges. They must remain local:
+# tables, grids, page furniture, and vague implicit list positions are handled
+# by stronger native/explicit stream paths instead.
+DERIVABLE_BLOCK_STREAM_LABELS = GENERIC_STRUCTURE_ORDER_LABELS | frozenset(
+    {
+        "algorithm",
+        "code",
+        "list",
+        "list_item",
+        "paragraph_title",
+        "section_header",
+        "section_title",
+        "title",
+    }
+)
+
+
 @dataclass(frozen=True)
 class StructureRegion:
     page_index: int
@@ -1259,12 +1277,15 @@ def apply_structure_evidence(
     relation_stream_count = 0
     resolved_relation_stream_member_count = 0
     relation_stream_conflict_count = 0
+    derived_block_stream_count = 0
+    derived_block_stream_member_count = 0
     reordered_pages = 0
     relation_reordered_pages = 0
     order_reordered_pages = 0
     order_source_counts = Counter(str(region.order_source or "none") for region in regions)
     relation_resolution_by_page: list[dict[str, Any]] = []
     stream_resolution_by_page: list[dict[str, Any]] = []
+    derived_block_streams_by_page: list[dict[str, Any]] = []
     for page in document.pages:
         page_regions = regions_by_page.get(page.page_index, [])
         if page_regions:
@@ -1319,6 +1340,16 @@ def apply_structure_evidence(
         relation_stream_count += page_relation_streams
         resolved_relation_stream_member_count += page_relation_stream_members
         relation_stream_conflict_count += page_relation_stream_conflicts
+        page_block_streams = _apply_derived_block_streams(page, source=source_name)
+        derived_block_stream_count += len(page_block_streams)
+        derived_block_stream_member_count += sum(len(stream.member_refs) for stream in page_block_streams)
+        if page_block_streams:
+            derived_block_streams_by_page.append(
+                {
+                    "page_index": page.page_index,
+                    "streams": [stream.as_metadata() for stream in page_block_streams],
+                }
+            )
         if reorder:
             reorder_source = _reorder_page_from_regions(page)
             if reorder_source:
@@ -1350,6 +1381,8 @@ def apply_structure_evidence(
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
         "relation_stream_conflict_count": relation_stream_conflict_count,
+        "derived_block_stream_count": derived_block_stream_count,
+        "derived_block_stream_member_count": derived_block_stream_member_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "relation_reordered_page_count": relation_reordered_pages,
@@ -1378,6 +1411,7 @@ def apply_structure_evidence(
             for page_index, page_streams in sorted(streams_by_page.items())
         ],
         "stream_resolution_by_page": stream_resolution_by_page,
+        "derived_block_streams_by_page": derived_block_streams_by_page,
     }
     _update_semantic_layer_metadata(
         document,
@@ -1404,6 +1438,8 @@ def apply_structure_evidence(
         relation_stream_count=relation_stream_count,
         resolved_relation_stream_member_count=resolved_relation_stream_member_count,
         relation_stream_conflict_count=relation_stream_conflict_count,
+        derived_block_stream_count=derived_block_stream_count,
+        derived_block_stream_member_count=derived_block_stream_member_count,
         relation_reordered_pages=relation_reordered_pages,
         order_reordered_pages=order_reordered_pages,
     )
@@ -1431,6 +1467,8 @@ def apply_structure_evidence(
                 "relation_stream_count": relation_stream_count,
                 "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
                 "relation_stream_conflict_count": relation_stream_conflict_count,
+                "derived_block_stream_count": derived_block_stream_count,
+                "derived_block_stream_member_count": derived_block_stream_member_count,
                 "matched_element_count": matched_count,
                 "reordered_page_count": reordered_pages,
                 "relation_reordered_page_count": relation_reordered_pages,
@@ -1468,6 +1506,8 @@ def _update_semantic_layer_metadata(
     relation_stream_count: int,
     resolved_relation_stream_member_count: int,
     relation_stream_conflict_count: int,
+    derived_block_stream_count: int,
+    derived_block_stream_member_count: int,
     relation_reordered_pages: int,
     order_reordered_pages: int,
 ) -> None:
@@ -1501,6 +1541,8 @@ def _update_semantic_layer_metadata(
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
         "relation_stream_conflict_count": relation_stream_conflict_count,
+        "derived_block_stream_count": derived_block_stream_count,
+        "derived_block_stream_member_count": derived_block_stream_member_count,
         "relation_reordered_page_count": relation_reordered_pages,
         "order_reordered_page_count": order_reordered_pages,
     }
@@ -2789,6 +2831,7 @@ def _apply_page_regions(
             "label": region.label,
             "order": region.order,
             "order_source": region.order_source,
+            "text": region.text,
             "confidence": region.confidence,
             "bbox_pdf": region.bbox_pdf.as_list(),
             "bbox_px": region.bbox_px.as_list(),
@@ -3173,6 +3216,129 @@ def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, 
             element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
             resolved_count += 1
     return stream_count, resolved_count, conflict_count
+
+
+def _apply_derived_block_streams(page: PageIR, *, source: str) -> list[StructureReadingStream]:
+    """Promote coherent explicit model blocks into translation-local streams.
+
+    A layout parser often knows paragraph or column boundaries without exposing
+    relation edges. Those boundaries are useful for translation replacement,
+    but must never become a page-wide order claim. Keep each matched native
+    line in its selected local sequence and derive a stream only when all
+    members share one native flow segment and column. Stronger native islands
+    and explicit external streams always win.
+    """
+
+    groups: dict[tuple[str, str, int, tuple[float, float, float, float]], list[ElementIR]] = {}
+    for element in page.elements:
+        signature = _derived_block_stream_signature(element)
+        if signature is not None:
+            groups.setdefault(signature, []).append(element)
+
+    candidates = [
+        (signature, sorted(members, key=_structure_block_member_order_key))
+        for signature, members in groups.items()
+        if len(members) >= 2 and _derived_block_stream_members_are_coherent(members)
+    ]
+    candidates.sort(
+        key=lambda item: (
+            item[0][2],
+            item[0][3][1],
+            item[0][3][0],
+            item[0][1],
+            item[0][0],
+        )
+    )
+
+    streams: list[StructureReadingStream] = []
+    for stream_number, ((structure_source, label, order, bbox), members) in enumerate(candidates, start=1):
+        stream = StructureReadingStream(
+            page_index=page.page_index,
+            stream_id=f"external-block-body-{page.page_index + 1:03d}-{stream_number:03d}",
+            stream_type="body",
+            member_refs=tuple(element.id for element in members),
+            source=source,
+            raw={
+                "source": source,
+                "derived_block_stream": True,
+                "structure_source": structure_source,
+                "structure_label": label,
+                "structure_order": order,
+                "structure_bbox_pdf": list(bbox),
+            },
+        )
+        for stream_index, element in enumerate(members, start=1):
+            _apply_external_stream_metadata(element, stream, stream_index)
+            element.metadata["external_structure_stream_block_derived"] = True
+            element.metadata["external_structure_stream_block_order"] = order
+            element.metadata["external_structure_stream_block_label"] = label
+            evidence = _reading_order_evidence(element)
+            if "external-structure-block-stream" not in evidence:
+                evidence.append("external-structure-block-stream")
+            element.metadata["reading_order_evidence"] = evidence
+            element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+        streams.append(stream)
+    return streams
+
+
+def _derived_block_stream_signature(
+    element: ElementIR,
+) -> tuple[str, str, int, tuple[float, float, float, float]] | None:
+    if not element.source_text.strip():
+        return None
+    metadata = element.metadata
+    if str(metadata.get("external_structure_stream_id") or "").strip():
+        return None
+    if metadata.get("external_structure_order_diagnostic_only") is True:
+        return None
+    if str(metadata.get("reading_order_scope") or "body").strip() != "body":
+        return None
+    if str(metadata.get("reading_order_stream_type") or "body").strip() != "body":
+        return None
+    column_span = str(metadata.get("column_span") or "").strip()
+    if column_span.startswith(("grid", "table", "caption", "artifact", "footnote", "sidebar")):
+        return None
+
+    structure = metadata.get("structure_evidence")
+    if not isinstance(structure, dict):
+        return None
+    if not str(structure.get("text") or "").strip():
+        return None
+    label = _normalize_structure_label(str(structure.get("label") or metadata.get("external_structure_label") or ""))
+    if label not in DERIVABLE_BLOCK_STREAM_LABELS:
+        return None
+    order = _optional_int(structure.get("order"))
+    if order is None or str(structure.get("order_source") or "") != "explicit":
+        return None
+    coverage = _optional_float(structure.get("coverage"))
+    if coverage is None or coverage < 0.5:
+        return None
+    source = str(structure.get("source") or "").strip()
+    bbox = structure.get("bbox_pdf")
+    if not source or not isinstance(bbox, list) or len(bbox) != 4:
+        return None
+    try:
+        normalized_bbox = tuple(round(float(value), 6) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+    return source, label, order, normalized_bbox
+
+
+def _derived_block_stream_members_are_coherent(members: list[ElementIR]) -> bool:
+    flow_segments = {_optional_int(element.metadata.get("flow_segment_index")) or 1 for element in members}
+    columns = {_optional_int(element.metadata.get("column_index")) for element in members}
+    return len(flow_segments) == 1 and len(columns) == 1
+
+
+def _structure_block_member_order_key(element: ElementIR) -> tuple[int, float, float, str]:
+    return (int(element.reading_order), element.bbox_pdf.y0, element.bbox_pdf.x0, element.id)
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _element_by_id(elements: list[ElementIR], element_id: str) -> ElementIR | None:
