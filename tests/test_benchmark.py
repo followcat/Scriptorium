@@ -7,6 +7,7 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from scriptorium.benchmark import (
+    _external_structure_candidate_order,
     _fidelity_replacement_stats,
     _page_reading_order_geometry_profile,
     _reading_order_candidate_page_diagnostics,
@@ -545,6 +546,32 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
 
     assert candidates["external_structure"][0] == ["left-one", "left-two", "right-one", "right-two"]
     assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
+
+
+def test_external_structure_candidate_order_fuses_partial_orders_stably() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("title", "Document title", BBox(x0=10, y0=5, x1=118, y1=16), 1, None),
+            ("right-one", "Right one.", BBox(x0=110, y0=30, x1=176, y1=40), 2, 2),
+            ("left-one", "Left one.", BBox(x0=10, y0=30, x1=76, y1=40), 3, 1),
+            ("aside", "Unordered note", BBox(x0=80, y0=45, x1=102, y1=55), 4, None),
+            ("right-two", "Right two.", BBox(x0=110, y0=60, x1=176, y1=70), 5, 2),
+            ("left-two", "Left two.", BBox(x0=10, y0=60, x1=76, y1=70), 6, 1),
+            ("footer", "Page 1", BBox(x0=10, y0=180, x1=52, y1=190), 7, None),
+        ]
+    )
+
+    order = _external_structure_candidate_order(document.pages[0].elements)
+
+    assert [document.pages[0].elements[index].id for index in order] == [
+        "title",
+        "left-one",
+        "aside",
+        "left-two",
+        "right-one",
+        "right-two",
+        "footer",
+    ]
 
 
 def test_semantic_candidate_orders_include_external_structure_relations() -> None:
@@ -1389,7 +1416,7 @@ def test_structure_ab_benchmark_reports_block_group_relation_metrics(tmp_path: P
     assert "structure_evidence_unresolved_stream_member_ref_count" in csv_text
 
 
-def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int]]) -> DocumentIR:
+def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int | None]]) -> DocumentIR:
     elements = [
         ElementIR(
             id=element_id,

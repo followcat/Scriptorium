@@ -3075,6 +3075,107 @@ def _text_similarity(left: str, right: str) -> float:
     return SequenceMatcher(None, left_text, right_text).ratio()
 
 
+def external_structure_partial_order_for_elements(elements: list[Any]) -> list[int]:
+    """Fuse sparse external block orders without treating them as a page permutation.
+
+    Structure engines commonly omit page furniture, decorations, or unresolved
+    text while still assigning an order to the blocks they recognize.  Sorting
+    every element by that field turns an incomplete annotation into a full-page
+    claim and moves all unmatched text to the end.  Instead, retain the native
+    order as the topological tie-breaker and add precedence constraints only
+    from one explicit order tier to the next.
+
+    Multiple native/OCR lines matched to one structure region stay in their
+    native local order.  Likewise, unmatched elements remain available at their
+    native positions unless an explicit structure constraint requires a move.
+    """
+
+    if len(elements) < 2:
+        return []
+
+    base_order = _external_structure_base_order(elements)
+    base_rank = {index: rank for rank, index in enumerate(base_order)}
+    groups: dict[tuple[int, int, tuple[Any, ...]], list[int]] = {}
+    for index, element in enumerate(elements):
+        metadata = getattr(element, "metadata", None)
+        if not isinstance(metadata, dict):
+            continue
+        order = _optional_int(metadata.get("external_structure_order"))
+        if order is None:
+            continue
+        subindex = _optional_int(metadata.get("external_structure_order_subindex")) or 0
+        identity = _external_structure_order_group_identity(element, order=order, subindex=subindex)
+        groups.setdefault((order, subindex, identity), []).append(index)
+
+    if len(groups) < 2:
+        return []
+
+    tiers: dict[tuple[int, int], list[list[int]]] = {}
+    for (order, subindex, _identity), members in groups.items():
+        members.sort(key=lambda index: base_rank[index])
+        tiers.setdefault((order, subindex), []).append(members)
+    ordered_tiers = sorted(tiers)
+    if len(ordered_tiers) < 2:
+        return []
+
+    precedence_edges: list[tuple[int, int]] = []
+    for previous_tier, next_tier in zip(ordered_tiers, ordered_tiers[1:]):
+        previous_members = [index for group in tiers[previous_tier] for index in group]
+        next_members = [index for group in tiers[next_tier] for index in group]
+        precedence_edges.extend(
+            (source, target)
+            for source in previous_members
+            for target in next_members
+            if source != target
+        )
+    if not precedence_edges:
+        return []
+
+    ordered_indices, _path_cover_chains = relation_edge_candidate_path_cover(
+        item_count=len(elements),
+        successor_edges=[],
+        precedence_edges=precedence_edges,
+        base_order=base_order,
+    )
+    return ordered_indices
+
+
+def _external_structure_base_order(elements: list[Any]) -> list[int]:
+    return [
+        index
+        for index, _element in sorted(
+            enumerate(elements),
+            key=lambda item: (
+                int(getattr(item[1], "reading_order", 0)),
+                getattr(getattr(item[1], "bbox_pdf", None), "y0", 0.0),
+                getattr(getattr(item[1], "bbox_pdf", None), "x0", 0.0),
+                item[0],
+            ),
+        )
+    ]
+
+
+def _external_structure_order_group_identity(
+    element: ElementIR,
+    *,
+    order: int,
+    subindex: int,
+) -> tuple[Any, ...]:
+    """Return a stable identity for all native lines matched to one model block."""
+
+    signature = _structure_group_signature(element)
+    if signature is not None:
+        return ("region", signature)
+    node_keys = tuple(
+        key
+        for key in sorted(_external_structure_node_keys(element))
+        if key not in {str(order), f"order:{order}"}
+    )
+    if node_keys:
+        return ("nodes", *node_keys)
+    return ("order-tier", order, subindex)
+
+
 def _reorder_page_from_regions(page: PageIR) -> str | None:
     text_elements = [element for element in page.elements if element.source_text.strip()]
     relation_order, relation_participant_ids, _relation_chains = _relation_order_for_elements(text_elements)
@@ -3088,36 +3189,20 @@ def _reorder_page_from_regions(page: PageIR) -> str | None:
         )
         return "relation"
 
-    ordered_elements = [element for element in text_elements if element.metadata.get("external_structure_order") is not None]
-    distinct_orders = {
-        (
-            int(element.metadata["external_structure_order"]),
-            int(element.metadata.get("external_structure_order_subindex") or 0),
-        )
-        for element in ordered_elements
-    }
-    if len(distinct_orders) < 2:
+    ordered_elements = [element for element in text_elements if _optional_int(element.metadata.get("external_structure_order")) is not None]
+    ordered_indices = external_structure_partial_order_for_elements(text_elements)
+    if not ordered_indices:
         return None
 
-    old_order_by_id = {element.id: element.reading_order for element in text_elements}
-    ordered_ids = [
-        element.id
-        for element in sorted(
-            text_elements,
-            key=lambda element: (
-                int(element.metadata.get("external_structure_order") or 1_000_000),
-                int(element.metadata.get("external_structure_order_subindex") or 0),
-                old_order_by_id[element.id],
-                element.bbox_pdf.y0,
-                element.bbox_pdf.x0,
-            ),
-        )
-    ]
+    base_order = _external_structure_base_order(text_elements)
+    if ordered_indices == base_order:
+        return None
+    ordered_ids = [text_elements[index].id for index in ordered_indices]
     _apply_reordered_text_order(
         ordered_ids,
         text_elements,
-        strategy="external-structure-fusion-v1",
-        evidence_label="external-structure-order",
+        strategy="external-structure-partial-order-fusion-v2",
+        evidence_label="external-structure-partial-order",
         participant_ids={element.id for element in ordered_elements},
     )
     return "order"

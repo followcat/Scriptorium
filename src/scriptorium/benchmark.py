@@ -29,7 +29,11 @@ from .reading_order import (
 )
 from .relation_order import relation_edge_candidate_order
 from .semantic_quality import compare_semantic_reading_order
-from .structure_evidence import apply_structure_evidence, load_structure_json
+from .structure_evidence import (
+    apply_structure_evidence,
+    external_structure_partial_order_for_elements,
+    load_structure_json,
+)
 
 BenchmarkFontProfile = Literal["browser-default", "local-urw", "auto"]
 HtmlMode = Literal["structured", "fidelity"]
@@ -2332,47 +2336,7 @@ def _external_structure_candidate_order(elements: list[Any]) -> list[int]:
     relation_order = _external_structure_relation_candidate_order(elements)
     if relation_order:
         return relation_order
-
-    indexed_orders: list[tuple[int, int]] = []
-    for index, element in enumerate(elements):
-        order = element.metadata.get("external_structure_order")
-        if order is None:
-            continue
-        try:
-            indexed_orders.append((int(order), index))
-        except (TypeError, ValueError):
-            continue
-    if len({order for order, _index in indexed_orders}) < 2:
-        return []
-
-    ranked_indices = {
-        index
-        for _order, index in indexed_orders
-    }
-    ordered_indices = sorted(
-        ranked_indices,
-        key=lambda index: (
-            int(elements[index].metadata.get("external_structure_order") or 1_000_000),
-            elements[index].reading_order,
-            elements[index].bbox_pdf.y0,
-            elements[index].bbox_pdf.x0,
-            index,
-        ),
-    )
-    ordered_indices.extend(
-        index
-        for index, element in sorted(
-            enumerate(elements),
-            key=lambda item: (
-                item[1].reading_order,
-                item[1].bbox_pdf.y0,
-                item[1].bbox_pdf.x0,
-                item[0],
-            ),
-        )
-        if index not in ranked_indices
-    )
-    return ordered_indices
+    return external_structure_partial_order_for_elements(elements)
 
 
 def _external_structure_relation_candidate_order(elements: list[Any]) -> list[int]:

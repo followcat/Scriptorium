@@ -57,8 +57,63 @@ def test_pp_structure_block_order_can_reorder_native_lines() -> None:
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
     assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
     assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 1
-    assert document.pages[0].elements[0].metadata["reading_order_strategy"] == "external-structure-fusion-v1"
+    assert document.pages[0].elements[0].metadata["reading_order_strategy"] == "external-structure-partial-order-fusion-v2"
     assert document.pages[0].elements[0].metadata["structure_evidence"]["source"] == "pp-structurev3"
+
+
+def test_partial_structure_order_keeps_unmatched_text_in_native_flow() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("title", "Document title", BBox(x0=10, y0=5, x1=118, y1=16), 1),
+            ("right-one", "Right one.", BBox(x0=110, y0=30, x1=176, y1=40), 2),
+            ("left-one", "Left one.", BBox(x0=10, y0=30, x1=76, y1=40), 3),
+            ("aside", "Unordered note", BBox(x0=80, y0=45, x1=102, y1=55), 4),
+            ("right-two", "Right two.", BBox(x0=110, y0=60, x1=176, y1=70), 5),
+            ("left-two", "Left two.", BBox(x0=10, y0=60, x1=76, y1=70), 6),
+            ("footer", "Page 1", BBox(x0=10, y0=180, x1=52, y1=190), 7),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_id": "left-column",
+                    "block_label": "text",
+                    "block_bbox": [16, 48, 152, 148],
+                    "block_order": 1,
+                    "block_content": "Left one. Left two.",
+                    "confidence": 0.94,
+                },
+                {
+                    "block_id": "right-column",
+                    "block_label": "text",
+                    "block_bbox": [208, 48, 360, 148],
+                    "block_order": 2,
+                    "block_content": "Right one. Right two.",
+                    "confidence": 0.93,
+                },
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    ordered_ids = [
+        element.id
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ]
+
+    assert ordered_ids == ["title", "left-one", "aside", "left-two", "right-one", "right-two", "footer"]
+    assert by_id["title"].reading_order == 1
+    assert by_id["aside"].reading_order < by_id["left-two"].reading_order
+    assert by_id["footer"].reading_order == 7
+    assert by_id["left-one"].metadata["reading_order_strategy"] == "external-structure-partial-order-fusion-v2"
+    assert "external-structure-partial-order" in by_id["left-one"].metadata["reading_order_evidence"]
+    assert by_id["title"].metadata["reading_order_strategy"] == "visual-yx"
+    assert "external-structure-partial-order" not in by_id["title"].metadata.get("reading_order_evidence", [])
 
 
 def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -> None:
