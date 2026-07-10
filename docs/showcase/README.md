@@ -2,6 +2,8 @@
 
 The static gallery is deployed by `.github/workflows/deploy-showcase.yml` and is intended for GitHub Pages at `https://followcat.github.io/Scriptorium/`.
 
+For a repository that has never enabled Pages, either select `GitHub Actions` in `Settings > Pages` once or add a `PAGES_ADMIN_TOKEN` Actions secret with repository administration and Pages write access. The workflow then keeps the site source set to GitHub Actions on later deployments.
+
 Each case preserves the actual generated `index.html` and the minimum local assets it needs. Source PDFs that are small and redistributable are bundled; large third-party reports are linked to their public source instead.
 
 | Case | Source | Export mode | Notes |

@@ -26,11 +26,14 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
-          # Create the Pages site with GitHub Actions as its source when needed.
-          enablement: true
+          # A repository Pages site can be created automatically only with an
+          # administrator PAT. Existing Pages sites use the workflow token.
+          token: ${{ secrets.PAGES_ADMIN_TOKEN || github.token }}
+          enablement: ${{ secrets.PAGES_ADMIN_TOKEN != '' }}
       - name: Select GitHub Actions as Pages source
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.PAGES_ADMIN_TOKEN || github.token }}
           script: |
             await github.rest.repos.updateInformationAboutPagesSite({
               owner: context.repo.owner,
