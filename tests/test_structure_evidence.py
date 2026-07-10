@@ -116,6 +116,39 @@ def test_partial_structure_order_keeps_unmatched_text_in_native_flow() -> None:
     assert "external-structure-partial-order" not in by_id["title"].metadata.get("reading_order_evidence", [])
 
 
+def test_generic_structure_text_order_does_not_flatten_native_grid_island() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("card", "Card title", BBox(x0=110, y0=42, x1=178, y1=54), 1),
+            ("body", "Body introduction.", BBox(x0=12, y0=12, x1=136, y1=24), 2),
+        ]
+    )
+    card = next(element for element in document.pages[0].elements if element.id == "card")
+    card.metadata["column_span"] = "grid-full"
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("body", "text", "Body introduction.", 1, document),
+                _pp_region("card", "text", "Card title", 2, document),
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [
+        element.id
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == ["card", "body"]
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
+    assert by_id["card"].metadata["external_structure_order"] == 2
+    assert by_id["card"].metadata["reading_order_strategy"] == "visual-yx"
+
+
 def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -> None:
     document = _document_with_text_boxes(
         [

@@ -3184,7 +3184,7 @@ def external_structure_partial_order_for_elements(elements: list[Any]) -> list[i
         if not isinstance(metadata, dict):
             continue
         order = _optional_int(metadata.get("external_structure_order"))
-        if order is None:
+        if order is None or not _external_structure_order_participates(element):
             continue
         subindex = _optional_int(metadata.get("external_structure_order_subindex")) or 0
         identity = _external_structure_order_group_identity(element, order=order, subindex=subindex)
@@ -3259,6 +3259,35 @@ def _external_structure_order_group_identity(
     return ("order-tier", order, subindex)
 
 
+def _external_structure_order_participates(element: ElementIR) -> bool:
+    """Keep generic model text order out of stronger native local structures.
+
+    A PP layout model frequently labels every text line in a card grid or table
+    as generic ``text``.  Native table/grid/caption routing is more specific in
+    that case, so generic block order must not flatten those local streams.
+    Model labels that explicitly identify a table or grid still participate.
+    """
+
+    metadata = element.metadata
+    if _optional_int(metadata.get("external_structure_order")) is None:
+        return False
+    label = _normalize_structure_label(str(metadata.get("external_structure_label") or ""))
+    if label in {"table", "table_body", "table_cell", "table_content"}:
+        return True
+    if _external_grid_island_type(label):
+        return True
+
+    scope = str(metadata.get("reading_order_scope") or "").strip()
+    if scope in {"page-artifact", "footnote", "sidebar"}:
+        return False
+    if metadata.get("reading_order_caption_type") or _external_caption_type(label):
+        return False
+    column_span = str(metadata.get("column_span") or "").strip()
+    if column_span.startswith(("grid", "table", "artifact", "footnote", "sidebar")):
+        return False
+    return True
+
+
 def _reorder_page_from_regions(page: PageIR) -> str | None:
     text_elements = [element for element in page.elements if element.source_text.strip()]
     relation_order, relation_participant_ids, _relation_chains = _relation_order_for_elements(text_elements)
@@ -3272,7 +3301,11 @@ def _reorder_page_from_regions(page: PageIR) -> str | None:
         )
         return "relation"
 
-    ordered_elements = [element for element in text_elements if _optional_int(element.metadata.get("external_structure_order")) is not None]
+    ordered_elements = [
+        element
+        for element in text_elements
+        if _external_structure_order_participates(element)
+    ]
     ordered_indices = external_structure_partial_order_for_elements(text_elements)
     if not ordered_indices:
         return None
