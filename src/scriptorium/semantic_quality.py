@@ -29,6 +29,13 @@ STRUCTURE_REF_KEYS = (
     "external_structure_table_ref",
 )
 
+INDEX_ALIAS_LABEL_KEYS = (
+    "document",
+    "elements",
+    "blocks",
+    "parsing_res_list",
+)
+
 
 def semantic_ground_truth_path(source_path: str | Path) -> Path:
     return Path(source_path).with_suffix(".semantic-order.json")
@@ -519,19 +526,14 @@ def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
 def _page_label_map(page_payloads: list[dict[str, Any]]) -> dict[str, str]:
     labels: dict[str, str] = {}
     for page_truth in page_payloads:
-        for key in (
-            "document",
-            "elements",
-            "blocks",
-            "parsing_res_list",
-            "table_res_list",
-            "formula_res_list",
-            "seal_res_list",
-        ):
+        for key in INDEX_ALIAS_LABEL_KEYS:
             value = page_truth.get(key)
             if isinstance(value, list):
-                for item in value:
-                    _collect_label_map(item, labels)
+                _collect_label_map(value, labels, allow_index_alias=True)
+        for key in ("table_res_list", "formula_res_list", "seal_res_list"):
+            value = page_truth.get(key)
+            if isinstance(value, list):
+                _collect_label_map(value, labels)
         for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
             value = page_truth.get(key)
             if isinstance(value, dict):
@@ -540,20 +542,31 @@ def _page_label_map(page_payloads: list[dict[str, Any]]) -> dict[str, str]:
         if isinstance(layout, dict):
             boxes = layout.get("boxes")
             if isinstance(boxes, list):
-                for item in boxes:
-                    _collect_label_map(item, labels)
+                _collect_label_map(boxes, labels, allow_index_alias=True)
     return labels
 
 
-def _collect_label_map(value: Any, labels: dict[str, str]) -> None:
+def _collect_label_map(
+    value: Any,
+    labels: dict[str, str],
+    *,
+    allow_index_alias: bool = False,
+    list_index: int | None = None,
+) -> None:
     if isinstance(value, list):
-        for item in value:
-            _collect_label_map(item, labels)
+        for index, item in enumerate(value):
+            _collect_label_map(
+                item,
+                labels,
+                list_index=index if allow_index_alias else None,
+            )
         return
     if not isinstance(value, dict):
         return
     text = _label_text(value)
     if text:
+        if list_index is not None:
+            labels.setdefault(str(list_index), text)
         for key in STRUCTURE_REF_KEYS:
             raw_id = value.get(key)
             if raw_id is not None:
