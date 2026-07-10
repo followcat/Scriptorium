@@ -780,6 +780,84 @@ def test_structure_evidence_matches_sparse_source_page_index() -> None:
     assert document.pages[0].elements[0].metadata["external_structure_order"] == 1
 
 
+def test_structure_evidence_inherits_sparse_page_index_through_nested_data() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("line", "Nested page line.", BBox(x0=10, y0=10, x1=100, y1=22), 1),
+        ],
+        page_index=4,
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "page_results": [
+            {
+                "page_index": 4,
+                "data": {
+                    "overall_ocr_res": {
+                        "rec_boxes": [[20, 20, 200, 44]],
+                        "rec_texts": ["Nested page line."],
+                        "rec_scores": [0.95],
+                    }
+                },
+            }
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert len(regions) == 1
+    assert regions[0].page_index == 4
+    assert document.metadata["structure_evidence"]["regions_by_page"][0]["page_index"] == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 1
+    assert document.pages[0].elements[0].metadata["structure_evidence"]["confidence"] == 0.95
+
+
+def test_structure_relations_inherit_sparse_page_index_through_nested_data() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 2),
+        ],
+        page_index=4,
+    )
+    payload = {
+        "source": "stream-structure",
+        "page_results": [
+            {
+                "page_index": 4,
+                "data": {
+                    "reading_streams": [
+                        {
+                            "id": "sampled-body",
+                            "stream_type": "body",
+                            "members": ["a", "b"],
+                            "successor_edges": [["a", "b"]],
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert len(relations) == 1
+    assert relations[0].page_index == 4
+    assert len(streams) == 1
+    assert streams[0].page_index == 4
+    assert document.metadata["structure_evidence"]["relations_by_page"][0]["page_index"] == 4
+    assert document.metadata["structure_evidence"]["streams_by_page"][0]["page_index"] == 4
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 1
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 2
+    assert by_id["a"].metadata["external_structure_successor_ids"] == ["b"]
+    assert by_id["a"].metadata["reading_order_stream_id"] == "sampled-body"
+    assert by_id["b"].metadata["reading_order_stream_index"] == 2
+
+
 def test_structure_evidence_does_not_fallback_to_position_for_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [

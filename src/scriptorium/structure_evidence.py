@@ -924,6 +924,7 @@ def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:
         if not isinstance(value, dict):
             return
 
+        child_fallback_page_index = _payload_page_index(value, fallback_page_index)
         if _has_blocks(value):
             page_payload = dict(value)
             if fallback_page_index is not None and page_payload.get("page_index") is None:
@@ -933,7 +934,7 @@ def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:
         for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
             child = value.get(key)
             if child is not None:
-                visit(child, fallback_page_index)
+                visit(child, child_fallback_page_index)
 
     visit(payload)
     return collected
@@ -954,6 +955,7 @@ def _collect_relation_payloads(payload: Any) -> list[dict[str, Any]]:
             return
         seen.add(id(value))
 
+        child_fallback_page_index = _payload_page_index(value, fallback_page_index)
         if _has_relation_edges(value):
             page_payload = dict(value)
             if fallback_page_index is not None and page_payload.get("page_index") is None:
@@ -963,10 +965,16 @@ def _collect_relation_payloads(payload: Any) -> list[dict[str, Any]]:
         for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
             child = value.get(key)
             if child is not None:
-                visit(child, fallback_page_index)
+                visit(child, child_fallback_page_index)
 
     visit(payload)
     return collected
+
+
+def _payload_page_index(value: dict[str, Any], fallback_page_index: int | None) -> int | None:
+    if not any(key in value for key in ("page_index", "page", "page_no", "page_num")):
+        return fallback_page_index
+    return _extract_page_index(value, fallback_page_index if fallback_page_index is not None else 0)
 
 
 def _has_relation_edges(value: dict[str, Any]) -> bool:
