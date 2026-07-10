@@ -224,6 +224,21 @@ Transformer-XL is the labelled check for this proposal layer. In `outputs/extern
 
 Those direct counts are intentionally retained, but they are not sufficient for an `ordered-subsequence` semantic sidecar: labels can skip unlabelled IR nodes. The path-aware scorer now checks whether consecutive labelled anchors are connected without crossing another labelled anchor. Native-only has strict local path coverage `32/41` (`0.78048780`) and reviewable graph path coverage `41/41` (`1.0`); native-plus-structure has strict local `30/41`, strict-plus-local-review `32/41`, and reviewable graph `41/41`. The final nine native anchor transitions are supported only through review-only cross-stream handoffs, so they remain non-executable. This corrects the partial-label measurement gap without claiming that review transitions are safe automatic layout constraints.
 
+### Evidence-gated local promotion v1
+
+`reading_order_confidence` describes a page strategy, not a particular edge. The sidecar now promotes a review-only edge only when it remains inside one provisional stream and all three independent signals agree: mutual forward geometry, a selected full-page relation-graph edge with score at least `0.86`, and direct successor agreement from visual-YX, box-flow, and relation-graph stream candidates. The proposal records `geometry-mutual-neighbor`, `relation-graph-selected`, and `stream-consensus-3-of-3`; cross-stream transitions remain review-only.
+
+The following reruns are stored under `outputs/external/*-edge-evidence-v1`. Counts are streams / strict / review / transitions. They are proposal counts, not accuracy claims on unlabelled samples.
+
+| Sample | Native proposal | Native-plus-structure proposal | Result |
+|---|---:|---:|---|
+| Transformer-XL pp. 1-3 | 18 / 299 / 4 / 15 | 18 / 299 / 4 / 21 | No review edge met all gates. Strict anchor-path coverage remains `32/41` native and `30/41` structure; reviewable path coverage remains `41/41` for both. |
+| PUMA annual report p. 5 | 2 / 13 / 10 / 1 | 2 / 13 / 10 / 1 | Twelve stable body edges move from review to strict, compared with the prior `1 / 22` local split. PUMA has no semantic sidecar, so this is evidence coverage only, not a correctness score. |
+| JD homepage p. 1 | 10 / 39 / 85 / 11 | 15 / 39 / 80 / 45 | No low-consensus OCR/card edge is promoted. The structure branch retains the `-60` successor-consensus disagreement delta, while raw block boundaries increase review transitions. |
+| BYD annual report p. 136 | 17 / 17 / 0 / 16 | 17 / 17 / 0 / 19 | Table-like content receives no accidental promotion. The raw PP-Structure page JSON does not lower the stream `needs-structure-evidence` count in this rerun. |
+
+The new gate is intentionally precision-first. It demonstrates a general way to recover stable local chains without converting every low-confidence page strategy into an executable relation. The next promotion criterion is labelled relation or stream coverage on additional complex documents, not a larger raw strict-edge count.
+
 The BYD page-136 pseudo-translation A/B leaves the total at 17 overflows and 17 conflicts, so table structure alone is not a fidelity fix. It does, however, move 10 replacements into `table-island` and attributes 9 conflicts to that one local stream instead of the body streams. That is the measurable target for table-aware mask padding and text fitting.
 
 ## Translation Stress Results

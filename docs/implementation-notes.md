@@ -215,6 +215,8 @@ When a semantic ground-truth sidecar exists, benchmark writes `semantic/reading_
 
 For pages labelled with `match_mode: "ordered-subsequence"`, the report also distinguishes direct edges from graph paths between consecutive labelled anchors. `strict_anchor_path_coverage` traverses only executable local edges; `local_reviewable_anchor_path_coverage` additionally allows review-only local edges; `reviewable_anchor_path_coverage` also permits review-only cross-stream transitions. A path is rejected if it crosses another labelled anchor, so it cannot turn an out-of-order anchor into a match. This is an evaluation-only view: review transitions remain non-executable until separately accepted. Unlabelled pages retain raw stream/edge/transition counts only; those counts are triage signals, not correctness claims.
 
+Low `reading_order_confidence` no longer downgrades every local edge as a group. Before a review edge is promoted to strict, `reading_order_sidecar.py` requires it to remain within one provisional stream and pass three independent checks: mutual forward geometry, a selected full-page relation-graph edge with score `>= 0.86`, and direct successor agreement across visual-YX, box-flow, and relation-graph local candidates. The edge records all three evidence labels. The relation-graph API exposes selected path-cover edges separately from its serialized candidate order, which prevents a serialization handoff from being mistaken for a geometry relation. Cross-stream transitions are intentionally excluded from this promotion path.
+
 ## Reading Order Layer
 
 PDF text is positioned drawing evidence, not guaranteed semantic text order. The current implementation keeps visual element IDs stable, then writes semantic ordering metadata:

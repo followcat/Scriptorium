@@ -185,6 +185,8 @@ scriptorium propose-reading-sidecar \
 
 对于带有 `match_mode: "ordered-subsequence"` 的页面，报告还会区分 direct edge 和相邻标注锚点之间的 graph path。`strict_anchor_path_coverage` 只沿可执行局部边；`local_reviewable_anchor_path_coverage` 额外允许 review-only 局部边；`reviewable_anchor_path_coverage` 还允许 review-only 的跨 stream transition。若路径穿过另一个已标注锚点就会被拒绝，因此不会把乱序锚点误判为正确。这只是评测视图：review transition 在单独 accepted 前仍不可执行。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
 
+低 `reading_order_confidence` 不再把整个局部流的边一律降级。`reading_order_sidecar.py` 只有在 review edge 位于同一个 provisional stream 且同时通过三项独立检查时才提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score `>= 0.86`、visual-YX、box-flow、relation-graph 三个局部 candidate 的直接 successor 一致。边会记录全部三项 evidence。Relation graph API 会单独暴露实际选中的 path-cover edge，而不是把序列化 candidate order 的 handoff 误当作几何关系；跨 stream transition 被有意排除在提升路径之外。
+
 图片 source 使用同一个 benchmark 命令：
 
 ```bash

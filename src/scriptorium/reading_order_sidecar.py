@@ -4,15 +4,25 @@ import json
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from statistics import median
 from typing import Any
 
-from .models import DocumentIR, ElementIR, PageIR
+from .models import BBox, DocumentIR, ElementIR, PageIR
+from .reading_order import (
+    infer_box_flow_order,
+    infer_relation_graph_order,
+    infer_relation_graph_selected_edges,
+    successor_consensus_diagnostics,
+)
 
 
 SIDECAR_SCHEMA_NAME = "ScriptoriumReadingOrderSidecar"
 SIDECAR_SCHEMA_VERSION = "1.0"
 SIDECAR_PROPOSAL_STATUS = "proposal"
 SIDECAR_SOURCE = "scriptorium-local-stream-proposal-v1"
+REVIEW_EDGE_PROMOTION_CONFIDENCE = 0.82
+REVIEW_EDGE_RELATION_GRAPH_SCORE = 0.86
+REVIEW_EDGE_GEOMETRY_SCORE = 0.82
 
 
 STREAMABLE_EXTERNAL_BLOCK_LABELS = frozenset(
@@ -194,6 +204,11 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
         stream_details.setdefault(stream_id, details)
         member_by_element_id[element.id] = member
 
+    review_edge_promotions = _review_edge_promotion_support(
+        page,
+        elements,
+        stream_members,
+    )
     streams: list[dict[str, Any]] = []
     summary: Counter[str] = Counter()
     stream_type_counts: Counter[str] = Counter()
@@ -203,7 +218,12 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
         key=lambda item: (_element_order_key(item[1][0].element), item[0]),
     ):
         details = stream_details[stream_id]
-        stream_payload, stream_summary = _propose_stream(stream_id, details, members)
+        stream_payload, stream_summary = _propose_stream(
+            stream_id,
+            details,
+            members,
+            review_edge_promotions,
+        )
         streams.append(stream_payload)
         summary.update(stream_summary)
         stream_type_counts[details.stream_type] += 1
@@ -475,16 +495,214 @@ def _has_explicit_structure_stream(metadata: Mapping[str, Any], stream_id: str) 
     )
 
 
+def _review_edge_promotion_support(
+    page: PageIR,
+    elements: list[ElementIR],
+    stream_members: Mapping[str, list["_ProposalMember"]],
+) -> dict[tuple[str, str], "_ReviewEdgePromotion"]:
+    """Find review edges supported by three independent local signals.
+
+    Page-level reading-order confidence is intentionally not reused here: it
+    describes a strategy, not a particular adjacent edge. An upgrade requires
+    mutual geometry, an actually selected global relation-graph edge, and a
+    three-way local candidate consensus. Cross-stream handoffs never enter
+    this function because it only receives edges inside one provisional stream.
+    """
+
+    if len(elements) < 2:
+        return {}
+    global_relation_scores = infer_relation_graph_selected_edges(
+        [element.bbox_pdf for element in elements],
+        page.width_pt,
+        page.height_pt,
+    )
+    global_index_by_id = {element.id: index for index, element in enumerate(elements)}
+    promotions: dict[tuple[str, str], _ReviewEdgePromotion] = {}
+    for members in stream_members.values():
+        promotions.update(
+            _stream_review_edge_promotion_support(
+                members,
+                page_width=page.width_pt,
+                page_height=page.height_pt,
+                global_relation_scores=global_relation_scores,
+                global_index_by_id=global_index_by_id,
+            )
+        )
+    return promotions
+
+
+def _stream_review_edge_promotion_support(
+    members: list["_ProposalMember"],
+    *,
+    page_width: float,
+    page_height: float,
+    global_relation_scores: Mapping[tuple[int, int], float],
+    global_index_by_id: Mapping[str, int],
+) -> dict[tuple[str, str], "_ReviewEdgePromotion"]:
+    if len(members) < 2:
+        return {}
+    bboxes = [member.element.bbox_pdf for member in members]
+    geometry_scores = _mutual_forward_geometry_scores(bboxes, page_width, page_height)
+    if not geometry_scores:
+        return {}
+
+    visual_yx = sorted(range(len(members)), key=lambda index: _bbox_order_key(bboxes[index]))
+    candidate_orders = {
+        "visual-yx": visual_yx,
+        "box-flow": infer_box_flow_order(bboxes, page_width, page_height),
+        "relation-graph": infer_relation_graph_order(bboxes, page_width, page_height),
+    }
+    consensus = successor_consensus_diagnostics(
+        candidate_orders,
+        item_count=len(members),
+        base_order=list(range(len(members))),
+    )
+    if consensus.agreement_level != "high":
+        return {}
+    candidate_successors = {
+        name: _candidate_successor_edges(order)
+        for name, order in candidate_orders.items()
+    }
+
+    promotions: dict[tuple[str, str], _ReviewEdgePromotion] = {}
+    for source_index in range(len(members) - 1):
+        target_index = source_index + 1
+        geometry_score = geometry_scores.get((source_index, target_index))
+        if geometry_score is None or geometry_score < REVIEW_EDGE_GEOMETRY_SCORE:
+            continue
+        if not all((source_index, target_index) in edges for edges in candidate_successors.values()):
+            continue
+        source_id = members[source_index].element.id
+        target_id = members[target_index].element.id
+        global_source_index = global_index_by_id.get(source_id)
+        global_target_index = global_index_by_id.get(target_id)
+        if global_source_index is None or global_target_index is None:
+            continue
+        relation_score = global_relation_scores.get((global_source_index, global_target_index))
+        if relation_score is None or relation_score < REVIEW_EDGE_RELATION_GRAPH_SCORE:
+            continue
+        promotions[(source_id, target_id)] = _ReviewEdgePromotion(
+            geometry_score=geometry_score,
+            relation_graph_score=relation_score,
+        )
+    return promotions
+
+
+def _candidate_successor_edges(order: list[int]) -> set[tuple[int, int]]:
+    return {
+        (source, target)
+        for source, target in zip(order, order[1:], strict=False)
+        if source != target
+    }
+
+
+def _mutual_forward_geometry_scores(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> dict[tuple[int, int], float]:
+    heights = [bbox.height for bbox in bboxes if bbox.height > 0]
+    median_height = median(heights) if heights else 10.0
+    forward: dict[int, list[tuple[float, int]]] = defaultdict(list)
+    backward: dict[int, list[tuple[float, int]]] = defaultdict(list)
+    for source_index, source_bbox in enumerate(bboxes):
+        for target_index, target_bbox in enumerate(bboxes):
+            if source_index == target_index:
+                continue
+            score = _forward_geometry_score(
+                source_bbox,
+                target_bbox,
+                page_width=page_width,
+                page_height=page_height,
+                median_height=median_height,
+            )
+            if score is None:
+                continue
+            forward[source_index].append((score, target_index))
+            backward[target_index].append((score, source_index))
+
+    best_forward = {
+        source_index: _best_geometry_neighbor(candidates)
+        for source_index, candidates in forward.items()
+    }
+    best_backward = {
+        target_index: _best_geometry_neighbor(candidates)
+        for target_index, candidates in backward.items()
+    }
+    scores: dict[tuple[int, int], float] = {}
+    for source_index, target_index in best_forward.items():
+        if best_backward.get(target_index) != source_index:
+            continue
+        score = next(
+            candidate_score
+            for candidate_score, candidate_target in forward[source_index]
+            if candidate_target == target_index
+        )
+        scores[(source_index, target_index)] = round(score, 8)
+    return scores
+
+
+def _best_geometry_neighbor(candidates: list[tuple[float, int]]) -> int:
+    return max(candidates, key=lambda item: (item[0], -item[1]))[1]
+
+
+def _forward_geometry_score(
+    source_bbox: BBox,
+    target_bbox: BBox,
+    *,
+    page_width: float,
+    page_height: float,
+    median_height: float,
+) -> float | None:
+    vertical_gap = target_bbox.y0 - source_bbox.y1
+    max_forward_gap = max(page_height * 0.08, median_height * 7.0)
+    if vertical_gap < -median_height * 0.35 or vertical_gap > max_forward_gap:
+        return None
+    if not _horizontally_related(source_bbox, target_bbox, page_width):
+        return None
+    horizontal_overlap = _horizontal_overlap_ratio(source_bbox, target_bbox)
+    center_delta = abs(_center_x(source_bbox) - _center_x(target_bbox))
+    gap_score = 1.0 - min(max(vertical_gap, 0.0) / max(max_forward_gap, 1.0), 1.0)
+    center_score = 1.0 - min(center_delta / max(page_width * 0.28, 1.0), 1.0)
+    return 0.45 * gap_score + 0.35 * min(horizontal_overlap, 1.0) + 0.2 * center_score
+
+
+def _horizontally_related(first: BBox, second: BBox, page_width: float) -> bool:
+    overlap = _horizontal_overlap_ratio(first, second)
+    center_delta = abs(_center_x(first) - _center_x(second))
+    max_width = max(first.width, second.width)
+    center_limit = max(24.0, min(max_width * 0.42, page_width * 0.12))
+    return center_delta <= center_limit or (overlap >= 0.65 and center_delta <= page_width * 0.16)
+
+
+def _horizontal_overlap_ratio(first: BBox, second: BBox) -> float:
+    overlap = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    return overlap / max(1.0, min(first.width, second.width))
+
+
+def _center_x(bbox: BBox) -> float:
+    return (bbox.x0 + bbox.x1) / 2
+
+
+def _bbox_order_key(bbox: BBox) -> tuple[float, float, float, float]:
+    return (bbox.y0, bbox.x0, bbox.y1, bbox.x1)
+
+
 def _propose_stream(
     stream_id: str,
     details: "_StreamDetails",
     members: list["_ProposalMember"],
+    review_edge_promotions: Mapping[tuple[str, str], "_ReviewEdgePromotion"],
 ) -> tuple[dict[str, Any], Counter[str]]:
     successor_edges: list[dict[str, Any]] = []
     review_successor_edges: list[dict[str, Any]] = []
     review_edge_count = 0
     for source, target in zip(members, members[1:], strict=False):
-        edge = _successor_edge(source, target)
+        edge = _successor_edge(
+            source,
+            target,
+            review_edge_promotions.get((source.element.id, target.element.id)),
+        )
         if edge["review_required"]:
             review_edge_count += 1
             review_successor_edges.append(edge)
@@ -516,11 +734,16 @@ def _propose_stream(
     )
 
 
-def _successor_edge(source: "_ProposalMember", target: "_ProposalMember") -> dict[str, Any]:
+def _successor_edge(
+    source: "_ProposalMember",
+    target: "_ProposalMember",
+    review_edge_promotion: "_ReviewEdgePromotion | None" = None,
+) -> dict[str, Any]:
     source_metadata = source.element.metadata
     target_metadata = target.element.metadata
     confidence = min(_confidence(source.element), _confidence(target.element))
     evidence = [*source.details.evidence]
+    promotion: dict[str, Any] | None = None
     if _has_explicit_successor(source.element, target.element.id):
         confidence = max(confidence, 0.99)
         evidence.append("external-successor-evidence")
@@ -543,14 +766,21 @@ def _successor_edge(source: "_ProposalMember", target: "_ProposalMember") -> dic
         target_metadata.get("flow_segment_index"), default=-1
     ):
         evidence.append("same-flow-segment")
+    if confidence < 0.78 and review_edge_promotion is not None:
+        confidence = max(confidence, REVIEW_EDGE_PROMOTION_CONFIDENCE)
+        evidence.extend(review_edge_promotion.evidence)
+        promotion = review_edge_promotion.as_payload()
     confidence = min(round(confidence, 8), 1.0)
-    return {
+    edge = {
         "source": source.element.id,
         "target": target.element.id,
         "confidence": confidence,
         "review_required": confidence < 0.78,
         "evidence": _dedupe_texts(evidence),
     }
+    if promotion is not None:
+        edge["promotion"] = promotion
+    return edge
 
 
 def _review_transitions(
@@ -673,3 +903,22 @@ class _ProposalMember:
         self.element = element
         self.stream_id = stream_id
         self.details = details
+
+
+class _ReviewEdgePromotion:
+    def __init__(self, *, geometry_score: float, relation_graph_score: float) -> None:
+        self.geometry_score = geometry_score
+        self.relation_graph_score = relation_graph_score
+        self.evidence = (
+            "geometry-mutual-neighbor",
+            "relation-graph-selected",
+            "stream-consensus-3-of-3",
+        )
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "kind": "independent-local-evidence",
+            "geometry_score": round(self.geometry_score, 8),
+            "relation_graph_score": round(self.relation_graph_score, 8),
+            "candidate_consensus": "3-of-3",
+        }

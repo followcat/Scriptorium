@@ -224,6 +224,21 @@ Transformer-XL 是本 proposal layer 的有标注检查。在 `outputs/external/
 
 但这个 direct 指标不足以评估 `ordered-subsequence` 语义 sidecar：标签可以跳过未标注的 IR 节点。新的路径指标会检查相邻标注锚点之间是否存在路径，同时不允许路径穿过另一个已标注锚点。native-only 的 strict 局部路径 coverage 为 `32/41`（`0.78048780`），包含 review graph path 后为 `41/41`（`1.0`）；native-plus-structure 分别为 strict local `30/41`、strict 加 local review `32/41`、reviewable graph `41/41`。native 中最后的 9 条 anchor transition 只依赖跨 stream 的 review handoff，因此仍不可自动执行。这修正了部分标签的计分缺口，但不把 review transition 宣称为安全的自动版面约束。
 
+### Evidence-gated local promotion v1
+
+`reading_order_confidence` 描述的是页面策略，而不是单条边的可信度。Sidecar 现在只有在边位于同一个 provisional stream 且三类独立证据同时成立时，才把 review-only edge 提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score 至少为 `0.86`、visual-YX、box-flow、relation-graph 三个 stream candidate 都给出直接 successor。Proposal 会写入 `geometry-mutual-neighbor`、`relation-graph-selected`、`stream-consensus-3-of-3`；跨 stream transition 始终保持 review-only。
+
+下面的重跑产物位于 `outputs/external/*-edge-evidence-v1`。计数格式为 streams / strict / review / transitions。未标注样本的计数只是 proposal 证据，不是正确率。
+
+| 样本 | Native proposal | Native-plus-structure proposal | 结果 |
+|---|---:|---:|---|
+| Transformer-XL pp. 1-3 | 18 / 299 / 4 / 15 | 18 / 299 / 4 / 21 | 没有 review edge 满足全部 gate。strict anchor-path coverage 仍为 native `32/41`、structure `30/41`；两侧 reviewable path 都是 `41/41`。 |
+| PUMA 年报 p. 5 | 2 / 13 / 10 / 1 | 2 / 13 / 10 / 1 | 相比之前的 `1 / 22` 局部拆分，有 12 条稳定正文边从 review 升为 strict。PUMA 还没有 semantic sidecar，因此这里只能说明证据覆盖，不能当作正确率。 |
+| JD 首页 p. 1 | 10 / 39 / 85 / 11 | 15 / 39 / 80 / 45 | 没有低共识 OCR/card edge 被自动提升。structure 分支仍有 `-60` successor-consensus disagreement delta，但 raw block boundary 让 review transition 增多。 |
+| BYD 年报 p. 136 | 17 / 17 / 0 / 16 | 17 / 17 / 0 / 19 | 表格型内容没有被意外提升。本轮 raw PP-Structure page JSON 也没有降低 stream `needs-structure-evidence` 计数。 |
+
+这个 gate 是 precision-first 的：它展示了如何恢复稳定的局部链，而不是把整页低置信策略都改成可执行关系。下一次能扩大自动提升范围的依据应是更多复杂文档上的 labelled relation 或 stream coverage，而不是更大的 raw strict-edge 数量。
+
 比亚迪第 136 页的 pseudo-translation A/B 仍有 17 个 overflow 和 17 个 conflict，因此表格结构本身不是 fidelity 修复。它把 10 个 replacement 正确归入 `table-island`，并把 9 个 conflict 归因到同一个局部流，而不是正文流。这就是后续 table-aware mask padding 和 text fitting 的可量化目标。
 
 ## 翻译压力测试结果

@@ -192,6 +192,12 @@ class _RelationGraphEdge:
 
 
 @dataclass(frozen=True)
+class _RelationGraphResult:
+    ordered_indices: list[int]
+    selected_edges: tuple[_RelationGraphEdge, ...]
+
+
+@dataclass(frozen=True)
 class PairwiseOrderDisagreement:
     pair_count: int
     disagreement_count: int
@@ -336,8 +342,33 @@ def infer_relation_graph_order(
     the candidate should be trusted for a class of pages.
     """
 
+    return _infer_relation_graph_result(bboxes, page_width, page_height).ordered_indices
+
+
+def infer_relation_graph_selected_edges(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> dict[tuple[int, int], float]:
+    """Return selected geometry-only relation-graph edges with their scores.
+
+    Unlike a serialized candidate order, this exposes only path-cover edges
+    actually selected by the max-regret relation graph. Consumers can use it
+    as independent local evidence without accidentally treating path heads
+    joined during serialization as a selected successor relation.
+    """
+
+    result = _infer_relation_graph_result(bboxes, page_width, page_height)
+    return {(edge.source, edge.target): edge.score for edge in result.selected_edges}
+
+
+def _infer_relation_graph_result(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> _RelationGraphResult:
     if not bboxes:
-        return []
+        return _RelationGraphResult(ordered_indices=[], selected_edges=())
     visual_order = sorted(range(len(bboxes)), key=lambda index: reading_order_key(bboxes[index]))
     source_indices = [
         index
@@ -345,7 +376,7 @@ def infer_relation_graph_order(
         if bbox.width >= 8 and bbox.height >= 4
     ]
     if len(source_indices) < 2 or _looks_like_table_grid([bboxes[index] for index in source_indices], page_width):
-        return visual_order
+        return _RelationGraphResult(ordered_indices=visual_order, selected_edges=())
 
     heights = [bboxes[index].height for index in source_indices if bboxes[index].height > 0]
     median_height = median(heights) if heights else 10.0
@@ -362,16 +393,18 @@ def infer_relation_graph_order(
         column_bounds,
     )
     if not edges:
-        return visual_order
+        return _RelationGraphResult(ordered_indices=visual_order, selected_edges=())
 
     successor_by_item: dict[int, int] = {}
     predecessor_by_item: dict[int, int] = {}
+    selected_edges: list[_RelationGraphEdge] = []
     while len(successor_by_item) < len(source_indices) - 1:
         edge = _select_relation_graph_edge(edges, successor_by_item, predecessor_by_item)
         if edge is None:
             break
         successor_by_item[edge.source] = edge.target
         predecessor_by_item[edge.target] = edge.source
+        selected_edges.append(edge)
 
     ordered = _serialize_relation_graph_paths(
         source_indices,
@@ -381,7 +414,7 @@ def infer_relation_graph_order(
     )
     ordered_set = set(ordered)
     ordered.extend(index for index in visual_order if index not in ordered_set)
-    return ordered
+    return _RelationGraphResult(ordered_indices=ordered, selected_edges=tuple(selected_edges))
 
 
 def infer_successor_consensus_order(

@@ -9,6 +9,7 @@ from scriptorium.pdf_render import render_pdf
 from scriptorium.reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
+    infer_relation_graph_selected_edges,
     infer_semantic_reading_order,
     infer_successor_consensus_order,
     pairwise_order_disagreement,
@@ -285,6 +286,22 @@ def test_relation_graph_candidate_orders_column_successor_paths() -> None:
     assert candidate_order == [*left_indices, *right_indices]
 
 
+def test_relation_graph_selected_edges_exclude_serialized_path_handoffs() -> None:
+    bboxes = [
+        BBox(x0=60, y0=70, x1=240, y1=80),
+        BBox(x0=60, y0=88, x1=240, y1=98),
+        BBox(x0=320, y0=70, x1=500, y1=80),
+        BBox(x0=320, y0=88, x1=500, y1=98),
+    ]
+
+    selected = infer_relation_graph_selected_edges(bboxes, page_width=612, page_height=792)
+
+    assert (0, 1) in selected
+    assert (2, 3) in selected
+    assert selected[(0, 1)] >= 0.86
+    assert selected[(2, 3)] >= 0.86
+
+
 def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:
     bboxes: list[BBox] = []
     for row in range(4):
@@ -294,6 +311,7 @@ def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:
     candidate_order = infer_relation_graph_order(bboxes, page_width=612, page_height=792)
 
     assert candidate_order == list(range(len(bboxes)))
+    assert infer_relation_graph_selected_edges(bboxes, page_width=612, page_height=792) == {}
 
 
 def test_successor_consensus_arbitration_orders_sparse_two_column_page() -> None:

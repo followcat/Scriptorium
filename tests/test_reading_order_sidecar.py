@@ -118,7 +118,7 @@ def test_low_confidence_local_edges_stay_review_only() -> None:
         _document(
             [
                 _element("first", "First", 1, 10, 20, confidence=0.5),
-                _element("second", "Second", 2, 10, 40, confidence=0.5),
+                _element("second", "Second", 2, 10, 140, confidence=0.5),
             ]
         )
     )
@@ -136,6 +136,75 @@ def test_low_confidence_local_edges_stay_review_only() -> None:
     ]
     assert reading_order_sidecar_summary(proposal)["successor_edge_count"] == 0
     assert reading_order_sidecar_summary(proposal)["review_successor_edge_count"] == 1
+
+
+def test_stable_low_confidence_local_edges_promote_with_independent_evidence() -> None:
+    proposal = propose_reading_order_sidecar(
+        _document(
+            [
+                _element("first", "First", 1, 10, 20, confidence=0.5),
+                _element("second", "Second", 2, 10, 40, confidence=0.5),
+            ]
+        )
+    )
+    stream = proposal["pages"][0]["reading_streams"][0]
+
+    assert stream["review_successor_edges"] == []
+    assert stream["successor_edges"][0]["confidence"] == 0.82
+    assert stream["successor_edges"][0]["review_required"] is False
+    assert stream["successor_edges"][0]["evidence"][-3:] == [
+        "geometry-mutual-neighbor",
+        "relation-graph-selected",
+        "stream-consensus-3-of-3",
+    ]
+    promotion = stream["successor_edges"][0]["promotion"]
+    assert promotion["kind"] == "independent-local-evidence"
+    assert promotion["geometry_score"] >= 0.82
+    assert promotion["relation_graph_score"] >= 0.86
+    assert promotion["candidate_consensus"] == "3-of-3"
+
+
+def test_low_confidence_cross_stream_handoff_stays_review_only() -> None:
+    proposal = propose_reading_order_sidecar(
+        _document(
+            [
+                _element("left", "Left", 1, 10, 20, column_index=0, confidence=0.5),
+                _element("right", "Right", 2, 120, 20, column_index=1, confidence=0.5),
+            ]
+        )
+    )
+    page = proposal["pages"][0]
+
+    assert sum(len(stream["successor_edges"]) for stream in page["reading_streams"]) == 0
+    assert page["review_transitions"] == [
+        {
+            "source": "left",
+            "target": "right",
+            "source_stream_id": "body-column-001",
+            "target_stream_id": "body-column-002",
+            "reason": "column-handoff",
+            "confidence": 0.5,
+            "review_required": True,
+        }
+    ]
+
+
+def test_same_baseline_grid_edges_stay_review_only() -> None:
+    proposal = propose_reading_order_sidecar(
+        _document(
+            [
+                _element("top-left", "Top left", 1, 10, 20, confidence=0.5),
+                _element("top-right", "Top right", 2, 120, 20, confidence=0.5),
+                _element("bottom-left", "Bottom left", 3, 10, 40, confidence=0.5),
+                _element("bottom-right", "Bottom right", 4, 120, 40, confidence=0.5),
+            ]
+        )
+    )
+    stream = proposal["pages"][0]["reading_streams"][0]
+
+    assert stream["successor_edges"] == []
+    assert len(stream["review_successor_edges"]) == 3
+    assert all("promotion" not in edge for edge in stream["review_successor_edges"])
 
 
 def test_proposal_semantic_quality_tracks_multihop_strict_anchor_paths(tmp_path) -> None:
@@ -254,7 +323,7 @@ def test_proposal_anchor_path_does_not_skip_another_label(tmp_path) -> None:
     assert report["unresolved_anchor_transition_count"] == 2
 
 
-def test_textual_structure_blocks_become_reviewable_local_streams() -> None:
+def test_textual_structure_blocks_promote_only_with_independent_local_evidence() -> None:
     first = _element("first", "First", 1, 10, 20, confidence=0.9)
     second = _element("second", "Second", 2, 10, 40, confidence=0.9)
     for element in (first, second):
@@ -273,9 +342,10 @@ def test_textual_structure_blocks_become_reviewable_local_streams() -> None:
     assert stream["id"] == "external-block-body-001"
     assert stream["proposal"]["origin"] == "external-structure-block"
     assert stream["members"] == ["first", "second"]
-    assert stream["successor_edges"] == []
-    assert stream["review_successor_edges"][0]["confidence"] == 0.76
-    assert "structure-block-membership" in stream["review_successor_edges"][0]["evidence"]
+    assert stream["review_successor_edges"] == []
+    assert stream["successor_edges"][0]["confidence"] == 0.82
+    assert "structure-block-membership" in stream["successor_edges"][0]["evidence"]
+    assert "stream-consensus-3-of-3" in stream["successor_edges"][0]["evidence"]
 
 
 def test_generic_model_text_does_not_split_a_stable_native_column_stream() -> None:
@@ -311,8 +381,8 @@ def test_structural_flow_segments_split_a_single_body_stream() -> None:
     assert set(streams) == {"body-segment-001", "body-segment-002"}
     assert streams["body-segment-001"]["members"] == ["first"]
     assert streams["body-segment-002"]["members"] == ["second", "third"]
-    assert streams["body-segment-002"]["successor_edges"] == []
-    assert len(streams["body-segment-002"]["review_successor_edges"]) == 1
+    assert len(streams["body-segment-002"]["successor_edges"]) == 1
+    assert streams["body-segment-002"]["review_successor_edges"] == []
 
 
 def test_proposal_document_nodes_can_seed_an_image_ocr_layer(tmp_path) -> None:
@@ -374,7 +444,7 @@ def test_proposal_semantic_quality_separates_executable_and_review_edges(tmp_pat
                 _element("strict-one", "Strict one", 1, 10, 20, column_index=0, confidence=0.9),
                 _element("strict-two", "Strict two", 2, 10, 40, column_index=0, confidence=0.9),
                 _element("review-one", "Review one", 3, 120, 20, confidence=0.5),
-                _element("review-two", "Review two", 4, 120, 40, confidence=0.5),
+                _element("review-two", "Review two", 4, 120, 140, confidence=0.5),
             ]
         )
     )
@@ -385,7 +455,7 @@ def test_proposal_semantic_quality_separates_executable_and_review_edges(tmp_pat
                 _element("strict-one", "Strict one", 1, 10, 20, column_index=0, confidence=0.9),
                 _element("strict-two", "Strict two", 2, 10, 40, column_index=0, confidence=0.9),
                 _element("review-one", "Review one", 3, 120, 20, confidence=0.5),
-                _element("review-two", "Review two", 4, 120, 40, confidence=0.5),
+                _element("review-two", "Review two", 4, 120, 140, confidence=0.5),
             ]
         ),
         source_path,
