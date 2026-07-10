@@ -10,6 +10,7 @@ from typing import Any
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
+from .paddle_json import normalize_paddleocr_vl_payload
 from .reading_order_sidecar import is_unaccepted_reading_order_sidecar
 from .relation_order import relation_edge_candidate_path_cover
 
@@ -294,7 +295,9 @@ class _DoclingTreeLeaf:
 
 
 def load_structure_json(path: str | Path) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    normalized = normalize_paddleocr_vl_payload(payload)
+    return normalized if isinstance(normalized, dict) else payload
 
 
 def normalize_structure_evidence(
@@ -311,6 +314,7 @@ def normalize_structure_evidence(
     derives region order from the `body.children` tree.
     """
 
+    payload = normalize_paddleocr_vl_payload(payload)
     regions: list[StructureRegion] = []
     regions.extend(_normalize_docling_evidence(payload, document, source=source))
     for fallback_page_index, page_payload in enumerate(_collect_page_payloads(payload)):
@@ -1188,6 +1192,7 @@ def apply_structure_evidence(
     min_text_similarity: float = 0.45,
     reorder: bool = True,
 ) -> DocumentIR:
+    payload = normalize_paddleocr_vl_payload(payload)
     source_name = source or _extract_source(payload, None)
     if is_unaccepted_reading_order_sidecar(payload):
         document.metadata["structure_evidence_proposal"] = {
@@ -1967,8 +1972,11 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
                 )
     layout = page_payload.get("layout_det_res")
     if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
+        parsing_blocks = page_payload.get("parsing_res_list")
         for block_index, block in enumerate(layout["boxes"]):
             if not isinstance(block, dict):
+                continue
+            if _is_layout_companion_for_parsing_block(block, parsing_blocks):
                 continue
             add_block(
                 block,
@@ -1979,6 +1987,48 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
     blocks.extend(_paddle_ocr_result_blocks(page_payload))
     blocks.extend(_paddle_table_cell_blocks(page_payload))
     return _dedupe_structure_blocks(blocks)
+
+
+def _is_layout_companion_for_parsing_block(layout_box: dict[str, Any], parsing_blocks: Any) -> bool:
+    """Recognize Paddle's detector duplicate without hiding unmatched layout.
+
+    PaddleOCR-VL places recognized content in ``parsing_res_list`` and emits a
+    detector-only copy under ``layout_det_res.boxes``.  An exact geometry match
+    is always a duplicate. A detector box fully contained in a same-label
+    parser block with recognized content is also a duplicate at the semantic
+    block layer; native PDF/OCR lines already retain its fine geometry.
+    Standalone layout boxes remain useful evidence for figures, formulas, and
+    blocks that parser recognition omitted.
+    """
+
+    if not isinstance(parsing_blocks, list):
+        return False
+    layout_bbox_info = _extract_bbox(layout_box)
+    if layout_bbox_info is None:
+        return False
+    layout_bbox, layout_space = layout_bbox_info
+    layout_label = _normalize_structure_label(_extract_label(layout_box))
+    if not layout_label:
+        return False
+    for parsing_block in parsing_blocks:
+        if not isinstance(parsing_block, dict):
+            continue
+        parsing_bbox_info = _extract_bbox(parsing_block)
+        if parsing_bbox_info is None:
+            continue
+        parsing_bbox, parsing_space = parsing_bbox_info
+        if parsing_space != layout_space:
+            continue
+        if _normalize_structure_label(_extract_label(parsing_block)) != layout_label:
+            continue
+        if max(
+            abs(left - right)
+            for left, right in zip(parsing_bbox.as_list(), layout_bbox.as_list(), strict=True)
+        ) <= 1.0:
+            return True
+        if _extract_text(parsing_block).strip() and _bbox_coverage(layout_bbox, parsing_bbox) >= 0.98:
+            return True
+    return False
 
 
 def _dedupe_structure_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:

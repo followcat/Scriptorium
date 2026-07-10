@@ -17,7 +17,7 @@ from .models import BBox, DocumentIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
-from .pdf_render import SourceKind, render_source
+from .pdf_render import SourceKind, page_indices_from_ranges, render_source
 from .quality import compare_source_to_pdf_rendering
 from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
 from .reading_order import (
@@ -3935,36 +3935,7 @@ def _page_ranges_request(page_ranges: str | None) -> str | None:
 
 
 def _page_indices_request(page_ranges: str | None, max_pages: int | None) -> tuple[int, ...] | None:
-    if page_ranges is None:
-        return None
-    if max_pages is not None:
-        raise ValueError("page_ranges cannot be combined with max_pages")
-
-    indices: list[int] = []
-    seen: set[int] = set()
-    for part in page_ranges.split(","):
-        if "-" in part:
-            start_text, end_text = (item.strip() for item in part.split("-", 1))
-        else:
-            start_text = end_text = part.strip()
-        try:
-            start = int(start_text)
-            end = int(end_text)
-        except ValueError as exc:
-            raise ValueError(f"Invalid page range segment: {part!r}") from exc
-        if start <= 0 or end <= 0:
-            raise ValueError(f"Page ranges are 1-based and must be positive, got {part!r}")
-        if end < start:
-            raise ValueError(f"Page range end must be >= start, got {part!r}")
-        for page_number in range(start, end + 1):
-            index = page_number - 1
-            if index in seen:
-                continue
-            indices.append(index)
-            seen.add(index)
-    if not indices:
-        raise ValueError("page_ranges did not contain any pages")
-    return tuple(indices)
+    return page_indices_from_ranges(page_ranges, max_pages=max_pages)
 
 
 def _fidelity_background_request(

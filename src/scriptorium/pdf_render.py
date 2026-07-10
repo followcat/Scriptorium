@@ -47,6 +47,53 @@ class RenderedDocument:
         return self.source_pdf
 
 
+def page_indices_from_ranges(
+    page_ranges: str | None,
+    *,
+    max_pages: int | None = None,
+) -> tuple[int, ...] | None:
+    """Parse 1-based CLI page ranges into stable zero-based source indices.
+
+    Rendering, model execution, and benchmarking all need the original source
+    page index preserved so a structure payload from a sampled long document
+    can safely rejoin the native PDF IR.
+    """
+
+    if page_ranges is None:
+        return None
+    if max_pages is not None:
+        raise ValueError("page_ranges cannot be combined with max_pages")
+
+    normalized = ",".join(part.strip() for part in str(page_ranges).split(",") if part.strip())
+    if not normalized:
+        return None
+    indices: list[int] = []
+    seen: set[int] = set()
+    for part in normalized.split(","):
+        if "-" in part:
+            start_text, end_text = (item.strip() for item in part.split("-", 1))
+        else:
+            start_text = end_text = part.strip()
+        try:
+            start = int(start_text)
+            end = int(end_text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid page range segment: {part!r}") from exc
+        if start <= 0 or end <= 0:
+            raise ValueError(f"Page ranges are 1-based and must be positive, got {part!r}")
+        if end < start:
+            raise ValueError(f"Page range end must be >= start, got {part!r}")
+        for page_number in range(start, end + 1):
+            index = page_number - 1
+            if index in seen:
+                continue
+            indices.append(index)
+            seen.add(index)
+    if not indices:
+        raise ValueError("page_ranges did not contain any pages")
+    return tuple(indices)
+
+
 def render_source(
     source_path: str | Path,
     out_dir: str | Path,

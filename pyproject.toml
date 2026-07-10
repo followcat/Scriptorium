@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]
-ocr = ["paddleocr>=3.0.0"]
+ocr = ["paddleocr[doc-parser]>=3.7.0"]
 
 [project.scripts]
 scriptorium = "scriptorium.cli:app"

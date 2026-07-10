@@ -20,9 +20,9 @@ from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
-from .ocr import load_ocr_json, normalize_ocr_to_ir
+from .ocr import PaddleOcrAdapter, load_ocr_json, normalize_ocr_to_ir, write_ocr_json
 from .pdf_export import print_html_to_pdf
-from .pdf_render import SourceKind, render_pdf, render_source
+from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
@@ -327,6 +327,75 @@ def capture_pdf_command(
 ) -> None:
     pdf_path = capture_pdf(source, pdf, mode=mode, chrome_executable=chrome)
     typer.echo(f"PDF: {pdf_path}")
+
+
+@app.command("run-paddleocr-vl")
+def run_paddleocr_vl_command(
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF or image source."),
+    output: Path = typer.Option(
+        Path("outputs/paddleocr-vl.raw.json"),
+        "--output",
+        "-o",
+        help="Raw PaddleOCR-VL structure JSON to persist for replay or A/B benchmarking.",
+    ),
+    dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for PDF source pages."),
+    input_kind: SourceKind = typer.Option(
+        "auto",
+        help="Source type: auto, pdf, or image.",
+    ),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image pixels into PDF points for image sources.",
+    ),
+    max_pages: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Limit model execution to the first N source pages.",
+    ),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Explicit 1-based source page ranges, for example 1-3,136. Cannot be combined with --max-pages.",
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        help="Optional Paddle device, for example gpu:0 or cpu.",
+    ),
+    vl_rec_model_dir: Optional[Path] = typer.Option(
+        None,
+        help="Optional local PaddleOCR-VL recognition model directory.",
+    ),
+) -> None:
+    """Run PaddleOCR-VL 1.6 on rendered source pages and persist its raw JSON."""
+
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    rendered = render_source(
+        source,
+        output.parent / f"{output.stem}.pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=page_indices,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
+    )
+    options: dict[str, object] = {}
+    if device:
+        options["device"] = device
+    if vl_rec_model_dir is not None:
+        options["vl_rec_model_dir"] = str(vl_rec_model_dir)
+    payload = PaddleOcrAdapter(**options).analyze(
+        [page.background_image for page in rendered.pages],
+        page_indices=[page.page_index for page in rendered.pages],
+    )
+    output_path = write_ocr_json(payload, output)
+    typer.echo(f"PaddleOCR-VL JSON: {output_path}")
+    typer.echo(f"Pages: {len(rendered.pages)}")
+    typer.echo(f"Source type: {rendered.source_type}")
+    typer.echo(f"Model: {payload.get('model')}")
 
 
 @app.command()

@@ -6,5 +6,6 @@
 # PaddlePaddle 3.3 CPU can require the documented PIR/MKLDNN compatibility
 # environment settings in implementation-notes when running PP-StructureV3.
 paddlepaddle>=3.2.0
-paddleocr>=3.0.0
-paddlex[ocr]>=3.7.0
+# PaddleOCR-VL uses the complete document-parser pipeline (layout plus VLM),
+# not only the basic OCR extra. PaddleOCR resolves compatible PaddleX extras.
+paddleocr[doc-parser]>=3.7.0

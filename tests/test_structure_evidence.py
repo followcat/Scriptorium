@@ -285,6 +285,62 @@ def test_layout_detection_boxes_do_not_create_implicit_reading_order() -> None:
     assert "external_structure_order" not in document.pages[0].elements[0].metadata
 
 
+def test_paddle_parsing_blocks_absorb_matching_layout_companions() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 140, 80],
+                    "block_content": "Left column one. Left column two.",
+                    "block_order": 1,
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [220, 20, 340, 80],
+                    "block_content": "Right column one. Right column two.",
+                    "block_order": 2,
+                },
+            ],
+            "layout_det_res": {
+                "boxes": [
+                    {"label": "text", "coordinate": [20, 20, 140, 80], "order": 17, "score": 0.94},
+                    {"label": "text", "coordinate": [24, 24, 132, 44], "order": 18, "score": 0.81},
+                    {"label": "text", "coordinate": [220, 20, 340, 80], "order": 19, "score": 0.93},
+                ]
+            },
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert len(regions) == 2
+    assert [region.order for region in regions] == [1, 2]
+    assert [region.confidence for region in regions] == [0.94, 0.93]
+    assert document.metadata["structure_evidence"]["region_count"] == 2
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == [
+        "Left column one.",
+        "Left column two.",
+        "Right column one.",
+        "Right column two.",
+    ]
+
+
 def test_structure_relation_edges_attach_to_matched_elements() -> None:
     document = _document_with_text_boxes(
         [

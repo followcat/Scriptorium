@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import fitz
@@ -10,6 +11,7 @@ from PIL import Image
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox, reading_order_key
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
+from .paddle_json import normalize_paddleocr_vl_payload
 from .pdf_render import RenderedDocument, RenderedPage
 from .reading_order import infer_semantic_reading_order
 
@@ -33,7 +35,18 @@ TYPE_ALIASES = {
 
 
 def load_ocr_json(path: str | Path) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    normalized = normalize_paddleocr_vl_payload(payload)
+    return normalized if isinstance(normalized, dict) else payload
+
+
+def write_ocr_json(payload: Mapping[str, Any], path: str | Path) -> Path:
+    """Persist an OCR/structure payload without losing non-ASCII text."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    return target
 
 
 def normalize_ocr_to_ir(
@@ -914,46 +927,164 @@ def _write_crop(page: RenderedPage, bbox: BBox, crop_root: Path, order: int) -> 
 
 
 class PaddleOcrAdapter:
-    """Lazy PaddleOCR-VL adapter.
+    """Run the complete PaddleOCR-VL pipeline and retain raw structure JSON.
 
-    The exact structured JSON shape can vary between PaddleOCR releases and
-    pipelines, so this adapter returns raw saved JSON. A model-specific mapper
-    should translate that raw payload into the fallback `pages/elements` shape.
+    The adapter treats rendered source pages as independent model inputs, then
+    overwrites Paddle's per-input page index with the original source page
+    index. This is essential for sampled long PDFs: raw model results often
+    start each single-image invocation at page zero.
     """
 
-    def __init__(self, **options: Any) -> None:
+    def __init__(
+        self,
+        *,
+        predict_options: Mapping[str, Any] | None = None,
+        pipeline_factory: Callable[..., Any] | None = None,
+        **options: Any,
+    ) -> None:
         self.options = options
+        self.predict_options = dict(predict_options or {})
+        self.pipeline_factory = pipeline_factory
 
-    def analyze(self, image_paths: list[str | Path]) -> dict[str, Any]:
+    def analyze(
+        self,
+        image_paths: Sequence[str | Path],
+        *,
+        page_indices: Sequence[int] | None = None,
+    ) -> dict[str, Any]:
+        paths = [Path(image_path) for image_path in image_paths]
+        if page_indices is None:
+            source_page_indices = list(range(len(paths)))
+        else:
+            source_page_indices = [int(page_index) for page_index in page_indices]
+            if len(source_page_indices) != len(paths):
+                raise ValueError("page_indices must have one entry for every PaddleOCR-VL input image")
+
+        pipeline = self._create_pipeline()
+        raw_results: list[Any] = []
+
+        with tempfile.TemporaryDirectory(prefix="scriptorium-paddle-") as tmp:
+            tmp_path = Path(tmp)
+            for image_path, source_page_index in zip(paths, source_page_indices, strict=True):
+                output = pipeline.predict(str(image_path), **self.predict_options)
+                for result_index, result in enumerate(output):
+                    payloads = self._result_payloads(result, tmp_path)
+                    if not payloads:
+                        payloads = [{"result_index": result_index, "repr": repr(result)}]
+                    for payload in payloads:
+                        raw_results.append(
+                            _with_paddle_source_page_context(
+                                payload,
+                                image_path=image_path,
+                                source_page_index=source_page_index,
+                            )
+                        )
+
+        return {
+            "source": "paddleocr-vl",
+            "model": "PaddleOCR-VL-1.6",
+            "pipeline_version": str(self.options.get("pipeline_version") or "v1.6"),
+            "raw_results": raw_results,
+        }
+
+    def _create_pipeline(self) -> Any:
+        options = {"pipeline_version": "v1.6", **self.options}
+        if self.pipeline_factory is not None:
+            return self.pipeline_factory(**options)
         try:
             from paddleocr import PaddleOCRVL  # type: ignore
         except ImportError as exc:
             raise RuntimeError(
                 "PaddleOCR is not installed. Install requirements-ocr.txt or use --ocr-json fallback."
             ) from exc
+        return PaddleOCRVL(**options)
 
-        options = {"pipeline_version": "v1.6", **self.options}
-        pipeline = PaddleOCRVL(**options)
-        raw_results: list[Any] = []
+    def _result_payloads(self, result: Any, tmp_path: Path) -> list[dict[str, Any]]:
+        if hasattr(result, "save_to_json"):
+            before = set(tmp_path.glob("*.json"))
+            result.save_to_json(save_path=str(tmp_path))
+            after = set(tmp_path.glob("*.json"))
+            saved_files = sorted(after - before)
+            if not saved_files:
+                saved_files = sorted(after)
+            payloads: list[dict[str, Any]] = []
+            for json_path in saved_files:
+                payload = load_ocr_json(json_path)
+                if isinstance(payload, dict):
+                    payloads.append(payload)
+            if payloads:
+                return payloads
 
-        with tempfile.TemporaryDirectory(prefix="scriptorium-paddle-") as tmp:
-            tmp_path = Path(tmp)
-            for image_path in image_paths:
-                output = pipeline.predict(str(image_path))
-                for index, result in enumerate(output):
-                    if isinstance(result, dict):
-                        raw_results.append(result)
-                        continue
-                    if hasattr(result, "save_to_json"):
-                        before = set(tmp_path.glob("*.json"))
-                        result.save_to_json(save_path=str(tmp_path))
-                        after = set(tmp_path.glob("*.json"))
-                        new_files = sorted(after - before)
-                        if not new_files:
-                            new_files = sorted(tmp_path.glob("*.json"))
-                        for json_path in new_files:
-                            raw_results.append(load_ocr_json(json_path))
-                    else:
-                        raw_results.append({"image": str(image_path), "index": index, "repr": repr(result)})
+        if isinstance(result, Mapping):
+            normalized = normalize_paddleocr_vl_payload(dict(result))
+            return [normalized] if isinstance(normalized, dict) else []
 
-        return {"source": "paddleocr-vl", "raw_results": raw_results}
+        # Some third-party wrappers expose only a mapping-like ``json``
+        # property. PaddleOCR-VL itself is intentionally handled above because
+        # its display-oriented property can stringify parsing blocks.
+        serialized = getattr(result, "json", None)
+        if isinstance(serialized, Mapping):
+            normalized = normalize_paddleocr_vl_payload(dict(serialized))
+            return [normalized] if isinstance(normalized, dict) else []
+        return []
+
+
+_PADDLE_PAGE_CONTEXT_WRAPPER_KEYS = frozenset(
+    {"res", "result", "data", "raw_results", "results", "page_results", "pages"}
+)
+_PADDLE_PAGE_CONTEXT_BLOCK_KEYS = frozenset(
+    {
+        "parsing_res_list",
+        "layout_det_res",
+        "overall_ocr_res",
+        "text_paragraphs_ocr_res",
+        "table_res_list",
+        "formula_res_list",
+        "seal_res_list",
+        "document",
+        "elements",
+        "blocks",
+    }
+)
+
+
+def _with_paddle_source_page_context(
+    value: Any,
+    *,
+    image_path: Path,
+    source_page_index: int,
+) -> Any:
+    """Set original source-page context through common Paddle result wrappers."""
+
+    if isinstance(value, list):
+        return [
+            _with_paddle_source_page_context(
+                item,
+                image_path=image_path,
+                source_page_index=source_page_index,
+            )
+            for item in value
+        ]
+    if not isinstance(value, Mapping):
+        return value
+    payload = {
+        key: _with_paddle_source_page_context(
+            item,
+            image_path=image_path,
+            source_page_index=source_page_index,
+        )
+        if key in _PADDLE_PAGE_CONTEXT_WRAPPER_KEYS
+        else item
+        for key, item in value.items()
+    }
+    is_page_payload = bool(
+        set(payload).intersection(_PADDLE_PAGE_CONTEXT_WRAPPER_KEYS)
+        or set(payload).intersection(_PADDLE_PAGE_CONTEXT_BLOCK_KEYS)
+        or "page_index" in payload
+        or "input_path" in payload
+    )
+    if is_page_payload:
+        payload["page_index"] = source_page_index
+        payload["input_path"] = str(image_path)
+        payload["scriptorium_source_page_index"] = source_page_index
+    return payload
