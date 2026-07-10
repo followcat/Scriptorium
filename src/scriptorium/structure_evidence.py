@@ -42,6 +42,54 @@ INDEX_ALIAS_LABEL_KEYS = (
 )
 
 
+# A parsing-list position is weaker than an explicit model order.  Keep it for
+# blocks that can form a reading stream, but never promote visual/furniture
+# regions such as an image, header, or footer into a page-order constraint just
+# because the producer serialized them in a list.
+IMPLICIT_ORDERABLE_LABELS = frozenset(
+    {
+        "abstract",
+        "algorithm",
+        "body",
+        "body_text",
+        "card",
+        "card_grid",
+        "code",
+        "content_card",
+        "content_grid",
+        "doc_title",
+        "equation",
+        "formula",
+        "grid",
+        "grid_area",
+        "grid_block",
+        "list",
+        "list_item",
+        "menu_grid",
+        "nav_grid",
+        "paragraph",
+        "paragraph_text",
+        "paragraph_title",
+        "product",
+        "product_card",
+        "product_grid",
+        "reference",
+        "references",
+        "section_header",
+        "section_title",
+        "table",
+        "table_body",
+        "table_cell",
+        "table_content",
+        "text",
+        "text_block",
+        "tile",
+        "tile_grid",
+        "title",
+    }
+)
+
+
 @dataclass(frozen=True)
 class StructureRegion:
     page_index: int
@@ -2188,10 +2236,17 @@ def _extract_implicit_order(raw: dict[str, Any]) -> int | None:
     list_key = str(raw.get("_scriptorium_structure_list_key") or "")
     if list_key not in {"parsing_res_list", "blocks", "elements", "table_res_list.table_cells", *_nested_block_keys()}:
         return None
+    if not _implicit_orderable_structure_block(raw):
+        return None
     try:
         return int(raw.get("_scriptorium_structure_list_position"))
     except (TypeError, ValueError):
         return None
+
+
+def _implicit_orderable_structure_block(raw: dict[str, Any]) -> bool:
+    label = _normalize_structure_label(_extract_label(raw))
+    return label in IMPLICIT_ORDERABLE_LABELS
 
 
 def _extract_order_source(raw: dict[str, Any]) -> str:

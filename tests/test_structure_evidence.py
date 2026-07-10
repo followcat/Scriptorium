@@ -169,6 +169,47 @@ def test_structure_parsing_list_order_can_reorder_when_block_order_is_absent() -
     assert document.pages[0].elements[0].metadata["external_structure_order_source"] == "implicit-list"
 
 
+def test_implicit_image_blocks_stay_region_evidence_without_reading_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("title", "Report title", BBox(x0=12, y0=10, x1=96, y1=22), 1),
+            ("caption", "Portrait caption", BBox(x0=18, y0=48, x1=112, y1=60), 2),
+            ("body", "Body paragraph.", BBox(x0=12, y0=92, x1=144, y1=106), 3),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("title", "doc_title", "Report title", 1, document),
+                {
+                    "block_label": "image",
+                    "block_bbox": [24, 72, 250, 150],
+                    "block_content": "Portrait caption",
+                    "confidence": 0.93,
+                },
+                _pp_region("body", "text", "Body paragraph.", 2, document),
+            ],
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    image_region = next(region for region in regions if region.label == "image")
+    assert image_region.order is None
+    assert image_region.order_source is None
+    assert "external_structure_order" not in by_id["caption"].metadata
+    assert document.metadata["structure_evidence"]["order_source_counts"] == {"explicit": 2, "none": 1}
+    assert [
+        element.id
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == ["title", "caption", "body"]
+
+
 def test_layout_detection_boxes_do_not_create_implicit_reading_order() -> None:
     document = _document_with_text_boxes(
         [
