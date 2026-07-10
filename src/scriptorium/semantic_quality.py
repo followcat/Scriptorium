@@ -8,6 +8,28 @@ from typing import Any
 from .models import DocumentIR
 
 
+STRUCTURE_REF_KEYS = (
+    "id",
+    "element_id",
+    "block_id",
+    "region_id",
+    "layout_region_id",
+    "table_region_id",
+    "table_id",
+    "formula_region_id",
+    "seal_region_id",
+    "cell_id",
+    "text_id",
+    "line_id",
+    "paragraph_id",
+    "uid",
+    "self_ref",
+    "ref",
+    "docling_ref",
+    "external_structure_table_ref",
+)
+
+
 def semantic_ground_truth_path(source_path: str | Path) -> Path:
     return Path(source_path).with_suffix(".semantic-order.json")
 
@@ -380,11 +402,23 @@ def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
 
 def _page_label_map(page_truth: dict[str, Any]) -> dict[str, str]:
     labels: dict[str, str] = {}
-    for key in ("document", "elements", "blocks", "parsing_res_list"):
+    for key in (
+        "document",
+        "elements",
+        "blocks",
+        "parsing_res_list",
+        "table_res_list",
+        "formula_res_list",
+        "seal_res_list",
+    ):
         value = page_truth.get(key)
         if isinstance(value, list):
             for item in value:
                 _collect_label_map(item, labels)
+    for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
+        value = page_truth.get(key)
+        if isinstance(value, dict):
+            _collect_label_map(value, labels)
     layout = page_truth.get("layout_det_res")
     if isinstance(layout, dict):
         boxes = layout.get("boxes")
@@ -403,30 +437,40 @@ def _collect_label_map(value: Any, labels: dict[str, str]) -> None:
         return
     text = _label_text(value)
     if text:
-        for key in (
-            "id",
-            "element_id",
-            "block_id",
-            "region_id",
-            "uid",
-            "self_ref",
-            "ref",
-            "docling_ref",
-        ):
+        for key in STRUCTURE_REF_KEYS:
             raw_id = value.get(key)
             if raw_id is not None:
                 labels.setdefault(str(raw_id).strip(), text)
-    for key in ("children", "child_blocks", "sub_blocks", "sub_regions", "items", "cells", "blocks", "elements"):
+    for key in (
+        "children",
+        "child_blocks",
+        "sub_blocks",
+        "sub_regions",
+        "items",
+        "cells",
+        "blocks",
+        "elements",
+        "data",
+        "table_ocr_pred",
+        "overall_ocr_res",
+        "text_paragraphs_ocr_res",
+        "formula_res_list",
+        "seal_res_list",
+        "table_res_list",
+    ):
         child = value.get(key)
         if isinstance(child, (dict, list)):
             _collect_label_map(child, labels)
 
 
 def _label_text(value: dict[str, Any]) -> str:
-    for key in ("text", "source_text", "block_content", "content", "rec_text", "markdown", "html"):
+    for key in ("text", "source_text", "block_content", "content", "rec_text", "rec_formula", "markdown", "html"):
         text = value.get(key)
         if text:
             return str(text).strip()
+    rec_texts = value.get("rec_texts")
+    if isinstance(rec_texts, list):
+        return " ".join(str(text).strip() for text in rec_texts if str(text).strip())
     return ""
 
 
@@ -437,12 +481,9 @@ def _relation_endpoint(value: Any, label_map: dict[str, str]) -> str:
             "source_text",
             "block_content",
             "content",
-            "id",
-            "element_id",
-            "block_id",
-            "region_id",
-            "self_ref",
-            "ref",
+            "rec_text",
+            "rec_formula",
+            *STRUCTURE_REF_KEYS,
         ):
             endpoint = value.get(key)
             if endpoint is not None:
