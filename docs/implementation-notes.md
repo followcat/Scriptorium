@@ -310,7 +310,7 @@ Sidecars can also store relation-style ground truth, which is better for complex
 }
 ```
 
-The same evaluator also accepts ROOR/structure-style page payloads. A sidecar can provide page-level `document`, `elements`, `blocks`, `parsing_res_list`, or `layout_det_res.boxes` entries with ids and text, then reference those ids from `ro_linkings`, `reading_order_edges`, `reading_order_relations`, or `reading_order_linkings`:
+The same evaluator also accepts ROOR/structure-style payloads. A sidecar can provide page-level `document`, `elements`, `blocks`, `parsing_res_list`, or `layout_det_res.boxes` entries with ids and text, then reference those ids from `ro_linkings`, `reading_order_edges`, `reading_order_relations`, or `reading_order_linkings`. It can be wrapped in standard `pages`, or reuse model-root wrappers such as `page_results`, `raw_results`, `results`, `res`, `result`, and `data`:
 
 ```json
 {

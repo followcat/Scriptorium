@@ -239,7 +239,7 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 }
 ```
 
-同一个评测器也接受 ROOR/结构 JSON 风格的 page payload。Sidecar 可以在 page 级提供带 id 和文本的 `document`、`elements`、`blocks`、`parsing_res_list` 或 `layout_det_res.boxes`，再用 `ro_linkings`、`reading_order_edges`、`reading_order_relations` 或 `reading_order_linkings` 引用这些 id：
+同一个评测器也接受 ROOR/结构 JSON 风格 payload。Sidecar 可以在 page 级提供带 id 和文本的 `document`、`elements`、`blocks`、`parsing_res_list` 或 `layout_det_res.boxes`，再用 `ro_linkings`、`reading_order_edges`、`reading_order_relations` 或 `reading_order_linkings` 引用这些 id。它既可以包在标准 `pages` 下，也可以直接复用模型根级的 `page_results`、`raw_results`、`results`、`res`、`result`、`data` 包装：
 
 ```json
 {
