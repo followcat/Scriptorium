@@ -366,6 +366,45 @@ def test_generic_model_text_does_not_split_a_stable_native_column_stream() -> No
     assert stream["proposal"]["origin"] == "column-partition"
 
 
+def test_external_stream_interior_demotes_inferred_native_successor() -> None:
+    first = _element("first", "First", 1, 10, 20, column_index=0)
+    external_one = _element("external-one", "External one", 2, 120, 20)
+    external_two = _element("external-two", "External two", 3, 120, 40)
+    last = _element("last", "Last", 4, 10, 40, column_index=0)
+    for index, element in enumerate((external_one, external_two), start=1):
+        element.metadata.update(
+            {
+                "external_structure_stream_id": "docling-body-page-001-run-001",
+                "external_structure_stream_type": "body",
+                "external_structure_stream_source": "docling",
+                "external_structure_stream_index": index,
+                "reading_order_stream_id": "docling-body-page-001-run-001",
+                "reading_order_stream_type": "body",
+            }
+        )
+
+    proposal = propose_reading_order_sidecar(_document([first, external_one, external_two, last]))
+    streams = {stream["id"]: stream for stream in proposal["pages"][0]["reading_streams"]}
+    native_stream = streams["body-column-001"]
+
+    assert native_stream["successor_edges"] == []
+    assert native_stream["review_successor_edges"] == [
+        {
+            "source": "first",
+            "target": "last",
+            "confidence": 0.76,
+            "review_required": True,
+            "evidence": [
+                "column-local-stream",
+                "flow-segment-001",
+                "interleaved-external-stream-boundary",
+                "same-flow-segment",
+            ],
+        }
+    ]
+    assert streams["docling-body-page-001-run-001"]["successor_edges"][0]["source"] == "external-one"
+
+
 def test_structural_flow_segments_split_a_single_body_stream() -> None:
     first = _element("first", "First", 1, 10, 20, confidence=0.5)
     second = _element("second", "Second", 2, 10, 40, confidence=0.5)

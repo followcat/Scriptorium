@@ -801,11 +801,23 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     }
 
     regions = normalize_structure_evidence(payload, document)
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
     apply_structure_evidence(document, payload)
 
     assert [region.order for region in regions] == [1, 2, 3, 4]
     assert regions[1].bbox_pdf.as_list() == [10.0, 30.0, 70.0, 40.0]
     assert {region.source for region in regions} == {"docling"}
+    assert [(edge.kind, edge.source_ref, edge.target_ref) for edge in relations] == [
+        ("successor", "#/texts/0", "#/texts/2"),
+        ("successor", "#/texts/2", "#/texts/1"),
+        ("successor", "#/texts/1", "#/texts/3"),
+    ]
+    assert {edge.raw["docling_parent_ref"] for edge in relations} == {"#/groups/0"}
+    assert {edge.raw["docling_boundary_policy"] for edge in relations} == {"no-cross-container-successor"}
+    assert len(streams) == 1
+    assert streams[0].member_refs == ("#/texts/0", "#/texts/2", "#/texts/1", "#/texts/3")
+    assert streams[0].stream_type == "body"
     ordered_text = [
         element.source_text
         for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
@@ -819,11 +831,19 @@ def test_docling_body_tree_order_can_reorder_native_lines() -> None:
     ]
     assert document.metadata["structure_evidence"]["region_count"] == 4
     assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["stream_count"] == 1
+    relation_metadata = document.metadata["structure_evidence"]["relations_by_page"][0]["relations"]
+    stream_metadata = document.metadata["structure_evidence"]["streams_by_page"][0]["streams"]
+    assert relation_metadata[0]["docling_parent_ref"] == "#/groups/0"
+    assert relation_metadata[0]["docling_same_page"] is True
+    assert stream_metadata[0]["docling_boundary_policy"] == "no-cross-container-successor"
     assert document.metadata["structure_evidence"]["reordered_page_count"] == 1
-    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
-    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
     assert document.pages[0].elements[2].metadata["external_structure_order"] == 2
     assert document.pages[0].elements[2].metadata["structure_evidence"]["source"] == "docling"
+    assert document.pages[0].elements[0].metadata["external_structure_stream_source"] == "docling"
 
 
 def test_docling_furniture_tree_feeds_page_artifact_streams() -> None:
@@ -861,6 +881,8 @@ def test_docling_furniture_tree_feeds_page_artifact_streams() -> None:
     }
 
     regions = normalize_structure_evidence(payload, document)
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
     apply_structure_evidence(document, payload)
     annotate_document(document)
     by_id = {element.id: element for element in document.pages[0].elements}
@@ -870,6 +892,8 @@ def test_docling_furniture_tree_feeds_page_artifact_streams() -> None:
         ("page_header", None, "docling-furniture"),
         ("page_footer", None, "docling-furniture"),
     ]
+    assert relations == []
+    assert streams == []
     assert document.metadata["structure_evidence"]["region_count"] == 3
     assert document.metadata["structure_evidence"]["matched_element_count"] == 3
     assert document.metadata["structure_evidence"]["order_source_counts"] == {
@@ -923,6 +947,8 @@ def test_docling_table_cells_drive_row_major_table_order() -> None:
     }
 
     regions = normalize_structure_evidence(payload, document)
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
     apply_structure_evidence(document, payload)
     annotate_document(document)
     by_id = {element.id: element for element in document.pages[0].elements}
@@ -945,6 +971,8 @@ def test_docling_table_cells_drive_row_major_table_order() -> None:
         "docling-body": 1,
         "docling-table-cell": 4,
     }
+    assert relations == []
+    assert streams == []
     assert ordered_text == ["A", "B", "C", "D"]
     assert by_id["a"].metadata["external_structure_label"] == "table_cell"
     assert by_id["a"].metadata["external_structure_order_subindex"] == 1
@@ -956,6 +984,240 @@ def test_docling_table_cells_drive_row_major_table_order() -> None:
     assert by_id["b"].metadata["external_structure_table_cell_col"] == 1
     assert by_id["a"].metadata["reading_order_stream_type"] == "table-island"
     assert by_id["a"].metadata["role"] == "table-cell-text"
+
+
+def test_docling_nested_group_runs_stay_local_and_resolve_to_native_streams() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {"self_ref": "#/body", "children": [{"$ref": "#/groups/0"}]},
+        "groups": [
+            {
+                "self_ref": "#/groups/0",
+                "label": "section",
+                "children": [{"$ref": "#/groups/1"}, {"$ref": "#/groups/2"}],
+            },
+            {
+                "self_ref": "#/groups/1",
+                "label": "section",
+                "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/2"}],
+            },
+            {
+                "self_ref": "#/groups/2",
+                "label": "section",
+                "children": [{"$ref": "#/texts/1"}, {"$ref": "#/texts/3"}],
+            },
+        ],
+        "texts": [
+            _docling_text("#/texts/0", "Left one.", 10, 10, 70, 20, page_no=1),
+            _docling_text("#/texts/1", "Right one.", 110, 10, 170, 20, page_no=1),
+            _docling_text("#/texts/2", "Left two.", 10, 30, 70, 40, page_no=1),
+            _docling_text("#/texts/3", "Right two.", 110, 30, 170, 40, page_no=1),
+        ],
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert [(edge.source_ref, edge.target_ref) for edge in relations] == [
+        ("#/texts/0", "#/texts/2"),
+        ("#/texts/1", "#/texts/3"),
+    ]
+    assert ("#/texts/2", "#/texts/1") not in {
+        (edge.source_ref, edge.target_ref) for edge in relations
+    }
+    assert [stream.member_refs for stream in streams] == [
+        ("#/texts/0", "#/texts/2"),
+        ("#/texts/1", "#/texts/3"),
+    ]
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+    ] == ["Left one.", "Left two.", "Right one.", "Right two."]
+    by_id = {element.id: element for element in document.pages[0].elements}
+    assert by_id["left-one"].metadata["external_structure_stream_id"] != by_id["right-one"].metadata[
+        "external_structure_stream_id"
+    ]
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
+
+
+def test_docling_group_boundary_does_not_fallback_to_global_body_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("right", "Right group.", BBox(x0=110, y0=10, x1=170, y1=20), 1),
+            ("left", "Left group.", BBox(x0=10, y0=10, x1=70, y1=20), 2),
+        ]
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {
+            "self_ref": "#/body",
+            "children": [{"$ref": "#/groups/0"}, {"$ref": "#/groups/1"}],
+        },
+        "groups": [
+            {
+                "self_ref": "#/groups/0",
+                "label": "section",
+                "children": [{"$ref": "#/texts/0"}],
+            },
+            {
+                "self_ref": "#/groups/1",
+                "label": "section",
+                "children": [{"$ref": "#/texts/1"}],
+            },
+        ],
+        "texts": [
+            _docling_text("#/texts/0", "Left group.", 10, 10, 70, 20, page_no=1),
+            _docling_text("#/texts/1", "Right group.", 110, 10, 170, 20, page_no=1),
+        ],
+    }
+
+    assert normalize_structure_relations(payload, document) == []
+    assert normalize_structure_streams(payload, document) == []
+    apply_structure_evidence(document, payload)
+
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+    ] == ["Right group.", "Left group."]
+    assert document.metadata["structure_evidence"]["reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
+
+
+def test_docling_root_body_runs_split_at_multicolumn_geometry_boundary() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {
+            "self_ref": "#/body",
+            "children": [
+                {"$ref": "#/texts/0"},
+                {"$ref": "#/texts/2"},
+                {"$ref": "#/texts/1"},
+                {"$ref": "#/texts/3"},
+            ],
+        },
+        "texts": [
+            _docling_text("#/texts/0", "Left one.", 10, 10, 70, 20, page_no=1),
+            _docling_text("#/texts/1", "Right one.", 110, 10, 170, 20, page_no=1),
+            _docling_text("#/texts/2", "Left two.", 10, 30, 70, 40, page_no=1),
+            _docling_text("#/texts/3", "Right two.", 110, 30, 170, 40, page_no=1),
+        ],
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert [(edge.source_ref, edge.target_ref) for edge in relations] == [
+        ("#/texts/0", "#/texts/2"),
+        ("#/texts/1", "#/texts/3"),
+    ]
+    assert [stream.member_refs for stream in streams] == [
+        ("#/texts/0", "#/texts/2"),
+        ("#/texts/1", "#/texts/3"),
+    ]
+    assert {stream.raw["docling_locality"] for stream in streams} == {"same-container-geometry"}
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+    ] == ["Left one.", "Left two.", "Right one.", "Right two."]
+    by_id = {element.id: element for element in document.pages[0].elements}
+    assert by_id["left-one"].metadata["external_structure_stream_index"] == 1
+
+
+def test_docling_root_body_stream_splits_at_native_grid_island() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("before-one", "Before one.", BBox(x0=10, y0=10, x1=90, y1=20), 1),
+            ("before-two", "Before two.", BBox(x0=10, y0=30, x1=90, y1=40), 2),
+            ("card", "Featured offer.", BBox(x0=10, y0=50, x1=150, y1=60), 3),
+            ("after-one", "After one.", BBox(x0=10, y0=70, x1=90, y1=80), 4),
+            ("after-two", "After two.", BBox(x0=10, y0=90, x1=90, y1=100), 5),
+        ]
+    )
+    card = next(element for element in document.pages[0].elements if element.id == "card")
+    card.metadata["column_span"] = "grid-full"
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {
+            "self_ref": "#/body",
+            "children": [{"$ref": f"#/texts/{index}"} for index in range(5)],
+        },
+        "texts": [
+            _docling_text("#/texts/0", "Before one.", 10, 10, 90, 20, page_no=1),
+            _docling_text("#/texts/1", "Before two.", 10, 30, 90, 40, page_no=1),
+            _docling_text("#/texts/2", "Featured offer.", 10, 50, 150, 60, page_no=1),
+            _docling_text("#/texts/3", "After one.", 10, 70, 90, 80, page_no=1),
+            _docling_text("#/texts/4", "After two.", 10, 90, 90, 100, page_no=1),
+        ],
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["card"].metadata["column_span"] == "grid-full"
+    assert "external_structure_stream_id" not in by_id["card"].metadata
+    assert by_id["before-one"].metadata["external_structure_stream_id"].endswith("native-segment-001")
+    assert by_id["after-one"].metadata["external_structure_stream_id"].endswith("native-segment-002")
+    assert by_id["before-one"].metadata["external_structure_stream_id"] != by_id["after-one"].metadata[
+        "external_structure_stream_id"
+    ]
+    assert by_id["before-one"].metadata["external_structure_successor_ids"] == ["before-two"]
+    assert by_id["after-one"].metadata["external_structure_successor_ids"] == ["after-two"]
+    assert "external_structure_successor_ids" not in by_id["before-two"].metadata
+    assert by_id["card"].metadata["external_structure_skipped_streams"][0]["reason"] == "specific-native-local-stream"
+
+
+def test_docling_body_tree_does_not_emit_cross_page_successor_or_stream() -> None:
+    first_page = _document_with_text_boxes(
+        [("first", "First page.", BBox(x0=10, y0=10, x1=80, y1=22), 1)],
+        page_index=0,
+    )
+    second_page = _document_with_text_boxes(
+        [("second", "Second page.", BBox(x0=10, y0=10, x1=90, y1=22), 1)],
+        page_index=1,
+    )
+    document = DocumentIR(
+        source_pdf="paper.pdf",
+        render_dpi=144,
+        page_count=2,
+        pages=[first_page.pages[0], second_page.pages[0]],
+    )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {
+            "self_ref": "#/body",
+            "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}],
+        },
+        "texts": [
+            _docling_text("#/texts/0", "First page.", 10, 10, 80, 22, page_no=1),
+            _docling_text("#/texts/1", "Second page.", 10, 10, 90, 22, page_no=2),
+        ],
+    }
+
+    assert normalize_structure_relations(payload, document) == []
+    assert normalize_structure_streams(payload, document) == []
+    apply_structure_evidence(document, payload)
+
+    assert document.metadata["structure_evidence"]["relation_edge_count"] == 0
+    assert document.metadata["structure_evidence"]["stream_count"] == 0
 
 
 def test_pp_structure_table_res_cells_inherit_parent_table_order() -> None:
@@ -1595,4 +1857,27 @@ def _docling_cell(text: str, row: int, col: int, x0: float, y0: float, x1: float
         "start_col_offset_idx": col,
         "end_col_offset_idx": col + 1,
         "bbox": {"l": x0, "t": y0, "r": x1, "b": y1, "coord_origin": "TOPLEFT"},
+    }
+
+
+def _docling_text(
+    ref: str,
+    text: str,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    *,
+    page_no: int,
+) -> dict[str, object]:
+    return {
+        "self_ref": ref,
+        "label": "text",
+        "text": text,
+        "prov": [
+            {
+                "page_no": page_no,
+                "bbox": {"l": x0, "t": y0, "r": x1, "b": y1, "coord_origin": "TOPLEFT"},
+            }
+        ],
     }

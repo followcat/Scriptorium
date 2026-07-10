@@ -209,6 +209,7 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
         elements,
         stream_members,
     )
+    element_order = {element.id: index for index, element in enumerate(elements)}
     streams: list[dict[str, Any]] = []
     summary: Counter[str] = Counter()
     stream_type_counts: Counter[str] = Counter()
@@ -223,6 +224,8 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
             details,
             members,
             review_edge_promotions,
+            elements,
+            element_order,
         )
         streams.append(stream_payload)
         summary.update(stream_summary)
@@ -693,15 +696,24 @@ def _propose_stream(
     details: "_StreamDetails",
     members: list["_ProposalMember"],
     review_edge_promotions: Mapping[tuple[str, str], "_ReviewEdgePromotion"],
+    ordered_elements: list[ElementIR],
+    element_order: Mapping[str, int],
 ) -> tuple[dict[str, Any], Counter[str]]:
     successor_edges: list[dict[str, Any]] = []
     review_successor_edges: list[dict[str, Any]] = []
     review_edge_count = 0
     for source, target in zip(members, members[1:], strict=False):
+        interleaved_structure_boundary = _has_interleaved_explicit_structure_stream(
+            source.element,
+            target.element,
+            ordered_elements,
+            element_order,
+        )
         edge = _successor_edge(
             source,
             target,
             review_edge_promotions.get((source.element.id, target.element.id)),
+            interleaved_structure_boundary=interleaved_structure_boundary,
         )
         if edge["review_required"]:
             review_edge_count += 1
@@ -738,6 +750,8 @@ def _successor_edge(
     source: "_ProposalMember",
     target: "_ProposalMember",
     review_edge_promotion: "_ReviewEdgePromotion | None" = None,
+    *,
+    interleaved_structure_boundary: bool = False,
 ) -> dict[str, Any]:
     source_metadata = source.element.metadata
     target_metadata = target.element.metadata
@@ -747,6 +761,9 @@ def _successor_edge(
     if _has_explicit_successor(source.element, target.element.id):
         confidence = max(confidence, 0.99)
         evidence.append("external-successor-evidence")
+    elif interleaved_structure_boundary:
+        confidence = min(confidence, 0.76)
+        evidence.append("interleaved-external-stream-boundary")
     elif source.details.origin == "external-structure-block":
         confidence = min(confidence, 0.76)
         evidence.append("structure-block-membership")
@@ -766,7 +783,11 @@ def _successor_edge(
         target_metadata.get("flow_segment_index"), default=-1
     ):
         evidence.append("same-flow-segment")
-    if confidence < 0.78 and review_edge_promotion is not None:
+    if (
+        confidence < 0.78
+        and review_edge_promotion is not None
+        and not interleaved_structure_boundary
+    ):
         confidence = max(confidence, REVIEW_EDGE_PROMOTION_CONFIDENCE)
         evidence.extend(review_edge_promotion.evidence)
         promotion = review_edge_promotion.as_payload()
@@ -781,6 +802,26 @@ def _successor_edge(
     if promotion is not None:
         edge["promotion"] = promotion
     return edge
+
+
+def _has_interleaved_explicit_structure_stream(
+    source: ElementIR,
+    target: ElementIR,
+    ordered_elements: list[ElementIR],
+    element_order: Mapping[str, int],
+) -> bool:
+    """Keep inferred native edges from jumping across an external local stream."""
+
+    source_index = element_order.get(source.id)
+    target_index = element_order.get(target.id)
+    if source_index is None or target_index is None or target_index <= source_index + 1:
+        return False
+    for element in ordered_elements[source_index + 1 : target_index]:
+        metadata = element.metadata
+        stream_id = _text(metadata.get("reading_order_stream_id")) or "body-main"
+        if _has_explicit_structure_stream(metadata, stream_id):
+            return True
+    return False
 
 
 def _review_transitions(

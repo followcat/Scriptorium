@@ -782,6 +782,28 @@ def test_candidate_stream_diagnostics_are_local_to_reading_streams() -> None:
     assert by_stream["sidebar-right"]["consensus_successor_disagreement_count"] == 0
 
 
+def test_candidate_stream_diagnostics_trust_complete_explicit_successors() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("first", "First.", BBox(x0=10, y0=10, x1=70, y1=20), 1, None),
+            ("second", "Second.", BBox(x0=10, y0=50, x1=70, y1=60), 2, None),
+            ("third", "Third.", BBox(x0=10, y0=30, x1=70, y1=40), 3, None),
+        ]
+    )
+    elements = document.pages[0].elements
+    for element in elements:
+        element.metadata["reading_order_stream_id"] = "docling-body-page-001-run-001"
+        element.metadata["reading_order_stream_type"] = "body"
+    elements[0].metadata["external_structure_successor_ids"] = ["second"]
+    elements[1].metadata["external_structure_successor_ids"] = ["third"]
+
+    diagnostics = _reading_order_candidate_stream_diagnostics(document)
+
+    assert diagnostics[0]["explicit_successor_edge_count"] == 2
+    assert diagnostics[0]["explicit_successor_coverage"] == 1.0
+    assert diagnostics[0]["recommendation"] == "keep-selected-external-successors"
+
+
 def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
     metrics = _semantic_candidate_arbitration_metrics(
         selected_pairwise=0.75,

@@ -147,6 +147,18 @@ class StructureRelationEdge:
             metadata["target_alias"] = str(target_alias)
         if source_alias or target_alias:
             metadata["has_endpoint_alias"] = True
+        for key in (
+            "source_kind",
+            "docling_document_index",
+            "docling_parent_ref",
+            "docling_parent_scope",
+            "docling_run_index",
+            "docling_same_page",
+            "docling_locality",
+            "docling_boundary_policy",
+        ):
+            if key in self.raw:
+                metadata[key] = self.raw[key]
         return metadata
 
 
@@ -170,6 +182,18 @@ class StructureReadingStream:
         member_aliases = self.raw.get("_scriptorium_member_aliases")
         if isinstance(member_aliases, dict) and member_aliases:
             metadata["member_aliases"] = dict(sorted((str(key), str(value)) for key, value in member_aliases.items()))
+        for key in (
+            "source_kind",
+            "docling_document_index",
+            "docling_parent_ref",
+            "docling_parent_scope",
+            "docling_run_index",
+            "docling_same_page",
+            "docling_locality",
+            "docling_boundary_policy",
+        ):
+            if key in self.raw:
+                metadata[key] = self.raw[key]
         return metadata
 
 
@@ -250,6 +274,25 @@ class _ResolvedStreamMember:
     group_size: int
 
 
+@dataclass(frozen=True)
+class _DoclingLocalRun:
+    """A contiguous, same-page text run under one Docling body-tree container."""
+
+    page_index: int
+    parent_ref: str
+    parent_scope: str
+    run_index: int
+    member_refs: tuple[str, ...]
+    locality: str
+
+
+@dataclass(frozen=True)
+class _DoclingTreeLeaf:
+    ref: str
+    page_index: int
+    bbox_pdf: BBox
+
+
 def load_structure_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -320,6 +363,18 @@ def normalize_structure_relations(
 
     edges: list[StructureRelationEdge] = []
     seen: set[tuple[int, str, str, str]] = set()
+    def append(edge: StructureRelationEdge) -> None:
+        key = (
+            edge.page_index,
+            edge.kind,
+            _relation_key(edge.source_ref),
+            _relation_key(edge.target_ref),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        edges.append(edge)
+
     for fallback_page_index, page_payload in enumerate(_collect_relation_payloads(payload)):
         page_index = _extract_page_index(page_payload, fallback_page_index)
         page = _document_page_by_evidence_index(document, page_index)
@@ -328,10 +383,6 @@ def normalize_structure_relations(
         source_name = source or _extract_source(payload, None)
         endpoint_aliases = _page_relation_alias_map(page_payload)
         for kind, source_ref, target_ref, raw in _iter_relation_edges(page_payload):
-            key = (page.page_index, kind, _relation_key(source_ref), _relation_key(target_ref))
-            if key in seen:
-                continue
-            seen.add(key)
             raw_edge = dict(raw)
             source_alias = _endpoint_alias(source_ref, endpoint_aliases)
             target_alias = _endpoint_alias(target_ref, endpoint_aliases)
@@ -339,7 +390,7 @@ def normalize_structure_relations(
                 raw_edge["_scriptorium_source_alias"] = source_alias
             if target_alias:
                 raw_edge["_scriptorium_target_alias"] = target_alias
-            edges.append(
+            append(
                 StructureRelationEdge(
                     page_index=page.page_index,
                     kind=kind,
@@ -349,6 +400,32 @@ def normalize_structure_relations(
                     raw=raw_edge,
                 )
             )
+
+    for document_index, doc in enumerate(_collect_docling_documents(payload), start=1):
+        source_name = source or "docling"
+        for run in _docling_body_tree_local_runs(doc, document):
+            for source_ref, target_ref in zip(run.member_refs, run.member_refs[1:], strict=False):
+                append(
+                    StructureRelationEdge(
+                        page_index=run.page_index,
+                        kind="successor",
+                        source_ref=source_ref,
+                        target_ref=target_ref,
+                        source=source_name,
+                        raw={
+                            "source": source_ref,
+                            "target": target_ref,
+                            "source_kind": "docling-body-tree",
+                            "docling_document_index": document_index,
+                            "docling_parent_ref": run.parent_ref,
+                            "docling_parent_scope": run.parent_scope,
+                            "docling_run_index": run.run_index,
+                            "docling_same_page": True,
+                            "docling_locality": run.locality,
+                            "docling_boundary_policy": "no-cross-container-successor",
+                        },
+                    )
+                )
     return edges
 
 
@@ -359,6 +436,17 @@ def normalize_structure_streams(
 ) -> list[StructureReadingStream]:
     streams: list[StructureReadingStream] = []
     seen: set[tuple[int, str, tuple[str, ...]]] = set()
+    def append(stream: StructureReadingStream) -> None:
+        key = (
+            stream.page_index,
+            stream.stream_id,
+            tuple(_relation_key(ref) for ref in stream.member_refs),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        streams.append(stream)
+
     for fallback_page_index, page_payload in enumerate(_collect_relation_payloads(payload)):
         page_index = _extract_page_index(page_payload, fallback_page_index)
         page = _document_page_by_evidence_index(document, page_index)
@@ -371,10 +459,6 @@ def normalize_structure_streams(
             if not member_refs:
                 continue
             stream_id = _extract_stream_id(raw_stream, page.page_index, stream_index)
-            key = (page.page_index, stream_id, tuple(_relation_key(ref) for ref in member_refs))
-            if key in seen:
-                continue
-            seen.add(key)
             raw_stream_with_aliases = dict(raw_stream)
             member_aliases = {
                 _relation_key(ref): alias
@@ -383,7 +467,7 @@ def normalize_structure_streams(
             }
             if member_aliases:
                 raw_stream_with_aliases["_scriptorium_member_aliases"] = member_aliases
-            streams.append(
+            append(
                 StructureReadingStream(
                     page_index=page.page_index,
                     stream_id=stream_id,
@@ -391,6 +475,33 @@ def normalize_structure_streams(
                     member_refs=member_refs,
                     source=source_name,
                     raw=raw_stream_with_aliases,
+                )
+            )
+
+    for document_index, doc in enumerate(_collect_docling_documents(payload), start=1):
+        source_name = source or "docling"
+        for run in _docling_body_tree_local_runs(doc, document):
+            stream_id = _docling_local_run_stream_id(run, document_index=document_index)
+            append(
+                StructureReadingStream(
+                    page_index=run.page_index,
+                    stream_id=stream_id,
+                    stream_type="body",
+                    member_refs=run.member_refs,
+                    source=source_name,
+                    raw={
+                        "stream_id": stream_id,
+                        "stream_type": "body",
+                        "members": list(run.member_refs),
+                        "source_kind": "docling-body-tree",
+                        "docling_document_index": document_index,
+                        "docling_parent_ref": run.parent_ref,
+                        "docling_parent_scope": run.parent_scope,
+                        "docling_run_index": run.run_index,
+                        "docling_same_page": True,
+                        "docling_locality": run.locality,
+                        "docling_boundary_policy": "no-cross-container-successor",
+                    },
                 )
             )
     return streams
@@ -530,6 +641,175 @@ def _normalize_docling_document(
     if isinstance(furniture, dict):
         traverse(furniture, "#/furniture", order_source="docling-furniture", orderable=False)
     return regions
+
+
+def _docling_body_tree_local_runs(
+    doc: dict[str, Any],
+    document: DocumentIR,
+) -> list[_DoclingLocalRun]:
+    """Collect only local Docling text runs that are safe as executable edges.
+
+    Docling's body tree carries document order, but a parent containing two
+    nested groups does not establish a direct text-to-text successor across
+    those groups.  Restricting runs to adjacent text siblings keeps group,
+    table, picture, unresolved-ref, and page transitions as boundaries.
+    """
+
+    body = doc.get("body")
+    if not isinstance(body, dict):
+        return []
+
+    ref_index = _build_docling_ref_index(doc)
+    runs: list[_DoclingLocalRun] = []
+    visited_containers: set[str] = set()
+
+    def visit_container(node: Any, current_ref: str | None, parent_scope: str) -> None:
+        item, ref = _resolve_docling_node(node, doc, ref_index, current_ref)
+        if not isinstance(item, dict):
+            return
+        parent_ref = str(ref or item.get("self_ref") or current_ref or "").strip()
+        if not parent_ref:
+            return
+        if parent_ref in visited_containers:
+            return
+        visited_containers.add(parent_ref)
+
+        children = item.get("children")
+        if not isinstance(children, list):
+            return
+
+        run_index = 0
+        pending_leaves: list[_DoclingTreeLeaf] = []
+
+        def flush() -> None:
+            nonlocal run_index, pending_leaves
+            if len(pending_leaves) >= 2:
+                run_index += 1
+                runs.append(
+                    _DoclingLocalRun(
+                        page_index=pending_leaves[0].page_index,
+                        parent_ref=parent_ref,
+                        parent_scope=parent_scope,
+                        run_index=run_index,
+                        member_refs=tuple(leaf.ref for leaf in pending_leaves),
+                        locality=(
+                            "same-container-geometry"
+                            if parent_scope == "body"
+                            else "same-container-tree"
+                        ),
+                    )
+                )
+            pending_leaves = []
+
+        for child in children:
+            child_item, child_ref = _resolve_docling_node(child, doc, ref_index)
+            if not isinstance(child_item, dict):
+                flush()
+                continue
+            if _docling_tree_container_scope(child_item, child_ref):
+                flush()
+                visit_container(child, child_ref, "group")
+                continue
+
+            leaf = _docling_relation_leaf(child_item, child_ref, document)
+            if leaf is None:
+                flush()
+                continue
+            if pending_leaves:
+                previous = pending_leaves[-1]
+                if previous.page_index != leaf.page_index:
+                    flush()
+                elif parent_scope == "body":
+                    page = _document_page_by_evidence_index(document, leaf.page_index)
+                    if page is None or not _docling_body_siblings_are_locally_continuous(previous, leaf, page):
+                        flush()
+            pending_leaves.append(leaf)
+        flush()
+
+    visit_container(body, "#/body", "body")
+    return runs
+
+
+def _docling_tree_container_scope(item: dict[str, Any], ref: str | None) -> str | None:
+    if _docling_ref_kind(ref or item.get("self_ref")) == "groups":
+        return "group"
+    return None
+
+
+def _docling_relation_leaf(
+    item: dict[str, Any],
+    ref: str | None,
+    document: DocumentIR,
+) -> _DoclingTreeLeaf | None:
+    """Return one bounded, single-page textual Docling leaf."""
+
+    ref_kind = _docling_ref_kind(ref or item.get("self_ref"))
+    label = _normalize_structure_label(_extract_label(item))
+    if ref_kind in {"groups", "pictures", "tables"}:
+        return None
+    if label in {"picture", "image", "figure", "chart", "table", "table_body", "table_content"}:
+        return None
+    if not _extract_docling_text(item):
+        return None
+
+    prov_items = [prov for prov in item.get("prov", []) if isinstance(prov, dict)]
+    if not prov_items:
+        return None
+    evidence_page_indices = {_docling_page_index(prov) for prov in prov_items}
+    if len(evidence_page_indices) != 1:
+        return None
+    evidence_page_index = next(iter(evidence_page_indices))
+    page = _document_page_by_evidence_index(document, evidence_page_index)
+    if page is None:
+        return None
+    boxes = [bbox for prov in prov_items if (bbox := _docling_bbox_from_prov(prov, page)) is not None]
+    bbox_pdf = _union_bboxes(boxes)
+    if bbox_pdf is None:
+        return None
+    resolved_ref = str(ref or item.get("self_ref") or "").strip()
+    if not resolved_ref:
+        return None
+    return _DoclingTreeLeaf(ref=resolved_ref, page_index=page.page_index, bbox_pdf=bbox_pdf)
+
+
+def _docling_body_siblings_are_locally_continuous(
+    previous: _DoclingTreeLeaf,
+    current: _DoclingTreeLeaf,
+    page: PageIR,
+) -> bool:
+    """Guard root-body edges against multi-column or long-range transitions."""
+
+    if previous.page_index != current.page_index:
+        return False
+    previous_box = previous.bbox_pdf
+    current_box = current.bbox_pdf
+    vertical_tolerance = max(1.0, min(previous_box.height, current_box.height) * 0.35)
+    if current_box.y0 < previous_box.y0 - vertical_tolerance:
+        return False
+    maximum_gap = max(page.height_pt * 0.16, max(previous_box.height, current_box.height) * 14.0)
+    if current_box.y0 - previous_box.y1 > maximum_gap:
+        return False
+
+    horizontal_overlap = max(
+        0.0,
+        min(previous_box.x1, current_box.x1) - max(previous_box.x0, current_box.x0),
+    )
+    minimum_width = max(min(previous_box.width, current_box.width), 1.0)
+    if horizontal_overlap / minimum_width >= 0.35:
+        return True
+
+    center_offset = abs(_center_x(previous_box) - _center_x(current_box))
+    return center_offset <= max(page.width_pt * 0.10, minimum_width * 0.60)
+
+
+def _docling_local_run_stream_id(run: _DoclingLocalRun, *, document_index: int) -> str:
+    parent = _slug_text(run.parent_ref)
+    if not parent or parent == "unknown":
+        parent = run.parent_scope
+    return (
+        f"docling-{parent}-document-{document_index:03d}"
+        f"-page-{run.page_index + 1:03d}-run-{run.run_index:03d}"
+    )
 
 
 def _build_docling_ref_index(doc: dict[str, Any]) -> dict[str, Any]:
@@ -2428,6 +2708,14 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             diagnostic["status"] = "skipped-overlapping-endpoints"
             stats.diagnostics.append(diagnostic)
             continue
+        if _docling_body_relation_hits_specific_native_stream(
+            relation,
+            source_resolution,
+            target_resolution,
+        ):
+            diagnostic["status"] = "skipped-specific-native-stream"
+            stats.diagnostics.append(diagnostic)
+            continue
 
         if source_resolution.is_group or target_resolution.is_group:
             stats.resolved_group_edge_count += 1
@@ -2555,37 +2843,41 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
             stats.diagnostics.append(diagnostic)
         if not stream_members:
             continue
-        for stream_index, member in enumerate(stream_members, start=1):
-            element = member.element
-            existing_stream_id = str(element.metadata.get("external_structure_stream_id") or "").strip()
-            if existing_stream_id and existing_stream_id != stream.stream_id:
-                conflicts = element.metadata.get("external_structure_stream_conflicts")
-                if not isinstance(conflicts, list):
-                    conflicts = []
-                conflicts.append(
-                    {
-                        "existing_stream_id": existing_stream_id,
-                        "stream_id": stream.stream_id,
-                        "stream_type": stream.stream_type,
-                        "source": stream.source,
-                    }
+        for applied_stream, applied_members in _split_docling_body_stream_at_native_boundaries(
+            stream,
+            stream_members,
+        ):
+            for stream_index, member in enumerate(applied_members, start=1):
+                element = member.element
+                existing_stream_id = str(element.metadata.get("external_structure_stream_id") or "").strip()
+                if existing_stream_id and existing_stream_id != applied_stream.stream_id:
+                    conflicts = element.metadata.get("external_structure_stream_conflicts")
+                    if not isinstance(conflicts, list):
+                        conflicts = []
+                    conflicts.append(
+                        {
+                            "existing_stream_id": existing_stream_id,
+                            "stream_id": applied_stream.stream_id,
+                            "stream_type": applied_stream.stream_type,
+                            "source": applied_stream.source,
+                        }
+                    )
+                    element.metadata["external_structure_stream_conflicts"] = conflicts
+                    stats.conflict_count += 1
+                    continue
+                _apply_external_stream_metadata(element, applied_stream, stream_index)
+                element.metadata["external_structure_stream_member_ref"] = member.reference
+                element.metadata["external_structure_stream_resolved_via_alias"] = member.alias_used
+                element.metadata["external_structure_stream_member_resolution"] = (
+                    "group" if member.is_group else "element"
                 )
-                element.metadata["external_structure_stream_conflicts"] = conflicts
-                stats.conflict_count += 1
-                continue
-            _apply_external_stream_metadata(element, stream, stream_index)
-            element.metadata["external_structure_stream_member_ref"] = member.reference
-            element.metadata["external_structure_stream_resolved_via_alias"] = member.alias_used
-            element.metadata["external_structure_stream_member_resolution"] = (
-                "group" if member.is_group else "element"
-            )
-            if member.is_group:
-                element.metadata["external_structure_stream_member_group_index"] = member.group_index
-                element.metadata["external_structure_stream_member_group_size"] = member.group_size
-            if member.alias_used:
-                element.metadata["external_structure_stream_member_alias"] = member.alias
-                stats.alias_resolved_count += 1
-            stats.resolved_count += 1
+                if member.is_group:
+                    element.metadata["external_structure_stream_member_group_index"] = member.group_index
+                    element.metadata["external_structure_stream_member_group_size"] = member.group_size
+                if member.alias_used:
+                    element.metadata["external_structure_stream_member_alias"] = member.alias
+                    stats.alias_resolved_count += 1
+                stats.resolved_count += 1
     return stats
 
 
@@ -2682,6 +2974,8 @@ def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, 
             continue
         if any(str(element.metadata.get("external_structure_stream_id") or "").strip() for element in stream_members):
             continue
+        if any(_has_skipped_docling_body_stream(element) for element in stream_members):
+            continue
         stream_count += 1
         stream_type = _relation_derived_stream_type(stream_members)
         stream = StructureReadingStream(
@@ -2709,6 +3003,148 @@ def _element_by_id(elements: list[ElementIR], element_id: str) -> ElementIR | No
         if element.id == element_id:
             return element
     return None
+
+
+def _docling_body_relation_hits_specific_native_stream(
+    relation: StructureRelationEdge,
+    source: _EndpointResolution,
+    target: _EndpointResolution,
+) -> bool:
+    if str(relation.raw.get("source_kind") or "") != "docling-body-tree":
+        return False
+    if str(relation.raw.get("docling_parent_scope") or "") != "body":
+        return False
+    return any(
+        _has_specific_native_local_stream(element)
+        for element in (*source.elements, *target.elements)
+    )
+
+
+def _docling_body_stream_hits_specific_native_stream(
+    stream: StructureReadingStream,
+    element: ElementIR,
+) -> bool:
+    return (
+        str(stream.raw.get("source_kind") or "") == "docling-body-tree"
+        and str(stream.raw.get("docling_parent_scope") or "") == "body"
+        and stream.stream_type == "body"
+        and _has_specific_native_local_stream(element)
+    )
+
+
+def _split_docling_body_stream_at_native_boundaries(
+    stream: StructureReadingStream,
+    members: list[_ResolvedStreamMember],
+) -> list[tuple[StructureReadingStream, list[_ResolvedStreamMember]]]:
+    """Keep generic root-body streams from bridging stronger native islands.
+
+    A root Docling ``body`` run may geometrically span a grid, table, caption,
+    sidebar, or artifact that native extraction already identified.  Such a run
+    is only generic evidence, so split it at the stronger local boundary rather
+    than assigning one external stream id to disjoint text on both sides.
+    """
+
+    if not any(_docling_body_stream_hits_specific_native_stream(stream, member.element) for member in members):
+        return [(stream, members)]
+
+    segments: list[tuple[StructureReadingStream, list[_ResolvedStreamMember]]] = []
+    pending: list[_ResolvedStreamMember] = []
+    segment_index = 0
+
+    def flush() -> None:
+        nonlocal pending, segment_index
+        if len(pending) >= 2:
+            segment_index += 1
+            segments.append((_docling_native_boundary_segment(stream, segment_index, pending), pending))
+        elif pending:
+            _record_skipped_docling_body_stream(
+                pending[0].element,
+                stream,
+                pending[0],
+                reason="native-boundary-singleton",
+            )
+        pending = []
+
+    for member in members:
+        if _docling_body_stream_hits_specific_native_stream(stream, member.element):
+            flush()
+            _record_skipped_docling_body_stream(
+                member.element,
+                stream,
+                member,
+                reason="specific-native-local-stream",
+            )
+            continue
+        pending.append(member)
+    flush()
+    return segments
+
+
+def _docling_native_boundary_segment(
+    stream: StructureReadingStream,
+    segment_index: int,
+    members: list[_ResolvedStreamMember],
+) -> StructureReadingStream:
+    raw = dict(stream.raw)
+    member_refs = tuple(member.reference for member in members)
+    stream_id = f"{stream.stream_id}-native-segment-{segment_index:03d}"
+    raw["docling_original_stream_id"] = stream.stream_id
+    raw["docling_native_boundary_segment_index"] = segment_index
+    raw["docling_native_boundary_policy"] = "split-at-specific-native-local-stream"
+    raw["stream_id"] = stream_id
+    raw["members"] = list(member_refs)
+    return StructureReadingStream(
+        page_index=stream.page_index,
+        stream_id=stream_id,
+        stream_type=stream.stream_type,
+        member_refs=member_refs,
+        source=stream.source,
+        raw=raw,
+    )
+
+
+def _has_specific_native_local_stream(element: ElementIR) -> bool:
+    metadata = element.metadata
+    stream_type = str(metadata.get("reading_order_stream_type") or "").strip()
+    if stream_type and stream_type != "body":
+        return True
+    scope = str(metadata.get("reading_order_scope") or "body").strip()
+    if scope in {"page-artifact", "footnote", "sidebar"}:
+        return True
+    column_span = str(metadata.get("column_span") or "").strip()
+    return column_span.startswith(("grid", "table", "caption", "artifact", "footnote", "sidebar"))
+
+
+def _record_skipped_docling_body_stream(
+    element: ElementIR,
+    stream: StructureReadingStream,
+    member: _ResolvedStreamMember,
+    *,
+    reason: str,
+) -> None:
+    skipped = element.metadata.get("external_structure_skipped_streams")
+    if not isinstance(skipped, list):
+        skipped = []
+    record = {
+        "stream_id": stream.stream_id,
+        "stream_type": stream.stream_type,
+        "source": stream.source,
+        "member_ref": member.reference,
+        "reason": reason,
+    }
+    if record not in skipped:
+        skipped.append(record)
+    element.metadata["external_structure_skipped_streams"] = skipped
+    evidence = _reading_order_evidence(element)
+    if "external-structure-stream-preserved-native" not in evidence:
+        evidence.append("external-structure-stream-preserved-native")
+    element.metadata["reading_order_evidence"] = evidence
+    element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
+
+
+def _has_skipped_docling_body_stream(element: ElementIR) -> bool:
+    skipped = element.metadata.get("external_structure_skipped_streams")
+    return isinstance(skipped, list) and bool(skipped)
 
 
 def _relation_derived_stream_type(elements: list[ElementIR]) -> str:
@@ -3287,6 +3723,11 @@ def _external_structure_order_participates(element: ElementIR) -> bool:
 
     metadata = element.metadata
     if _optional_int(metadata.get("external_structure_order")) is None:
+        return False
+    # Docling's full body traversal is useful region evidence, but only its
+    # same-container local runs become executable relation edges.  Do not turn
+    # a depth-first sequence across groups or pages into a global fallback.
+    if str(metadata.get("external_structure_order_source") or "").strip() == "docling-body":
         return False
     label = _normalize_structure_label(str(metadata.get("external_structure_label") or ""))
     if label in {"table", "table_body", "table_cell", "table_content"}:

@@ -2202,7 +2202,14 @@ def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[di
             )
             pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
             successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
-            recommendation, reason = _reading_order_candidate_page_recommendation(consensus, successor)
+            explicit_successor_edge_count, explicit_successor_coverage = _explicit_successor_coverage(
+                stream_elements
+            )
+            recommendation, reason = _reading_order_candidate_page_recommendation(
+                consensus,
+                successor,
+                explicit_successor_coverage=explicit_successor_coverage,
+            )
             diagnostics.append(
                 {
                     "page_index": page.page_index,
@@ -2221,6 +2228,8 @@ def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[di
                     "consensus_successor_edge_count": successor.edge_count,
                     "consensus_successor_disagreement_count": successor.disagreement_count,
                     "consensus_successor_disagreement_ratio": successor.disagreement_ratio,
+                    "explicit_successor_edge_count": explicit_successor_edge_count,
+                    "explicit_successor_coverage": explicit_successor_coverage,
                     "recommendation": recommendation,
                     "reason": reason,
                 }
@@ -2231,7 +2240,11 @@ def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[di
 def _reading_order_candidate_page_recommendation(
     consensus: Any,
     successor_disagreement: Any,
+    *,
+    explicit_successor_coverage: float = 0.0,
 ) -> tuple[str, str]:
+    if successor_disagreement.edge_count and explicit_successor_coverage >= 1.0:
+        return "keep-selected-external-successors", "selected local edges are fully confirmed by structure evidence"
     if consensus.agreement_level == "unavailable":
         return "unavailable", "not enough candidate successor evidence"
     if successor_disagreement.disagreement_count == 0:
@@ -2243,6 +2256,17 @@ def _reading_order_candidate_page_recommendation(
     if consensus.agreement_level == "medium":
         return "review-disagreement", "medium-support consensus disagrees with selected order"
     return "needs-structure-evidence", "candidate consensus is weak or conflicted"
+
+
+def _explicit_successor_coverage(stream_elements: list[Any]) -> tuple[int, float]:
+    edge_count = max(0, len(stream_elements) - 1)
+    if edge_count == 0:
+        return 0, 0.0
+    explicit_edge_count = sum(
+        int(str(target.id) in _metadata_id_list(source, "external_structure_successor_ids"))
+        for source, target in zip(stream_elements, stream_elements[1:], strict=False)
+    )
+    return explicit_edge_count, round(explicit_edge_count / edge_count, 8)
 
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
