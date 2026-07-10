@@ -125,7 +125,7 @@ scriptorium compare-pdf \
 
 External OCR/layout models are optional. Without OCR or structure JSON, an image source still keeps the full-page visual layer; with OCR or Paddle/PP-Structure/Docling/ROOR-style structure JSON it gains transparent text anchors and reading-stream evidence.
 
-Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallback also requires the system `tesseract` binary and language data.
+Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallback also requires the system `tesseract` binary and language data; local PP-StructureV3 runs need the version-specific Paddle CPU compatibility settings in the [implementation notes](docs/implementation-notes.md#external-structure-evidence-fusion).
 
 ## Core Workflow
 

@@ -1,6 +1,10 @@
 -r requirements.txt
 
-# Heavy optional runtime for local PaddleOCR/PaddleOCR-VL experiments.
+# Heavy optional runtime for local PaddleOCR-VL / PP-StructureV3 experiments.
 # Keep it separate so fixture-based conversion and quality tests stay runnable
 # before GPU/model dependencies are ready.
+# PaddlePaddle 3.3 CPU can require the documented PIR/MKLDNN compatibility
+# environment settings in implementation-notes when running PP-StructureV3.
+paddlepaddle>=3.2.0
 paddleocr>=3.0.0
+paddlex[ocr]>=3.7.0

@@ -125,7 +125,7 @@ scriptorium compare-pdf \
 
 外部 OCR/结构模型不是核心依赖。没有 OCR/结构 JSON 时，image source 仍会得到整页图片 visual layer；有 OCR 或 Paddle/PP-Structure/Docling/ROOR 风格结构 JSON 时，会生成透明文本锚点和 reading-stream 证据。
 
-可选 OCR 依赖放在 `requirements-ocr.txt`。Image-only OCR fallback 依赖系统 `tesseract` 和对应语言数据。
+可选 OCR 依赖放在 `requirements-ocr.txt`。Image-only OCR fallback 依赖系统 `tesseract` 和对应语言数据；本地运行 PP-StructureV3 时，还需要按 [实现说明](docs/implementation-notes.zh-CN.md#外部结构证据融合) 设置对应 Paddle CPU 兼容环境变量。
 
 ## 核心流程
 

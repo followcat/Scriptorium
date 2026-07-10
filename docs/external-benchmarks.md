@@ -195,6 +195,19 @@ The direct JD PNG run validates the first-class image-source path. It produces t
 
 BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 
+## PP-StructureV3 A/B
+
+Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-structure-ab`. The CPU runs use layout and text recognition only; formula, table, chart, and seal modules are disabled for these reading-order samples. Visual output is unchanged because structure evidence changes the semantic layer, not the source visual layer.
+
+| Sample page | Structure regions / matched elements | Visual similarity | Labelled semantic result | Structure-order result |
+|---|---:|---:|---|---|
+| Attention p. 1 | 78 / 56 | `0.95231377` | Pair `1.0`, successor `1.0` | No selected reorder; the prior sparse-order regression is gone. |
+| Transformer-XL p. 1 | 116 / 99 | `0.94267969` | Pair `1.0`, successor `1.0` | 49 elements use partial-order fusion without changing labelled correctness. |
+| JD homepage p. 1 | 160 / 128 | `0.99536129` | No semantic sidecar | Successor-consensus disagreement improves by 58, but stream `needs-structure-evidence` rises by 2 because the model emits no relation or stream edges. |
+| PUMA p. 5 | 42 / 25 | `0.95767110` | No semantic sidecar | The implicit-image guard leaves selected order and review diagnostics at the native baseline. |
+
+This is evidence that block order is useful but incomplete: model block order can refine candidate successors, while translation needs explicit local `successor_edges` and `reading_streams` to resolve portal cards, image captions, sidebars, and repeated text safely.
+
 ## Translation Stress Results
 
 `outputs/external/translation-stress-v3` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`.
