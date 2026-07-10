@@ -104,6 +104,10 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
     body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
       color: var(--text-color, #111) !important;
@@ -145,13 +149,17 @@
       -webkit-text-fill-color: transparent;
       pointer-events: auto;
     }
-    body.mode-structured .element.text-fit:focus .text-fit-layer {
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
       opacity: 0.18;
     }
-    body.mode-structured .element.text-fit:focus .editable-text-proxy {
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
       color: var(--text-color, #111);
       -webkit-text-fill-color: currentColor;
       background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
     }
     .element.positioned-runs {
       overflow: hidden !important;
@@ -389,6 +397,10 @@
         data-scriptorium-editable="{{ 'true' if is_text_node else 'false' }}"
         data-scriptorium-edit-target="{{ 'edited_text' if is_text_node else '' }}"
         data-scriptorium-translation-target="{{ 'translated_text' if is_text_node else '' }}"
+        data-scriptorium-source-text="{{ element.source_text }}"
+        data-scriptorium-edited-text="{{ element.edited_text if element.edited_text is not none else '' }}"
+        data-scriptorium-translated-text="{{ element.translated_text if element.translated_text is not none else '' }}"
+        data-scriptorium-active-text-target="{{ 'translated_text' if display_mode == 'translated' or element.translated_text is not none else 'edited_text' }}"
         data-scriptorium-has-replacement="{{ 'true' if has_replacement else 'false' }}"
         data-scriptorium-replacement-policy="{{ replacement.policy if replacement else '' }}"
         data-scriptorium-replacement-fit-scale="{{ replacement.fit_scale if replacement else '' }}"
@@ -426,7 +438,7 @@
         data-scriptorium-caption-target-confidence="{{ annotation_attr(element, 'reading_order_caption_target_confidence') }}"
         data-scriptorium-reading-order-confidence="{{ annotation_attr(element, 'reading_order_confidence') }}"
         data-scriptorium-reading-order-evidence="{{ annotation_attr(element, 'reading_order_evidence_summary') }}"
-        contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual', 'fidelity'] else 'false' }}"
+        contenteditable="{{ 'true' if is_text_node and not use_svg_text_fit and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual', 'fidelity'] else 'false' }}"
         spellcheck="false"
         style="
           left: {{ '%.3f'|format(render_box.x0 * layout_scale) }}px;
@@ -448,7 +460,7 @@
           --replacement-padding-bottom: {{ replacement.padding_bottom if replacement else 0 }}px;
           --replacement-padding-left: {{ replacement.padding_left if replacement else 0 }}px;
         "
-      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif use_svg_text_fit and svg_text_fit %}<svg class="text-fit-layer" viewBox="0 0 {{ svg_text_fit.width }} {{ svg_text_fit.height }}" preserveAspectRatio="none" aria-hidden="true">{% for run in svg_text_fit.runs %}<text xml:space="preserve" x="{{ run.x }}" y="{{ run.y }}" textLength="{{ run.text_length }}" lengthAdjust="spacingAndGlyphs" fill="{{ run.text_color }}" font-family="{{ run.font_family }}" font-size="{{ run.font_size }}" font-weight="{{ run.font_weight }}" font-style="{{ run.font_style }}">{{ run.text }}</text>{% endfor %}</svg><span class="editable-text-proxy">{{ element_text(element, display_mode) }}</span>{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
+      ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif use_svg_text_fit and svg_text_fit %}<svg class="text-fit-layer" viewBox="0 0 {{ svg_text_fit.width }} {{ svg_text_fit.height }}" preserveAspectRatio="none" aria-hidden="true">{% for run in svg_text_fit.runs %}<text xml:space="preserve" x="{{ run.x }}" y="{{ run.y }}" textLength="{{ run.text_length }}" lengthAdjust="spacingAndGlyphs" fill="{{ run.text_color }}" font-family="{{ run.font_family }}" font-size="{{ run.font_size }}" font-weight="{{ run.font_weight }}" font-style="{{ run.font_style }}">{{ run.text }}</text>{% endfor %}</svg><span class="editable-text-proxy" contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual', 'fidelity'] else 'false' }}" spellcheck="false">{{ element_text(element, display_mode) }}</span>{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
           class="text-run"
           data-scriptorium-run-index="{{ run.index }}"
           data-scriptorium-run-style-id="{{ run.style_id }}"
@@ -474,5 +486,214 @@
     </section>
     {% endfor %}
   </main>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
 </body>
 </html>

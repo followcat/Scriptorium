@@ -104,6 +104,10 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
     body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
       color: var(--text-color, #111) !important;
@@ -145,13 +149,17 @@
       -webkit-text-fill-color: transparent;
       pointer-events: auto;
     }
-    body.mode-structured .element.text-fit:focus .text-fit-layer {
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
       opacity: 0.18;
     }
-    body.mode-structured .element.text-fit:focus .editable-text-proxy {
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
       color: var(--text-color, #111);
       -webkit-text-fill-color: currentColor;
       background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
     }
     .element.positioned-runs {
       overflow: hidden !important;
@@ -366,6 +374,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="比亚迪股份有限公司2024 年年度报告全文"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -460,6 +472,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="第十节 财务报告"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -554,6 +570,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="一、审计报告"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -648,6 +668,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="审计意见类型"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -742,6 +766,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="标准的无保留意见"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -836,6 +864,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="审计报告签署日期"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -930,6 +962,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2025 年03 月24 日"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1024,6 +1060,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="审计机构名称"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1118,6 +1158,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="安永华明会计师事务所（特殊普通合伙）"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1212,6 +1256,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="审计报告文号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1306,6 +1354,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="安永华明（2025）审字第70013328_H01 号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1400,6 +1452,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="注册会计师姓名"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1494,6 +1550,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="李剑光、胡 蝶"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1588,6 +1648,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="审计报告正文"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1682,6 +1746,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="安永华明（2025）审字第70013328_H01 号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1776,6 +1844,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="比亚迪股份有限公司"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1870,6 +1942,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="比亚迪股份有限公司全体股东："
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1964,6 +2040,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="一、审计意见"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2058,6 +2138,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我们审计了比亚迪股份有限公司的财务报表，包括2024 年12 月31 日的合并及公司资产负债表，2024 年度合并及公司"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2152,6 +2236,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="利润表、股东权益变动表和现金流量表以及相关财务报表附注。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2246,6 +2334,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我们认为，后附的比亚迪股份有限公司的财务报表在所有重大方面按照企业会计准则的规定编制，公允反映了比亚迪"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2340,6 +2432,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="股份有限公司2024 年12 月31 日的合并及公司的财务状况以及2024 年度的合并及公司的经营成果和现金流量。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2434,6 +2530,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="二、形成审计意见的基础"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2528,6 +2628,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我们按照中国注册会计师审计准则的规定执行了审计工作。审计报告的“注册会计师对财务报表审计的责任”部分进"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2622,6 +2726,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="一步阐述了我们在这些准则下的责任。按照中国注册会计师职业道德守则，我们独立于比亚迪股份有限公司，并履行了职"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2716,6 +2824,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="业道德方面的其他责任。我们相信，我们获取的审计证据是充分、适当的，为发表审计意见提供了基础。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2810,6 +2922,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="三、关键审计事项"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2904,6 +3020,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="关键审计事项是我们根据职业判断，认为对本期财务报表审计最为重要的事项。这些事项的应对以对财务报表整体进"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2998,6 +3118,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="行审计并形成审计意见为背景，我们不对这些事项单独发表意见。我们对下述每一事项在审计中是如何应对的描述也以此"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3092,6 +3216,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="为背景。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3186,6 +3314,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我们已经履行了本报告“注册会计师对财务报表审计的责任”部分阐述的责任，包括与这些关键审计事项相关的责任。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3280,6 +3412,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="相应地，我们的审计工作包括执行为应对评估的财务报表重大错报风险而设计的审计程序。我们执行审计程序的结果，包"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3374,6 +3510,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="括应对下述关键审计事项所执行的程序，为财务报表整体发表审计意见提供了基础。"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3468,6 +3608,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="136"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3562,6 +3706,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3641,6 +3789,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3720,6 +3872,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3799,6 +3955,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3878,6 +4038,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3957,6 +4121,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4036,6 +4204,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4115,6 +4287,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4194,6 +4370,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4273,6 +4453,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4352,6 +4536,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4431,6 +4619,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4510,6 +4702,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4589,6 +4785,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4668,6 +4868,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4747,6 +4951,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4826,6 +5034,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4905,6 +5117,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4984,6 +5200,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5063,6 +5283,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5142,6 +5366,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5221,6 +5449,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5300,6 +5532,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5379,6 +5615,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5458,6 +5698,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5537,6 +5781,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5616,6 +5864,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5695,6 +5947,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5774,6 +6030,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5853,6 +6113,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5932,6 +6196,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6011,6 +6279,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6090,6 +6362,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6169,6 +6445,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6248,6 +6528,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6327,6 +6611,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6406,6 +6694,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6485,6 +6777,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6564,6 +6860,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6643,6 +6943,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6722,6 +7026,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6801,6 +7109,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6880,6 +7192,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6959,6 +7275,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7038,6 +7358,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7117,6 +7441,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7196,6 +7524,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7275,6 +7607,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7354,6 +7690,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7433,6 +7773,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7512,6 +7856,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7591,6 +7939,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7670,6 +8022,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7749,6 +8105,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7828,6 +8188,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7907,6 +8271,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7986,6 +8354,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8065,6 +8437,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8144,6 +8520,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8223,6 +8603,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8285,5 +8669,214 @@
       ><span class="element-label">shape #94</span><svg class="shape-vector" viewBox="0 0 0.24 0.24" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 0 L 0.24 0 L 0.24 0.24 L 0 0.24 Z" fill="rgb(0, 0, 0)" fill-opacity="1.0" fill-rule="evenodd" stroke="transparent" stroke-width="0.0" stroke-opacity="1" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
     </section>
   </main>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
 </body>
 </html>

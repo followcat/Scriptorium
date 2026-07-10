@@ -61,7 +61,7 @@ def test_structured_html_can_render_svg_text_fit_layer(tmp_path: Path) -> None:
     assert 'data-scriptorium-text-fit="svg"' in html
     assert '<svg class="text-fit-layer"' in html
     assert 'lengthAdjust="spacingAndGlyphs"' in html
-    assert 'class="editable-text-proxy"' in html
+    assert 'class="editable-text-proxy" contenteditable="true"' in html
     assert "Scriptorium" in html
 
 

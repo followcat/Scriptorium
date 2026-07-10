@@ -16,6 +16,7 @@ from .benchmark import (
     run_structure_ab_benchmark,
 )
 from .fixture import create_fixture
+from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
@@ -494,6 +495,32 @@ def apply_xml_edits_command(
 ) -> None:
     document = DocumentIR.load(ir_json)
     changed = apply_xml_edits(document, xml, target_field=target_field)
+    document.save(ir_json)
+    typer.echo(f"Changed elements: {changed}")
+
+
+@app.command("apply-html-edits")
+def apply_html_edits_command(
+    ir_json: Path = typer.Argument(..., exists=True, readable=True, help="DocumentIR JSON to update."),
+    patch: Path = typer.Argument(..., exists=True, readable=True, help="Browser edit patch JSON."),
+    allow_document_mismatch: bool = typer.Option(
+        False,
+        help="Allow a patch created from a different DocumentIR id after manual identity review.",
+    ),
+    allow_source_mismatch: bool = typer.Option(
+        False,
+        help="Allow edits whose exported source text no longer matches the target element.",
+    ),
+) -> None:
+    """Apply a Scriptorium HTML edit patch to edited_text or translated_text."""
+
+    document = DocumentIR.load(ir_json)
+    changed = apply_html_edit_patch(
+        document,
+        patch,
+        require_document_id=not allow_document_mismatch,
+        require_source_match=not allow_source_mismatch,
+    )
     document.save(ir_json)
     typer.echo(f"Changed elements: {changed}")
 

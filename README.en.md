@@ -57,6 +57,8 @@ Scriptorium supports two output paths:
 
 HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style id, reading order, reading stream, translation target, and replacement risk. See [Implementation notes](docs/implementation-notes.md) for the full model.
 
+Standalone HTML also exposes `window.ScriptoriumEdits`: browser changes become validated `scriptorium-html-edits/v1` patches that `scriptorium apply-html-edits` can write back to the same `DocumentIR` before another export or print.
+
 <table>
   <tr>
     <td width="50%">

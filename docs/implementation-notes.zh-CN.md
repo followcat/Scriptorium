@@ -105,6 +105,20 @@ HTML exporter 会把这些标记落成 DOM 属性，例如：
 
 对于 image-only 页面，原生图像仍然是可见层；`native-ocr` 节点默认透明，只在 hover/focus 时可见，避免重复显示文本，同时保留编辑锚点。
 
+### 浏览器编辑补丁
+
+导出的 HTML 会包含一个轻量浏览器桥 `window.ScriptoriumEdits`。编辑可编辑节点后，它会从透明 fidelity 锚点升级为可见的局部 replacement，将改动保存在当前浏览器会话中，并通过 `collect()` 或 `download()` 生成可移植 JSON 补丁。补丁格式为 `scriptorium-html-edits/v1`，记录 document id、element id、目标字段（`edited_text` 或 `translated_text`）、替换文本和导出时的原文。
+
+下载补丁后，先写回原始 IR，再重新导出或打印：
+
+```bash
+scriptorium apply-html-edits outputs/document.ir.json document.scriptorium-edits.json
+scriptorium export-html outputs/document.ir.json --out-dir outputs/html --display-mode fidelity
+scriptorium print-pdf outputs/html/index.html --pdf outputs/edited.pdf
+```
+
+导入器默认拒绝不同 document id、未知 element id 或原文已经变化的补丁，避免旧的浏览器补丁悄悄写入错误锚点。`--allow-document-mismatch` 和 `--allow-source-mismatch` 只用于已经人工审查过的迁移。
+
 ## 原生视觉保真层
 
 复杂科学论文和网页 PDF 的视觉误差通常不来自阅读顺序，而来自字体度量、嵌入图像、矢量绘制、透明度和浏览器重绘差异。当前原生路径覆盖这些能力：

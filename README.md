@@ -57,6 +57,8 @@ Scriptorium 支持两条路径：
 
 输出 HTML 中的节点会带上 `data-scriptorium-*` 元数据，例如 role、source、bbox、style id、reading order、reading stream、translation target 和 replacement risk。完整字段说明见 [实现说明](docs/implementation-notes.zh-CN.md)。
 
+独立 HTML 内置 `window.ScriptoriumEdits`：浏览器内的局部修改会生成可校验的 `scriptorium-html-edits/v1` 补丁，可通过 `scriptorium apply-html-edits` 写回同一份 `DocumentIR` 后再导出或打印。
+
 <table>
   <tr>
     <td width="50%">

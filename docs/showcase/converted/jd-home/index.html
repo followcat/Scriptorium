@@ -104,6 +104,10 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
     body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
       color: var(--text-color, #111) !important;
@@ -145,13 +149,17 @@
       -webkit-text-fill-color: transparent;
       pointer-events: auto;
     }
-    body.mode-structured .element.text-fit:focus .text-fit-layer {
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
       opacity: 0.18;
     }
-    body.mode-structured .element.text-fit:focus .editable-text-proxy {
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
       color: var(--text-color, #111);
       -webkit-text-fill-color: currentColor;
       background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
     }
     .element.positioned-runs {
       overflow: hidden !important;
@@ -367,6 +375,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -446,6 +458,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="港澳版"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -525,6 +541,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="你好，请登录免费注册| 切换"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -604,6 +624,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="至企业版"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -683,6 +707,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="购物车0"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -762,6 +790,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我的订单"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -841,6 +873,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="我的京东~"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -920,6 +956,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="企业采购"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -999,6 +1039,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1078,6 +1122,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="商家服务"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1157,6 +1205,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="网站导航~"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1236,6 +1288,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="手机京东~"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1315,6 +1371,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="个京东首页"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1394,6 +1454,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="”中国"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1473,6 +1537,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="= 京东"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1552,6 +1620,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="wet"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1631,6 +1703,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="TINIIN 港澳"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1710,6 +1786,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1789,6 +1869,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Lo HINARI!"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1868,6 +1952,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text=">"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1947,6 +2035,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="asian"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2026,6 +2118,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2105,6 +2201,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2184,6 +2284,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="—_"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2263,6 +2367,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="’"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2342,6 +2450,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="BRE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2421,6 +2533,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="="
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2500,6 +2616,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="区"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2579,6 +2699,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="一"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2658,6 +2782,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="saUASAES"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2737,6 +2865,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="FD ERR"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2816,6 +2948,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="a"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2895,6 +3031,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="be"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2974,6 +3114,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Gy"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3053,6 +3197,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="SSS SBA"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3132,6 +3280,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="©"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3211,6 +3363,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3290,6 +3446,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="o"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3369,6 +3529,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="性"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3448,6 +3612,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="从"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3527,6 +3695,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3606,6 +3778,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="fe}"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3685,6 +3861,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="从y"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3764,6 +3944,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="物流中心“客户服务SARC"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3843,6 +4027,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3922,6 +4110,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="国际支付"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4001,6 +4193,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="专区了"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4080,6 +4276,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ewe"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4159,6 +4359,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="visssanee’"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4238,6 +4442,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="|G."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4317,6 +4525,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="新人优惠"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4396,6 +4608,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="进入专区@"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4475,6 +4691,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Ne"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4554,6 +4774,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="进入专区@"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4633,6 +4857,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="4"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4712,6 +4940,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text=""i"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4791,6 +5023,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="sep © Son OS"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4870,6 +5106,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ae"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4949,6 +5189,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="J"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5028,6 +5272,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="~ 频道广场~"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5107,6 +5355,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="=]"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5186,6 +5438,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东服饰sem amy"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5265,6 +5521,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东超市semis"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5344,6 +5604,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="新品首发"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5423,6 +5687,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="超级排行榜"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5502,6 +5770,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="4一"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5581,6 +5853,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="，"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5660,6 +5936,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="榜上有名"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5739,6 +6019,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="作"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5818,6 +6102,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="PORE精"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5897,6 +6185,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="选好物"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5976,6 +6268,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="THRE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6055,6 +6351,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="e@"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6134,6 +6434,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="'Z ("
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6213,6 +6517,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="e9"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6292,6 +6600,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="27+"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6371,6 +6683,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="q"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6450,6 +6766,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东京造=scsne"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6529,6 +6849,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="电脑数码eon"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6608,6 +6932,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="P= ie"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6687,6 +7015,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="=|"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6766,6 +7098,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="4"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6845,6 +7181,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="一"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6924,6 +7264,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="|"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7003,6 +7347,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="品类齐全，轻松购物"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7082,6 +7430,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="多"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7161,6 +7513,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="仓直发，极速配送"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7240,6 +7596,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="正品行货,精致服务"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7319,6 +7679,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="FRM, wise"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7398,6 +7762,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="re"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7477,6 +7845,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="购物指南"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7556,6 +7928,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="物流配送"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7635,6 +8011,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="帮助中心"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7714,6 +8094,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="联系我们"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7793,6 +8177,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="购物流程"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7872,6 +8260,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="运费说明"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7951,6 +8343,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="付款方式"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8030,6 +8426,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="客服联络"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8109,6 +8509,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8188,6 +8592,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="会员简介"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8267,6 +8675,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="关税说明"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8346,6 +8758,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="价格保证"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8425,6 +8841,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="商务合作"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8504,6 +8924,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东ss"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8583,6 +9007,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="安全"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8662,6 +9090,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="="
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8741,6 +9173,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="常见问题"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8820,6 +9256,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="账户"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8899,6 +9339,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="用户私隐协议"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8978,6 +9422,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="协议"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9057,6 +9505,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="全球售服务"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9136,6 +9588,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="关于我们RAG]"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9215,6 +9671,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RAS ，合作招商"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9294,6 +9754,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="| 商家帮助"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9373,6 +9837,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="BAD"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9452,6 +9920,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="，手机京东"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9531,6 +10003,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RAGE | 销售联盟RAK ，风险监测"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9610,6 +10086,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="。隐私政策。京东公益，Media &IR"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9689,6 +10169,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="公网安备11000002000088号“| 京ICP 备11041704号| icp | 互联网药品信息服务资格证编号("
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9768,6 +10252,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京) 经营性-2014.0008 | 新出发京夺字第大120007号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9847,6 +10335,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9926,6 +10418,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="互联网出版许可证编号新出网证("
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10005,6 +10501,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京)字150号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10084,6 +10584,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="出版物经营许可证"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10163,6 +10667,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="网络文化经营许可证京网文【2020)"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10242,6 +10750,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="6112-12015"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10321,6 +10833,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="违法和不良信息举报电话:4006561155"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10400,6 +10916,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Copyrigt"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10479,6 +10999,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2004- 2026 京东"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10558,6 +11082,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="JD.com版权所有"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10637,6 +11165,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="消费"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10716,6 +11248,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="者维权热线:40060677:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10795,6 +11331,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="经营证照"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10874,6 +11414,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="高) 网械平台备字(2018) 第:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10953,6 +11497,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="3 号"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11032,6 +11580,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="营业执照"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11111,6 +11663,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="堆值电信业务"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11190,6 +11746,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="经营许可证"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11269,6 +11829,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东旗下网站: 京东钱包"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11348,6 +11912,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="京东云"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11427,6 +11995,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Omi Bi"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11506,6 +12078,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Simm OEE Ohi Dian"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11568,5 +12144,214 @@
       ><span class="element-label">text #141</span>Simm OEE Ohi Dian</div>
     </section>
   </main>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
 </body>
 </html>

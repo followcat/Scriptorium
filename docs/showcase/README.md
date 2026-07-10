@@ -6,6 +6,8 @@ GitHub Pages must first be available to the repository. On GitHub Free, that mea
 
 Each case preserves the actual generated `index.html` and the minimum local assets it needs. Source PDFs that are small and redistributable are bundled; large third-party reports are linked to their public source instead.
 
+The generated HTML panes are live document exports. Local changes can be collected as a `scriptorium-html-edits/v1` patch through the gallery controls and applied to the matching `DocumentIR` with `scriptorium apply-html-edits` before a new HTML/PDF export.
+
 | Case | Source | Export mode | Notes |
 |---|---|---|---|
 | Transformer-XL, p. 1 | ACL 2019 PDF | structured | Multi-column reading order, 99 editable nodes, semantic successor accuracy `1.0` on the tracked labels. |

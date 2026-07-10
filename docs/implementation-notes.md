@@ -124,6 +124,20 @@ Text runs are a source-fidelity layer, not the edit storage model. When `edited_
 
 In `fidelity` mode, edited/translated replacements use `fidelity-replacement-fit-v1`. The exporter expands the local white mask, records `data-scriptorium-replacement-mask-padding`, keeps the replacement text aligned to the original bbox with CSS padding, applies `data-scriptorium-replacement-fit-scale` for long text, and flags `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` with neighboring element ids when the replacement needs review.
 
+### Browser Edit Patches
+
+Generated HTML includes a small browser bridge at `window.ScriptoriumEdits`. Editing an editable node promotes it from a transparent fidelity anchor to a visible local replacement, retains the change in the current browser session, and exposes a portable JSON patch through `collect()` or `download()`. The patch format is `scriptorium-html-edits/v1` and records the document id, element id, target field (`edited_text` or `translated_text`), replacement text, and exported source text.
+
+Apply a downloaded patch to the original IR before exporting or printing again:
+
+```bash
+scriptorium apply-html-edits outputs/document.ir.json document.scriptorium-edits.json
+scriptorium export-html outputs/document.ir.json --out-dir outputs/html --display-mode fidelity
+scriptorium print-pdf outputs/html/index.html --pdf outputs/edited.pdf
+```
+
+The importer rejects a different document id, unknown element id, or changed source text by default, so a stale browser patch cannot silently write to the wrong anchor. `--allow-document-mismatch` and `--allow-source-mismatch` exist only for reviewed migrations.
+
 ## Native Visual Fidelity Layer
 
 Complex scientific PDFs often lose visual score for reasons unrelated to reading order: embedded figures are image blocks, LaTeX fonts are not named like browser fonts, and dense vector graphics may depend on transparency, clipping, and draw ordering that a simple rectangle exporter cannot reproduce.

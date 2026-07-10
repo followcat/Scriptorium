@@ -104,6 +104,10 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
     body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
     body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
       color: var(--text-color, #111) !important;
@@ -145,13 +149,17 @@
       -webkit-text-fill-color: transparent;
       pointer-events: auto;
     }
-    body.mode-structured .element.text-fit:focus .text-fit-layer {
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
       opacity: 0.18;
     }
-    body.mode-structured .element.text-fit:focus .editable-text-proxy {
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
       color: var(--text-color, #111);
       -webkit-text-fill-color: currentColor;
       background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
     }
     .element.positioned-runs {
       overflow: hidden !important;
@@ -366,6 +374,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Transformer-XL: Attentive Language Models"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -460,6 +472,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Beyond a Fixed-Length Context"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -554,6 +570,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Zihang Dai⇤12, Zhilin Yang⇤12, Yiming Yang1, Jaime Carbonell1,"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -798,6 +818,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Quoc V. Le2, Ruslan Salakhutdinov1"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -953,6 +977,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="1Carnegie Mellon University, 2Google Brain"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1107,6 +1135,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="{dzihang,zhiliny,yiming,jgc,rsalakhu}@cs.cmu.edu, qvl@google.com"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1231,6 +1263,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Abstract"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1325,6 +1361,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Term Memory (LSTM) networks (Hochreiter and"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1434,6 +1474,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Schmidhuber, 1997), have been a standard solu-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1738,6 +1782,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Transformers have a potential of learning"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -1982,6 +2030,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="tion to language modeling and obtained strong"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2256,6 +2308,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="longer-term dependency, but are limited by a"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2530,6 +2586,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="results on multiple benchmarks."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2714,6 +2774,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Despite the"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2838,6 +2902,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ﬁxed-length context in the setting of language"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -2932,6 +3000,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="wide adaption, RNNs are difﬁcult to optimize"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3206,6 +3278,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="modeling."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3300,6 +3376,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="We propose a novel neural ar-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3544,6 +3624,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="chitecture Transformer-XL that enables learn-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3758,6 +3842,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="due to gradient vanishing and explosion (Hochre-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -3867,6 +3955,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ing dependency beyond a ﬁxed length with-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4141,6 +4233,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="iter et al., 2001), and the introduction of gat-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4505,6 +4601,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="out disrupting temporal coherence."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4689,6 +4789,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="It con-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -4813,6 +4917,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ing in LSTMs and the gradient clipping tech-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5117,6 +5225,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="sists of a segment-level recurrence mechanism"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5211,6 +5323,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="nique (Graves, 2013) might not be sufﬁcient to"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5560,6 +5676,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="and a novel positional encoding scheme. Our"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -5834,6 +5954,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="fully address this issue."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6018,6 +6142,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Empirically, previous"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6142,6 +6270,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="method not only enables capturing longer-term"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6236,6 +6368,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="work has found that LSTM language models use"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6540,6 +6676,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="dependency, but also resolves the context frag-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6634,6 +6774,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="200 context words on average (Khandelwal et al.,"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6758,6 +6902,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="mentation problem. As a result, Transformer-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -6912,6 +7060,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2018), indicating room for further improvement."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7021,6 +7173,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="XL learns dependency that is 80% longer than"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7115,6 +7271,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RNNs and 450% longer than vanilla Trans-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7389,6 +7549,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="On the other hand, the direct connections be-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7693,6 +7857,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="formers, achieves better performance on both"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -7937,6 +8105,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="tween long-distance word pairs baked in atten-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8211,6 +8383,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="short and long sequences, and is up to 1,800+"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8305,6 +8481,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="tion mechanisms might ease optimization and en-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8399,6 +8579,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="times faster than vanilla Transformers during"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8643,6 +8827,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="able the learning of long-term dependency (Bah-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -8932,6 +9120,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="evaluation. Notably, we improve the state-of-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9176,6 +9368,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="danau et al., 2014; Vaswani et al., 2017)."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9540,6 +9736,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Re-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9634,6 +9834,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="the-art results of bpc/perplexity to 0.99 on en-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9728,6 +9932,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="cently, Al-Rfou et al. (2018) designed a set of aux-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -9882,6 +10090,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="wiki8, 1.08 on text8, 18.3 on WikiText-103,"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10156,6 +10368,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="iliary losses to train deep Transformer networks"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10430,6 +10646,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="21.8 on One Billion Word, and 54.5 on Penn"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10764,6 +10984,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="for character-level language modeling, which out-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -10858,6 +11082,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Treebank (without ﬁnetuning). When trained"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11072,6 +11300,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="only on WikiText-103, Transformer-XL man-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11286,6 +11518,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="perform LSTMs by a large margin. Despite the"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11590,6 +11826,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ages to generate reasonably coherent, novel"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -11834,6 +12074,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="success, the LM training in Al-Rfou et al. (2018)"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -12198,6 +12442,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="text articles with thousands of tokens."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -12442,6 +12690,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Our"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -12536,6 +12788,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="is performed on separated ﬁxed-length segments"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -12780,6 +13036,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="code, pretrained models, and hyperparameters"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -12874,6 +13134,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="are available in both Tensorﬂow and PyTorch1."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13010,6 +13274,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="of a few hundred characters, without any informa-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13104,6 +13372,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="tion ﬂow across segments. As a consequence of"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13408,6 +13680,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="1"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13502,6 +13778,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Introduction"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13596,6 +13876,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="the ﬁxed context length, the model cannot capture"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13690,6 +13974,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="any longer-term dependency beyond the prede-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -13934,6 +14222,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Language modeling is among the important prob-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14028,6 +14320,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ﬁned context length. In addition, the ﬁxed-length"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14182,6 +14478,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="lems that require modeling long-term dependency,"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14276,6 +14576,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="segments are created by selecting a consecutive"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14550,6 +14854,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="with successful applications such as unsupervised"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14644,6 +14952,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="chunk of symbols without respecting the sentence"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14738,6 +15050,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="pretraining (Dai and Le, 2015; Peters et al., 2018;"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -14952,6 +15268,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="or any other semantic boundary. Hence, the model"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -15076,6 +15396,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Radford et al., 2018; Devlin et al., 2018). How-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -15470,6 +15794,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="lacks necessary contextual information needed to"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -15714,6 +16042,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ever, it has been a challenge to equip neural"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16048,6 +16380,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="well predict the ﬁrst few symbols, leading to inef-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16142,6 +16478,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="networks with the capability to model long-term"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16416,6 +16756,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ﬁcient optimization and inferior performance. We"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16540,6 +16884,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="dependency in sequential data."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16724,6 +17072,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Recurrent neu-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16848,6 +17200,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="refer to this problem as context fragmentation."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -16972,6 +17328,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ral networks (RNNs), in particular Long Short-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -17246,6 +17606,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="To address the aforementioned limitations of"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -17490,6 +17854,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="⇤Equal contribution. Order determined by swapping the"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -17779,6 +18147,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ﬁxed-length contexts, we propose a new architec-"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -17873,6 +18245,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="one in Yang et al. (2017)."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18027,6 +18403,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="ture called Transformer-XL (meaning extra long)."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18121,6 +18501,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="1https://github.com/kimiyoung/"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18230,6 +18614,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="We introduce the notion of recurrence into our"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18534,6 +18922,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="transformer-xl"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18628,6 +19020,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2978"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18722,6 +19118,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 2978–2988"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18831,6 +19231,10 @@
         data-scriptorium-editable="true"
         data-scriptorium-edit-target="edited_text"
         data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Florence, Italy, July 28 - August 2, 2019. c⃝2019 Association for Computational Linguistics"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -18985,6 +19389,10 @@
         data-scriptorium-editable="false"
         data-scriptorium-edit-target=""
         data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
         data-scriptorium-has-replacement="false"
         data-scriptorium-replacement-policy=""
         data-scriptorium-replacement-fit-scale=""
@@ -19047,5 +19455,214 @@
       ><span class="element-label">shape #100</span><svg class="shape-line" viewBox="0 0 60.276 0.5" preserveAspectRatio="none" aria-hidden="true"><line x1="0.25" y1="0.25" x2="60.026" y2="0.25" stroke="rgb(0, 0, 0)" stroke-width="0.398" stroke-opacity="1.0" stroke-linecap="butt"></line></svg></div>
     </section>
   </main>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
 </body>
 </html>

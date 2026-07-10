@@ -80,7 +80,8 @@
 
     .repo-link,
     .jump-link,
-    .pane-link {
+    .pane-link,
+    .pane-action {
       color: var(--accent);
       font-size: 14px;
       font-weight: 700;
@@ -89,7 +90,25 @@
 
     .repo-link:hover,
     .jump-link:hover,
-    .pane-link:hover { text-decoration: underline; }
+    .pane-link:hover,
+    .pane-action:hover { text-decoration: underline; }
+
+    .pane-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .pane-action {
+      appearance: none;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+    }
 
     .sample-nav {
       display: flex;
@@ -283,9 +302,13 @@
         <figure class="pane">
           <figcaption class="pane-header">
             <span class="pane-name"><span class="html-mark"></span>Generated structured HTML</span>
-            <a class="pane-link" href="converted/transformer-xl/index.html">Open HTML</a>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/transformer-xl/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="transformer-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="transformer-html" title="Discard local edits">Reset</button>
+            </span>
           </figcaption>
-          <div class="html-stage"><iframe title="Transformer-XL converted HTML" data-source-width="794" data-source-height="1123" src="converted/transformer-xl/index.html"></iframe></div>
+          <div class="html-stage"><iframe id="transformer-html" title="Transformer-XL converted HTML" data-source-width="794" data-source-height="1123" src="converted/transformer-xl/index.html"></iframe></div>
           <p class="html-note">Live DOM output with positioned editable text, local reading streams, and semantic order metadata.</p>
         </figure>
       </div>
@@ -311,9 +334,13 @@
         <figure class="pane">
           <figcaption class="pane-header">
             <span class="pane-name"><span class="html-mark"></span>Generated structured HTML</span>
-            <a class="pane-link" href="converted/byd-financial/index.html">Open HTML</a>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/byd-financial/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="byd-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="byd-html" title="Discard local edits">Reset</button>
+            </span>
           </figcaption>
-          <div class="html-stage"><iframe title="BYD financial report converted HTML" data-source-width="794" data-source-height="1123" src="converted/byd-financial/index.html"></iframe></div>
+          <div class="html-stage"><iframe id="byd-html" title="BYD financial report converted HTML" data-source-width="794" data-source-height="1123" src="converted/byd-financial/index.html"></iframe></div>
           <p class="html-note">The exported DOM keeps table cells and vector rules addressable instead of flattening the page into one image.</p>
         </figure>
       </div>
@@ -339,9 +366,13 @@
         <figure class="pane">
           <figcaption class="pane-header">
             <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
-            <a class="pane-link" href="converted/jd-home/index.html">Open HTML</a>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/jd-home/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="jd-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="jd-html" title="Discard local edits">Reset</button>
+            </span>
           </figcaption>
-          <div class="html-stage"><iframe title="JD homepage converted fidelity HTML" data-source-width="1440" data-source-height="1635" src="converted/jd-home/index.html"></iframe></div>
+          <div class="html-stage"><iframe id="jd-html" title="JD homepage converted fidelity HTML" data-source-width="1440" data-source-height="1635" src="converted/jd-home/index.html"></iframe></div>
           <p class="html-note">The fidelity layer preserves the source visual while the underlying DOM provides transparent editable OCR anchors.</p>
         </figure>
       </div>
@@ -374,6 +405,35 @@
     new ResizeObserver(fitAllFrames).observe(document.body);
     window.addEventListener("load", fitAllFrames);
     fitAllFrames();
+
+    function editorFor(frameId) {
+      return document.getElementById(frameId)?.contentWindow?.ScriptoriumEdits;
+    }
+
+    function downloadPatch(patch) {
+      const blob = new Blob([JSON.stringify(patch, null, 2) + "\n"], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = `${patch.document_id || "document"}.scriptorium-edits.json`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    }
+
+    document.querySelectorAll("[data-export-edits]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const editor = editorFor(button.dataset.exportEdits);
+        if (editor) {
+          downloadPatch(editor.collect());
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-reset-edits]").forEach((button) => {
+      button.addEventListener("click", () => {
+        editorFor(button.dataset.resetEdits)?.reset();
+      });
+    });
   </script>
 </body>
 </html>
