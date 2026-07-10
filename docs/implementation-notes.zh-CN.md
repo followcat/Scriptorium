@@ -239,7 +239,7 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 }
 ```
 
-同一个评测器也接受 ROOR/结构 JSON 风格 payload。Sidecar 可以在 page 级提供带 id 和文本的 `document`、`elements`、`blocks`、`parsing_res_list` 或 `layout_det_res.boxes`，再用 `ro_linkings`、`reading_order_edges`、`reading_order_relations` 或 `reading_order_linkings` 引用这些 id。它既可以包在标准 `pages` 下，也可以直接复用模型根级的 `page_results`、`raw_results`、`results`、`res`、`result`、`data` 包装：
+同一个评测器也接受 ROOR/结构 JSON 风格 payload。Sidecar 可以在 page 级提供带文本、可选 id 的 `document`、`elements`、`blocks`、`parsing_res_list` 或 `layout_det_res.boxes`，再用 `ro_linkings`、`reading_order_edges`、`reading_order_relations` 或 `reading_order_linkings` 引用这些标签。没有显式 id 的有序结构列表也可以用 0-based 列表下标引用，这兼容 `[[0, 2], [2, 1]]` 这类常见关系模型输出。它既可以包在标准 `pages` 下，也可以直接复用模型根级的 `page_results`、`raw_results`、`results`、`res`、`result`、`data` 包装：
 
 ```json
 {
@@ -259,7 +259,7 @@ Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 }
 ```
 
-`successor_edges` 和 ROOR 风格 linkings 会评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。通用 `relations` 列表也可以使用，但每个 item 必须显式声明 successor 或 precedence 的 type/kind。关系端点可以是文本、数组，也可以是使用 `source` / `target`、`from` / `to`、`head` / `tail`、`source_id` / `target_id` 等别名的字典；id 会先通过 page label map 解析成文本再评分。Page label map 也能识别 PP/结构 payload 里的 `formula_region_id`、`seal_region_id`、`table_region_id`、`layout_region_id` 等模型 region id，因此 sidecar 可以复用 runtime 结构融合使用的同一组 id。Semantic page payload 还会在同页内读取 `res`、`result`、`data`、`page_results`、`raw_results`、`results` 包装后再评分 relation 和 stream labels。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
+`successor_edges` 和 ROOR 风格 linkings 会评估 labelled 节点的相邻后继关系，`precedence_edges` 只要求 source 在 target 之前。通用 `relations` 列表也可以使用，但每个 item 必须显式声明 successor 或 precedence 的 type/kind。关系端点可以是文本、列表下标、数组，也可以是使用 `source` / `target`、`from` / `to`、`head` / `tail`、`source_id` / `target_id` 等别名的字典；id 和受支持的列表下标会先通过 page label map 解析成文本再评分。Page label map 也能识别 PP/结构 payload 里的 `formula_region_id`、`seal_region_id`、`table_region_id`、`layout_region_id` 等模型 region id，因此 sidecar 可以复用 runtime 结构融合使用的同一组 id。Semantic page payload 还会在同页内读取 `res`、`result`、`data`、`page_results`、`raw_results`、`results` 包装后再评分 relation 和 stream labels。只有关系标签、没有 `text_sequence` 的页面会默认按 `ordered-subsequence` 处理，不因为未标注正文而扣 sequence 分。报告会输出 `semantic_relation_successor_accuracy`、`semantic_relation_precedence_accuracy`、relation missing text counts、每个候选的 relation-edge 指标，以及 `semantic_candidate_relation_successor_delta`；当 sequence 分数持平但 relation edge 变好时，候选仲裁也可以给出 `consider-<candidate>`。
 
 Stream sidecar 使用同一套形状。`text_sequence`、`sequence` 或 `texts` 会被视为有序序列，并生成 stream-local successor/precedence 检查。`members`、`elements`、`items`、`children` 只用于声明 stream label 和 missing/coverage 诊断，不会单独暗示顺序；stream-local 的 `ro_linkings`、`reading_order_*` 或 typed `relations` 才提供显式顺序约束。
 
