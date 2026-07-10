@@ -33,6 +33,14 @@ STRUCTURE_REF_KEYS = (
     "external_structure_table_ref",
 )
 
+INDEX_ALIAS_LABEL_KEYS = (
+    "document",
+    "elements",
+    "blocks",
+    "parsing_res_list",
+    "layout_det_res.boxes",
+)
+
 
 @dataclass(frozen=True)
 class StructureRegion:
@@ -1281,11 +1289,19 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     sequence_index = 0
 
-    def add_block(raw_block: dict[str, Any], *, list_key: str, orderable: bool) -> None:
+    def add_block(
+        raw_block: dict[str, Any],
+        *,
+        list_key: str,
+        orderable: bool,
+        list_index: int | None = None,
+    ) -> None:
         nonlocal sequence_index
         sequence_index += 1
         normalized_block = dict(raw_block)
         normalized_block.setdefault("_scriptorium_structure_list_key", list_key)
+        if list_index is not None:
+            normalized_block.setdefault("_scriptorium_structure_list_index", list_index)
         if orderable:
             normalized_block.setdefault("_scriptorium_structure_list_position", sequence_index)
         blocks.append(normalized_block)
@@ -1301,16 +1317,26 @@ def _iter_blocks(page_payload: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("document", "parsing_res_list", "blocks", "elements"):
         value = page_payload.get(key)
         if isinstance(value, list):
-            for block in value:
+            for block_index, block in enumerate(value):
                 if not isinstance(block, dict):
                     continue
-                add_block(block, list_key=key, orderable=key != "document")
+                add_block(
+                    block,
+                    list_key=key,
+                    orderable=key != "document",
+                    list_index=block_index if key in INDEX_ALIAS_LABEL_KEYS else None,
+                )
     layout = page_payload.get("layout_det_res")
     if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
-        for block in layout["boxes"]:
+        for block_index, block in enumerate(layout["boxes"]):
             if not isinstance(block, dict):
                 continue
-            add_block(block, list_key="layout_det_res.boxes", orderable=False)
+            add_block(
+                block,
+                list_key="layout_det_res.boxes",
+                orderable=False,
+                list_index=block_index,
+            )
     blocks.extend(_paddle_ocr_result_blocks(page_payload))
     blocks.extend(_paddle_table_cell_blocks(page_payload))
     return _dedupe_structure_blocks(blocks)
@@ -2233,6 +2259,10 @@ def _region_node_keys(region: StructureRegion) -> list[str]:
         value = region.raw.get(key)
         if value is not None:
             keys.append(str(value).strip())
+    list_key = str(region.raw.get("_scriptorium_structure_list_key") or "")
+    list_index = region.raw.get("_scriptorium_structure_list_index")
+    if list_key in INDEX_ALIAS_LABEL_KEYS and list_index is not None:
+        keys.append(str(list_index).strip())
     if region.order is not None:
         keys.extend([str(region.order), f"order:{region.order}"])
     if region.text:

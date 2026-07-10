@@ -273,6 +273,64 @@ def test_roor_document_relations_drive_order_without_implicit_block_order() -> N
     }
 
 
+def test_roor_document_relations_and_streams_resolve_list_indices_without_ids() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("c", "C", BBox(x0=110, y0=10, x1=140, y1=20), 2),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 3),
+            ("d", "D", BBox(x0=110, y0=30, x1=140, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "roor",
+        "page_index": 0,
+        "document": [
+            {"box": [20, 20, 80, 40], "text": "A"},
+            {"box": [220, 20, 280, 40], "text": "C"},
+            {"box": [20, 60, 80, 80], "text": "B"},
+            {"box": [220, 60, 280, 80], "text": "D"},
+        ],
+        "ro_linkings": [[0, 2], [2, 1], [1, 3]],
+        "reading_streams": [
+            {
+                "id": "body-chain",
+                "type": "product_grid",
+                "members": [0, 2, 1, 3],
+                "ro_linkings": [[0, 2], [2, 1], [1, 3]],
+            }
+        ],
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    streams = normalize_structure_streams(payload, document)
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert [(edge.kind, edge.source_ref, edge.target_ref) for edge in relations] == [
+        ("successor", "0", "2"),
+        ("successor", "2", "1"),
+        ("successor", "1", "3"),
+    ]
+    assert [(stream.stream_id, stream.stream_type, list(stream.member_refs)) for stream in streams] == [
+        ("body-chain", "grid-island", ["0", "2", "1", "3"])
+    ]
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == ["A", "B", "C", "D"]
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 4
+    assert document.metadata["structure_evidence"]["resolved_relation_edge_count"] == 3
+    assert document.metadata["structure_evidence"]["resolved_stream_member_count"] == 4
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 1
+    assert "0" in by_id["a"].metadata["external_structure_node_keys"]
+    assert "2" in by_id["b"].metadata["external_structure_node_keys"]
+    assert by_id["a"].metadata["reading_order_stream_id"] == "body-chain"
+    assert by_id["a"].metadata["reading_order_stream_type"] == "grid-island"
+    assert by_id["b"].metadata["reading_order_stream_index"] == 2
+
+
 def test_structure_reading_streams_attach_to_elements_without_regions() -> None:
     document = _document_with_text_boxes(
         [
