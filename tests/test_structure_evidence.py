@@ -1142,6 +1142,60 @@ def test_docling_root_body_runs_split_at_multicolumn_geometry_boundary() -> None
     assert by_id["left-one"].metadata["external_structure_stream_index"] == 1
 
 
+def test_docling_root_body_stream_is_secondary_to_native_column_flow() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("left-two", "Left two.", BBox(x0=10, y0=30, x1=70, y1=40), 2),
+        ]
+    )
+    for index, element in enumerate(document.pages[0].elements, start=1):
+        element.metadata.update(
+            {
+                "column_count": 2,
+                "column_index": 0,
+                "column_span": "column",
+                "flow_segment_index": 1,
+                "reading_order_stream_id": "body-column-001",
+                "reading_order_stream_type": "body",
+                "reading_order_stream_index": index,
+            }
+        )
+    payload = {
+        "schema_name": "DoclingDocument",
+        "body": {
+            "self_ref": "#/body",
+            "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}],
+        },
+        "texts": [
+            _docling_text("#/texts/0", "Left one.", 10, 10, 70, 20, page_no=1),
+            _docling_text("#/texts/1", "Left two.", 10, 30, 70, 40, page_no=1),
+        ],
+    }
+
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["left-one"].metadata["external_structure_stream_id"].startswith("docling-body")
+    assert by_id["left-one"].metadata["external_structure_stream_primary"] is False
+    assert by_id["left-one"].metadata["reading_order_stream_id"] == "body-main"
+    assert by_id["left-two"].metadata["reading_order_stream_id"] == "body-main"
+    assert by_id["left-one"].metadata["external_structure_successor_ids"] == ["left-two"]
+    assert by_id["left-one"].metadata["external_structure_relation_edges"] == [
+        {
+            "kind": "successor",
+            "target_id": "left-two",
+            "source_ref": "#/texts/0",
+            "target_ref": "#/texts/1",
+            "source": "docling",
+            "secondary_native_column_flow": True,
+        }
+    ]
+    assert "external-structure-stream-secondary" in by_id["left-one"].metadata["reading_order_evidence"]
+    assert document.metadata["structure_evidence"]["relation_reordered_page_count"] == 0
+
+
 def test_docling_root_body_stream_splits_at_native_grid_island() -> None:
     document = _document_with_text_boxes(
         [

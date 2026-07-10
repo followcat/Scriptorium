@@ -432,7 +432,11 @@ def _external_structure_block_signature(
     metadata = element.metadata
     stream_type = _text(metadata.get("reading_order_stream_type")) or "body"
     stream_id = _text(metadata.get("reading_order_stream_id")) or "body-main"
-    if stream_type != "body" or _has_explicit_structure_stream(metadata, stream_id):
+    if (
+        stream_type != "body"
+        or _has_explicit_structure_stream(metadata, stream_id)
+        or _has_secondary_structure_stream(metadata)
+    ):
         return None
     structure = metadata.get("structure_evidence")
     if not isinstance(structure, Mapping):
@@ -491,11 +495,20 @@ def _normalize_external_label(value: Any) -> str:
 
 
 def _has_explicit_structure_stream(metadata: Mapping[str, Any], stream_id: str) -> bool:
+    if _has_secondary_structure_stream(metadata):
+        return False
     return bool(
         _text(metadata.get("external_structure_stream_id"))
         or _text(metadata.get("external_structure_stream_source"))
         or stream_id.startswith("external-")
     )
+
+
+def _has_secondary_structure_stream(metadata: Mapping[str, Any]) -> bool:
+    value = metadata.get("external_structure_stream_primary")
+    if value is False:
+        return True
+    return _text(value).lower() in {"false", "0", "secondary"}
 
 
 def _review_edge_promotion_support(
@@ -773,12 +786,12 @@ def _successor_edge(
     elif source.details.stream_type == "grid-island":
         confidence = max(confidence, 0.84)
         evidence.append("grid-local-order")
-    elif source.details.origin == "column-partition":
-        confidence = max(confidence, 0.8)
-        evidence.append("same-column")
     elif source.details.origin == "existing-local":
         confidence = max(confidence, 0.76)
         evidence.append("existing-local-stream")
+    if source.details.origin == "column-partition" and not interleaved_structure_boundary:
+        confidence = max(confidence, 0.8)
+        evidence.append("same-column")
     if _int(source_metadata.get("flow_segment_index"), default=0) == _int(
         target_metadata.get("flow_segment_index"), default=-1
     ):

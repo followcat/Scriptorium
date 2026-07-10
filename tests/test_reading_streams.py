@@ -178,3 +178,48 @@ def test_external_structure_stream_metadata_is_preserved() -> None:
     assert [item["reading_order_stream_type"] for item in metadata_items] == ["grid-island", "grid-island"]
     assert [item["reading_order_stream_id"] for item in metadata_items] == ["product-row", "product-row"]
     assert [item["reading_order_stream_index"] for item in metadata_items] == [2, 1]
+
+
+def test_secondary_structure_stream_keeps_native_column_stream() -> None:
+    metadata_items = [
+        {
+            "semantic_order": 1,
+            "visual_order": 1,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_count": 2,
+            "column_index": 0,
+            "column_span": "column",
+            "reading_order_strategy": "column-flow-v1",
+            "external_structure_stream_id": "docling-body-run",
+            "external_structure_stream_type": "body",
+            "external_structure_stream_primary": False,
+        },
+        {
+            "semantic_order": 2,
+            "visual_order": 2,
+            "reading_order_scope": "body",
+            "flow_segment_index": 1,
+            "column_count": 2,
+            "column_index": 0,
+            "column_span": "column",
+            "reading_order_strategy": "column-flow-v1",
+            "external_structure_stream_id": "docling-body-run",
+            "external_structure_stream_type": "body",
+            "external_structure_stream_primary": False,
+        },
+    ]
+
+    assign_reading_streams_to_metadata(
+        metadata_items,
+        order_key=lambda item: item["semantic_order"],
+    )
+
+    assert [item["reading_order_stream_id"] for item in metadata_items] == [
+        "body-main",
+        "body-main",
+    ]
+    assert [item["external_structure_stream_id"] for item in metadata_items] == [
+        "docling-body-run",
+        "docling-body-run",
+    ]

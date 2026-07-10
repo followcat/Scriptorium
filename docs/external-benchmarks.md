@@ -211,11 +211,11 @@ This is evidence that block order is useful but incomplete: model block order ca
 
 ## Docling Body-Tree A/B
 
-Docling now contributes only bounded same-page sibling runs rather than a serialized whole-page body order. Root-body runs stop at geometry boundaries and split again at stronger native local streams. The latest reruns use the blank-PDF-checked Chromium path; native-only and structure branches therefore print the same nonblank visual layer before their semantic metrics are compared.
+Docling now contributes only bounded same-page sibling runs rather than a serialized whole-page body order. Root-body runs stop at geometry boundaries and split again at stronger native local streams. On concrete native columns, their membership and edges remain reviewable secondary evidence rather than primary translation streams or executable page-level reorder constraints. The latest reruns use the blank-PDF-checked Chromium path; native-only and structure branches therefore print the same nonblank visual layer before their semantic metrics are compared.
 
 | Sample | Docling regions / matched elements | Visual similarity | Semantic / local-stream result |
 |---|---:|---:|---|
-| Transformer-XL pp. 1-3 | 72 / 321 | `0.93853503` | Pair and successor remain `1.0`. Strict successor coverage rises from `17/41` to `18/41`; candidate successor disagreement drops `108 -> 82`. Strict anchor-path coverage is `32/41 -> 31/41`, while reviewable path coverage remains `41/41`; this is retained as a reviewable tradeoff, not promoted as a gain. |
+| Transformer-XL pp. 1-3 | 72 / 321 | `0.93853503` | Pair and successor remain `1.0`. Strict successor coverage stays `17/41`, strict anchor-path coverage stays `32/41`, and reviewable path coverage stays `41/41`; stream `needs-structure-evidence` improves `3 -> 2`, while candidate successor disagreement drops `108 -> 82`. |
 | JD homepage p. 1 | 93 / 127 | `0.99536129` | All 35 native grid-island elements remain protected. Five Docling streams resolve 26 members and 3 relation edges; stream `needs-structure-evidence` improves `2 -> 1`, and candidate successor disagreement drops `114 -> 47`. |
 
 The same checked print path reruns PUMA p. 5 at `0.95767110` and BYD p. 136 at `0.96518593`, both with zero A/B visual delta. BYD still gains its one `table-island` stream and a one-page `needs-structure-evidence` improvement; these runs verify rendering stability, not new semantic labels.

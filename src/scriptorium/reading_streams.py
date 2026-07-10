@@ -18,7 +18,7 @@ def assign_reading_streams_to_metadata(
     for metadata in ordered_items:
         explicit_stream_id = _text(metadata.get("external_structure_stream_id"))
         explicit_stream_type = _text(metadata.get("external_structure_stream_type"))
-        if explicit_stream_id and explicit_stream_type:
+        if explicit_stream_id and explicit_stream_type and _external_structure_stream_is_primary(metadata):
             stream_counts[explicit_stream_id] += 1
             metadata["reading_order_stream_type"] = explicit_stream_type
             metadata["reading_order_stream_id"] = explicit_stream_id
@@ -217,6 +217,13 @@ def _evidence_items(metadata: Mapping[str, Any]) -> list[str]:
     if isinstance(evidence, str):
         return [_token(item) for item in evidence.split(",") if _token(item)]
     return []
+
+
+def _external_structure_stream_is_primary(metadata: Mapping[str, Any]) -> bool:
+    value = metadata.get("external_structure_stream_primary")
+    if isinstance(value, bool):
+        return value
+    return _token(value) not in {"false", "0", "secondary"}
 
 
 def _int_or_none(value: Any) -> int | None:

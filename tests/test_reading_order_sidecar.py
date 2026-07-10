@@ -405,6 +405,70 @@ def test_external_stream_interior_demotes_inferred_native_successor() -> None:
     assert streams["docling-body-page-001-run-001"]["successor_edges"][0]["source"] == "external-one"
 
 
+def test_secondary_structure_stream_keeps_native_column_successor_strict() -> None:
+    first = _element("first", "First", 1, 10, 20, column_index=0)
+    second = _element("second", "Second", 2, 10, 40, column_index=0)
+    for index, element in enumerate((first, second), start=1):
+        element.metadata.update(
+            {
+                "external_structure_stream_id": "docling-body-page-001-run-001",
+                "external_structure_stream_type": "body",
+                "external_structure_stream_source": "docling",
+                "external_structure_stream_index": index,
+                "external_structure_stream_primary": False,
+            }
+        )
+    first.metadata["external_structure_successor_ids"] = ["second"]
+
+    proposal = propose_reading_order_sidecar(_document([first, second]))
+    stream = proposal["pages"][0]["reading_streams"][0]
+
+    assert stream["id"] == "body-column-001"
+    assert stream["proposal"]["origin"] == "column-partition"
+    assert stream["successor_edges"] == [
+        {
+            "source": "first",
+            "target": "second",
+            "confidence": 0.99,
+            "review_required": False,
+            "evidence": [
+                "column-local-stream",
+                "flow-segment-001",
+                "external-successor-evidence",
+                "same-column",
+                "same-flow-segment",
+            ],
+        }
+    ]
+
+
+def test_secondary_structure_stream_does_not_reenter_as_external_block_partition() -> None:
+    first = _element("first", "First", 1, 10, 20, column_index=0)
+    second = _element("second", "Second", 2, 10, 40, column_index=0)
+    for index, element in enumerate((first, second), start=1):
+        element.metadata.update(
+            {
+                "external_structure_stream_id": "docling-body-page-001-run-001",
+                "external_structure_stream_type": "body",
+                "external_structure_stream_source": "docling",
+                "external_structure_stream_index": index,
+                "external_structure_stream_primary": False,
+                "external_structure_label": "section_header",
+                "structure_evidence": {
+                    "source": "docling",
+                    "label": "section_header",
+                    "bbox_pdf": [10, 20, 90, 52],
+                },
+            }
+        )
+
+    proposal = propose_reading_order_sidecar(_document([first, second]))
+    stream = proposal["pages"][0]["reading_streams"][0]
+
+    assert stream["id"] == "body-column-001"
+    assert stream["proposal"]["origin"] == "column-partition"
+
+
 def test_structural_flow_segments_split_a_single_body_stream() -> None:
     first = _element("first", "First", 1, 10, 20, confidence=0.5)
     second = _element("second", "Second", 2, 10, 40, confidence=0.5)

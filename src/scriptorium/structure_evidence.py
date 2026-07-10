@@ -2717,14 +2717,20 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             stats.diagnostics.append(diagnostic)
             continue
 
+        secondary_native_column_flow = _docling_body_relation_preserves_native_column_flow(
+            relation,
+            source_resolution,
+            target_resolution,
+        )
+
         if source_resolution.is_group or target_resolution.is_group:
             stats.resolved_group_edge_count += 1
-        if source_resolution.is_group:
+        if source_resolution.is_group and not secondary_native_column_flow:
             stats.group_internal_edge_count += _apply_structure_group_internal_successors(
                 source_resolution,
                 reference=relation.source_ref,
             )
-        if target_resolution.is_group:
+        if target_resolution.is_group and not secondary_native_column_flow:
             stats.group_internal_edge_count += _apply_structure_group_internal_successors(
                 target_resolution,
                 reference=relation.target_ref,
@@ -2759,13 +2765,17 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             record["target_alias"] = target_alias
         if source_alias_used or target_alias_used:
             record["resolved_via_alias"] = True
+        if secondary_native_column_flow:
+            record["secondary_native_column_flow"] = True
         if record not in relation_records:
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
         stats.resolved_count += 1
         if source_alias_used or target_alias_used:
             stats.alias_resolved_count += 1
-        diagnostic["status"] = "resolved"
+        diagnostic["status"] = (
+            "resolved-secondary-native-column-flow" if secondary_native_column_flow else "resolved"
+        )
         diagnostic["source_boundary_element_id"] = source_element.id
         diagnostic["target_boundary_element_id"] = target_element.id
         stats.diagnostics.append(diagnostic)
@@ -2865,7 +2875,15 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
                     element.metadata["external_structure_stream_conflicts"] = conflicts
                     stats.conflict_count += 1
                     continue
-                _apply_external_stream_metadata(element, applied_stream, stream_index)
+                _apply_external_stream_metadata(
+                    element,
+                    applied_stream,
+                    stream_index,
+                    preserve_native_primary=_docling_body_stream_preserves_native_column_flow(
+                        applied_stream,
+                        element,
+                    ),
+                )
                 element.metadata["external_structure_stream_member_ref"] = member.reference
                 element.metadata["external_structure_stream_resolved_via_alias"] = member.alias_used
                 element.metadata["external_structure_stream_member_resolution"] = (
@@ -3020,6 +3038,29 @@ def _docling_body_relation_hits_specific_native_stream(
     )
 
 
+def _docling_body_relation_preserves_native_column_flow(
+    relation: StructureRelationEdge,
+    source: _EndpointResolution,
+    target: _EndpointResolution,
+) -> bool:
+    """Keep root-body relations as diagnostics when native columns are concrete.
+
+    A root Docling body sequence is a useful local relation signal, but it is
+    not strong enough to overwrite native column flow. The relation is retained
+    on the element metadata and sidecar evidence, while the global path-cover
+    reorder ignores it. Nested Docling groups remain executable.
+    """
+
+    if str(relation.raw.get("source_kind") or "") != "docling-body-tree":
+        return False
+    if str(relation.raw.get("docling_parent_scope") or "") != "body":
+        return False
+    return any(
+        _has_concrete_native_column_flow(element)
+        for element in (*source.elements, *target.elements)
+    )
+
+
 def _docling_body_stream_hits_specific_native_stream(
     stream: StructureReadingStream,
     element: ElementIR,
@@ -3030,6 +3071,39 @@ def _docling_body_stream_hits_specific_native_stream(
         and stream.stream_type == "body"
         and _has_specific_native_local_stream(element)
     )
+
+
+def _docling_body_stream_preserves_native_column_flow(
+    stream: StructureReadingStream,
+    element: ElementIR,
+) -> bool:
+    """Keep root-body evidence secondary when native extraction has a column flow.
+
+    A root Docling body run is useful evidence for local successors, but its
+    serialization is weaker than a native stream that has already been assigned
+    to a concrete column. Keep the model membership for diagnostics and relation
+    evidence while leaving the native column as the primary translation stream.
+    Nested Docling groups remain strong enough to own their local stream.
+    """
+
+    if (
+        str(stream.raw.get("source_kind") or "") != "docling-body-tree"
+        or str(stream.raw.get("docling_parent_scope") or "") != "body"
+        or stream.stream_type != "body"
+    ):
+        return False
+    return _has_concrete_native_column_flow(element)
+
+
+def _has_concrete_native_column_flow(element: ElementIR) -> bool:
+    metadata = element.metadata
+    if str(metadata.get("reading_order_stream_type") or "body").strip() != "body":
+        return False
+    if (_optional_int(metadata.get("column_count")) or 1) < 2:
+        return False
+    if _optional_int(metadata.get("column_index")) is None:
+        return False
+    return str(metadata.get("column_span") or "").strip() not in {"", "full"}
 
 
 def _split_docling_body_stream_at_native_boundaries(
@@ -3192,6 +3266,8 @@ def _apply_external_stream_metadata(
     element: ElementIR,
     stream: StructureReadingStream,
     stream_index: int,
+    *,
+    preserve_native_primary: bool = False,
 ) -> None:
     for key in ("reading_order_stream_id", "reading_order_stream_type", "reading_order_stream_index"):
         if key in element.metadata:
@@ -3200,14 +3276,17 @@ def _apply_external_stream_metadata(
     element.metadata["external_structure_stream_type"] = stream.stream_type
     element.metadata["external_structure_stream_index"] = stream_index
     element.metadata["external_structure_stream_source"] = stream.source
-    element.metadata["reading_order_stream_id"] = stream.stream_id
-    element.metadata["reading_order_stream_type"] = stream.stream_type
-    element.metadata["reading_order_stream_index"] = stream_index
-
-    _apply_external_stream_scope_metadata(element, stream.stream_type)
+    element.metadata["external_structure_stream_primary"] = not preserve_native_primary
+    if not preserve_native_primary:
+        element.metadata["reading_order_stream_id"] = stream.stream_id
+        element.metadata["reading_order_stream_type"] = stream.stream_type
+        element.metadata["reading_order_stream_index"] = stream_index
+        _apply_external_stream_scope_metadata(element, stream.stream_type)
     evidence = _reading_order_evidence(element)
     if "external-structure-stream" not in evidence:
         evidence.append("external-structure-stream")
+    if preserve_native_primary and "external-structure-stream-secondary" not in evidence:
+        evidence.append("external-structure-stream-secondary")
     element.metadata["reading_order_evidence"] = evidence
     element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
 
@@ -3791,12 +3870,16 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
     participant_ids: set[str] = set()
     for source_index, element in enumerate(text_elements):
         for target_id in _string_list(element.metadata.get("external_structure_successor_ids")):
+            if _relation_target_is_secondary_native_column_flow(element, target_id, kind="successor"):
+                continue
             target_index = id_to_index.get(target_id)
             if target_index is None:
                 continue
             successor_edges.append((source_index, target_index))
             participant_ids.update({element.id, target_id})
         for target_id in _string_list(element.metadata.get("external_structure_precedence_target_ids")):
+            if _relation_target_is_secondary_native_column_flow(element, target_id, kind="precedence"):
+                continue
             target_index = id_to_index.get(target_id)
             if target_index is None:
                 continue
@@ -3831,6 +3914,28 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
         if len(chain) >= 2 and any((source, target) in successor_edges for source in chain for target in chain)
     ]
     return [text_elements[index].id for index in ordered_indices], participant_ids, stream_chains
+
+
+def _relation_target_is_secondary_native_column_flow(
+    source: ElementIR,
+    target_id: str,
+    *,
+    kind: str,
+) -> bool:
+    records = source.metadata.get("external_structure_relation_edges")
+    if not isinstance(records, list):
+        return False
+    matching_records = [
+        record
+        for record in records
+        if isinstance(record, dict)
+        and str(record.get("kind") or "") == kind
+        and str(record.get("target_id") or "") == target_id
+    ]
+    return bool(matching_records) and all(
+        record.get("secondary_native_column_flow") is True
+        for record in matching_records
+    )
 
 
 def _apply_reordered_text_order(
