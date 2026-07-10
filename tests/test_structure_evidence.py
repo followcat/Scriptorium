@@ -217,6 +217,119 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     assert "external_structure_order" not in by_id["a"].metadata
 
 
+def test_structure_block_relations_and_streams_expand_to_matched_native_lines() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4),
+        ]
+    )
+    payload = {
+        "source": "pp-structure-block-relations",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_id": "left-column",
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 140, 80],
+                    "block_content": "Left column one. Left column two.",
+                },
+                {
+                    "block_id": "right-column",
+                    "block_label": "text",
+                    "block_bbox": [220, 20, 340, 80],
+                    "block_content": "Right column one. Right column two.",
+                },
+            ],
+            "successor_edges": [["left-column", "right-column"]],
+            "reading_streams": [
+                {
+                    "id": "article-body",
+                    "type": "body",
+                    "members": ["left-column", "right-column"],
+                }
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+    evidence = document.metadata["structure_evidence"]
+
+    assert [
+        element.source_text
+        for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+        if element.source_text
+    ] == [
+        "Left column one.",
+        "Left column two.",
+        "Right column one.",
+        "Right column two.",
+    ]
+    assert evidence["resolved_relation_edge_count"] == 1
+    assert evidence["resolved_relation_group_edge_count"] == 1
+    assert evidence["relation_group_internal_edge_count"] == 2
+    assert evidence["unresolved_relation_edge_count"] == 0
+    assert evidence["resolved_stream_member_count"] == 4
+    assert evidence["resolved_stream_group_member_ref_count"] == 2
+    assert evidence["unresolved_stream_member_ref_count"] == 0
+    assert by_id["left-one"].metadata["external_structure_group_successor_ids"] == ["left-two"]
+    assert by_id["left-two"].metadata["external_structure_successor_ids"] == ["right-one"]
+    assert by_id["left-two"].metadata["external_structure_relation_edges"][0]["source_group_element_ids"] == [
+        "left-one",
+        "left-two",
+    ]
+    assert by_id["right-one"].metadata["external_structure_stream_member_resolution"] == "group"
+    assert by_id["right-one"].metadata["external_structure_stream_member_group_index"] == 1
+    assert by_id["right-two"].metadata["external_structure_stream_member_group_size"] == 2
+    assert [
+        by_id[element_id].metadata["reading_order_stream_index"]
+        for element_id in ("left-one", "left-two", "right-one", "right-two")
+    ] == [1, 2, 3, 4]
+    assert evidence["relation_resolution_by_page"][0]["edges"][0]["status"] == "resolved"
+    assert evidence["stream_resolution_by_page"][0]["members"][0]["resolution"] == "group"
+
+
+def test_structure_relation_and_stream_resolution_diagnostics_keep_unmapped_refs() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 2),
+        ]
+    )
+    payload = {
+        "source": "partial-relation-model",
+        "page_index": 0,
+        "successor_edges": [["A", "Missing target"]],
+        "reading_streams": [
+            {
+                "id": "partial-body",
+                "type": "body",
+                "members": ["A", "Missing member"],
+            }
+        ],
+    }
+
+    apply_structure_evidence(document, payload)
+    evidence = document.metadata["structure_evidence"]
+
+    assert evidence["resolved_relation_edge_count"] == 0
+    assert evidence["unresolved_relation_edge_count"] == 1
+    assert evidence["unresolved_relation_endpoint_count"] == 1
+    assert evidence["resolved_stream_member_count"] == 1
+    assert evidence["unresolved_stream_member_ref_count"] == 1
+    assert evidence["relation_resolution_by_page"][0]["edges"][0]["target_resolution"] == "unresolved"
+    assert evidence["stream_resolution_by_page"][0]["members"][1] == {
+        "stream_id": "partial-body",
+        "member_ref": "Missing member",
+        "resolution": "unresolved",
+        "status": "unresolved",
+    }
+
+
 def test_roor_document_relations_drive_order_without_implicit_block_order() -> None:
     document = _document_with_text_boxes(
         [

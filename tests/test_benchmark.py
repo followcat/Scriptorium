@@ -1323,6 +1323,72 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["structure_evidence_order_source_counts"] == {"explicit": 1}
 
 
+def test_structure_ab_benchmark_reports_block_group_relation_metrics(tmp_path: Path) -> None:
+    pdf_path = next(
+        path for path in create_benchmark_fixtures(tmp_path / "fixtures") if path.name == "two_column_notes.pdf"
+    )
+    structure_json = tmp_path / "two_column_notes.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "unit-pp-block-relations",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "parsing_res_list": [
+                            {
+                                "block_id": "left-column",
+                                "block_label": "text",
+                                "bbox_pdf": [60, 120, 280, 250],
+                                "block_content": "Left column one. Native extraction keeps text spans. The annotation layer records role. Coordinates remain in PDF points.",
+                            },
+                            {
+                                "block_id": "right-column",
+                                "block_label": "text",
+                                "bbox_pdf": [300, 120, 510, 250],
+                                "block_content": "Right column paragraph one. This stresses reading order. The HTML should avoid page images. Benchmarks track similarity.",
+                            },
+                        ],
+                        "successor_edges": [["left-column", "right-column"]],
+                        "reading_streams": [
+                            {
+                                "id": "article-columns",
+                                "type": "body",
+                                "members": ["left-column", "right-column"],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_structure_ab_benchmark(
+        [pdf_path],
+        tmp_path / "structure-ab-block-groups",
+        [structure_json],
+        dpi=96,
+    )
+    comparison = report["cases"][0]
+    csv_text = (tmp_path / "structure-ab-block-groups" / "structure_ab_summary.csv").read_text(encoding="utf-8")
+
+    assert comparison["structure_evidence_relation_edge_count"] == 1
+    assert comparison["structure_evidence_resolved_relation_edge_count"] == 1
+    assert comparison["structure_evidence_resolved_relation_group_edge_count"] == 1
+    assert comparison["structure_evidence_relation_group_internal_edge_count"] == 6
+    assert comparison["structure_evidence_unresolved_relation_edge_count"] == 0
+    assert comparison["structure_evidence_resolved_stream_group_member_ref_count"] == 2
+    assert comparison["structure_evidence_resolved_stream_member_count"] == 8
+    assert comparison["structure_evidence_unresolved_stream_member_ref_count"] == 0
+    assert report["summary"]["total_structure_evidence_resolved_relation_group_edges"] == 1
+    assert report["summary"]["total_structure_evidence_relation_group_internal_edges"] == 6
+    assert report["summary"]["total_structure_evidence_resolved_stream_group_member_refs"] == 2
+    assert report["summary"]["total_structure_evidence_unresolved_relation_edges"] == 0
+    assert "structure_evidence_resolved_relation_group_edge_count" in csv_text
+    assert "structure_evidence_unresolved_stream_member_ref_count" in csv_text
+
+
 def _document_with_candidate_text_boxes(items: list[tuple[str, str, BBox, int, int]]) -> DocumentIR:
     elements = [
         ElementIR(

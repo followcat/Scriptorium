@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -118,6 +118,83 @@ class StructureReadingStream:
         if isinstance(member_aliases, dict) and member_aliases:
             metadata["member_aliases"] = dict(sorted((str(key), str(value)) for key, value in member_aliases.items()))
         return metadata
+
+
+@dataclass(frozen=True)
+class _EndpointResolution:
+    """A relation endpoint mapped to one element or one matched structure group."""
+
+    elements: tuple[ElementIR, ...]
+    is_group: bool = False
+
+    @property
+    def first(self) -> ElementIR:
+        return self.elements[0]
+
+    @property
+    def last(self) -> ElementIR:
+        return self.elements[-1]
+
+    @property
+    def element_ids(self) -> list[str]:
+        return [element.id for element in self.elements]
+
+
+@dataclass
+class _RelationApplicationStats:
+    resolved_count: int = 0
+    alias_resolved_count: int = 0
+    resolved_group_edge_count: int = 0
+    group_internal_edge_count: int = 0
+    unresolved_edge_count: int = 0
+    unresolved_endpoint_count: int = 0
+    skipped_overlap_edge_count: int = 0
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_metadata(self) -> dict[str, Any]:
+        return {
+            "resolved_relation_edge_count": self.resolved_count,
+            "resolved_relation_alias_edge_count": self.alias_resolved_count,
+            "resolved_relation_group_edge_count": self.resolved_group_edge_count,
+            "relation_group_internal_edge_count": self.group_internal_edge_count,
+            "unresolved_relation_edge_count": self.unresolved_edge_count,
+            "unresolved_relation_endpoint_count": self.unresolved_endpoint_count,
+            "skipped_overlap_relation_edge_count": self.skipped_overlap_edge_count,
+            "edges": self.diagnostics,
+        }
+
+
+@dataclass
+class _StreamApplicationStats:
+    resolved_count: int = 0
+    conflict_count: int = 0
+    alias_resolved_count: int = 0
+    resolved_group_member_ref_count: int = 0
+    unresolved_member_ref_count: int = 0
+    duplicate_member_ref_count: int = 0
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_metadata(self) -> dict[str, Any]:
+        return {
+            "resolved_stream_member_count": self.resolved_count,
+            "resolved_stream_alias_member_count": self.alias_resolved_count,
+            "resolved_stream_group_member_ref_count": self.resolved_group_member_ref_count,
+            "unresolved_stream_member_ref_count": self.unresolved_member_ref_count,
+            "duplicate_stream_member_ref_count": self.duplicate_member_ref_count,
+            "stream_conflict_count": self.conflict_count,
+            "members": self.diagnostics,
+        }
+
+
+@dataclass(frozen=True)
+class _ResolvedStreamMember:
+    element: ElementIR
+    reference: str
+    alias: str
+    alias_used: bool
+    is_group: bool
+    group_index: int
+    group_size: int
 
 
 def load_structure_json(path: str | Path) -> dict[str, Any]:
@@ -795,8 +872,16 @@ def apply_structure_evidence(
     matched_count = 0
     resolved_relation_count = 0
     resolved_relation_alias_count = 0
+    resolved_relation_group_count = 0
+    relation_group_internal_edge_count = 0
+    unresolved_relation_edge_count = 0
+    unresolved_relation_endpoint_count = 0
+    skipped_overlap_relation_edge_count = 0
     resolved_stream_member_count = 0
     resolved_stream_alias_member_count = 0
+    resolved_stream_group_member_ref_count = 0
+    unresolved_stream_member_ref_count = 0
+    duplicate_stream_member_ref_count = 0
     stream_conflict_count = 0
     relation_stream_count = 0
     resolved_relation_stream_member_count = 0
@@ -805,6 +890,8 @@ def apply_structure_evidence(
     relation_reordered_pages = 0
     order_reordered_pages = 0
     order_source_counts = Counter(str(region.order_source or "none") for region in regions)
+    relation_resolution_by_page: list[dict[str, Any]] = []
+    stream_resolution_by_page: list[dict[str, Any]] = []
     for page in document.pages:
         page_regions = regions_by_page.get(page.page_index, [])
         if page_regions:
@@ -815,19 +902,41 @@ def apply_structure_evidence(
                 min_text_similarity=min_text_similarity,
             )
             matched_count += page_matches
-        page_relation_count, page_relation_alias_count = _apply_page_relation_edges(
+        page_relation_stats = _apply_page_relation_edges(
             page,
             relations_by_page.get(page.page_index, []),
         )
-        resolved_relation_count += page_relation_count
-        resolved_relation_alias_count += page_relation_alias_count
-        page_stream_members, page_stream_conflicts, page_stream_alias_members = _apply_page_streams(
+        resolved_relation_count += page_relation_stats.resolved_count
+        resolved_relation_alias_count += page_relation_stats.alias_resolved_count
+        resolved_relation_group_count += page_relation_stats.resolved_group_edge_count
+        relation_group_internal_edge_count += page_relation_stats.group_internal_edge_count
+        unresolved_relation_edge_count += page_relation_stats.unresolved_edge_count
+        unresolved_relation_endpoint_count += page_relation_stats.unresolved_endpoint_count
+        skipped_overlap_relation_edge_count += page_relation_stats.skipped_overlap_edge_count
+        if relations_by_page.get(page.page_index):
+            relation_resolution_by_page.append(
+                {
+                    "page_index": page.page_index,
+                    **page_relation_stats.as_metadata(),
+                }
+            )
+        page_stream_stats = _apply_page_streams(
             page,
             streams_by_page.get(page.page_index, []),
         )
-        resolved_stream_member_count += page_stream_members
-        resolved_stream_alias_member_count += page_stream_alias_members
-        stream_conflict_count += page_stream_conflicts
+        resolved_stream_member_count += page_stream_stats.resolved_count
+        resolved_stream_alias_member_count += page_stream_stats.alias_resolved_count
+        resolved_stream_group_member_ref_count += page_stream_stats.resolved_group_member_ref_count
+        unresolved_stream_member_ref_count += page_stream_stats.unresolved_member_ref_count
+        duplicate_stream_member_ref_count += page_stream_stats.duplicate_member_ref_count
+        stream_conflict_count += page_stream_stats.conflict_count
+        if streams_by_page.get(page.page_index):
+            stream_resolution_by_page.append(
+                {
+                    "page_index": page.page_index,
+                    **page_stream_stats.as_metadata(),
+                }
+            )
         page_relation_streams, page_relation_stream_members, page_relation_stream_conflicts = _apply_relation_derived_streams(
             page,
             source=source_name,
@@ -851,9 +960,17 @@ def apply_structure_evidence(
         "relation_edge_count": len(relations),
         "resolved_relation_edge_count": resolved_relation_count,
         "resolved_relation_alias_edge_count": resolved_relation_alias_count,
+        "resolved_relation_group_edge_count": resolved_relation_group_count,
+        "relation_group_internal_edge_count": relation_group_internal_edge_count,
+        "unresolved_relation_edge_count": unresolved_relation_edge_count,
+        "unresolved_relation_endpoint_count": unresolved_relation_endpoint_count,
+        "skipped_overlap_relation_edge_count": skipped_overlap_relation_edge_count,
         "stream_count": len(streams),
         "resolved_stream_member_count": resolved_stream_member_count,
         "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
+        "resolved_stream_group_member_ref_count": resolved_stream_group_member_ref_count,
+        "unresolved_stream_member_ref_count": unresolved_stream_member_ref_count,
+        "duplicate_stream_member_ref_count": duplicate_stream_member_ref_count,
         "stream_conflict_count": stream_conflict_count,
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -877,6 +994,7 @@ def apply_structure_evidence(
             }
             for page_index, page_relations in sorted(relations_by_page.items())
         ],
+        "relation_resolution_by_page": relation_resolution_by_page,
         "streams_by_page": [
             {
                 "page_index": page_index,
@@ -884,6 +1002,7 @@ def apply_structure_evidence(
             }
             for page_index, page_streams in sorted(streams_by_page.items())
         ],
+        "stream_resolution_by_page": stream_resolution_by_page,
     }
     _update_semantic_layer_metadata(
         document,
@@ -895,9 +1014,17 @@ def apply_structure_evidence(
         relation_count=len(relations),
         resolved_relation_count=resolved_relation_count,
         resolved_relation_alias_count=resolved_relation_alias_count,
+        resolved_relation_group_count=resolved_relation_group_count,
+        relation_group_internal_edge_count=relation_group_internal_edge_count,
+        unresolved_relation_edge_count=unresolved_relation_edge_count,
+        unresolved_relation_endpoint_count=unresolved_relation_endpoint_count,
+        skipped_overlap_relation_edge_count=skipped_overlap_relation_edge_count,
         stream_count=len(streams),
         resolved_stream_member_count=resolved_stream_member_count,
         resolved_stream_alias_member_count=resolved_stream_alias_member_count,
+        resolved_stream_group_member_ref_count=resolved_stream_group_member_ref_count,
+        unresolved_stream_member_ref_count=unresolved_stream_member_ref_count,
+        duplicate_stream_member_ref_count=duplicate_stream_member_ref_count,
         stream_conflict_count=stream_conflict_count,
         relation_stream_count=relation_stream_count,
         resolved_relation_stream_member_count=resolved_relation_stream_member_count,
@@ -914,9 +1041,17 @@ def apply_structure_evidence(
                 "relation_edge_count": len(relations),
                 "resolved_relation_edge_count": resolved_relation_count,
                 "resolved_relation_alias_edge_count": resolved_relation_alias_count,
+                "resolved_relation_group_edge_count": resolved_relation_group_count,
+                "relation_group_internal_edge_count": relation_group_internal_edge_count,
+                "unresolved_relation_edge_count": unresolved_relation_edge_count,
+                "unresolved_relation_endpoint_count": unresolved_relation_endpoint_count,
+                "skipped_overlap_relation_edge_count": skipped_overlap_relation_edge_count,
                 "stream_count": len(streams),
                 "resolved_stream_member_count": resolved_stream_member_count,
                 "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
+                "resolved_stream_group_member_ref_count": resolved_stream_group_member_ref_count,
+                "unresolved_stream_member_ref_count": unresolved_stream_member_ref_count,
+                "duplicate_stream_member_ref_count": duplicate_stream_member_ref_count,
                 "stream_conflict_count": stream_conflict_count,
                 "relation_stream_count": relation_stream_count,
                 "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -943,9 +1078,17 @@ def _update_semantic_layer_metadata(
     relation_count: int,
     resolved_relation_count: int,
     resolved_relation_alias_count: int,
+    resolved_relation_group_count: int,
+    relation_group_internal_edge_count: int,
+    unresolved_relation_edge_count: int,
+    unresolved_relation_endpoint_count: int,
+    skipped_overlap_relation_edge_count: int,
     stream_count: int,
     resolved_stream_member_count: int,
     resolved_stream_alias_member_count: int,
+    resolved_stream_group_member_ref_count: int,
+    unresolved_stream_member_ref_count: int,
+    duplicate_stream_member_ref_count: int,
     stream_conflict_count: int,
     relation_stream_count: int,
     resolved_relation_stream_member_count: int,
@@ -968,9 +1111,17 @@ def _update_semantic_layer_metadata(
         "relation_edge_count": relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
         "resolved_relation_alias_edge_count": resolved_relation_alias_count,
+        "resolved_relation_group_edge_count": resolved_relation_group_count,
+        "relation_group_internal_edge_count": relation_group_internal_edge_count,
+        "unresolved_relation_edge_count": unresolved_relation_edge_count,
+        "unresolved_relation_endpoint_count": unresolved_relation_endpoint_count,
+        "skipped_overlap_relation_edge_count": skipped_overlap_relation_edge_count,
         "stream_count": stream_count,
         "resolved_stream_member_count": resolved_stream_member_count,
         "resolved_stream_alias_member_count": resolved_stream_alias_member_count,
+        "resolved_stream_group_member_ref_count": resolved_stream_group_member_ref_count,
+        "unresolved_stream_member_ref_count": unresolved_stream_member_ref_count,
+        "duplicate_stream_member_ref_count": duplicate_stream_member_ref_count,
         "stream_conflict_count": stream_conflict_count,
         "relation_stream_count": relation_stream_count,
         "resolved_relation_stream_member_count": resolved_relation_stream_member_count,
@@ -2119,43 +2270,86 @@ def _apply_page_regions(
     return matched_count
 
 
-def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEdge]) -> tuple[int, int]:
+def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEdge]) -> _RelationApplicationStats:
+    stats = _RelationApplicationStats()
     if not relations:
-        return 0, 0
+        return stats
     text_elements = [element for element in page.elements if element.source_text.strip()]
     if len(text_elements) < 2:
-        return 0, 0
+        for relation in relations:
+            stats.unresolved_edge_count += 1
+            stats.unresolved_endpoint_count += 2
+            stats.diagnostics.append(
+                {
+                    "kind": relation.kind,
+                    "source_ref": relation.source_ref,
+                    "target_ref": relation.target_ref,
+                    "status": "unresolved-no-text-elements",
+                }
+            )
+        return stats
 
-    resolved_count = 0
-    alias_resolved_count = 0
     for relation in relations:
-        source_element = _resolve_relation_endpoint_to_element(relation.source_ref, text_elements)
-        source_alias_used = False
-        if source_element is None:
-            source_element = _resolve_relation_endpoint_to_element(
-                relation.raw.get("_scriptorium_source_alias"),
-                text_elements,
-            )
-            source_alias_used = source_element is not None
-        target_element = _resolve_relation_endpoint_to_element(relation.target_ref, text_elements)
-        target_alias_used = False
-        if target_element is None:
-            target_element = _resolve_relation_endpoint_to_element(
-                relation.raw.get("_scriptorium_target_alias"),
-                text_elements,
-            )
-            target_alias_used = target_element is not None
-        if source_element is None or target_element is None or source_element.id == target_element.id:
+        source_resolution, source_alias_used, source_alias = _resolve_endpoint_with_alias(
+            relation.source_ref,
+            relation.raw.get("_scriptorium_source_alias"),
+            text_elements,
+        )
+        target_resolution, target_alias_used, target_alias = _resolve_endpoint_with_alias(
+            relation.target_ref,
+            relation.raw.get("_scriptorium_target_alias"),
+            text_elements,
+        )
+        diagnostic: dict[str, Any] = {
+            "kind": relation.kind,
+            "source_ref": relation.source_ref,
+            "target_ref": relation.target_ref,
+            "source_resolution": _endpoint_resolution_label(source_resolution, source_alias_used),
+            "target_resolution": _endpoint_resolution_label(target_resolution, target_alias_used),
+        }
+        if source_resolution is not None:
+            diagnostic["source_element_ids"] = source_resolution.element_ids
+        else:
+            stats.unresolved_endpoint_count += 1
+        if target_resolution is not None:
+            diagnostic["target_element_ids"] = target_resolution.element_ids
+        else:
+            stats.unresolved_endpoint_count += 1
+        if source_resolution is None or target_resolution is None:
+            stats.unresolved_edge_count += 1
+            diagnostic["status"] = "unresolved"
+            stats.diagnostics.append(diagnostic)
             continue
+
+        source_ids = set(source_resolution.element_ids)
+        target_ids = set(target_resolution.element_ids)
+        if source_ids & target_ids:
+            stats.skipped_overlap_edge_count += 1
+            diagnostic["status"] = "skipped-overlapping-endpoints"
+            stats.diagnostics.append(diagnostic)
+            continue
+
+        if source_resolution.is_group or target_resolution.is_group:
+            stats.resolved_group_edge_count += 1
+        if source_resolution.is_group:
+            stats.group_internal_edge_count += _apply_structure_group_internal_successors(
+                source_resolution,
+                reference=relation.source_ref,
+            )
+        if target_resolution.is_group:
+            stats.group_internal_edge_count += _apply_structure_group_internal_successors(
+                target_resolution,
+                reference=relation.target_ref,
+            )
+
+        source_element = source_resolution.last
+        target_element = target_resolution.first
         metadata_key = (
             "external_structure_successor_ids"
             if relation.kind == "successor"
             else "external_structure_precedence_target_ids"
         )
-        target_ids = _string_list(source_element.metadata.get(metadata_key))
-        if target_element.id not in target_ids:
-            target_ids.append(target_element.id)
-        source_element.metadata[metadata_key] = target_ids
+        _append_external_relation_target(source_element, target_element, metadata_key)
 
         relation_records = source_element.metadata.get("external_structure_relation_edges")
         if not isinstance(relation_records, list):
@@ -2167,56 +2361,102 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             "target_ref": relation.target_ref,
             "source": relation.source,
         }
+        if source_resolution.is_group:
+            record["source_group_element_ids"] = source_resolution.element_ids
+        if target_resolution.is_group:
+            record["target_group_element_ids"] = target_resolution.element_ids
         if source_alias_used:
-            record["source_alias"] = str(relation.raw.get("_scriptorium_source_alias") or "")
+            record["source_alias"] = source_alias
         if target_alias_used:
-            record["target_alias"] = str(relation.raw.get("_scriptorium_target_alias") or "")
+            record["target_alias"] = target_alias
         if source_alias_used or target_alias_used:
             record["resolved_via_alias"] = True
         if record not in relation_records:
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
-        resolved_count += 1
+        stats.resolved_count += 1
         if source_alias_used or target_alias_used:
-            alias_resolved_count += 1
-    return resolved_count, alias_resolved_count
+            stats.alias_resolved_count += 1
+        diagnostic["status"] = "resolved"
+        diagnostic["source_boundary_element_id"] = source_element.id
+        diagnostic["target_boundary_element_id"] = target_element.id
+        stats.diagnostics.append(diagnostic)
+    return stats
 
 
-def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> tuple[int, int, int]:
+def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> _StreamApplicationStats:
+    stats = _StreamApplicationStats()
     if not streams:
-        return 0, 0, 0
+        return stats
     text_elements = [element for element in page.elements if element.source_text.strip()]
     if not text_elements:
-        return 0, 0, 0
+        for stream in streams:
+            for ref in stream.member_refs:
+                stats.unresolved_member_ref_count += 1
+                stats.diagnostics.append(
+                    {
+                        "stream_id": stream.stream_id,
+                        "member_ref": str(ref),
+                        "status": "unresolved-no-text-elements",
+                    }
+                )
+        return stats
 
-    resolved_count = 0
-    conflict_count = 0
-    alias_resolved_count = 0
     for stream in streams:
-        stream_members: list[tuple[ElementIR, str, str, bool]] = []
+        stream_members: list[_ResolvedStreamMember] = []
         seen_member_ids: set[str] = set()
         member_aliases = stream.raw.get("_scriptorium_member_aliases")
         if not isinstance(member_aliases, dict):
             member_aliases = {}
         for ref in stream.member_refs:
             ref_text = str(ref)
-            alias_text = ""
-            element = _resolve_relation_endpoint_to_element(ref, text_elements)
-            alias_used = False
-            if element is None:
-                alias_text = str(member_aliases.get(_relation_key(ref)) or "")
-                element = _resolve_relation_endpoint_to_element(
-                    alias_text,
-                    text_elements,
-                )
-                alias_used = element is not None
-            if element is None or element.id in seen_member_ids:
+            resolution, alias_used, alias_text = _resolve_endpoint_with_alias(
+                ref,
+                member_aliases.get(_relation_key(ref)),
+                text_elements,
+            )
+            diagnostic: dict[str, Any] = {
+                "stream_id": stream.stream_id,
+                "member_ref": ref_text,
+                "resolution": _endpoint_resolution_label(resolution, alias_used),
+            }
+            if resolution is None:
+                stats.unresolved_member_ref_count += 1
+                diagnostic["status"] = "unresolved"
+                stats.diagnostics.append(diagnostic)
                 continue
-            seen_member_ids.add(element.id)
-            stream_members.append((element, ref_text, alias_text, alias_used))
+            if resolution.is_group:
+                stats.resolved_group_member_ref_count += 1
+            diagnostic["element_ids"] = resolution.element_ids
+            duplicate_ids: list[str] = []
+            resolved_ids: list[str] = []
+            for group_index, element in enumerate(resolution.elements, start=1):
+                if element.id in seen_member_ids:
+                    duplicate_ids.append(element.id)
+                    continue
+                seen_member_ids.add(element.id)
+                resolved_ids.append(element.id)
+                stream_members.append(
+                    _ResolvedStreamMember(
+                        element=element,
+                        reference=ref_text,
+                        alias=alias_text,
+                        alias_used=alias_used,
+                        is_group=resolution.is_group,
+                        group_index=group_index,
+                        group_size=len(resolution.elements),
+                    )
+                )
+            if duplicate_ids:
+                stats.duplicate_member_ref_count += 1
+                diagnostic["duplicate_element_ids"] = duplicate_ids
+            diagnostic["resolved_element_ids"] = resolved_ids
+            diagnostic["status"] = "resolved" if resolved_ids else "duplicate"
+            stats.diagnostics.append(diagnostic)
         if not stream_members:
             continue
-        for stream_index, (element, ref_text, alias_text, alias_used) in enumerate(stream_members, start=1):
+        for stream_index, member in enumerate(stream_members, start=1):
+            element = member.element
             existing_stream_id = str(element.metadata.get("external_structure_stream_id") or "").strip()
             if existing_stream_id and existing_stream_id != stream.stream_id:
                 conflicts = element.metadata.get("external_structure_stream_conflicts")
@@ -2231,16 +2471,96 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
                     }
                 )
                 element.metadata["external_structure_stream_conflicts"] = conflicts
-                conflict_count += 1
+                stats.conflict_count += 1
                 continue
             _apply_external_stream_metadata(element, stream, stream_index)
-            element.metadata["external_structure_stream_member_ref"] = ref_text
-            element.metadata["external_structure_stream_resolved_via_alias"] = alias_used
-            if alias_used:
-                element.metadata["external_structure_stream_member_alias"] = alias_text
-                alias_resolved_count += 1
-            resolved_count += 1
-    return resolved_count, conflict_count, alias_resolved_count
+            element.metadata["external_structure_stream_member_ref"] = member.reference
+            element.metadata["external_structure_stream_resolved_via_alias"] = member.alias_used
+            element.metadata["external_structure_stream_member_resolution"] = (
+                "group" if member.is_group else "element"
+            )
+            if member.is_group:
+                element.metadata["external_structure_stream_member_group_index"] = member.group_index
+                element.metadata["external_structure_stream_member_group_size"] = member.group_size
+            if member.alias_used:
+                element.metadata["external_structure_stream_member_alias"] = member.alias
+                stats.alias_resolved_count += 1
+            stats.resolved_count += 1
+    return stats
+
+
+def _resolve_endpoint_with_alias(
+    reference: Any,
+    alias: Any,
+    elements: list[ElementIR],
+) -> tuple[_EndpointResolution | None, bool, str]:
+    resolution = _resolve_relation_endpoint(reference, elements)
+    if resolution is not None:
+        return resolution, False, ""
+    alias_text = str(alias or "").strip()
+    if not alias_text:
+        return None, False, ""
+    resolution = _resolve_relation_endpoint(alias_text, elements)
+    return resolution, resolution is not None, alias_text
+
+
+def _endpoint_resolution_label(
+    resolution: _EndpointResolution | None,
+    alias_used: bool,
+) -> str:
+    if resolution is None:
+        return "unresolved"
+    if resolution.is_group:
+        return "alias-group" if alias_used else "group"
+    return "alias-element" if alias_used else "element"
+
+
+def _apply_structure_group_internal_successors(
+    resolution: _EndpointResolution,
+    *,
+    reference: str,
+) -> int:
+    if not resolution.is_group:
+        return 0
+    added_count = 0
+    reference_text = str(reference)
+    for group_index, element in enumerate(resolution.elements, start=1):
+        memberships = element.metadata.get("external_structure_relation_groups")
+        if not isinstance(memberships, list):
+            memberships = []
+        membership = {
+            "ref": reference_text,
+            "member_index": group_index,
+            "member_count": len(resolution.elements),
+        }
+        if membership not in memberships:
+            memberships.append(membership)
+        element.metadata["external_structure_relation_groups"] = memberships
+    for source_element, target_element in zip(resolution.elements, resolution.elements[1:], strict=False):
+        if _append_external_relation_target(
+            source_element,
+            target_element,
+            "external_structure_successor_ids",
+        ):
+            added_count += 1
+        group_target_ids = _string_list(source_element.metadata.get("external_structure_group_successor_ids"))
+        if target_element.id not in group_target_ids:
+            group_target_ids.append(target_element.id)
+        source_element.metadata["external_structure_group_successor_ids"] = group_target_ids
+    return added_count
+
+
+def _append_external_relation_target(
+    source_element: ElementIR,
+    target_element: ElementIR,
+    metadata_key: str,
+) -> bool:
+    target_ids = _string_list(source_element.metadata.get(metadata_key))
+    if target_element.id in target_ids:
+        return False
+    target_ids.append(target_element.id)
+    source_element.metadata[metadata_key] = target_ids
+    return True
 
 
 def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, int, int]:
@@ -2379,10 +2699,10 @@ def _apply_external_stream_scope_metadata(element: ElementIR, stream_type: str) 
         element.metadata["column_span"] = "grid-external"
 
 
-def _resolve_relation_endpoint_to_element(
-    endpoint: str,
+def _resolve_relation_endpoint(
+    endpoint: Any,
     elements: list[ElementIR],
-) -> ElementIR | None:
+) -> _EndpointResolution | None:
     key = _relation_key(endpoint)
     if not key:
         return None
@@ -2393,13 +2713,16 @@ def _resolve_relation_endpoint_to_element(
         if key in _element_relation_keys(element)
     ]
     if len(key_matches) == 1:
-        return key_matches[0]
+        return _EndpointResolution(elements=(key_matches[0],))
     if len(key_matches) > 1:
+        group_resolution = _shared_structure_group_resolution(key, key_matches)
+        if group_resolution is not None:
+            return group_resolution
         return None
 
     scored: list[tuple[float, ElementIR]] = []
     for element in elements:
-        score = _text_similarity(endpoint, element.source_text)
+        score = _relation_endpoint_text_similarity(endpoint, element.source_text)
         if score >= 0.92:
             scored.append((score, element))
     scored.sort(key=lambda item: item[0], reverse=True)
@@ -2407,7 +2730,101 @@ def _resolve_relation_endpoint_to_element(
         return None
     if len(scored) > 1 and abs(scored[0][0] - scored[1][0]) < 0.02:
         return None
-    return scored[0][1]
+    return _EndpointResolution(elements=(scored[0][1],))
+
+
+def _relation_endpoint_text_similarity(endpoint: Any, source_text: str) -> float:
+    """Score fallback endpoint text without letting one-character labels match prose.
+
+    Exact ids/text keys are handled before this fallback. For non-exact values,
+    a one-character OCR token such as ``A`` or ``B`` is too weak: ordinary
+    prose often contains that character as a substring. Treating it as a fuzzy
+    match silently turns unmapped structure references into wrong relations.
+    """
+
+    endpoint_key = _relation_key(endpoint)
+    source_key = _relation_key(source_text)
+    if not endpoint_key or not source_key:
+        return 0.0
+    if endpoint_key == source_key:
+        return 1.0
+    if min(len(endpoint_key), len(source_key)) < 4:
+        return 0.0
+    return _text_similarity(endpoint_key, source_key)
+
+
+def _resolve_relation_endpoint_to_element(
+    endpoint: str,
+    elements: list[ElementIR],
+) -> ElementIR | None:
+    """Compatibility helper for callers that intentionally reject group endpoints."""
+
+    resolution = _resolve_relation_endpoint(endpoint, elements)
+    if resolution is None or resolution.is_group:
+        return None
+    return resolution.first
+
+
+def _shared_structure_group_resolution(
+    key: str,
+    matches: list[ElementIR],
+) -> _EndpointResolution | None:
+    """Expand a model block only when every match belongs to one structure region.
+
+    A raw text label such as ``Price`` may occur many times on a page and must
+    remain ambiguous. A model block id/index, on the other hand, can validly
+    cover several native text lines. The common region signature is the guard
+    that keeps those two cases distinct.
+    """
+
+    if len(matches) < 2:
+        return None
+    if not all(key in _external_structure_node_keys(element) for element in matches):
+        return None
+    signatures = {_structure_group_signature(element) for element in matches}
+    if None in signatures or len(signatures) != 1:
+        return None
+    ordered = tuple(sorted(matches, key=_structure_group_element_key))
+    return _EndpointResolution(elements=ordered, is_group=True)
+
+
+def _external_structure_node_keys(element: ElementIR) -> set[str]:
+    node_keys = element.metadata.get("external_structure_node_keys")
+    if not isinstance(node_keys, list):
+        return set()
+    return {_relation_key(item) for item in node_keys if _relation_key(item)}
+
+
+def _structure_group_signature(element: ElementIR) -> tuple[Any, ...] | None:
+    structure = element.metadata.get("structure_evidence")
+    if not isinstance(structure, dict):
+        return None
+    bbox = structure.get("bbox_pdf")
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        return None
+    try:
+        normalized_bbox = tuple(round(float(value), 6) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+    return (
+        _relation_key(structure.get("source")),
+        _relation_key(structure.get("label")),
+        normalized_bbox,
+        _relation_key(structure.get("text")),
+        _relation_key(structure.get("order")),
+    )
+
+
+def _structure_group_element_key(element: ElementIR) -> tuple[int, int, int, float, float, str]:
+    subindex = _optional_int(element.metadata.get("external_structure_order_subindex"))
+    return (
+        0 if subindex is not None else 1,
+        subindex if subindex is not None else 0,
+        int(element.reading_order),
+        element.bbox_pdf.y0,
+        element.bbox_pdf.x0,
+        element.id,
+    )
 
 
 def _element_relation_keys(element: ElementIR) -> set[str]:
