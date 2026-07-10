@@ -489,6 +489,56 @@ def test_structure_region_ids_score_relations_and_streams(tmp_path: Path) -> Non
     assert report["semantic_stream_assignment_type_accuracy"] == 1
 
 
+def test_nested_structure_sidecar_payloads_score_relations_and_streams(tmp_path: Path) -> None:
+    source_image = tmp_path / "page.png"
+    source_image.write_bytes(b"fake image bytes")
+    source_image.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "data": {
+                            "formula_res_list": [
+                                {
+                                    "formula_region_id": "formula-1",
+                                    "rec_formula": "E=mc^2",
+                                }
+                            ],
+                            "seal_res_list": [
+                                {
+                                    "seal_region_id": "seal-1",
+                                    "rec_texts": ["Seal"],
+                                }
+                            ],
+                            "successor_edges": [["formula-1", "seal-1"]],
+                            "reading_streams": [
+                                {
+                                    "id": "stamp-flow",
+                                    "type": "body",
+                                    "members": ["formula-1", "seal-1"],
+                                    "successor_edges": [["formula-1", "seal-1"]],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["E=mc^2", "Seal"])
+
+    report = compare_semantic_reading_order(document, source_image, tmp_path / "semantic")
+
+    assert report["semantic_relation_successor_accuracy"] == 1
+    assert report["semantic_stream_successor_accuracy"] == 1
+    assert report["pages"][0]["stream_count"] == 1
+    assert report["pages"][0]["reading_streams"][0]["label_count"] == 2
+    assert report["pages"][0]["reading_streams"][0]["successor_correct_count"] == 1
+
+
 def test_reading_streams_score_local_successors_independently(tmp_path: Path) -> None:
     source_pdf = tmp_path / "paper.pdf"
     source_pdf.write_bytes(b"%PDF-1.4\n")

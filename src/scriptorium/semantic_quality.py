@@ -101,7 +101,7 @@ def compare_semantic_reading_order(
 
 def _page_truth_in_document(document: DocumentIR, page_truth: dict[str, Any]) -> bool:
     try:
-        page_index = int(page_truth.get("page_index", 0))
+        page_index = _payload_page_index(page_truth, 0)
     except (TypeError, ValueError):
         return False
     return _document_page_by_index(document, page_index) is not None
@@ -112,11 +112,12 @@ def _compare_page(
     page_truth: dict[str, Any],
     candidate_orders: dict[str, dict[int, list[str]]],
 ) -> dict[str, Any]:
-    truth_page_index = int(page_truth.get("page_index", 0))
-    label_map = _page_label_map(page_truth)
-    expected = [str(text).strip() for text in page_truth.get("text_sequence", []) if str(text).strip()]
-    relation_edges = _page_relation_edges(page_truth, label_map)
-    reading_streams = _page_reading_streams(page_truth, label_map)
+    truth_page_index = _payload_page_index(page_truth, 0)
+    page_payloads = _page_truth_payloads(page_truth, truth_page_index)
+    label_map = _page_label_map(page_payloads)
+    expected = _page_expected_texts(page_payloads, label_map)
+    relation_edges = _page_relation_edges(page_payloads, label_map)
+    reading_streams = _page_reading_streams(page_payloads, label_map)
     has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
     has_stream_labels = bool(reading_streams)
     match_mode = str(
@@ -188,47 +189,94 @@ def _document_uses_positional_page_indices(document: DocumentIR) -> bool:
     return all(page.page_index == index for index, page in enumerate(document.pages))
 
 
-def _page_relation_edges(page_truth: dict[str, Any], label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
-    typed_edges = _typed_relation_edges_from_any(page_truth.get("relations"), label_map)
+def _page_truth_payloads(page_truth: dict[str, Any], truth_page_index: int) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(value: Any, fallback_page_index: int) -> None:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                visit(item, fallback_page_index if fallback_page_index is not None else index)
+            return
+        if not isinstance(value, dict):
+            return
+        if id(value) in seen:
+            return
+        page_index = _payload_page_index(value, fallback_page_index)
+        if page_index != truth_page_index:
+            return
+        seen.add(id(value))
+        payloads.append(value)
+        for key in ("res", "result", "data", "page_results", "raw_results", "results"):
+            child = value.get(key)
+            if child is not None:
+                visit(child, page_index)
+
+    visit(page_truth, truth_page_index)
+    return payloads
+
+
+def _payload_page_index(value: dict[str, Any], fallback_page_index: int) -> int:
+    for key in ("page_index", "index"):
+        if key in value and value[key] is not None:
+            return int(value[key])
+    for key in ("page", "page_no", "page_num"):
+        if key in value and value[key] is not None:
+            page_index = int(value[key])
+            return max(page_index - 1, 0) if page_index > 0 else page_index
+    return fallback_page_index
+
+
+def _page_expected_texts(page_payloads: list[dict[str, Any]], label_map: dict[str, str]) -> list[str]:
+    for payload in page_payloads:
+        sequence = _texts_from_any(payload.get("text_sequence"), label_map)
+        if sequence:
+            return sequence
+    return []
+
+
+def _page_relation_edges(page_payloads: list[dict[str, Any]], label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    successor_edges: list[tuple[str, str]] = []
+    precedence_edges: list[tuple[str, str]] = []
+    for payload in page_payloads:
+        typed_edges = _typed_relation_edges_from_any(payload.get("relations"), label_map)
+        successor_edges.extend(
+            _relation_edges_from_any(
+                _combined_relation_values(
+                    payload.get("successor_edges"),
+                    payload.get("successor_relations"),
+                    payload.get("ro_linkings"),
+                    payload.get("reading_order_edges"),
+                    payload.get("reading_order_relations"),
+                    payload.get("reading_order_linkings"),
+                ),
+                label_map,
+            )
+        )
+        successor_edges.extend(typed_edges["successor_edges"])
+        precedence_edges.extend(
+            _relation_edges_from_any(
+                _combined_relation_values(
+                    payload.get("precedence_edges"),
+                    payload.get("order_edges"),
+                ),
+                label_map,
+            )
+        )
+        precedence_edges.extend(typed_edges["precedence_edges"])
     return {
-        "successor_edges": _dedupe_edges(
-            [
-                *_relation_edges_from_any(
-                    _combined_relation_values(
-                        page_truth.get("successor_edges"),
-                        page_truth.get("successor_relations"),
-                        page_truth.get("ro_linkings"),
-                        page_truth.get("reading_order_edges"),
-                        page_truth.get("reading_order_relations"),
-                        page_truth.get("reading_order_linkings"),
-                    ),
-                    label_map,
-                ),
-                *typed_edges["successor_edges"],
-            ]
-        ),
-        "precedence_edges": _dedupe_edges(
-            [
-                *_relation_edges_from_any(
-                    _combined_relation_values(
-                        page_truth.get("precedence_edges"),
-                        page_truth.get("order_edges"),
-                    ),
-                    label_map,
-                ),
-                *typed_edges["precedence_edges"],
-            ]
-        ),
+        "successor_edges": _dedupe_edges(successor_edges),
+        "precedence_edges": _dedupe_edges(precedence_edges),
     }
 
 
-def _page_reading_streams(page_truth: dict[str, Any], label_map: dict[str, str]) -> list[dict[str, Any]]:
+def _page_reading_streams(page_payloads: list[dict[str, Any]], label_map: dict[str, str]) -> list[dict[str, Any]]:
     streams: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for raw_stream in _combined_relation_values(
-        page_truth.get("reading_streams"),
-        page_truth.get("streams"),
-    ):
+    raw_streams: list[Any] = []
+    for payload in page_payloads:
+        raw_streams.extend(_combined_relation_values(payload.get("reading_streams"), payload.get("streams")))
+    for raw_stream in raw_streams:
         if not isinstance(raw_stream, dict):
             continue
         stream_id = str(raw_stream.get("stream_id", raw_stream.get("id", "")) or "").strip()
@@ -400,31 +448,32 @@ def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
-def _page_label_map(page_truth: dict[str, Any]) -> dict[str, str]:
+def _page_label_map(page_payloads: list[dict[str, Any]]) -> dict[str, str]:
     labels: dict[str, str] = {}
-    for key in (
-        "document",
-        "elements",
-        "blocks",
-        "parsing_res_list",
-        "table_res_list",
-        "formula_res_list",
-        "seal_res_list",
-    ):
-        value = page_truth.get(key)
-        if isinstance(value, list):
-            for item in value:
-                _collect_label_map(item, labels)
-    for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
-        value = page_truth.get(key)
-        if isinstance(value, dict):
-            _collect_label_map(value, labels)
-    layout = page_truth.get("layout_det_res")
-    if isinstance(layout, dict):
-        boxes = layout.get("boxes")
-        if isinstance(boxes, list):
-            for item in boxes:
-                _collect_label_map(item, labels)
+    for page_truth in page_payloads:
+        for key in (
+            "document",
+            "elements",
+            "blocks",
+            "parsing_res_list",
+            "table_res_list",
+            "formula_res_list",
+            "seal_res_list",
+        ):
+            value = page_truth.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    _collect_label_map(item, labels)
+        for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
+            value = page_truth.get(key)
+            if isinstance(value, dict):
+                _collect_label_map(value, labels)
+        layout = page_truth.get("layout_det_res")
+        if isinstance(layout, dict):
+            boxes = layout.get("boxes")
+            if isinstance(boxes, list):
+                for item in boxes:
+                    _collect_label_map(item, labels)
     return labels
 
 
