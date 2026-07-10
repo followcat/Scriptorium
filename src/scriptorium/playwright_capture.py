@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+
+from .browser_launch import chromium_launch_kwargs
 
 
 CaptureMode = Literal["print", "download"]
@@ -32,13 +33,8 @@ def print_page_to_pdf(
     target = Path(pdf_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     url = _source_to_url(source)
-    executable = chrome_executable or shutil.which("google-chrome") or shutil.which("chromium")
-    launch_kwargs: dict[str, Any] = {"headless": True, "args": ["--no-proxy-server"]}
-    if executable:
-        launch_kwargs["executable_path"] = executable
-
     with sync_playwright() as p:
-        browser = p.chromium.launch(**launch_kwargs)
+        browser = p.chromium.launch(**chromium_launch_kwargs(chrome_executable))
         try:
             page = browser.new_page(device_scale_factor=1)
             page.goto(url, wait_until="networkidle")
@@ -62,13 +58,8 @@ def download_pdf(
     target = Path(pdf_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     url = _source_to_url(source)
-    executable = chrome_executable or shutil.which("google-chrome") or shutil.which("chromium")
-    launch_kwargs: dict[str, Any] = {"headless": True, "args": ["--no-proxy-server"]}
-    if executable:
-        launch_kwargs["executable_path"] = executable
-
     with sync_playwright() as p:
-        browser = p.chromium.launch(**launch_kwargs)
+        browser = p.chromium.launch(**chromium_launch_kwargs(chrome_executable))
         try:
             request_context = p.request.new_context()
             response = request_context.get(url)

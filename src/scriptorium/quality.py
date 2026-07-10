@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import math
-import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageChops
 
+from .browser_launch import chromium_launch_kwargs
 from .models import DocumentIR
 from .pdf_render import SourceKind, render_pdf, render_source
 
@@ -56,13 +56,8 @@ def _capture_html_pages(
     except ImportError as exc:
         raise RuntimeError("Playwright is required for HTML screenshot quality checks.") from exc
 
-    executable = chrome_executable or shutil.which("google-chrome") or shutil.which("chromium")
-    launch_kwargs: dict[str, Any] = {"headless": True, "args": ["--no-proxy-server"]}
-    if executable:
-        launch_kwargs["executable_path"] = executable
-
     with sync_playwright() as p:
-        browser = p.chromium.launch(**launch_kwargs)
+        browser = p.chromium.launch(**chromium_launch_kwargs(chrome_executable))
         try:
             page = browser.new_page(device_scale_factor=1)
             page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
