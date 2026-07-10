@@ -205,8 +205,11 @@ Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-st
 | Transformer-XL pp. 1-3 | 458 / 321 | `0.93853503` | Pair `1.0`, successor `1.0` | Native column flow is retained; stream needs decrease by 1 and consensus successor disagreement by 26. |
 | JD homepage p. 1 | 160 / 128 | `0.99536129` | No semantic sidecar | Successor-consensus disagreement improves by 62; native grid streams remain protected and stream `needs-structure-evidence` stays at baseline. |
 | PUMA p. 5 | 42 / 25 | `0.95767110` | No semantic sidecar | The implicit-image guard leaves selected order and review diagnostics at the native baseline. |
+| BYD financial report p. 136 | 66 / 34 | `0.96518593` | No semantic sidecar | PP table recognition maps 10 cells into one row-major `table-island`; page needs-structure-evidence decreases by 1. |
 
 This is evidence that block order is useful but incomplete: model block order can refine candidate successors, while translation needs explicit local `successor_edges` and `reading_streams` to resolve portal cards, image captions, sidebars, and repeated text safely.
+
+The BYD page-136 pseudo-translation A/B leaves the total at 17 overflows and 17 conflicts, so table structure alone is not a fidelity fix. It does, however, move 10 replacements into `table-island` and attributes 9 conflicts to that one local stream instead of the body streams. That is the measurable target for table-aware mask padding and text fitting.
 
 ## Translation Stress Results
 
