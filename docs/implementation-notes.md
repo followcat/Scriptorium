@@ -541,7 +541,9 @@ Metrics:
 - `structure_evidence_source`: optional JSON evidence source used by the case.
 - `structure_evidence_region_count`: normalized external regions loaded from Paddle/PP-Structure/Docling structure JSON.
 - `structure_evidence_relation_edge_count` and `structure_evidence_resolved_relation_edge_count`: external successor/precedence edges loaded from structure JSON and successfully resolved to current page elements.
+- `structure_evidence_resolved_relation_alias_edge_count`: resolved relation edges that required the text-only structure-list alias fallback rather than direct region/node-key matching.
 - `structure_evidence_stream_count`, `structure_evidence_resolved_stream_member_count`, and `structure_evidence_stream_conflict_count`: external reading streams loaded from structure JSON, members resolved to current elements, and overlapping stream assignments that were skipped.
+- `structure_evidence_resolved_stream_alias_member_count`: stream members that required the same text-only alias fallback.
 - `structure_evidence_relation_stream_count`, `structure_evidence_resolved_relation_stream_member_count`, and `structure_evidence_relation_stream_conflict_count`: streams derived from relation-only successor chains, resolved member count, and reserved conflict diagnostics. Explicit external streams are skipped before relation-derived stream assignment and are not counted as conflicts.
 - `structure_evidence_matched_element_count`: native elements matched to those regions by bbox/text evidence.
 - `structure_evidence_reordered_page_count`: pages whose text order was reassigned from external structure evidence.
