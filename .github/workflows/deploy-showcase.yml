@@ -26,8 +26,8 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
-          # A repository Pages site can be created automatically only with an
-          # administrator PAT. Existing Pages sites use the workflow token.
+          # An eligible repository can create a Pages site automatically only
+          # with an administrator PAT. Existing sites use the workflow token.
           token: ${{ secrets.PAGES_ADMIN_TOKEN || github.token }}
           enablement: ${{ secrets.PAGES_ADMIN_TOKEN != '' }}
       - name: Select GitHub Actions as Pages source
