@@ -9,9 +9,10 @@ from typing import Any
 
 from .models import BBox, DocumentIR, ElementIR, PageIR
 from .reading_order import (
+    RelationGraphEdgeDiagnostics,
     infer_box_flow_order,
     infer_relation_graph_order,
-    infer_relation_graph_selected_edges,
+    infer_relation_graph_selected_edge_diagnostics,
     successor_consensus_diagnostics,
 )
 
@@ -204,10 +205,12 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
         stream_details.setdefault(stream_id, details)
         member_by_element_id[element.id] = member
 
+    relation_graph_edge_diagnostics = _page_relation_graph_edge_diagnostics(page, elements)
     review_edge_promotions = _review_edge_promotion_support(
         page,
         elements,
         stream_members,
+        relation_graph_edge_diagnostics=relation_graph_edge_diagnostics,
     )
     element_order = {element.id: index for index, element in enumerate(elements)}
     streams: list[dict[str, Any]] = []
@@ -224,6 +227,7 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
             details,
             members,
             review_edge_promotions,
+            relation_graph_edge_diagnostics,
             elements,
             element_order,
         )
@@ -511,10 +515,30 @@ def _has_secondary_structure_stream(metadata: Mapping[str, Any]) -> bool:
     return _text(value).lower() in {"false", "0", "secondary"}
 
 
+def _page_relation_graph_edge_diagnostics(
+    page: PageIR,
+    elements: list[ElementIR],
+) -> dict[tuple[str, str], RelationGraphEdgeDiagnostics]:
+    if len(elements) < 2:
+        return {}
+    diagnostics = infer_relation_graph_selected_edge_diagnostics(
+        [element.bbox_pdf for element in elements],
+        page.width_pt,
+        page.height_pt,
+    )
+    return {
+        (elements[source_index].id, elements[target_index].id): diagnostic
+        for (source_index, target_index), diagnostic in diagnostics.items()
+        if 0 <= source_index < len(elements) and 0 <= target_index < len(elements)
+    }
+
+
 def _review_edge_promotion_support(
     page: PageIR,
     elements: list[ElementIR],
     stream_members: Mapping[str, list["_ProposalMember"]],
+    *,
+    relation_graph_edge_diagnostics: Mapping[tuple[str, str], RelationGraphEdgeDiagnostics],
 ) -> dict[tuple[str, str], "_ReviewEdgePromotion"]:
     """Find review edges supported by three independent local signals.
 
@@ -527,12 +551,6 @@ def _review_edge_promotion_support(
 
     if len(elements) < 2:
         return {}
-    global_relation_scores = infer_relation_graph_selected_edges(
-        [element.bbox_pdf for element in elements],
-        page.width_pt,
-        page.height_pt,
-    )
-    global_index_by_id = {element.id: index for index, element in enumerate(elements)}
     promotions: dict[tuple[str, str], _ReviewEdgePromotion] = {}
     for members in stream_members.values():
         promotions.update(
@@ -540,8 +558,7 @@ def _review_edge_promotion_support(
                 members,
                 page_width=page.width_pt,
                 page_height=page.height_pt,
-                global_relation_scores=global_relation_scores,
-                global_index_by_id=global_index_by_id,
+                global_relation_edge_diagnostics=relation_graph_edge_diagnostics,
             )
         )
     return promotions
@@ -552,8 +569,7 @@ def _stream_review_edge_promotion_support(
     *,
     page_width: float,
     page_height: float,
-    global_relation_scores: Mapping[tuple[int, int], float],
-    global_index_by_id: Mapping[str, int],
+    global_relation_edge_diagnostics: Mapping[tuple[str, str], RelationGraphEdgeDiagnostics],
 ) -> dict[tuple[str, str], "_ReviewEdgePromotion"]:
     if len(members) < 2:
         return {}
@@ -590,16 +606,14 @@ def _stream_review_edge_promotion_support(
             continue
         source_id = members[source_index].element.id
         target_id = members[target_index].element.id
-        global_source_index = global_index_by_id.get(source_id)
-        global_target_index = global_index_by_id.get(target_id)
-        if global_source_index is None or global_target_index is None:
+        relation_diagnostic = global_relation_edge_diagnostics.get((source_id, target_id))
+        if relation_diagnostic is None or relation_diagnostic.score < REVIEW_EDGE_RELATION_GRAPH_SCORE:
             continue
-        relation_score = global_relation_scores.get((global_source_index, global_target_index))
-        if relation_score is None or relation_score < REVIEW_EDGE_RELATION_GRAPH_SCORE:
+        if relation_diagnostic.has_tied_alternative:
             continue
         promotions[(source_id, target_id)] = _ReviewEdgePromotion(
             geometry_score=geometry_score,
-            relation_graph_score=relation_score,
+            relation_graph_diagnostic=relation_diagnostic,
         )
     return promotions
 
@@ -709,6 +723,7 @@ def _propose_stream(
     details: "_StreamDetails",
     members: list["_ProposalMember"],
     review_edge_promotions: Mapping[tuple[str, str], "_ReviewEdgePromotion"],
+    relation_graph_edge_diagnostics: Mapping[tuple[str, str], RelationGraphEdgeDiagnostics],
     ordered_elements: list[ElementIR],
     element_order: Mapping[str, int],
 ) -> tuple[dict[str, Any], Counter[str]]:
@@ -726,6 +741,7 @@ def _propose_stream(
             source,
             target,
             review_edge_promotions.get((source.element.id, target.element.id)),
+            relation_graph_edge_diagnostics.get((source.element.id, target.element.id)),
             interleaved_structure_boundary=interleaved_structure_boundary,
         )
         if edge["review_required"]:
@@ -763,6 +779,7 @@ def _successor_edge(
     source: "_ProposalMember",
     target: "_ProposalMember",
     review_edge_promotion: "_ReviewEdgePromotion | None" = None,
+    relation_graph_diagnostic: RelationGraphEdgeDiagnostics | None = None,
     *,
     interleaved_structure_boundary: bool = False,
 ) -> dict[str, Any]:
@@ -814,6 +831,13 @@ def _successor_edge(
     }
     if promotion is not None:
         edge["promotion"] = promotion
+    # Stable strict edges retain the compact v1 payload.  Selection diagnostics
+    # are attached when an edge was promoted or when a score tie itself is the
+    # reason that a reviewer needs to inspect the local relation.
+    if relation_graph_diagnostic is not None and (
+        promotion is not None or relation_graph_diagnostic.has_tied_alternative
+    ):
+        edge["relation_graph"] = relation_graph_diagnostic.as_payload()
     return edge
 
 
@@ -912,6 +936,10 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+def _optional_float(value: float | None) -> float | None:
+    return round(value, 8) if value is not None else None
+
+
 def _int(value: Any, *, default: int = 0) -> int:
     parsed = _optional_int(value)
     return default if parsed is None else parsed
@@ -960,9 +988,14 @@ class _ProposalMember:
 
 
 class _ReviewEdgePromotion:
-    def __init__(self, *, geometry_score: float, relation_graph_score: float) -> None:
+    def __init__(
+        self,
+        *,
+        geometry_score: float,
+        relation_graph_diagnostic: RelationGraphEdgeDiagnostics,
+    ) -> None:
         self.geometry_score = geometry_score
-        self.relation_graph_score = relation_graph_score
+        self.relation_graph_diagnostic = relation_graph_diagnostic
         self.evidence = (
             "geometry-mutual-neighbor",
             "relation-graph-selected",
@@ -973,6 +1006,10 @@ class _ReviewEdgePromotion:
         return {
             "kind": "independent-local-evidence",
             "geometry_score": round(self.geometry_score, 8),
-            "relation_graph_score": round(self.relation_graph_score, 8),
+            "relation_graph_score": round(self.relation_graph_diagnostic.score, 8),
+            "relation_graph_minimum_margin": _optional_float(
+                self.relation_graph_diagnostic.minimum_margin
+            ),
+            "relation_graph_has_tied_alternative": self.relation_graph_diagnostic.has_tied_alternative,
             "candidate_consensus": "3-of-3",
         }

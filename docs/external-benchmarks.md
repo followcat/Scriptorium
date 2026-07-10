@@ -237,7 +237,7 @@ Those direct counts are intentionally retained, but they are not sufficient for 
 
 ### Evidence-gated local promotion v1
 
-`reading_order_confidence` describes a page strategy, not a particular edge. The sidecar now promotes a review-only edge only when it remains inside one provisional stream and all three independent signals agree: mutual forward geometry, a selected full-page relation-graph edge with score at least `0.86`, and direct successor agreement from visual-YX, box-flow, and relation-graph stream candidates. The proposal records `geometry-mutual-neighbor`, `relation-graph-selected`, and `stream-consensus-3-of-3`; cross-stream transitions remain review-only.
+`reading_order_confidence` describes a page strategy, not a particular edge. The sidecar now promotes a review-only edge only when it remains inside one provisional stream and all three independent signals agree: mutual forward geometry, a selected full-page relation-graph edge with score at least `0.86`, and direct successor agreement from visual-YX, box-flow, and relation-graph stream candidates. An exactly tied feasible relation-graph alternative blocks promotion even when those three checks agree. The proposal records `geometry-mutual-neighbor`, `relation-graph-selected`, and `stream-consensus-3-of-3`; tied review edges also carry selection-time `relation_graph` margin diagnostics. Cross-stream transitions remain review-only.
 
 The following reruns are stored under `outputs/external/*-edge-evidence-v1`. Counts are streams / strict / review / transitions. They are proposal counts, not accuracy claims on unlabelled samples.
 
@@ -251,6 +251,19 @@ The following reruns are stored under `outputs/external/*-edge-evidence-v1`. Cou
 The new gate is intentionally precision-first. It demonstrates a general way to recover stable local chains without converting every low-confidence page strategy into an executable relation. The next promotion criterion is labelled relation or stream coverage on additional complex documents, not a larger raw strict-edge count.
 
 The BYD page-136 pseudo-translation A/B leaves the total at 17 overflows and 17 conflicts, so table structure alone is not a fidelity fix. It does, however, move 10 replacements into `table-island` and attributes 9 conflicts to that one local stream instead of the body streams. That is the measurable target for table-aware mask padding and text fitting.
+
+### Relation-Graph Selection Ambiguity
+
+The relation graph now reports selection-time alternatives rather than only a serialized candidate order. `path_cover_edge_count` excludes serialization handoffs; `tied_edge_count` is limited to exactly equal feasible alternatives; `mean_minimum_margin` summarizes only edges that had an alternative. None of these are correctness scores or runtime switching thresholds.
+
+| Sample | Output | Path-Cover Edges | Exact Ties | Mean Minimum Margin | Result |
+|---|---|---:|---:|---:|---|
+| Transformer-XL pp. 1-3 | `outputs/external/transformer-xl-relation-ambiguity-v1` | 288 | 3 (1.041667%) | 0.00123018 | Visual `0.98160664`, semantic pair/successor accuracy remains `1.0`; ties remain review-only. |
+| PUMA pp. 1-12 | `outputs/external/puma-2024-annual-report-relation-ambiguity-v1` | 329 | 0 | 0.03710031 | Visual `0.9795117`; weak/missing structure evidence, not exact ties, is the main unresolved source. |
+| JD screenshot PDF | `outputs/external/jd-home-relation-ambiguity-v1` | 93 | 2 (2.150538%) | 0.03896739 | Visual `0.99576887`; explicit local streams or successor relations remain required. |
+| BYD p. 136 | `outputs/external/byd-2024-annual-report-relation-ambiguity-v1` | 30 | 0 | 0.09570952 | Visual `1.0`; table/translation streams still need structural evidence despite no exact tie. |
+
+This confirms that a margin gate is not a substitute for semantic structure: it prevents arbitrary promotion, while PaddleOCR-VL/PP-Structure/Docling relation or stream output must resolve the remaining low-evidence local flows.
 
 ## Translation Stress Results
 

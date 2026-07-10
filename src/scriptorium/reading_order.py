@@ -192,9 +192,76 @@ class _RelationGraphEdge:
 
 
 @dataclass(frozen=True)
+class RelationGraphEdgeDiagnostics:
+    """Selection-time ambiguity data for one relation-graph successor edge.
+
+    The relation graph deliberately keeps a local path cover rather than
+    asserting that every page has one total order.  A selected edge's absolute
+    geometry score alone is insufficient evidence: an equally good feasible
+    predecessor or successor means the path-cover tie-break was arbitrary.
+    These diagnostics preserve the alternatives that existed when the edge was
+    committed, so callers can keep tied relations review-only.
+    """
+
+    source: int
+    target: int
+    score: float
+    source_candidate_count: int
+    target_candidate_count: int
+    source_alternative_score: float | None
+    target_alternative_score: float | None
+    source_margin: float | None
+    target_margin: float | None
+    source_regret: float
+    target_regret: float
+    selection_regret: float
+    selection_step: int
+
+    @property
+    def has_tied_alternative(self) -> bool:
+        """Whether a feasible alternative was indistinguishable by score."""
+
+        return any(
+            margin is not None and abs(margin) <= 1e-8
+            for margin in (self.source_margin, self.target_margin)
+        )
+
+    @property
+    def minimum_margin(self) -> float | None:
+        margins = [margin for margin in (self.source_margin, self.target_margin) if margin is not None]
+        return min(margins) if margins else None
+
+    def as_payload(self) -> dict[str, float | int | bool | None]:
+        """Return a stable JSON-compatible representation for sidecars."""
+
+        return {
+            "score": round(self.score, 8),
+            "source_candidate_count": self.source_candidate_count,
+            "target_candidate_count": self.target_candidate_count,
+            "source_alternative_score": _optional_rounded_score(self.source_alternative_score),
+            "target_alternative_score": _optional_rounded_score(self.target_alternative_score),
+            "source_margin": _optional_rounded_score(self.source_margin),
+            "target_margin": _optional_rounded_score(self.target_margin),
+            "minimum_margin": _optional_rounded_score(self.minimum_margin),
+            "source_regret": round(self.source_regret, 8),
+            "target_regret": round(self.target_regret, 8),
+            "selection_regret": round(self.selection_regret, 8),
+            "selection_step": self.selection_step,
+            "has_tied_alternative": self.has_tied_alternative,
+        }
+
+
+@dataclass(frozen=True)
+class _RelationGraphSelection:
+    edge: _RelationGraphEdge
+    diagnostics: RelationGraphEdgeDiagnostics
+
+
+@dataclass(frozen=True)
 class _RelationGraphResult:
     ordered_indices: list[int]
     selected_edges: tuple[_RelationGraphEdge, ...]
+    selected_edge_diagnostics: tuple[RelationGraphEdgeDiagnostics, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -362,6 +429,27 @@ def infer_relation_graph_selected_edges(
     return {(edge.source, edge.target): edge.score for edge in result.selected_edges}
 
 
+def infer_relation_graph_selected_edge_diagnostics(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> dict[tuple[int, int], RelationGraphEdgeDiagnostics]:
+    """Return selection-time ambiguity evidence for selected successor edges.
+
+    This exposes the feasible source and target alternatives at the instant an
+    edge entered the degree-constrained path cover.  It is deliberately
+    separate from ``infer_relation_graph_order``: callers can inspect a tied
+    local relation without treating the serialized candidate order as ground
+    truth.
+    """
+
+    result = _infer_relation_graph_result(bboxes, page_width, page_height)
+    return {
+        (diagnostic.source, diagnostic.target): diagnostic
+        for diagnostic in result.selected_edge_diagnostics
+    }
+
+
 def _infer_relation_graph_result(
     bboxes: list[BBox],
     page_width: float,
@@ -398,13 +486,21 @@ def _infer_relation_graph_result(
     successor_by_item: dict[int, int] = {}
     predecessor_by_item: dict[int, int] = {}
     selected_edges: list[_RelationGraphEdge] = []
+    selected_edge_diagnostics: list[RelationGraphEdgeDiagnostics] = []
     while len(successor_by_item) < len(source_indices) - 1:
-        edge = _select_relation_graph_edge(edges, successor_by_item, predecessor_by_item)
-        if edge is None:
+        selection = _select_relation_graph_edge(
+            edges,
+            successor_by_item,
+            predecessor_by_item,
+            selection_step=len(selected_edges) + 1,
+        )
+        if selection is None:
             break
+        edge = selection.edge
         successor_by_item[edge.source] = edge.target
         predecessor_by_item[edge.target] = edge.source
         selected_edges.append(edge)
+        selected_edge_diagnostics.append(selection.diagnostics)
 
     ordered = _serialize_relation_graph_paths(
         source_indices,
@@ -414,7 +510,11 @@ def _infer_relation_graph_result(
     )
     ordered_set = set(ordered)
     ordered.extend(index for index in visual_order if index not in ordered_set)
-    return _RelationGraphResult(ordered_indices=ordered, selected_edges=tuple(selected_edges))
+    return _RelationGraphResult(
+        ordered_indices=ordered,
+        selected_edges=tuple(selected_edges),
+        selected_edge_diagnostics=tuple(selected_edge_diagnostics),
+    )
 
 
 def infer_successor_consensus_order(
@@ -2102,7 +2202,9 @@ def _select_relation_graph_edge(
     edges: list[_RelationGraphEdge],
     successor_by_item: dict[int, int],
     predecessor_by_item: dict[int, int],
-) -> _RelationGraphEdge | None:
+    *,
+    selection_step: int,
+) -> _RelationGraphSelection | None:
     feasible = [
         edge
         for edge in edges
@@ -2127,14 +2229,50 @@ def _select_relation_graph_edge(
         target_regret = _relation_graph_regret(edge, incoming[edge.target])
         return (source_regret + target_regret, edge.score, -edge.source, -edge.target)
 
-    return max(feasible, key=priority)
+    edge = max(feasible, key=priority)
+    source_alternative = _relation_graph_best_alternative(edge, outgoing[edge.source])
+    target_alternative = _relation_graph_best_alternative(edge, incoming[edge.target])
+    source_alternative_score = source_alternative.score if source_alternative is not None else None
+    target_alternative_score = target_alternative.score if target_alternative is not None else None
+    source_margin = edge.score - source_alternative_score if source_alternative_score is not None else None
+    target_margin = edge.score - target_alternative_score if target_alternative_score is not None else None
+    source_regret = _relation_graph_regret(edge, outgoing[edge.source])
+    target_regret = _relation_graph_regret(edge, incoming[edge.target])
+    return _RelationGraphSelection(
+        edge=edge,
+        diagnostics=RelationGraphEdgeDiagnostics(
+            source=edge.source,
+            target=edge.target,
+            score=edge.score,
+            source_candidate_count=len(outgoing[edge.source]),
+            target_candidate_count=len(incoming[edge.target]),
+            source_alternative_score=source_alternative_score,
+            target_alternative_score=target_alternative_score,
+            source_margin=source_margin,
+            target_margin=target_margin,
+            source_regret=source_regret,
+            target_regret=target_regret,
+            selection_regret=source_regret + target_regret,
+            selection_step=selection_step,
+        ),
+    )
 
 
 def _relation_graph_regret(edge: _RelationGraphEdge, alternatives: list[_RelationGraphEdge]) -> float:
+    alternative = _relation_graph_best_alternative(edge, alternatives)
+    if alternative is not None:
+        return edge.score - alternative.score
+    return edge.score
+
+
+def _relation_graph_best_alternative(
+    edge: _RelationGraphEdge,
+    alternatives: list[_RelationGraphEdge],
+) -> _RelationGraphEdge | None:
     for alternative in alternatives:
         if alternative != edge:
-            return edge.score - alternative.score
-    return edge.score
+            return alternative
+    return None
 
 
 def _relation_graph_would_cycle(source: int, target: int, successor_by_item: dict[int, int]) -> bool:
@@ -2584,6 +2722,10 @@ def _merge_evidence(*groups: tuple[str, ...]) -> tuple[str, ...]:
             if item and item not in evidence:
                 evidence.append(item)
     return tuple(evidence)
+
+
+def _optional_rounded_score(value: float | None) -> float | None:
+    return round(value, 8) if value is not None else None
 
 
 def _bounded_confidence(value: float) -> float:

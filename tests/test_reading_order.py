@@ -9,6 +9,7 @@ from scriptorium.pdf_render import render_pdf
 from scriptorium.reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
+    infer_relation_graph_selected_edge_diagnostics,
     infer_relation_graph_selected_edges,
     infer_semantic_reading_order,
     infer_successor_consensus_order,
@@ -300,6 +301,50 @@ def test_relation_graph_selected_edges_exclude_serialized_path_handoffs() -> Non
     assert (2, 3) in selected
     assert selected[(0, 1)] >= 0.86
     assert selected[(2, 3)] >= 0.86
+
+
+def test_relation_graph_selected_edge_diagnostics_keep_selection_time_alternatives() -> None:
+    bboxes = [
+        BBox(x0=60, y0=70, x1=240, y1=80),
+        BBox(x0=60, y0=88, x1=240, y1=98),
+        BBox(x0=320, y0=70, x1=500, y1=80),
+        BBox(x0=320, y0=88, x1=500, y1=98),
+    ]
+
+    diagnostics = infer_relation_graph_selected_edge_diagnostics(bboxes, page_width=612, page_height=792)
+
+    first = diagnostics[(0, 1)]
+    assert first.source_candidate_count == 2
+    assert first.target_candidate_count == 2
+    assert first.source_alternative_score is not None
+    assert first.target_alternative_score is not None
+    assert first.source_margin == 0.28
+    assert first.target_margin == 0.28
+    assert first.selection_regret == 0.56
+    assert first.selection_step == 1
+    assert first.has_tied_alternative is False
+    assert first.as_payload()["minimum_margin"] == 0.28
+
+    uncontested = diagnostics[(2, 3)]
+    assert uncontested.source_alternative_score is None
+    assert uncontested.target_alternative_score is None
+    assert uncontested.minimum_margin is None
+    assert uncontested.has_tied_alternative is False
+
+
+def test_relation_graph_selected_edge_diagnostics_mark_geometry_ties_ambiguous() -> None:
+    bboxes = [
+        BBox(x0=20, y0=20, x1=180, y1=30),
+        BBox(x0=20, y0=40, x1=180, y1=50),
+        BBox(x0=20, y0=40, x1=180, y1=50),
+        BBox(x0=20, y0=60, x1=180, y1=70),
+    ]
+
+    diagnostics = infer_relation_graph_selected_edge_diagnostics(bboxes, page_width=200, page_height=300)
+
+    assert diagnostics[(0, 1)].has_tied_alternative is True
+    assert diagnostics[(0, 1)].minimum_margin == 0
+    assert diagnostics[(1, 3)].has_tied_alternative is True
 
 
 def test_relation_graph_candidate_keeps_table_like_grid_visual() -> None:

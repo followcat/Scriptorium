@@ -160,6 +160,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_relation_graph_successor_disagreement_count" in case for case in report["cases"])
     assert all("reading_order_relation_graph_successor_disagreement_ratio" in case for case in report["cases"])
     assert all("reading_order_relation_graph_successor_disagreement_page_count" in case for case in report["cases"])
+    assert all("reading_order_relation_graph_path_cover_edge_count" in case for case in report["cases"])
+    assert all("reading_order_relation_graph_tied_edge_count" in case for case in report["cases"])
+    assert all("reading_order_relation_graph_tied_edge_ratio" in case for case in report["cases"])
+    assert all("reading_order_relation_graph_mean_minimum_margin" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_pair_count" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_disagreement_pair_count" in case for case in report["cases"])
     assert all("reading_order_successor_consensus_disagreement_ratio" in case for case in report["cases"])
@@ -291,6 +295,10 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_relation_graph_successor_disagreements" in report["summary"]
     assert "mean_reading_order_relation_graph_successor_disagreement_ratio" in report["summary"]
     assert "total_reading_order_relation_graph_successor_disagreement_pages" in report["summary"]
+    assert "total_reading_order_relation_graph_path_cover_edges" in report["summary"]
+    assert "total_reading_order_relation_graph_tied_edges" in report["summary"]
+    assert "mean_reading_order_relation_graph_tied_edge_ratio" in report["summary"]
+    assert "mean_reading_order_relation_graph_minimum_margin" in report["summary"]
     assert "total_reading_order_successor_consensus_pairs" in report["summary"]
     assert "total_reading_order_successor_consensus_disagreement_pairs" in report["summary"]
     assert "mean_reading_order_successor_consensus_disagreement_ratio" in report["summary"]
@@ -952,6 +960,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_box_flow_disagreement_ratio" in csv_text
     assert "reading_order_box_flow_successor_disagreement_ratio" in csv_text
     assert "reading_order_relation_graph_successor_disagreement_ratio" in csv_text
+    assert "reading_order_relation_graph_tied_edge_ratio" in csv_text
+    assert "reading_order_relation_graph_mean_minimum_margin" in csv_text
     assert "reading_order_successor_consensus_successor_disagreement_ratio" in csv_text
     assert "reading_order_successor_consensus_selected_edge_support_ratio" in csv_text
     assert "reading_order_successor_consensus_conflicted_edge_ratio" in csv_text

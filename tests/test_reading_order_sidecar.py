@@ -164,6 +164,27 @@ def test_stable_low_confidence_local_edges_promote_with_independent_evidence() -
     assert promotion["candidate_consensus"] == "3-of-3"
 
 
+def test_tied_relation_graph_edge_stays_review_only_with_ambiguity_payload() -> None:
+    proposal = propose_reading_order_sidecar(
+        _document(
+            [
+                _element("first", "First", 1, 10, 20, confidence=0.5),
+                _element("duplicate-a", "Duplicate A", 2, 10, 40, confidence=0.5),
+                _element("duplicate-b", "Duplicate B", 3, 10, 40, confidence=0.5),
+                _element("last", "Last", 4, 10, 60, confidence=0.5),
+            ]
+        )
+    )
+    stream = proposal["pages"][0]["reading_streams"][0]
+    first_edge = stream["review_successor_edges"][0]
+
+    assert first_edge["source"] == "first"
+    assert first_edge["target"] == "duplicate-a"
+    assert "promotion" not in first_edge
+    assert first_edge["relation_graph"]["has_tied_alternative"] is True
+    assert first_edge["relation_graph"]["minimum_margin"] == 0
+
+
 def test_low_confidence_cross_stream_handoff_stays_review_only() -> None:
     proposal = propose_reading_order_sidecar(
         _document(

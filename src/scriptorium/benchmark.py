@@ -23,6 +23,7 @@ from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_
 from .reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
+    infer_relation_graph_selected_edge_diagnostics,
     infer_successor_consensus_order,
     pairwise_order_disagreement,
     successor_order_disagreement,
@@ -1108,6 +1109,24 @@ def _run_case(
         "reading_order_relation_graph_successor_disagreement_page_count": stats[
             "reading_order_relation_graph_successor_disagreement_page_count"
         ],
+        "reading_order_relation_graph_path_cover_page_count": stats[
+            "reading_order_relation_graph_path_cover_page_count"
+        ],
+        "reading_order_relation_graph_path_cover_edge_count": stats[
+            "reading_order_relation_graph_path_cover_edge_count"
+        ],
+        "reading_order_relation_graph_tied_edge_count": stats[
+            "reading_order_relation_graph_tied_edge_count"
+        ],
+        "reading_order_relation_graph_tied_edge_ratio": stats[
+            "reading_order_relation_graph_tied_edge_ratio"
+        ],
+        "reading_order_relation_graph_margined_edge_count": stats[
+            "reading_order_relation_graph_margined_edge_count"
+        ],
+        "reading_order_relation_graph_mean_minimum_margin": stats[
+            "reading_order_relation_graph_mean_minimum_margin"
+        ],
         "reading_order_successor_consensus_pair_count": stats["reading_order_successor_consensus_pair_count"],
         "reading_order_successor_consensus_disagreement_pair_count": stats[
             "reading_order_successor_consensus_disagreement_pair_count"
@@ -2043,7 +2062,7 @@ def _reading_order_box_flow_diagnostics(document: DocumentIR) -> dict[str, Any]:
 
 
 def _reading_order_relation_graph_diagnostics(document: DocumentIR) -> dict[str, Any]:
-    return _reading_order_candidate_diagnostics(
+    diagnostics = _reading_order_candidate_diagnostics(
         document,
         prefix="relation_graph",
         candidate_order_fn=lambda text_elements, page: infer_relation_graph_order(
@@ -2052,6 +2071,58 @@ def _reading_order_relation_graph_diagnostics(document: DocumentIR) -> dict[str,
             page_height=page.height_pt,
         ),
     )
+    diagnostics.update(_relation_graph_support_diagnostics(document))
+    return diagnostics
+
+
+def _relation_graph_support_diagnostics(document: DocumentIR) -> dict[str, Any]:
+    """Summarize path-cover ambiguity without treating it as an accuracy score."""
+
+    candidate_page_count = 0
+    selected_edge_count = 0
+    tied_edge_count = 0
+    margined_edge_count = 0
+    minimum_margin_total = 0.0
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        if len(text_elements) < 2:
+            continue
+        edge_diagnostics = infer_relation_graph_selected_edge_diagnostics(
+            [element.bbox_pdf for element in text_elements],
+            page_width=page.width_pt,
+            page_height=page.height_pt,
+        )
+        if not edge_diagnostics:
+            continue
+        candidate_page_count += 1
+        selected_edge_count += len(edge_diagnostics)
+        tied_edge_count += sum(
+            1 for diagnostic in edge_diagnostics.values() if diagnostic.has_tied_alternative
+        )
+        for diagnostic in edge_diagnostics.values():
+            minimum_margin = diagnostic.minimum_margin
+            if minimum_margin is None:
+                continue
+            margined_edge_count += 1
+            minimum_margin_total += minimum_margin
+    return {
+        "reading_order_relation_graph_path_cover_page_count": candidate_page_count,
+        "reading_order_relation_graph_path_cover_edge_count": selected_edge_count,
+        "reading_order_relation_graph_tied_edge_count": tied_edge_count,
+        "reading_order_relation_graph_tied_edge_ratio": round(
+            tied_edge_count / selected_edge_count,
+            8,
+        )
+        if selected_edge_count
+        else 0.0,
+        "reading_order_relation_graph_margined_edge_count": margined_edge_count,
+        "reading_order_relation_graph_mean_minimum_margin": round(
+            minimum_margin_total / margined_edge_count,
+            8,
+        )
+        if margined_edge_count
+        else 0.0,
+    }
 
 
 def _reading_order_successor_consensus_diagnostics(document: DocumentIR) -> dict[str, Any]:
@@ -3061,6 +3132,28 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_relation_graph_successor_disagreement_pages": sum(
             int(case["reading_order_relation_graph_successor_disagreement_page_count"]) for case in cases
         ),
+        "total_reading_order_relation_graph_path_cover_pages": sum(
+            int(case["reading_order_relation_graph_path_cover_page_count"]) for case in cases
+        ),
+        "total_reading_order_relation_graph_path_cover_edges": sum(
+            int(case["reading_order_relation_graph_path_cover_edge_count"]) for case in cases
+        ),
+        "total_reading_order_relation_graph_tied_edges": sum(
+            int(case["reading_order_relation_graph_tied_edge_count"]) for case in cases
+        ),
+        "mean_reading_order_relation_graph_tied_edge_ratio": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_relation_graph_tied_edge_count",
+            denominator_key="reading_order_relation_graph_path_cover_edge_count",
+        ),
+        "total_reading_order_relation_graph_margined_edges": sum(
+            int(case["reading_order_relation_graph_margined_edge_count"]) for case in cases
+        ),
+        "mean_reading_order_relation_graph_minimum_margin": _weighted_case_mean(
+            cases,
+            value_key="reading_order_relation_graph_mean_minimum_margin",
+            weight_key="reading_order_relation_graph_margined_edge_count",
+        ),
         "total_reading_order_successor_consensus_pairs": sum(
             int(case["reading_order_successor_consensus_pair_count"]) for case in cases
         ),
@@ -3427,6 +3520,12 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_relation_graph_successor_disagreement_count",
         "reading_order_relation_graph_successor_disagreement_ratio",
         "reading_order_relation_graph_successor_disagreement_page_count",
+        "reading_order_relation_graph_path_cover_page_count",
+        "reading_order_relation_graph_path_cover_edge_count",
+        "reading_order_relation_graph_tied_edge_count",
+        "reading_order_relation_graph_tied_edge_ratio",
+        "reading_order_relation_graph_margined_edge_count",
+        "reading_order_relation_graph_mean_minimum_margin",
         "reading_order_successor_consensus_pair_count",
         "reading_order_successor_consensus_disagreement_pair_count",
         "reading_order_successor_consensus_disagreement_ratio",

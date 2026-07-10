@@ -237,7 +237,7 @@ Transformer-XL 是本 proposal layer 的有标注检查。在 `outputs/external/
 
 ### Evidence-gated local promotion v1
 
-`reading_order_confidence` 描述的是页面策略，而不是单条边的可信度。Sidecar 现在只有在边位于同一个 provisional stream 且三类独立证据同时成立时，才把 review-only edge 提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score 至少为 `0.86`、visual-YX、box-flow、relation-graph 三个 stream candidate 都给出直接 successor。Proposal 会写入 `geometry-mutual-neighbor`、`relation-graph-selected`、`stream-consensus-3-of-3`；跨 stream transition 始终保持 review-only。
+`reading_order_confidence` 描述的是页面策略，而不是单条边的可信度。Sidecar 现在只有在边位于同一个 provisional stream 且三类独立证据同时成立时，才把 review-only edge 提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score 至少为 `0.86`、visual-YX、box-flow、relation-graph 三个 stream candidate 都给出直接 successor。即使三项都通过，只要 relation graph 存在完全同分的可行替代边，也会阻止提升。Proposal 会写入 `geometry-mutual-neighbor`、`relation-graph-selected`、`stream-consensus-3-of-3`；同分 review edge 还会带上选择时的 `relation_graph` margin 诊断。跨 stream transition 始终保持 review-only。
 
 下面的重跑产物位于 `outputs/external/*-edge-evidence-v1`。计数格式为 streams / strict / review / transitions。未标注样本的计数只是 proposal 证据，不是正确率。
 
@@ -251,6 +251,19 @@ Transformer-XL 是本 proposal layer 的有标注检查。在 `outputs/external/
 这个 gate 是 precision-first 的：它展示了如何恢复稳定的局部链，而不是把整页低置信策略都改成可执行关系。下一次能扩大自动提升范围的依据应是更多复杂文档上的 labelled relation 或 stream coverage，而不是更大的 raw strict-edge 数量。
 
 比亚迪第 136 页的 pseudo-translation A/B 仍有 17 个 overflow 和 17 个 conflict，因此表格结构本身不是 fidelity 修复。它把 10 个 replacement 正确归入 `table-island`，并把 9 个 conflict 归因到同一个局部流，而不是正文流。这就是后续 table-aware mask padding 和 text fitting 的可量化目标。
+
+### Relation-Graph 选择歧义
+
+Relation graph 现在报告选择时的替代边，而不是只给出序列化 candidate order。`path_cover_edge_count` 不包含序列化时拼接的 handoff；`tied_edge_count` 只统计完全同分的可行替代项；`mean_minimum_margin` 只汇总存在替代项的边。它们不是正确率，也不是 runtime 切换阈值。
+
+| 样本 | 输出目录 | Path-cover 边 | 完全同分 | 平均最小 Margin | 结果 |
+|---|---|---:|---:|---:|---|
+| Transformer-XL pp. 1-3 | `outputs/external/transformer-xl-relation-ambiguity-v1` | 288 | 3 (1.041667%) | 0.00123018 | 视觉 `0.98160664`，semantic pair/successor accuracy 仍为 `1.0`；同分边保持 review-only。 |
+| PUMA pp. 1-12 | `outputs/external/puma-2024-annual-report-relation-ambiguity-v1` | 329 | 0 | 0.03710031 | 视觉 `0.9795117`；主要未解问题是弱/缺失 structure evidence，不是完全同分。 |
+| JD 截图 PDF | `outputs/external/jd-home-relation-ambiguity-v1` | 93 | 2 (2.150538%) | 0.03896739 | 视觉 `0.99576887`；仍需要显式 local stream 或 successor relation。 |
+| 比亚迪 p. 136 | `outputs/external/byd-2024-annual-report-relation-ambiguity-v1` | 30 | 0 | 0.09570952 | 视觉 `1.0`；即使没有完全同分，表格/翻译流仍需结构证据。 |
+
+这验证了 margin gate 不是 semantic structure 的替代品：它只阻止任意提升，真正解决剩余低证据局部流仍需要 PaddleOCR-VL/PP-Structure/Docling 的 relation 或 stream 输出。
 
 ## 翻译压力测试结果
 
