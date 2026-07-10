@@ -27,6 +27,8 @@
   ·
   <a href="#benchmark">Benchmark</a>
   ·
+  <a href="https://followcat.github.io/Scriptorium/">Live Gallery</a>
+  ·
   <a href="#documentation">Docs</a>
 </p>
 
@@ -69,6 +71,10 @@ HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style
     </td>
   </tr>
 </table>
+
+<p align="center">
+  <a href="https://followcat.github.io/Scriptorium/"><strong>Open the live source-to-HTML gallery</strong></a>
+</p>
 
 ## Quick Start
 
