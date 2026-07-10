@@ -160,7 +160,7 @@ scriptorium benchmark-structure-ab input.pdf --structure-json paddle.json --out-
 scriptorium benchmark page.png --input-kind image --structure-json page.structure.json --out-dir outputs/page-image
 ```
 
-`benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor 和 semantic stream-assignment id/type accuracy 指标。
+`benchmark-structure-ab` 会同时写出 `native-only/benchmark_report.json`、`native-plus-structure/benchmark_report.json`、`structure_ab_report.json` 和 `structure_ab_summary.csv`。A/B 报告会比较 visual similarity、reading-order risk、`grid_island_element_count`、结构区域/匹配/重排数、page/stream `needs-structure-evidence` 推荐数、review 推荐数、successor-disagreement 数，以及有 sidecar 时的 semantic successor、semantic relation/stream/assignment missing-label delta 和 semantic stream-assignment id/type accuracy 指标。
 
 这个设计和阅读顺序研究方向保持一致：LayoutReader / ReadingBank 把 reading order 当作文档理解的一等任务；ROOR 把 reading order 建模为 layout element 之间的关系；新的 graph/path-cover 工作也把复杂页面视为多条 successor chain，而不是一个脆弱的视觉扫描序列。Scriptorium 不把模型运行时绑进核心路径，但接收同形态证据：局部 successor edges、precedence edges 和 stream memberships。
 
@@ -267,7 +267,7 @@ Stream sidecar 现在还会单独评估 IR 的流归属质量。`semantic_stream
 
 对应的 triage 字段还包括 `semantic_stream_assignment_id_mismatch_count`、`semantic_stream_assignment_type_mismatch_count` 和 `semantic_stream_assignment_type_confusion_counts`。Confusion key 使用 `expected=>actual`，例如 `grid-island=>body`，用于快速判断复杂页面错在卡片网格、边栏、表格岛、caption、脚注还是页边 artifact 的流类型归属。
 
-在 `benchmark-structure-ab` 中，`semantic_stream_assignment_id_accuracy_delta` 和 `semantic_stream_assignment_type_accuracy_delta` 表示 native-plus-structure 减去 native-only 的流归属准确率。正向 delta 表示结构 JSON 改善了局部翻译流 membership，即使视觉相似度主要仍由背景层决定。
+在 `benchmark-structure-ab` 中，`semantic_relation_missing_text_delta`、`semantic_stream_missing_text_delta` 和 `semantic_stream_assignment_missing_delta` 表示 native-plus-structure 减去 native-only 的 missing label 数；负向 delta 表示结构 JSON 让 sidecar label 能在提取文本或 stream metadata 中被解析到。`semantic_stream_assignment_id_accuracy_delta` 和 `semantic_stream_assignment_type_accuracy_delta` 表示 native-plus-structure 减去 native-only 的流归属准确率。正向 delta 表示结构 JSON 改善了局部翻译流 membership，即使视觉相似度主要仍由背景层决定。
 
 Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
 
