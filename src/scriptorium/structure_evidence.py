@@ -183,11 +183,19 @@ def normalize_structure_relations(
         if page is None:
             continue
         source_name = source or _extract_source(payload, None)
+        endpoint_aliases = _page_relation_alias_map(page_payload)
         for kind, source_ref, target_ref, raw in _iter_relation_edges(page_payload):
             key = (page.page_index, kind, _relation_key(source_ref), _relation_key(target_ref))
             if key in seen:
                 continue
             seen.add(key)
+            raw_edge = dict(raw)
+            source_alias = _endpoint_alias(source_ref, endpoint_aliases)
+            target_alias = _endpoint_alias(target_ref, endpoint_aliases)
+            if source_alias:
+                raw_edge["_scriptorium_source_alias"] = source_alias
+            if target_alias:
+                raw_edge["_scriptorium_target_alias"] = target_alias
             edges.append(
                 StructureRelationEdge(
                     page_index=page.page_index,
@@ -195,7 +203,7 @@ def normalize_structure_relations(
                     source_ref=source_ref,
                     target_ref=target_ref,
                     source=source_name,
-                    raw=dict(raw),
+                    raw=raw_edge,
                 )
             )
     return edges
@@ -214,6 +222,7 @@ def normalize_structure_streams(
         if page is None:
             continue
         source_name = source or _extract_source(payload, None)
+        endpoint_aliases = _page_relation_alias_map(page_payload)
         for stream_index, raw_stream in enumerate(_iter_structure_streams(page_payload), start=1):
             member_refs = tuple(_stream_member_refs(raw_stream))
             if not member_refs:
@@ -223,6 +232,14 @@ def normalize_structure_streams(
             if key in seen:
                 continue
             seen.add(key)
+            raw_stream_with_aliases = dict(raw_stream)
+            member_aliases = {
+                _relation_key(ref): alias
+                for ref in member_refs
+                if (alias := _endpoint_alias(ref, endpoint_aliases))
+            }
+            if member_aliases:
+                raw_stream_with_aliases["_scriptorium_member_aliases"] = member_aliases
             streams.append(
                 StructureReadingStream(
                     page_index=page.page_index,
@@ -230,7 +247,7 @@ def normalize_structure_streams(
                     stream_type=_extract_stream_type(raw_stream),
                     member_refs=member_refs,
                     source=source_name,
-                    raw=dict(raw_stream),
+                    raw=raw_stream_with_aliases,
                 )
             )
     return streams
@@ -1086,6 +1103,94 @@ def _iter_structure_streams(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return streams
 
 
+def _page_relation_alias_map(page_payload: dict[str, Any]) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for key in ("document", "elements", "blocks", "parsing_res_list"):
+        value = page_payload.get(key)
+        if isinstance(value, list):
+            _collect_relation_aliases(value, aliases, allow_index_alias=True)
+    for key in ("table_res_list", "formula_res_list", "seal_res_list"):
+        value = page_payload.get(key)
+        if isinstance(value, list):
+            _collect_relation_aliases(value, aliases)
+    for key in ("overall_ocr_res", "text_paragraphs_ocr_res"):
+        value = page_payload.get(key)
+        if isinstance(value, dict):
+            _collect_relation_aliases(value, aliases)
+    layout = page_payload.get("layout_det_res")
+    if isinstance(layout, dict) and isinstance(layout.get("boxes"), list):
+        _collect_relation_aliases(layout["boxes"], aliases, allow_index_alias=True)
+    return aliases
+
+
+def _collect_relation_aliases(
+    value: Any,
+    aliases: dict[str, str],
+    *,
+    allow_index_alias: bool = False,
+    list_index: int | None = None,
+) -> None:
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _collect_relation_aliases(
+                item,
+                aliases,
+                list_index=index if allow_index_alias else None,
+            )
+        return
+    if not isinstance(value, dict):
+        return
+    text = _relation_alias_text(value)
+    if text:
+        if list_index is not None:
+            _add_relation_alias(aliases, list_index, text)
+        for key in STRUCTURE_REF_KEYS:
+            raw_id = value.get(key)
+            if raw_id is not None:
+                _add_relation_alias(aliases, raw_id, text)
+    for key in (
+        "children",
+        "child_blocks",
+        "sub_blocks",
+        "sub_regions",
+        "items",
+        "cells",
+        "blocks",
+        "elements",
+        "data",
+        "table_ocr_pred",
+        "overall_ocr_res",
+        "text_paragraphs_ocr_res",
+        "formula_res_list",
+        "seal_res_list",
+        "table_res_list",
+    ):
+        child = value.get(key)
+        if isinstance(child, (dict, list)):
+            _collect_relation_aliases(child, aliases)
+
+
+def _relation_alias_text(value: dict[str, Any]) -> str:
+    text = _extract_text(value)
+    if text:
+        return text
+    rec_texts = value.get("rec_texts")
+    if isinstance(rec_texts, list):
+        return " ".join(str(text).strip() for text in rec_texts if str(text).strip())
+    return ""
+
+
+def _add_relation_alias(aliases: dict[str, str], raw_alias: Any, text: str) -> None:
+    alias_key = _relation_key(raw_alias)
+    if alias_key and text.strip():
+        aliases.setdefault(alias_key, text.strip())
+
+
+def _endpoint_alias(endpoint: Any, aliases: dict[str, str]) -> str:
+    alias = aliases.get(_relation_key(endpoint), "")
+    return alias if alias and _relation_key(alias) != _relation_key(endpoint) else ""
+
+
 def _combined_relation_values(*values: Any) -> list[Any]:
     combined: list[Any] = []
     for value in values:
@@ -1260,7 +1365,9 @@ def _relation_endpoint(value: Any) -> str:
 
 
 def _relation_key(value: Any) -> str:
-    return " ".join(str(value or "").strip().lower().split())
+    if value is None:
+        return ""
+    return " ".join(str(value).strip().lower().split())
 
 
 def _slug_text(value: Any) -> str:
@@ -1994,7 +2101,17 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
     resolved_count = 0
     for relation in relations:
         source_element = _resolve_relation_endpoint_to_element(relation.source_ref, text_elements)
+        if source_element is None:
+            source_element = _resolve_relation_endpoint_to_element(
+                relation.raw.get("_scriptorium_source_alias"),
+                text_elements,
+            )
         target_element = _resolve_relation_endpoint_to_element(relation.target_ref, text_elements)
+        if target_element is None:
+            target_element = _resolve_relation_endpoint_to_element(
+                relation.raw.get("_scriptorium_target_alias"),
+                text_elements,
+            )
         if source_element is None or target_element is None or source_element.id == target_element.id:
             continue
         metadata_key = (
@@ -2036,8 +2153,16 @@ def _apply_page_streams(page: PageIR, streams: list[StructureReadingStream]) -> 
     for stream in streams:
         stream_members: list[ElementIR] = []
         seen_member_ids: set[str] = set()
+        member_aliases = stream.raw.get("_scriptorium_member_aliases")
+        if not isinstance(member_aliases, dict):
+            member_aliases = {}
         for ref in stream.member_refs:
             element = _resolve_relation_endpoint_to_element(ref, text_elements)
+            if element is None:
+                element = _resolve_relation_endpoint_to_element(
+                    member_aliases.get(_relation_key(ref)),
+                    text_elements,
+                )
             if element is None or element.id in seen_member_ids:
                 continue
             seen_member_ids.add(element.id)
