@@ -84,8 +84,8 @@ def compare_semantic_reading_order(
     ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
     page_reports = [
         _compare_page(document, page_truth, candidate_orders or {})
-        for page_truth in ground_truth.get("pages", [])
-        if isinstance(page_truth, dict) and _page_truth_in_document(document, page_truth)
+        for page_truth in _semantic_page_truths(ground_truth)
+        if _page_truth_in_document(document, page_truth)
     ]
     report = {
         "ground_truth_available": True,
@@ -97,6 +97,74 @@ def compare_semantic_reading_order(
     report.update(_summarize_candidate_orders(page_reports))
     (target / "semantic_quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
+
+
+def _semantic_page_truths(ground_truth: Any) -> list[dict[str, Any]]:
+    page_truths: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(value: Any, fallback_page_index: int | None = None) -> None:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                visit(item, index if fallback_page_index is None else fallback_page_index)
+            return
+        if not isinstance(value, dict):
+            return
+        if id(value) in seen:
+            return
+        seen.add(id(value))
+
+        has_explicit_page_index = _has_payload_page_index(value)
+        page_index = _payload_page_index(value, fallback_page_index if fallback_page_index is not None else 0)
+        if _has_semantic_page_evidence(value):
+            page_payload = dict(value)
+            if not has_explicit_page_index:
+                page_payload["page_index"] = page_index
+            page_truths.append(page_payload)
+            return
+
+        child_fallback = page_index if has_explicit_page_index or fallback_page_index is not None else None
+        for key in ("pages", "res", "result", "data", "page_results", "raw_results", "results"):
+            child = value.get(key)
+            if child is not None:
+                visit(child, child_fallback)
+
+    visit(ground_truth)
+    return page_truths
+
+
+def _has_semantic_page_evidence(value: dict[str, Any]) -> bool:
+    for key in (
+        "text_sequence",
+        "successor_edges",
+        "successor_relations",
+        "ro_linkings",
+        "reading_order_edges",
+        "reading_order_relations",
+        "reading_order_linkings",
+        "precedence_edges",
+        "order_edges",
+        "relations",
+        "reading_streams",
+        "streams",
+        "document",
+        "elements",
+        "blocks",
+        "parsing_res_list",
+        "table_res_list",
+        "formula_res_list",
+        "seal_res_list",
+    ):
+        if key in value and value[key]:
+            return True
+    for key in ("overall_ocr_res", "text_paragraphs_ocr_res", "layout_det_res"):
+        if isinstance(value.get(key), dict):
+            return True
+    return False
+
+
+def _has_payload_page_index(value: dict[str, Any]) -> bool:
+    return any(key in value and value[key] is not None for key in ("page_index", "index", "page", "page_no", "page_num"))
 
 
 def _page_truth_in_document(document: DocumentIR, page_truth: dict[str, Any]) -> bool:
