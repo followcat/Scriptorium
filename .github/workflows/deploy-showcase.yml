@@ -20,6 +20,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PAGES_ADMIN_TOKEN: ${{ secrets.PAGES_ADMIN_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,12 +30,13 @@ jobs:
         with:
           # An eligible repository can create a Pages site automatically only
           # with an administrator PAT. Existing sites use the workflow token.
-          token: ${{ secrets.PAGES_ADMIN_TOKEN || github.token }}
-          enablement: ${{ secrets.PAGES_ADMIN_TOKEN != '' }}
+          token: ${{ env.PAGES_ADMIN_TOKEN || github.token }}
+          enablement: ${{ env.PAGES_ADMIN_TOKEN != '' }}
       - name: Select GitHub Actions as Pages source
+        if: ${{ env.PAGES_ADMIN_TOKEN != '' }}
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PAGES_ADMIN_TOKEN || github.token }}
+          github-token: ${{ env.PAGES_ADMIN_TOKEN }}
           script: |
             await github.rest.repos.updateInformationAboutPagesSite({
               owner: context.repo.owner,
