@@ -174,7 +174,7 @@ JD 截图 PNG 一等 image source 路径：
   data/external/puma-2024-annual-report.pdf \
   outputs/external/jd-home/input.pdf \
   outputs/external/web-hn/input.pdf \
-  --out-dir outputs/external/translation-stress-v3 \
+  --out-dir outputs/external/translation-stress-padding-v1 \
   --dpi 144 \
   --max-pages 12 \
   --html-mode fidelity \
@@ -236,7 +236,7 @@ native 局部顺序，创建 primary `external-block-body-*` stream；不会把 
 
 | 样本 | 派生 block stream / 成员 | Selected-order 结果 | Sidecar proposal 结果 | 翻译压力结果 |
 |---|---:|---|---|---|
-| PUMA 年报第 5 页 | 4 / 17 | 没有重排；坐标 A/B baseline visual 为 `0.95767110` | stream / strict / review / transition 为 `7 / 12 / 6 / 7` | 23 个 replacement、22 个 conflict、6 个 overflow；分组改善归因，但总量尚未下降。 |
+| PUMA 年报第 5 页 | 4 / 17 | 没有重排；坐标 A/B baseline visual 为 `0.95767110` | stream / strict / review / transition 为 `7 / 12 / 6 / 7` | 23 个 replacement、6 个 overflow、18 个 conflict/target；v2 在不改变视觉相似度下约束 17 个 mask、26 个方向边。 |
 | Transformer-XL 第 1 页 | 6 / 85 | 有标注 successor accuracy 仍为 `1.0` | `13 / 81 / 5 / 13` | 不把它当作翻译视觉保真的声明。 |
 | JD 首页第 1 页 | 0 / 0 | 35 个 native grid-island 成员全部保留 | 不创建 generic block stream | 稠密卡片/页面结构仍需要显式模型 relation 或 stream。 |
 
@@ -302,15 +302,15 @@ Relation graph 现在报告选择时的替代边，而不是只给出序列化 c
 
 ## 翻译压力测试结果
 
-`outputs/external/translation-stress-v3` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。
+`outputs/external/translation-stress-padding-v1` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。该运行使用 `fidelity-replacement-fit-v2`：不改变文本坐标或 fitting 策略，只让局部 mask padding 在相邻可见元素处停止。
 
-| 样本 | 页数 | 选择路径 | 视觉相似度 | 最大差异 | 平均差异 | 翻译元素 | 扩展倍率 | Overflow | Conflict | 冲突目标 | 最小 Fit | 平均 Fit | Grid Islands | 页数/尺寸匹配 | Semantic Successor |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
-| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67616927 | 0.32383073 | 0.12495262 | 398 | 1.99511484 | 187 | 396 | 637 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
-| JD 首页截图 PDF | 1 | `fidelity/raster` | 0.87463572 | 0.12536428 | 0.12536428 | 104 | 6.15817223 | 97 | 104 | 192 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
-| Hacker News 打印 PDF | 2 | `fidelity/raster` | 0.90618105 | 0.09381895 | 0.04962468 | 65 | 2.23526357 | 42 | 65 | 70 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
+| 样本 | 页数 | 选择路径 | 视觉相似度 | 最大差异 | 平均差异 | 翻译元素 | 扩展倍率 | Overflow | Conflict | 冲突目标 | 受约束 Mask / 方向边 | 最小 Fit | 平均 Fit | Grid Islands | 页数/尺寸匹配 | Semantic Successor |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67731004 | 0.32268996 | 0.12552682 | 398 | 1.99511484 | 187 | 306 | 320 | 314 / 529 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
+| JD 首页截图 PDF | 1 | `fidelity/raster` | 0.87466976 | 0.12533024 | 0.12533024 | 104 | 6.15817223 | 97 | 104 | 189 | 50 / 110 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
+| Hacker News 打印 PDF | 2 | `fidelity/raster` | 0.90613373 | 0.09386627 | 0.04964834 | 65 | 2.23526357 | 42 | 65 | 69 | 32 / 33 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
 
-合并摘要：平均视觉相似度为 `0.81899535`，最大差异为 `0.32383073`，平均差异为 `0.09998053`，p95 差异为 `0.30398408`；总翻译元素 `567`，总 overflow `326`，总 conflict `565`，总冲突目标 `899`。`grid_island_element_count` 合计 `66`，其中 PUMA 为 31，JD 为 35。
+合并摘要：平均视觉相似度为 `0.81937118`，最大差异为 `0.32268996`，平均差异为 `0.10016847`，p95 差异为 `0.30295399`；总翻译元素 `567`，总 overflow `326`，总 conflict `475`，总冲突目标 `578`。本次共约束 `396` 个 replacement mask、`672` 个方向边。和同输入的 v1 baseline 相比，conflict 减少 `90`，冲突目标减少 `321`，overflow 不变；这说明它提高了 mask 安全性，而不是解决长译文 fitting。`grid_island_element_count` 合计 `66`，其中 PUMA 为 31，JD 为 35。
 
 同一次运行的页级候选建议为：`keep-selected-low-consensus: 1`、`keep-selected-supported: 5`、`needs-structure-evidence: 7`、`review-disagreement: 2`。流级诊断更关注局部结构：`keep-selected-low-consensus: 5`、`keep-selected-supported: 39`、`needs-structure-evidence: 17`、`review-consensus: 1`、`review-disagreement: 1`。
 

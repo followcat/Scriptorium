@@ -3,7 +3,7 @@ from pathlib import Path
 import fitz
 
 from scriptorium.fixture import create_fixture
-from scriptorium.html_export import export_html
+from scriptorium.html_export import export_html, page_replacement_geometries
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
 from scriptorium.ocr import load_ocr_json, normalize_ocr_to_ir
 from scriptorium.pdf_export import print_html_to_pdf
@@ -174,15 +174,61 @@ def test_fidelity_replacement_exports_fit_mask_and_conflict_metadata(tmp_path: P
     html_path = export_html(document, tmp_path / "fidelity-replacement", display_mode="fidelity")
     html = html_path.read_text(encoding="utf-8")
 
-    assert 'data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"' in html
+    assert 'data-scriptorium-replacement-policy="fidelity-replacement-fit-v2"' in html
     assert 'data-scriptorium-replacement-fit-scale="0.' in html
-    assert 'data-scriptorium-replacement-mask-padding="1.68,2.52,1.68,2.52"' in html
+    assert 'data-scriptorium-replacement-mask-padding="1.68,0.75,1.68,2.52"' in html
     assert 'data-scriptorium-replacement-conflict="true"' in html
-    assert 'data-scriptorium-replacement-conflict-ids="neighbor"' in html
+    assert 'data-scriptorium-replacement-conflict-ids=""' in html
+    assert 'data-scriptorium-replacement-padding-constrained="true"' in html
+    assert 'data-scriptorium-replacement-padding-constraint-ids="neighbor"' in html
+    assert 'data-scriptorium-replacement-padding-constraints="right:neighbor"' in html
     assert "left: 7.480px;" in html
     assert "--replacement-padding-left: 2.52px;" in html
     assert "A much longer translated replacement line" in html
     assert ">Buy now</span>" not in html
+
+
+def test_fidelity_replacement_clamps_vertical_padding_at_adjacent_text() -> None:
+    replacement = ElementIR(
+        id="replace",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=10, y0=10, x1=90, y1=24),
+        bbox_px=BBox(x0=10, y0=10, x1=90, y1=24),
+        source_text="Source",
+        translated_text="Expanded translated source",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    below = ElementIR(
+        id="below",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=10, y0=24.1, x1=90, y1=38),
+        bbox_px=BBox(x0=10, y0=24.1, x1=90, y1=38),
+        source_text="Adjacent source",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    page = PageIR(
+        page_index=0,
+        width_pt=120,
+        height_pt=80,
+        width_px=120,
+        height_px=80,
+        render_dpi=72,
+        scale_x=1,
+        scale_y=1,
+        background_image="page.png",
+        elements=[replacement, below],
+    )
+
+    geometry = page_replacement_geometries(page, "fidelity")["replace"]
+
+    assert geometry["padding_bottom"] == 0
+    assert geometry["padding_top"] == 1.68
+    assert geometry["padding_constrained"] is True
+    assert geometry["padding_constraint_ids"] == ["below"]
+    assert geometry["padding_constraint_summary"] == "bottom:below"
+    assert geometry["mask_bbox"]["y1"] == 24
 
 
 def test_edit_and_translation_do_not_overwrite_source(tmp_path: Path) -> None:

@@ -130,7 +130,7 @@ scriptorium print-pdf outputs/html/index.html --pdf outputs/edited.pdf
 - `--font-profile auto`、`--font-size-scale auto`、`--text-fit auto` 会在 benchmark 中运行候选并选择视觉相似度最高的路径。
 - `text_fit = svg` 使用 PDF run bbox、baseline origin、SVG `textLength` / `lengthAdjust="spacingAndGlyphs"` 拟合行宽，同时保留透明编辑代理。
 - `fidelity` HTML 模式用 SVG 或 raster 页面背景保留源视觉，同时叠加透明可编辑坐标节点。打印时未编辑节点隐藏；编辑或翻译节点作为局部白底 replacement overlay 打印。
-- `fidelity` 的 edited/translated replacement 使用 `fidelity-replacement-fit-v1`：导出器会扩展局部白底 mask，记录 `data-scriptorium-replacement-mask-padding`，用 CSS padding 把替换文本对齐回原 bbox，对长文本写入 `data-scriptorium-replacement-fit-scale`，并在仍然溢出或与相邻元素重叠时写入 `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` 和冲突元素 id。
+- `fidelity` 的 edited/translated replacement 使用 `fidelity-replacement-fit-v2`：导出器先计算局部白底 mask 的 padding，再逐方向在相邻可见元素处收缩，同时忽略包裹整页的背景 container。它会记录 `data-scriptorium-replacement-mask-padding`，并以 `data-scriptorium-replacement-padding-constrained`、`data-scriptorium-replacement-padding-constraint-ids`、`data-scriptorium-replacement-padding-constraints` 暴露受约束的边和元素 id；CSS padding 仍把替换文本对齐回原 bbox，长文本写入 `data-scriptorium-replacement-fit-scale`，仍然溢出或与相邻元素重叠时写入 `data-scriptorium-replacement-overflow` / `data-scriptorium-replacement-conflict` 和冲突元素 id。padding 约束只防止误遮挡，不会放宽 text-fit overflow。
 - `--translation-stress pseudo-expand` 会在 benchmark 内写入确定性伪译文到 `translated_text`，用于压测翻译回渲染的 mask、fit-scale、overflow 和邻近冲突；它不是翻译质量评测，也不需要外部翻译服务。
 - `--html-mode auto --fidelity-background auto` 会比较 structured redraw、SVG fidelity 和 raster fidelity，并保留更高分候选。
 - 打印后的 PDF page box 会归一到源 PDF 尺寸，避免 Chromium A4 1px 量化误差污染视觉指标。
@@ -265,7 +265,7 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 
 此外，新增加了流内候选诊断：`reading_order_candidate_stream_diagnostics` 会按 `reading_order_stream_id` 记录局部文档流内 selected 与候选共识的分歧与推荐，`reading_order_candidate_stream_count` 给出当次 case 的流内候选数量，`reading_order_candidate_stream_recommendation_counts` 则用于 case/summary/CSV 的流级 triage 统计，避免将边栏/脚注与正文流混到同一页级分数。Benchmark 也会记录 `grid_island_element_count`，用于观察复杂卡片/门户布局是否被识别为可翻译局部流。
 
-翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_same_stream_conflict_target_count`、`fidelity_replacement_cross_stream_conflict_target_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`。源文档无 replacement 时这些字段为 0/`null`；翻译写入 `translated_text` 后，它们用于衡量像素相似度之外的遮罩、压缩和邻近冲突风险。
+翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_same_stream_conflict_target_count`、`fidelity_replacement_cross_stream_conflict_target_count`、`fidelity_replacement_padding_constrained_count`、`fidelity_replacement_padding_constraint_side_count`、`fidelity_replacement_min_fit_scale`、`fidelity_replacement_mean_fit_scale` 和 `fidelity_replacement_policy_counts`。其中两个 padding 字段分别记录被收缩的 mask 数量和方向边数量。源文档无 replacement 时这些字段为 0/`null`；翻译写入 `translated_text` 后，它们用于衡量像素相似度之外的遮罩、压缩和邻近冲突风险。
 
 冲突目标还会按流属性归因：`fidelity_replacement_conflict_target_stream_type_counts`、`fidelity_replacement_conflict_target_stream_id_counts`、`fidelity_replacement_conflict_stream_type_pair_counts` 和 `fidelity_replacement_conflict_stream_id_pair_counts`。同流 target 冲突通常说明局部文本 fitting 空间不足；跨流 target 冲突通常指向语义流边界错误或 mask 扩张过大。
 
@@ -273,7 +273,7 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 
 对应的输入压力统计包括 `translation_stress`、`translation_stress_element_count`、`translation_stress_source_char_count`、`translation_stress_translated_char_count` 和 `translation_stress_char_expansion_ratio`。`pseudo-expand` 会故意拉长源文本，让 JD/PUMA/门户页这类复杂布局能在没有真实翻译服务的情况下先暴露 replacement 风险。
 
-最新 JD/PUMA/web-HN 三样本翻译压力 rerun 覆盖 15 页，没有页数或尺寸 mismatch；平均视觉相似度为 `0.81899535`，但 567 个 replacement 中仍有 565 个报告邻近冲突，所以后续优化重点仍是 mask、fitting、冲突消解和结构流分批翻译，而不是只追背景层像素分。
+最新 JD/PUMA/web-HN 三样本 v2 padding-constraint 翻译压力 rerun 覆盖 15 页，没有页数或尺寸 mismatch；平均视觉相似度为 `0.81937118`。逐方向收缩 padding 后，conflict 从 `565` 降至 `475`，冲突目标从 `899` 降至 `578`，但 `326` 个 text-fit overflow 不变。因此下一步应聚焦长译文 fitting，而不是继续单纯缩小 mask 或只追背景层像素分。
 
 Semantic sidecar 除了 `text_sequence`，现在还支持关系式标签：
 

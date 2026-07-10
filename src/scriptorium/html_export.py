@@ -12,6 +12,9 @@ from .models import BBox, DisplayMode, DocumentIR, ElementIR, PageIR
 HtmlTextFit = Literal["none", "svg"]
 FidelityBackground = Literal["svg", "raster"]
 
+_REPLACEMENT_PADDING_GUARD_PX = 0.25
+_REPLACEMENT_CROSS_AXIS_OVERLAP_RATIO = 0.2
+
 
 def export_html(
     document: DocumentIR,
@@ -342,7 +345,7 @@ def _replacement_candidates(page: PageIR, display_mode: DisplayMode) -> dict[str
     for element in page.elements:
         if not has_replacement_text(element, display_mode):
             continue
-        geometry = _base_replacement_geometry(element, page)
+        geometry = _base_replacement_geometry(element, page, page.elements)
         if geometry is not None:
             geometries[element.id] = geometry
 
@@ -367,7 +370,11 @@ def _replacement_geometry_for_page(
     return replacements.get(element.id)
 
 
-def _base_replacement_geometry(element: ElementIR, page: PageIR) -> dict[str, object] | None:
+def _base_replacement_geometry(
+    element: ElementIR,
+    page: PageIR,
+    page_elements: list[ElementIR],
+) -> dict[str, object] | None:
     text = (element.translated_text or element.edited_text or "").strip()
     box = element.bbox_px
     if not text or box.width <= 0 or box.height <= 0:
@@ -377,10 +384,21 @@ def _base_replacement_geometry(element: ElementIR, page: PageIR) -> dict[str, ob
     line_height = _replacement_line_height(element)
     pad_x = _clamp(font_size * 0.18, 1.0, 6.0)
     pad_y = _clamp(font_size * 0.12, 1.0, 5.0)
-    x0 = max(0.0, box.x0 - pad_x)
-    y0 = max(0.0, box.y0 - pad_y)
-    x1 = min(float(page.width_px), box.x1 + pad_x)
-    y1 = min(float(page.height_px), box.y1 + pad_y)
+    requested_padding = {
+        "top": pad_y,
+        "right": pad_x,
+        "bottom": pad_y,
+        "left": pad_x,
+    }
+    padding, padding_constraints = _constrained_replacement_padding(
+        element,
+        page_elements,
+        requested_padding,
+    )
+    x0 = max(0.0, box.x0 - padding["left"])
+    y0 = max(0.0, box.y0 - padding["top"])
+    x1 = min(float(page.width_px), box.x1 + padding["right"])
+    y1 = min(float(page.height_px), box.y1 + padding["bottom"])
     inner_width = max(1.0, x1 - x0 - (box.x0 - x0) - (x1 - box.x1))
     inner_height = max(1.0, y1 - y0 - (box.y0 - y0) - (y1 - box.y1))
 
@@ -395,6 +413,13 @@ def _base_replacement_geometry(element: ElementIR, page: PageIR) -> dict[str, ob
     fitted_height = fitted_line_count * font_size * line_height * scale
     overflow = fitted_width > inner_width * 1.05 or fitted_height > inner_height * 1.08
 
+    constraint_side_count = sum(1 for ids in padding_constraints.values() if ids)
+    constraint_ids = sorted({element_id for ids in padding_constraints.values() for element_id in ids})
+    constraint_summary = ";".join(
+        f"{side}:{','.join(ids)}"
+        for side, ids in padding_constraints.items()
+        if ids
+    )
     return {
         "mask_bbox": {
             "x0": round(x0, 4),
@@ -408,16 +433,122 @@ def _base_replacement_geometry(element: ElementIR, page: PageIR) -> dict[str, ob
         "padding_right": round(x1 - box.x1, 4),
         "padding_bottom": round(y1 - box.y1, 4),
         "padding_left": round(box.x0 - x0, 4),
+        "padding_requested": {side: round(value, 4) for side, value in requested_padding.items()},
+        "padding_constrained": constraint_side_count > 0,
+        "padding_constraint_side_count": constraint_side_count,
+        "padding_constraint_ids": constraint_ids,
+        "padding_constraint_summary": constraint_summary,
         "fit_scale": scale,
         "overflow": overflow,
         "estimated_text_width": round(text_width, 4),
         "estimated_text_height": round(fitted_height, 4),
         "estimated_line_count": fitted_line_count,
-        "policy": "fidelity-replacement-fit-v1",
+        "policy": "fidelity-replacement-fit-v2",
         "conflict": overflow,
         "conflict_ids": [],
         "conflict_summary": "",
     }
+
+
+def _constrained_replacement_padding(
+    element: ElementIR,
+    page_elements: list[ElementIR],
+    requested: dict[str, float],
+) -> tuple[dict[str, float], dict[str, list[str]]]:
+    """Keep a replacement mask from expanding into adjacent visible boxes."""
+
+    box = element.bbox_px
+    padding = dict(requested)
+    constraints = {side: [] for side in requested}
+    for other in page_elements:
+        if other.id == element.id or not other.visibility:
+            continue
+        other_box = other.bbox_px
+        if other_box.width <= 0 or other_box.height <= 0 or _is_mask_background_container(other_box, box):
+            continue
+
+        if _vertical_overlap_ratio(box, other_box) >= _REPLACEMENT_CROSS_AXIS_OVERLAP_RATIO:
+            if _center_x(other_box) < _center_x(box):
+                _limit_replacement_padding(
+                    padding,
+                    constraints,
+                    side="left",
+                    clearance=max(0.0, box.x0 - other_box.x1),
+                    element_id=other.id,
+                )
+            elif _center_x(other_box) > _center_x(box):
+                _limit_replacement_padding(
+                    padding,
+                    constraints,
+                    side="right",
+                    clearance=max(0.0, other_box.x0 - box.x1),
+                    element_id=other.id,
+                )
+
+        if _horizontal_overlap_ratio(box, other_box) >= _REPLACEMENT_CROSS_AXIS_OVERLAP_RATIO:
+            if _center_y(other_box) < _center_y(box):
+                _limit_replacement_padding(
+                    padding,
+                    constraints,
+                    side="top",
+                    clearance=max(0.0, box.y0 - other_box.y1),
+                    element_id=other.id,
+                )
+            elif _center_y(other_box) > _center_y(box):
+                _limit_replacement_padding(
+                    padding,
+                    constraints,
+                    side="bottom",
+                    clearance=max(0.0, other_box.y0 - box.y1),
+                    element_id=other.id,
+                )
+    return padding, constraints
+
+
+def _limit_replacement_padding(
+    padding: dict[str, float],
+    constraints: dict[str, list[str]],
+    *,
+    side: str,
+    clearance: float,
+    element_id: str,
+) -> None:
+    allowed = max(0.0, clearance - _REPLACEMENT_PADDING_GUARD_PX)
+    current = padding[side]
+    if allowed >= current - 1e-6:
+        return
+    if allowed < current - 1e-6:
+        padding[side] = allowed
+        constraints[side] = [element_id]
+
+
+def _is_mask_background_container(container: BBox, target: BBox) -> bool:
+    if container.width * container.height < target.width * target.height * 1.25:
+        return False
+    return (
+        container.x0 <= target.x0
+        and container.y0 <= target.y0
+        and container.x1 >= target.x1
+        and container.y1 >= target.y1
+    )
+
+
+def _horizontal_overlap_ratio(first: BBox, second: BBox) -> float:
+    overlap = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    return overlap / max(1.0, min(first.width, second.width))
+
+
+def _vertical_overlap_ratio(first: BBox, second: BBox) -> float:
+    overlap = max(0.0, min(first.y1, second.y1) - max(first.y0, second.y0))
+    return overlap / max(1.0, min(first.height, second.height))
+
+
+def _center_x(bbox: BBox) -> float:
+    return (bbox.x0 + bbox.x1) / 2
+
+
+def _center_y(bbox: BBox) -> float:
+    return (bbox.y0 + bbox.y1) / 2
 
 
 def _replacement_conflict_ids(

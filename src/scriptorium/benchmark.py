@@ -365,6 +365,28 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "fidelity_replacement_cross_stream_conflict_target_count",
         ),
+        "native_fidelity_replacement_padding_constrained_count": native_case[
+            "fidelity_replacement_padding_constrained_count"
+        ],
+        "structure_fidelity_replacement_padding_constrained_count": structure_case[
+            "fidelity_replacement_padding_constrained_count"
+        ],
+        "fidelity_replacement_padding_constrained_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_padding_constrained_count",
+        ),
+        "native_fidelity_replacement_padding_constraint_side_count": native_case[
+            "fidelity_replacement_padding_constraint_side_count"
+        ],
+        "structure_fidelity_replacement_padding_constraint_side_count": structure_case[
+            "fidelity_replacement_padding_constraint_side_count"
+        ],
+        "fidelity_replacement_padding_constraint_side_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "fidelity_replacement_padding_constraint_side_count",
+        ),
         "native_fidelity_replacement_overflow_count": native_case["fidelity_replacement_overflow_count"],
         "structure_fidelity_replacement_overflow_count": structure_case["fidelity_replacement_overflow_count"],
         "fidelity_replacement_overflow_delta": _numeric_delta(
@@ -600,6 +622,12 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "total_fidelity_replacement_cross_stream_conflict_target_delta": sum(
             int(values["fidelity_replacement_cross_stream_conflict_target_delta"] or 0) for values in comparisons
         ),
+        "total_fidelity_replacement_padding_constrained_delta": sum(
+            int(values["fidelity_replacement_padding_constrained_delta"] or 0) for values in comparisons
+        ),
+        "total_fidelity_replacement_padding_constraint_side_delta": sum(
+            int(values["fidelity_replacement_padding_constraint_side_delta"] or 0) for values in comparisons
+        ),
         "total_fidelity_replacement_overflow_delta": sum(
             int(values["fidelity_replacement_overflow_delta"] or 0) for values in comparisons
         ),
@@ -796,6 +824,12 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_fidelity_replacement_cross_stream_conflict_target_count",
         "structure_fidelity_replacement_cross_stream_conflict_target_count",
         "fidelity_replacement_cross_stream_conflict_target_delta",
+        "native_fidelity_replacement_padding_constrained_count",
+        "structure_fidelity_replacement_padding_constrained_count",
+        "fidelity_replacement_padding_constrained_delta",
+        "native_fidelity_replacement_padding_constraint_side_count",
+        "structure_fidelity_replacement_padding_constraint_side_count",
+        "fidelity_replacement_padding_constraint_side_delta",
         "native_fidelity_replacement_overflow_count",
         "structure_fidelity_replacement_overflow_count",
         "fidelity_replacement_overflow_delta",
@@ -1253,6 +1287,12 @@ def _run_case(
         ],
         "fidelity_replacement_cross_stream_conflict_target_count": replacement_stats[
             "fidelity_replacement_cross_stream_conflict_target_count"
+        ],
+        "fidelity_replacement_padding_constrained_count": replacement_stats[
+            "fidelity_replacement_padding_constrained_count"
+        ],
+        "fidelity_replacement_padding_constraint_side_count": replacement_stats[
+            "fidelity_replacement_padding_constraint_side_count"
         ],
         "fidelity_replacement_min_fit_scale": replacement_stats["fidelity_replacement_min_fit_scale"],
         "fidelity_replacement_mean_fit_scale": replacement_stats["fidelity_replacement_mean_fit_scale"],
@@ -1817,6 +1857,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
     conflict_stream_id_pair_counts: Counter[str] = Counter()
     same_stream_conflict_target_count = 0
     cross_stream_conflict_target_count = 0
+    padding_constrained_count = 0
+    padding_constraint_side_count = 0
     for page in document.pages:
         page_geometries = page_replacement_geometries(page, "fidelity")
         elements_by_id = {element.id: element for element in page.elements}
@@ -1826,6 +1868,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
             overflow = bool(geometry.get("overflow"))
             conflict = bool(geometry.get("conflict"))
             conflict_target_count = _replacement_conflict_target_count(geometry)
+            padding_constrained = bool(geometry.get("padding_constrained"))
+            padding_side_count = int(geometry.get("padding_constraint_side_count") or 0)
             fit_scale = geometry.get("fit_scale")
             fit_scale_float = float(fit_scale) if fit_scale is not None else None
 
@@ -1838,6 +1882,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
             if conflict:
                 stream_type_conflict_counts[stream_type] += 1
                 stream_id_conflict_counts[stream_id] += 1
+            padding_constrained_count += int(padding_constrained)
+            padding_constraint_side_count += padding_side_count
 
             group = stream_groups.setdefault(
                 (page.page_index, stream_id, stream_type),
@@ -1851,6 +1897,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
                     "conflict_target_count": 0,
                     "same_stream_conflict_target_count": 0,
                     "cross_stream_conflict_target_count": 0,
+                    "padding_constrained_count": 0,
+                    "padding_constraint_side_count": 0,
                     "conflict_target_stream_type_counts": Counter(),
                     "conflict_target_stream_id_counts": Counter(),
                     "conflict_stream_type_pair_counts": Counter(),
@@ -1862,6 +1910,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
             group["overflow_count"] += int(overflow)
             group["conflict_count"] += int(conflict)
             group["conflict_target_count"] += conflict_target_count
+            group["padding_constrained_count"] += int(padding_constrained)
+            group["padding_constraint_side_count"] += padding_side_count
             if fit_scale_float is not None:
                 group["fit_scales"].append(fit_scale_float)
 
@@ -1894,6 +1944,8 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
         "fidelity_replacement_conflict_target_count": conflict_target_count,
         "fidelity_replacement_same_stream_conflict_target_count": same_stream_conflict_target_count,
         "fidelity_replacement_cross_stream_conflict_target_count": cross_stream_conflict_target_count,
+        "fidelity_replacement_padding_constrained_count": padding_constrained_count,
+        "fidelity_replacement_padding_constraint_side_count": padding_constraint_side_count,
         "fidelity_replacement_min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
         "fidelity_replacement_mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
         "fidelity_replacement_policy_counts": dict(sorted(policy_counts.items())),
@@ -1925,6 +1977,8 @@ def _empty_fidelity_replacement_stats() -> dict[str, Any]:
         "fidelity_replacement_conflict_target_count": 0,
         "fidelity_replacement_same_stream_conflict_target_count": 0,
         "fidelity_replacement_cross_stream_conflict_target_count": 0,
+        "fidelity_replacement_padding_constrained_count": 0,
+        "fidelity_replacement_padding_constraint_side_count": 0,
         "fidelity_replacement_min_fit_scale": None,
         "fidelity_replacement_mean_fit_scale": None,
         "fidelity_replacement_policy_counts": {},
@@ -1975,6 +2029,8 @@ def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], di
                 "conflict_target_count": int(group["conflict_target_count"]),
                 "same_stream_conflict_target_count": int(group["same_stream_conflict_target_count"]),
                 "cross_stream_conflict_target_count": int(group["cross_stream_conflict_target_count"]),
+                "padding_constrained_count": int(group["padding_constrained_count"]),
+                "padding_constraint_side_count": int(group["padding_constraint_side_count"]),
                 "conflict_target_stream_type_counts": dict(
                     sorted(group["conflict_target_stream_type_counts"].items())
                 ),
@@ -3310,6 +3366,12 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_fidelity_replacement_cross_stream_conflict_targets": sum(
             int(case["fidelity_replacement_cross_stream_conflict_target_count"]) for case in cases
         ),
+        "total_fidelity_replacement_padding_constrained": sum(
+            int(case["fidelity_replacement_padding_constrained_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_padding_constraint_sides": sum(
+            int(case["fidelity_replacement_padding_constraint_side_count"]) for case in cases
+        ),
         "min_fidelity_replacement_fit_scale": _min_optional_case_float(cases, "fidelity_replacement_min_fit_scale"),
         "mean_fidelity_replacement_fit_scale": _weighted_optional_case_mean(
             cases,
@@ -3612,6 +3674,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "fidelity_replacement_conflict_target_count",
         "fidelity_replacement_same_stream_conflict_target_count",
         "fidelity_replacement_cross_stream_conflict_target_count",
+        "fidelity_replacement_padding_constrained_count",
+        "fidelity_replacement_padding_constraint_side_count",
         "fidelity_replacement_min_fit_scale",
         "fidelity_replacement_mean_fit_scale",
         "fidelity_replacement_policy_counts",

@@ -174,7 +174,7 @@ Translation re-rendering stress run for annual-report, ecommerce screenshot, and
   data/external/puma-2024-annual-report.pdf \
   outputs/external/jd-home/input.pdf \
   outputs/external/web-hn/input.pdf \
-  --out-dir outputs/external/translation-stress-v3 \
+  --out-dir outputs/external/translation-stress-padding-v1 \
   --dpi 144 \
   --max-pages 12 \
   --html-mode fidelity \
@@ -240,7 +240,7 @@ stream.
 
 | Sample | Derived block streams / members | Selected-order result | Sidecar proposal result | Translation-stress result |
 |---|---:|---|---|---|
-| PUMA annual report p. 5 | 4 / 17 | No reorder; visual `0.95767110` at the coordinate A/B baseline | `7 / 12 / 6 / 7` streams / strict / review / transitions | 23 replacements, 22 conflicts, 6 overflows; grouping improves attribution but not totals yet. |
+| PUMA annual report p. 5 | 4 / 17 | No reorder; visual `0.95767110` at the coordinate A/B baseline | `7 / 12 / 6 / 7` streams / strict / review / transitions | 23 replacements, 6 overflows, 18 conflicts/targets; v2 constrains 17 masks across 26 sides without changing visual similarity. |
 | Transformer-XL p. 1 | 6 / 85 | Labelled successor accuracy remains `1.0` | `13 / 81 / 5 / 13` | Not used as a claim about translated visual fidelity. |
 | JD homepage p. 1 | 0 / 0 | All 35 native grid-island members remain protected | No generic block stream is created | The dense card/page structure still needs explicit model relations or streams. |
 
@@ -308,15 +308,15 @@ This confirms that a margin gate is not a substitute for semantic structure: it 
 
 ## Translation Stress Results
 
-`outputs/external/translation-stress-v3` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`.
+`outputs/external/translation-stress-padding-v1` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`. The run uses `fidelity-replacement-fit-v2`, which constrains local mask padding against adjacent visible boxes without changing text coordinates or fitting policy.
 
-| Sample | Pages | Selected Path | Visual Similarity | Max Diff | Mean Diff | Translation Elements | Expansion | Overflows | Conflicts | Conflict Targets | Min Fit | Mean Fit | Grid Islands | Page/Size Match | Semantic Successor |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
-| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67616927 | 0.32383073 | 0.12495262 | 398 | 1.99511484 | 187 | 396 | 637 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
-| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.87463572 | 0.12536428 | 0.12536428 | 104 | 6.15817223 | 97 | 104 | 192 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
-| Hacker News print PDF | 2 | `fidelity/raster` | 0.90618105 | 0.09381895 | 0.04962468 | 65 | 2.23526357 | 42 | 65 | 70 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
+| Sample | Pages | Selected Path | Visual Similarity | Max Diff | Mean Diff | Translation Elements | Expansion | Overflows | Conflicts | Conflict Targets | Masks / Sides Constrained | Min Fit | Mean Fit | Grid Islands | Page/Size Match | Semantic Successor |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| PUMA 2024 Annual Report | 12 | `fidelity/svg` | 0.67731004 | 0.32268996 | 0.12552682 | 398 | 1.99511484 | 187 | 306 | 320 | 314 / 529 | 0.62 | 0.68186231 | 31 | yes / yes | n/a |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.87466976 | 0.12533024 | 0.12533024 | 104 | 6.15817223 | 97 | 104 | 189 | 50 / 110 | 0.62 | 0.63202981 | 35 | yes / yes | n/a |
+| Hacker News print PDF | 2 | `fidelity/raster` | 0.90613373 | 0.09386627 | 0.04964834 | 65 | 2.23526357 | 42 | 65 | 69 | 32 / 33 | 0.62 | 0.63153077 | 0 | yes / yes | 1.0 |
 
-Combined summary: mean visual similarity is `0.81899535`, max diff is `0.32383073`, mean diff is `0.09998053`, p95 diff is `0.30398408`, total translation elements are `567`, total overflows are `326`, total conflicts are `565`, and total conflict targets are `899`. `grid_island_element_count` totals `66`: 31 from PUMA and 35 from JD.
+Combined summary: mean visual similarity is `0.81937118`, max diff is `0.32268996`, mean diff is `0.10016847`, p95 diff is `0.30295399`, total translation elements are `567`, total overflows are `326`, total conflicts are `475`, and total conflict targets are `578`. The run constrains `396` replacement masks across `672` directional sides. Against the v1 baseline on the same inputs, that is `90` fewer conflicts and `321` fewer conflict targets with unchanged overflow, so the result is a mask-safety improvement rather than a long-text fitting improvement. `grid_island_element_count` totals `66`: 31 from PUMA and 35 from JD.
 
 The same run reports page-level candidate recommendations as `keep-selected-low-consensus: 1`, `keep-selected-supported: 5`, `needs-structure-evidence: 7`, and `review-disagreement: 2`. Stream-level diagnostics are stricter on local flows: `keep-selected-low-consensus: 5`, `keep-selected-supported: 39`, `needs-structure-evidence: 17`, `review-consensus: 1`, and `review-disagreement: 1`.
 

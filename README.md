@@ -252,7 +252,7 @@ scriptorium benchmark path/to/page.png \
 翻译回渲染目前重点解决三类问题：
 
 - 长译文如何在原 bbox 内 fit，必要时缩小字号或标记 overflow。
-- replacement mask 如何覆盖源文本但不破坏邻近元素。
+- replacement mask 如何覆盖源文本但不破坏邻近元素。v2 compositor 会在每个方向把 mask 截止到相邻可见元素，并记录受约束的边和元素 id；它减少误遮挡，但不会凭空增加长译文的排版空间。
 - 多栏、表格岛、卡片网格和边栏如何作为独立 reading stream 分批翻译。
 
 这部分还不是完整的交互式文档编辑器。当前更像一个可测量的转换内核：它把风险显式标出来，让后续 UI、人工复核或模型结构证据有稳定的数据入口。

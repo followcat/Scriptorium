@@ -253,7 +253,7 @@ Representative current scores are shown below. Exact commands, sources, checksum
 Translation re-rendering currently focuses on three hard problems:
 
 - Fitting longer translations back into the source bbox, with scale-down and overflow reporting.
-- Masking source text without damaging neighboring elements.
+- Masking source text without damaging neighboring elements. The v2 compositor stops each mask side at adjacent visible boxes and records constrained sides/ids; this reduces collateral masking, but does not create extra room for long translations.
 - Translating multi-column body flows, table islands, card grids, and sidebars as separate reading streams.
 
 This is not a full end-user document editor yet. It is a measurable conversion core that exposes the right risks for a future UI, review workflow, or stronger model-based structure evidence.

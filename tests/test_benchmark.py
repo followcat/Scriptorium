@@ -1111,24 +1111,19 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
 
     assert stats["fidelity_replacement_element_count"] == 2
     assert stats["fidelity_replacement_conflict_count"] == 1
-    assert stats["fidelity_replacement_conflict_target_count"] == 2
+    assert stats["fidelity_replacement_conflict_target_count"] == 1
     assert stats["fidelity_replacement_same_stream_conflict_target_count"] == 1
-    assert stats["fidelity_replacement_cross_stream_conflict_target_count"] == 1
+    assert stats["fidelity_replacement_cross_stream_conflict_target_count"] == 0
+    assert stats["fidelity_replacement_padding_constrained_count"] == 1
+    assert stats["fidelity_replacement_padding_constraint_side_count"] == 1
     assert stats["fidelity_replacement_min_fit_scale"] < 1
     assert stats["fidelity_replacement_mean_fit_scale"] > stats["fidelity_replacement_min_fit_scale"]
-    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v1": 2}
-    assert stats["fidelity_replacement_conflict_target_stream_type_counts"] == {"body": 1, "grid-island": 1}
-    assert stats["fidelity_replacement_conflict_target_stream_id_counts"] == {
-        "body-main": 1,
-        "grid-island-001": 1,
-    }
-    assert stats["fidelity_replacement_conflict_stream_type_pair_counts"] == {
-        "grid-island=>body": 1,
-        "grid-island=>grid-island": 1,
-    }
+    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v2": 2}
+    assert stats["fidelity_replacement_conflict_target_stream_type_counts"] == {"grid-island": 1}
+    assert stats["fidelity_replacement_conflict_target_stream_id_counts"] == {"grid-island-001": 1}
+    assert stats["fidelity_replacement_conflict_stream_type_pair_counts"] == {"grid-island=>grid-island": 1}
     assert stats["fidelity_replacement_conflict_stream_id_pair_counts"] == {
-        "grid-island-001=>body-main": 1,
-        "grid-island-001=>grid-island-001": 1,
+        "grid-island-001=>grid-island-001": 1
     }
     assert stats["fidelity_replacement_stream_type_counts"] == {"body": 1, "grid-island": 1}
     assert stats["fidelity_replacement_stream_type_conflict_counts"] == {"grid-island": 1}
@@ -1140,14 +1135,13 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
     }
     assert diagnostics["body-main"]["conflict_count"] == 0
     assert diagnostics["grid-island-001"]["conflict_count"] == 1
-    assert diagnostics["grid-island-001"]["conflict_target_count"] == 2
+    assert diagnostics["grid-island-001"]["conflict_target_count"] == 1
     assert diagnostics["grid-island-001"]["same_stream_conflict_target_count"] == 1
-    assert diagnostics["grid-island-001"]["cross_stream_conflict_target_count"] == 1
-    assert diagnostics["grid-island-001"]["conflict_target_stream_type_counts"] == {"body": 1, "grid-island": 1}
-    assert diagnostics["grid-island-001"]["conflict_stream_type_pair_counts"] == {
-        "grid-island=>body": 1,
-        "grid-island=>grid-island": 1,
-    }
+    assert diagnostics["grid-island-001"]["cross_stream_conflict_target_count"] == 0
+    assert diagnostics["grid-island-001"]["padding_constrained_count"] == 1
+    assert diagnostics["grid-island-001"]["padding_constraint_side_count"] == 1
+    assert diagnostics["grid-island-001"]["conflict_target_stream_type_counts"] == {"grid-island": 1}
+    assert diagnostics["grid-island-001"]["conflict_stream_type_pair_counts"] == {"grid-island=>grid-island": 1}
     assert structured_stats["fidelity_replacement_element_count"] == 0
     assert structured_stats["fidelity_replacement_stream_diagnostics"] == []
 
