@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -40,6 +41,9 @@ INDEX_ALIAS_LABEL_KEYS = (
     "parsing_res_list",
     "layout_det_res.boxes",
 )
+
+
+PADDLE_INPUT_PAGE_RE = re.compile(r"(?:^|[_-])page[_-]?0*(\d+)$", re.IGNORECASE)
 
 
 # A parsing-list position is weaker than an explicit model order.  Keep it for
@@ -1201,8 +1205,8 @@ def _collect_page_payloads(payload: Any) -> list[dict[str, Any]]:
         child_fallback_page_index = _payload_page_index(value, fallback_page_index)
         if _has_blocks(value):
             page_payload = dict(value)
-            if fallback_page_index is not None and page_payload.get("page_index") is None:
-                page_payload["page_index"] = fallback_page_index
+            if child_fallback_page_index is not None and page_payload.get("page_index") is None:
+                page_payload["page_index"] = child_fallback_page_index
             collected.append(page_payload)
 
         for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
@@ -1232,8 +1236,8 @@ def _collect_relation_payloads(payload: Any) -> list[dict[str, Any]]:
         child_fallback_page_index = _payload_page_index(value, fallback_page_index)
         if _has_relation_edges(value):
             page_payload = dict(value)
-            if fallback_page_index is not None and page_payload.get("page_index") is None:
-                page_payload["page_index"] = fallback_page_index
+            if child_fallback_page_index is not None and page_payload.get("page_index") is None:
+                page_payload["page_index"] = child_fallback_page_index
             collected.append(page_payload)
 
         for key in ("res", "raw_results", "pages", "results", "page_results", "data"):
@@ -1246,9 +1250,13 @@ def _collect_relation_payloads(payload: Any) -> list[dict[str, Any]]:
 
 
 def _payload_page_index(value: dict[str, Any], fallback_page_index: int | None) -> int | None:
-    if not any(key in value for key in ("page_index", "page", "page_no", "page_num")):
-        return fallback_page_index
-    return _extract_page_index(value, fallback_page_index if fallback_page_index is not None else 0)
+    explicit_page_index = _explicit_page_index(value)
+    if explicit_page_index is not None:
+        return explicit_page_index
+    paddle_input_page_index = _paddle_input_page_index(value)
+    if paddle_input_page_index is not None:
+        return paddle_input_page_index
+    return fallback_page_index
 
 
 def _has_relation_edges(value: dict[str, Any]) -> bool:
@@ -2145,6 +2153,11 @@ def _nested_block_keys() -> tuple[str, ...]:
 
 
 def _extract_page_index(payload: dict[str, Any], fallback: int) -> int:
+    explicit_page_index = _explicit_page_index(payload)
+    return explicit_page_index if explicit_page_index is not None else fallback
+
+
+def _explicit_page_index(payload: dict[str, Any]) -> int | None:
     for key in ("page_index", "page", "page_no", "page_num"):
         value = payload.get(key)
         if value is None:
@@ -2154,7 +2167,22 @@ def _extract_page_index(payload: dict[str, Any], fallback: int) -> int:
         except (TypeError, ValueError):
             continue
         return max(page_index - 1, 0) if key in {"page", "page_no", "page_num"} and page_index > 0 else page_index
-    return fallback
+    return None
+
+
+def _paddle_input_page_index(payload: dict[str, Any]) -> int | None:
+    value = payload.get("input_path")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    filename = value.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = filename.rsplit(".", 1)[0]
+    match = PADDLE_INPUT_PAGE_RE.search(stem)
+    if match is None:
+        return None
+    try:
+        return max(int(match.group(1)) - 1, 0)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_bbox(raw: dict[str, Any]) -> tuple[BBox, str] | None:

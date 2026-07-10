@@ -1192,6 +1192,37 @@ def test_structure_evidence_matches_sparse_source_page_index() -> None:
     assert document.pages[0].elements[0].metadata["external_structure_order"] == 1
 
 
+def test_structure_evidence_infers_sparse_page_index_from_paddle_input_path() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("line", "Sampled page line.", BBox(x0=10, y0=10, x1=100, y1=22), 1),
+        ],
+        page_index=4,
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "input_path": r"C:\\work\\pages\\page_0005.png",
+        "page_index": None,
+        "parsing_res_list": [
+            {
+                "block_label": "text",
+                "block_bbox": [20, 20, 200, 44],
+                "block_order": 1,
+                "block_content": "Sampled page line.",
+                "confidence": 0.94,
+            },
+        ],
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert len(regions) == 1
+    assert regions[0].page_index == 4
+    assert document.metadata["structure_evidence"]["matched_element_count"] == 1
+    assert document.pages[0].elements[0].metadata["external_structure_order"] == 1
+
+
 def test_structure_evidence_inherits_sparse_page_index_through_nested_data() -> None:
     document = _document_with_text_boxes(
         [
