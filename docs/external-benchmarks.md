@@ -556,20 +556,25 @@ before validation and reports precision `0.66132556`, recall `0.64857143`, and
 F1 `0.65488640`. The tracked 49-page validation set has no sample overlap with
 the train index.
 
-| Metric | Native selected | Trained external |
-|---|---:|---:|
-| Official relation correct / total after candidate decoding | 1274/2612 | 1513/2612 |
-| Official relation accuracy | 0.48774885 | 0.57924962 |
-| Direct predicted-edge precision | n/a | 0.68715305 |
-| Direct predicted-edge recall | n/a | 0.66347626 |
-| Direct predicted-edge F1 | n/a | 0.67510713 |
+The branch gate uses the same train/calibration boundary. Its fixed calibration
+threshold is `0.75`, where relation F1 is `0.66737288`; no validation result is
+used to select that threshold.
 
-The external candidate gains `0.09150077` absolute relation accuracy and is the
-best scored candidate on 34 of 49 pages. It predicts 2,522 review edges; 2,494
-resolve to IR elements. Visual similarity, grid-island counts, selected order,
+| Metric | Native selected | Top-1 ranker | Branching ranker |
+|---|---:|---:|---:|
+| Official relation correct / total after candidate decoding | 1274/2612 | 1513/2612 | 1529/2612 |
+| Official relation accuracy | 0.48774885 | 0.57924962 | 0.58537519 |
+| Direct predicted-edge precision | n/a | 0.68715305 | 0.67794118 |
+| Direct predicted-edge recall | n/a | 0.66347626 | 0.70597243 |
+| Direct predicted-edge F1 | n/a | 0.67510713 | 0.69167292 |
+
+The branching external candidate gains `0.09762634` absolute relation accuracy
+over native and is the best scored candidate on 35 of 49 pages. It adds 198
+calibrated rank-2 edges, predicting 2,720 review edges in total; 2,686 resolve
+to IR elements. Visual similarity, grid-island counts, selected order,
 and reordered-page counts remain unchanged. After filtering isolated relation
 provenance from explicit-successor diagnostics, both branches also retain the
 same stream recommendations, including 92 `needs-structure-evidence` streams.
 The result is sufficient to keep developing the model as an independent
 candidate, but not to promote it to runtime order: decoded accuracy remains
-0.579 and several multi-page/form-like samples have low direct precision.
+0.585 and several multi-page/form-like samples have low direct precision.

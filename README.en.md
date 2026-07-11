@@ -160,8 +160,8 @@ Use the normalized `--output` for structure A/B runs; `--raw-output` is only
 for inspecting Docling's original result. Current held-out evidence does not
 support promoting Docling reading order to the default orderer.
 
-For actual successor-relation research, a lightweight ranker can be trained
-locally from the official ROOR train split. Input structure JSON must not
+For actual successor-relation research, a lightweight ranker with calibrated
+branching can be trained locally from the official ROOR train split. Input structure JSON must not
 contain answer relations, and output remains review-only:
 
 ```bash

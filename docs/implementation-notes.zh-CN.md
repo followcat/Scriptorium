@@ -438,5 +438,11 @@ SHA-256。`run-relation-ranker` 加载前校验 digest，拒绝任何已含 succ
 `candidate_consensus_policy: isolated`、`runtime_reorder: false` 的边。Joblib 加载时
 可能执行代码，因此只信任本机生成的 bundle。
 
+ROOR relation 不一定是一条单路径，部分 source node 有多个合法 immediate successor。
+因此 v2 bundle 会在 fit partition 上训练第二个二分类 branch gate，输入 source 几何、
+前两个 pair score 与 margin，以及选定的 pair 几何特征。独立 calibration sweep 决定
+是否输出 rank-2 edge。推理最多输出两个 successor，并分别记录 `confidence` 和
+`branch_confidence`；不会把 pair scorer 变成不受约束的全局多边阈值。
+
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。

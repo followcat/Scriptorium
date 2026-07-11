@@ -543,18 +543,22 @@ train 文档校准。validation 评分前阈值已固定为 `0.16`；calibration
 `0.66132556`、recall 为 `0.64857143`、F1 为 `0.65488640`。项目跟踪的 49 页
 validation 与 train index 没有样本重叠。
 
-| 指标 | Native selected | Trained external |
-|---|---:|---:|
-| candidate 解码后命中的官方 relation / 总数 | 1274/2612 | 1513/2612 |
-| 官方 relation accuracy | 0.48774885 | 0.57924962 |
-| 直接预测边 precision | n/a | 0.68715305 |
-| 直接预测边 recall | n/a | 0.66347626 |
-| 直接预测边 F1 | n/a | 0.67510713 |
+branch gate 使用同一条 train/calibration 边界。其固定 calibration 阈值为 `0.75`，
+对应 relation F1 `0.66737288`；阈值选择没有使用 validation 结果。
 
-external candidate 的 relation accuracy 绝对提升 `0.09150077`，并在 49 页中的 34 页
-成为最佳候选。模型预测 2,522 条 review edge，其中 2,494 条解析到 IR 元素。视觉
+| 指标 | Native selected | Top-1 ranker | Branching ranker |
+|---|---:|---:|---:|
+| candidate 解码后命中的官方 relation / 总数 | 1274/2612 | 1513/2612 | 1529/2612 |
+| 官方 relation accuracy | 0.48774885 | 0.57924962 | 0.58537519 |
+| 直接预测边 precision | n/a | 0.68715305 | 0.67794118 |
+| 直接预测边 recall | n/a | 0.66347626 | 0.70597243 |
+| 直接预测边 F1 | n/a | 0.67510713 | 0.69167292 |
+
+branching external candidate 相对 native 的 relation accuracy 绝对提升 `0.09762634`，
+并在 49 页中的 35 页成为最佳候选。模型增加 198 条校准后的 rank-2 edge，共预测
+2,720 条 review edge，其中 2,686 条解析到 IR 元素。视觉
 相似度、grid-island 数、selected order 和重排页数均不变。过滤 isolated relation
 provenance 后，两分支的 stream recommendation 也完全一致，包括 92 个
 `needs-structure-evidence` stream。该结果足以继续把模型作为独立候选开发，但还不足以
-提升到 runtime order：解码后 accuracy 仍只有 0.579，且部分多页/form-like 样本的
+提升到 runtime order：解码后 accuracy 仍只有 0.585，且部分多页/form-like 样本的
 直接 precision 较低。

@@ -823,6 +823,14 @@ review-only edges with `candidate_consensus_policy: isolated` and
 `runtime_reorder: false`. Joblib can execute code while loading; only locally
 generated bundles are trusted.
 
+ROOR relations are not always a single path: some source nodes have multiple
+valid immediate successors. The v2 bundle therefore trains a second binary
+branch gate from the fit partition. It receives source geometry, the top two
+pair scores and margins, and selected pair geometry features. A separate
+calibration sweep decides whether to emit the rank-2 edge. Inference emits at
+most two successors, with independent `confidence` and `branch_confidence`;
+it never turns the pair scorer into an unrestricted global edge threshold.
+
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
 of aborting image-source benchmarks with `cannot write empty image`.
