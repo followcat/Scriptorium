@@ -156,7 +156,8 @@ scriptorium run-docling path/to/page.png \
 结果。当前 held-out 结果不支持把 Docling reading order 提升为默认排序器。
 
 需要研究真正的 successor relation 时，可以从 ROOR 官方 train split 本地训练轻量、
-支持校准分叉的 ranker。输入必须是不含答案 relation 的 structure JSON，输出默认 review-only：
+支持校准分叉的 ranker。输入可以是不含答案 relation 的 structure JSON 或多页
+`DocumentIR`，输出默认 review-only：
 
 ```bash
 pip install -r requirements-relation-ranker.txt

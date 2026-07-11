@@ -578,3 +578,27 @@ same stream recommendations, including 92 `needs-structure-evidence` streams.
 The result is sufficient to keep developing the model as an independent
 candidate, but not to promote it to runtime order: decoded accuracy remains
 0.585 and several multi-page/form-like samples have low direct precision.
+
+### Cross-Domain DocumentIR Replay
+
+Without retraining, the same ROOR model was applied to native PDF `DocumentIR`
+anchors from two paper families:
+
+| Sample | Selected | External ranker | Relation graph | Box flow |
+|---|---:|---:|---:|---:|
+| Transformer-XL pp. 1-3 | 41/41 | 29/41 | 22/41 | 14/41 |
+| Attention pp. 1-3, 12-13 | 33/33 | 29/33 | 21/33 | 18/33 |
+
+The external candidate generalizes above the geometry baselines but does not
+beat the mature native paper order. All 502 predicted relations resolve, while
+visual, selected-order, consensus, stream-diagnostic, and runtime-reorder deltas
+remain zero.
+
+Fit-only feature envelopes expose the domain shift that confidence misses.
+ROOR validation feature-value OOD has median `0.02000` and maximum `0.04875`.
+Transformer pages range `0.03028-0.03797`; Attention pages range
+`0.05309-0.10667`. PUMA p. 5 is `0.07304` and the JD homepage is `0.08274`, even
+though their mean pair confidences remain `0.86286` and `0.90136`. OOD is
+therefore a rejection/triage diagnostic, not a score correction or correctness
+claim. PUMA resolves 23/23 and JD 146/146 review edges with zero reorder and
+zero visual/stream-diagnostic delta.

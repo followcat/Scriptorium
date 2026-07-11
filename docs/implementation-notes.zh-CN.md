@@ -444,5 +444,15 @@ ROOR relation 不一定是一条单路径，部分 source node 有多个合法 i
 是否输出 rank-2 edge。推理最多输出两个 successor，并分别记录 `confidence` 和
 `branch_confidence`；不会把 pair scorer 变成不受约束的全局多边阈值。
 
+`run-relation-ranker` 也接受多页 `DocumentIR`。每个含文本的页面都会投影为归一化
+PDF-space segment，使用同一个模型评分，再输出通用
+`pages/elements/successor_edges` structure JSON。因此 native PDF 文本、图片 OCR
+anchor、年报和门户截图共享一条推理路径，而不是只支持 ROOR runtime。
+
+模型 bundle 保存仅由 fit partition 计算的逐特征 1%/99% envelope。每个输出页面会
+报告 mean pair confidence、edge-level envelope outlier ratio 和 feature-value outlier
+ratio。这些是域漂移诊断，不是正确率估计；模型在域外页面也可能保持很高 confidence。
+它们用于未来 runtime rejection，并帮助优先补独立标注。
+
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。

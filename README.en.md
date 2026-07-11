@@ -161,8 +161,8 @@ for inspecting Docling's original result. Current held-out evidence does not
 support promoting Docling reading order to the default orderer.
 
 For actual successor-relation research, a lightweight ranker with calibrated
-branching can be trained locally from the official ROOR train split. Input structure JSON must not
-contain answer relations, and output remains review-only:
+branching can be trained locally from the official ROOR train split. It accepts
+answer-free structure JSON or a multi-page `DocumentIR`, and output remains review-only:
 
 ```bash
 pip install -r requirements-relation-ranker.txt

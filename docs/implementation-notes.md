@@ -831,6 +831,19 @@ calibration sweep decides whether to emit the rank-2 edge. Inference emits at
 most two successors, with independent `confidence` and `branch_confidence`;
 it never turns the pair scorer into an unrestricted global edge threshold.
 
+`run-relation-ranker` also accepts a multi-page `DocumentIR`. Every text-bearing
+page is projected into normalized PDF-space segments, scored by the same model,
+and emitted as generic `pages/elements/successor_edges` structure JSON. This
+makes native PDF text, image OCR anchors, annual reports, and portal screenshots
+use one inference path rather than a ROOR-specific runtime.
+
+The model bundle stores per-feature 1%/99% envelopes computed only from the fit
+partition. Each output page reports mean pair confidence, edge-level envelope
+outlier ratio, and feature-value outlier ratio. These are domain-shift
+diagnostics, not correctness estimates: a model can remain highly confident on
+out-of-domain pages. They are intended as a future runtime rejection signal and
+as a way to prioritize independent labels.
+
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
 of aborting image-source benchmarks with `cannot write empty image`.

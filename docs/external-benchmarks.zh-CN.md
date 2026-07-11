@@ -562,3 +562,25 @@ provenance 后，两分支的 stream recommendation 也完全一致，包括 92 
 `needs-structure-evidence` stream。该结果足以继续把模型作为独立候选开发，但还不足以
 提升到 runtime order：解码后 accuracy 仍只有 0.585，且部分多页/form-like 样本的
 直接 precision 较低。
+
+### 跨域 DocumentIR Replay
+
+不做再训练，直接把同一 ROOR 模型应用到两个论文族的 native PDF `DocumentIR`
+anchor：
+
+| 样本 | Selected | External ranker | Relation graph | Box flow |
+|---|---:|---:|---:|---:|
+| Transformer-XL pp. 1-3 | 41/41 | 29/41 | 22/41 | 14/41 |
+| Attention pp. 1-3, 12-13 | 33/33 | 29/33 | 21/33 | 18/33 |
+
+external candidate 跨域后仍高于几何 baseline，但没有超过成熟的 native 论文顺序。
+502 条预测 relation 全部解析；视觉、selected order、consensus、stream diagnostics 和
+runtime reorder delta 都为 0。
+
+仅由 fit 数据计算的 feature envelope 揭示了 confidence 看不到的域漂移。ROOR
+validation 的 feature-value OOD 中位数为 `0.02000`、最大值为 `0.04875`；
+Transformer 页面为 `0.03028-0.03797`，Attention 页面为 `0.05309-0.10667`。
+PUMA p. 5 为 `0.07304`，JD 首页为 `0.08274`，但二者 mean pair confidence 仍达到
+`0.86286` 和 `0.90136`。因此 OOD 是 rejection/triage 诊断，不是分数修正或正确率
+声明。PUMA 23/23、JD 146/146 review edge 均解析成功，重排、视觉和 stream
+diagnostic delta 都为 0。
