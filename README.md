@@ -27,7 +27,7 @@
   ·
   <a href="#benchmark">Benchmark</a>
   ·
-  <a href="docs/showcase/README.zh-CN.md">转换对照</a>
+  <a href="https://followcat.github.io/Scriptorium/">在线展示</a>
   ·
   <a href="#文档">文档</a>
 </p>
@@ -77,7 +77,9 @@ Scriptorium 支持两条路径：
 </table>
 
 <p align="center">
-  <a href="docs/showcase/README.zh-CN.md"><strong>查看真实 source 与生成 HTML 的左右对照</strong></a>
+  <a href="https://followcat.github.io/Scriptorium/"><strong>打开真实 source 与生成 HTML 的交互对照</strong></a>
+  ·
+  <a href="docs/showcase/README.zh-CN.md">GitHub 内查看</a>
 </p>
 
 ## 快速开始
