@@ -505,7 +505,13 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             "fidelity_replacement_mean_fit_scale",
         ),
         "structure_evidence_region_count": structure_case["structure_evidence_region_count"],
+        "structure_evidence_review_region_count": structure_case[
+            "structure_evidence_review_region_count"
+        ],
         "structure_evidence_relation_edge_count": structure_case["structure_evidence_relation_edge_count"],
+        "structure_evidence_review_relation_edge_count": structure_case[
+            "structure_evidence_review_relation_edge_count"
+        ],
         "structure_evidence_resolved_relation_edge_count": structure_case[
             "structure_evidence_resolved_relation_edge_count"
         ],
@@ -823,8 +829,14 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
             values["fidelity_replacement_mean_fit_scale_delta"] for values in comparisons
         ),
         "total_structure_evidence_regions": sum(int(values["structure_evidence_region_count"]) for values in comparisons),
+        "total_structure_evidence_review_regions": sum(
+            int(values["structure_evidence_review_region_count"]) for values in comparisons
+        ),
         "total_structure_evidence_relation_edges": sum(
             int(values["structure_evidence_relation_edge_count"]) for values in comparisons
+        ),
+        "total_structure_evidence_review_relation_edges": sum(
+            int(values["structure_evidence_review_relation_edge_count"]) for values in comparisons
         ),
         "total_structure_evidence_resolved_relation_edges": sum(
             int(values["structure_evidence_resolved_relation_edge_count"]) for values in comparisons
@@ -1072,7 +1084,9 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "fidelity_replacement_overflow_delta",
         "fidelity_replacement_mean_fit_scale_delta",
         "structure_evidence_region_count",
+        "structure_evidence_review_region_count",
         "structure_evidence_relation_edge_count",
+        "structure_evidence_review_relation_edge_count",
         "structure_evidence_resolved_relation_edge_count",
         "structure_evidence_resolved_relation_alias_edge_count",
         "structure_evidence_resolved_relation_group_edge_count",
@@ -1681,7 +1695,11 @@ def _run_case(
         ],
         "structure_evidence_source": stats["structure_evidence_source"],
         "structure_evidence_region_count": stats["structure_evidence_region_count"],
+        "structure_evidence_review_region_count": stats["structure_evidence_review_region_count"],
         "structure_evidence_relation_edge_count": stats["structure_evidence_relation_edge_count"],
+        "structure_evidence_review_relation_edge_count": stats[
+            "structure_evidence_review_relation_edge_count"
+        ],
         "structure_evidence_resolved_relation_edge_count": stats[
             "structure_evidence_resolved_relation_edge_count"
         ],
@@ -2143,7 +2161,11 @@ def _document_stats(
         "font_size_scale": float(document.metadata.get("font_size_scale") or 1.0),
         "structure_evidence_source": structure_evidence.get("source"),
         "structure_evidence_region_count": int(structure_evidence.get("region_count") or 0),
+        "structure_evidence_review_region_count": int(structure_evidence.get("review_region_count") or 0),
         "structure_evidence_relation_edge_count": int(structure_evidence.get("relation_edge_count") or 0),
+        "structure_evidence_review_relation_edge_count": int(
+            structure_evidence.get("review_relation_edge_count") or 0
+        ),
         "structure_evidence_resolved_relation_edge_count": int(
             structure_evidence.get("resolved_relation_edge_count") or 0
         ),
@@ -4552,8 +4574,14 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_rasterized_shape_elements": sum(int(case["rasterized_shape_count"]) for case in cases),
         "total_vector_background_pages": sum(int(case["vector_background_page_count"]) for case in cases),
         "total_structure_evidence_regions": sum(int(case["structure_evidence_region_count"]) for case in cases),
+        "total_structure_evidence_review_regions": sum(
+            int(case["structure_evidence_review_region_count"]) for case in cases
+        ),
         "total_structure_evidence_relation_edges": sum(
             int(case["structure_evidence_relation_edge_count"]) for case in cases
+        ),
+        "total_structure_evidence_review_relation_edges": sum(
+            int(case["structure_evidence_review_relation_edge_count"]) for case in cases
         ),
         "total_structure_evidence_resolved_relation_edges": sum(
             int(case["structure_evidence_resolved_relation_edge_count"]) for case in cases
@@ -4889,7 +4917,9 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "fidelity_replacement_stream_id_conflict_counts",
         "structure_evidence_source",
         "structure_evidence_region_count",
+        "structure_evidence_review_region_count",
         "structure_evidence_relation_edge_count",
+        "structure_evidence_review_relation_edge_count",
         "structure_evidence_resolved_relation_edge_count",
         "structure_evidence_resolved_relation_alias_edge_count",
         "structure_evidence_resolved_relation_group_edge_count",

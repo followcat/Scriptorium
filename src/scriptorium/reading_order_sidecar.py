@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
@@ -22,6 +23,7 @@ SIDECAR_SCHEMA_NAME = "ScriptoriumReadingOrderSidecar"
 SIDECAR_SCHEMA_VERSION = "1.1"
 SIDECAR_PROPOSAL_STATUS = "proposal"
 SIDECAR_SOURCE = "scriptorium-local-stream-proposal-v2"
+PROVIDER_CONSENSUS_SOURCE = "scriptorium-provider-consensus-v1"
 EXPLICIT_BLOCK_ORDER_TRANSITION_KIND = "external-structure-explicit-block-order-v1"
 REVIEW_EDGE_PROMOTION_CONFIDENCE = 0.82
 REVIEW_EDGE_RELATION_GRAPH_SCORE = 0.86
@@ -200,6 +202,236 @@ def write_reading_order_sidecar(document: DocumentIR, path: str | Path) -> dict[
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return payload
+
+
+def build_provider_consensus_sidecar(
+    base_proposal: Mapping[str, Any],
+    provider_proposals: Sequence[tuple[str, Mapping[str, Any]]],
+    *,
+    min_provider_count: int = 2,
+) -> dict[str, Any]:
+    """Keep only explicit block-order transitions confirmed by independent providers.
+
+    The base proposal owns native local streams and all non-model review
+    transitions. Provider proposals contribute votes only for explicit model
+    block-order transitions over the same stable element IDs. Consensus remains
+    review-only; this helper never changes ``sidecar_status`` to accepted.
+    """
+
+    if min_provider_count < 2:
+        raise ValueError("min_provider_count must be at least 2")
+    if len(provider_proposals) < min_provider_count:
+        raise ValueError("not enough provider sidecars for the requested consensus")
+    provider_names = [str(name).strip() for name, _payload in provider_proposals]
+    if any(not name for name in provider_names) or len(set(provider_names)) != len(provider_names):
+        raise ValueError("provider sidecar names must be non-empty and unique")
+
+    result = deepcopy(dict(base_proposal))
+    _validate_consensus_sidecar(result, role="base")
+    base_pages = _consensus_pages_by_index(result)
+    support: dict[tuple[int, str, str], list[tuple[str, Mapping[str, Any]]]] = defaultdict(list)
+    for provider_name, provider_payload in provider_proposals:
+        _validate_consensus_sidecar(provider_payload, role=f"provider {provider_name}")
+        provider_pages = _consensus_pages_by_index(provider_payload)
+        _validate_consensus_document_alignment(base_pages, provider_pages, provider_name=str(provider_name))
+        provider_seen: set[tuple[int, str, str]] = set()
+        for page_index, page in provider_pages.items():
+            transitions = page.get("review_transitions")
+            if not isinstance(transitions, list):
+                continue
+            for transition in transitions:
+                if not isinstance(transition, Mapping) or not _is_explicit_block_order_transition(transition):
+                    continue
+                edge = (page_index, _text(transition.get("source")), _text(transition.get("target")))
+                if not all(edge[1:]) or edge[1] == edge[2] or edge in provider_seen:
+                    continue
+                support[edge].append((str(provider_name), transition))
+                provider_seen.add(edge)
+
+    consensus_edges = {
+        edge: votes
+        for edge, votes in support.items()
+        if len(votes) >= min_provider_count
+    }
+    consensus_count = 0
+    for page_index, page in base_pages.items():
+        raw_transitions = page.get("review_transitions")
+        existing = [
+            deepcopy(dict(transition))
+            for transition in raw_transitions
+            if isinstance(transition, Mapping) and not _is_explicit_block_order_transition(transition)
+        ] if isinstance(raw_transitions, list) else []
+        existing_by_edge = {
+            (_text(transition.get("source")), _text(transition.get("target"))): transition
+            for transition in existing
+        }
+        for (edge_page_index, source_id, target_id), votes in sorted(consensus_edges.items()):
+            if edge_page_index != page_index:
+                continue
+            transition = _provider_consensus_transition(
+                source_id,
+                target_id,
+                votes,
+                min_provider_count=min_provider_count,
+                base_transition=existing_by_edge.get((source_id, target_id)),
+            )
+            if (source_id, target_id) in existing_by_edge:
+                existing[existing.index(existing_by_edge[(source_id, target_id)])] = transition
+                existing_by_edge[(source_id, target_id)] = transition
+            else:
+                existing.append(transition)
+                existing_by_edge[(source_id, target_id)] = transition
+            consensus_count += 1
+        page["review_transitions"] = existing
+
+    summary = result.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+        result["summary"] = summary
+    summary["review_transition_count"] = sum(
+        len(page.get("review_transitions", []))
+        for page in base_pages.values()
+        if isinstance(page.get("review_transitions"), list)
+    )
+    summary["review_block_transition_count"] = consensus_count
+    summary["provider_consensus_transition_count"] = consensus_count
+    result["sidecar_status"] = SIDECAR_PROPOSAL_STATUS
+    result["source"] = PROVIDER_CONSENSUS_SOURCE
+    result["provider_consensus"] = {
+        "policy": "review-only",
+        "minimum_provider_count": min_provider_count,
+        "provider_count": len(provider_proposals),
+        "providers": provider_names,
+        "candidate_edge_count": len(support),
+        "consensus_edge_count": consensus_count,
+        "runtime_reorder": False,
+    }
+    review_policy = result.get("review_policy")
+    if isinstance(review_policy, dict):
+        review_policy["provider_consensus_relations"] = "review_only"
+    return result
+
+
+def _validate_consensus_sidecar(payload: Mapping[str, Any], *, role: str) -> None:
+    if _text(payload.get("schema_name")) != SIDECAR_SCHEMA_NAME:
+        raise ValueError(f"{role} is not a {SIDECAR_SCHEMA_NAME} payload")
+    if _text(payload.get("sidecar_status")).lower() != SIDECAR_PROPOSAL_STATUS:
+        raise ValueError(f"{role} must remain an unaccepted proposal")
+    if not isinstance(payload.get("pages"), list):
+        raise ValueError(f"{role} has no pages")
+
+
+def _is_explicit_block_order_transition(transition: Mapping[str, Any]) -> bool:
+    provenance = transition.get("provenance")
+    return (
+        isinstance(provenance, Mapping)
+        and _text(provenance.get("kind")) == EXPLICIT_BLOCK_ORDER_TRANSITION_KIND
+    )
+
+
+def _consensus_pages_by_index(payload: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    pages: dict[int, dict[str, Any]] = {}
+    for raw_page in payload.get("pages", []):
+        if not isinstance(raw_page, dict):
+            continue
+        page_index = _optional_int(raw_page.get("page_index"))
+        if page_index is None or page_index in pages:
+            raise ValueError("sidecar page indices must be unique integers")
+        pages[page_index] = raw_page
+    return pages
+
+
+def _validate_consensus_document_alignment(
+    base_pages: Mapping[int, Mapping[str, Any]],
+    provider_pages: Mapping[int, Mapping[str, Any]],
+    *,
+    provider_name: str,
+) -> None:
+    if set(base_pages) != set(provider_pages):
+        raise ValueError(f"provider {provider_name} page indices do not match the base sidecar")
+    for page_index, base_page in base_pages.items():
+        base_document = _consensus_document_fingerprint(base_page)
+        provider_document = _consensus_document_fingerprint(provider_pages[page_index])
+        if not base_document or base_document != provider_document:
+            raise ValueError(
+                f"provider {provider_name} page {page_index} does not use the base sidecar's stable elements"
+            )
+
+
+def _consensus_document_fingerprint(
+    page: Mapping[str, Any],
+) -> tuple[tuple[str, str, tuple[float, ...]], ...]:
+    document = page.get("document")
+    if not isinstance(document, list):
+        return ()
+    values: list[tuple[str, str, tuple[float, ...]]] = []
+    for element in document:
+        if not isinstance(element, Mapping) or not _text(element.get("id")):
+            continue
+        bbox = element.get("bbox_pdf")
+        try:
+            normalized_bbox = tuple(round(float(value), 6) for value in bbox) if len(bbox) == 4 else ()
+        except (TypeError, ValueError):
+            normalized_bbox = ()
+        values.append((_text(element.get("id")), _text(element.get("text")), normalized_bbox))
+    return tuple(sorted(values))
+
+
+def _provider_consensus_transition(
+    source_id: str,
+    target_id: str,
+    votes: Sequence[tuple[str, Mapping[str, Any]]],
+    *,
+    min_provider_count: int,
+    base_transition: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    representative = max(votes, key=lambda item: _safe_float(item[1].get("confidence")) or 0.0)[1]
+    transition = deepcopy(dict(base_transition or representative))
+    confidences = [
+        confidence
+        for _name, vote in votes
+        if (confidence := _safe_float(vote.get("confidence"))) is not None
+    ]
+    transition.update(
+        {
+            "source": source_id,
+            "target": target_id,
+            "reason": "independent-provider-consensus",
+            "review_required": True,
+            "evidence": _dedupe_texts(
+                [
+                    *(
+                        _text(item)
+                        for _name, vote in votes
+                        for item in (vote.get("evidence") if isinstance(vote.get("evidence"), list) else [])
+                    ),
+                    "independent-provider-consensus",
+                ]
+            ),
+            "provenance": {
+                "kind": EXPLICIT_BLOCK_ORDER_TRANSITION_KIND,
+                "provider_consensus": True,
+                "provider_count": len(votes),
+                "minimum_provider_count": min_provider_count,
+                "providers": [
+                    {
+                        "name": name,
+                        "confidence": _safe_float(vote.get("confidence")),
+                        "structure_source": _text(
+                            vote.get("provenance", {}).get("structure_source")
+                            if isinstance(vote.get("provenance"), Mapping)
+                            else ""
+                        ),
+                    }
+                    for name, vote in votes
+                ],
+            },
+        }
+    )
+    if confidences:
+        transition["confidence"] = round(min(confidences), 8)
+    transition.pop("selected_order_transition", None)
+    return transition
 
 
 def reading_order_sidecar_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -589,6 +821,8 @@ def _external_structure_block_signature(
     element: ElementIR,
 ) -> tuple[str, str, tuple[float, float, float, float]] | None:
     metadata = element.metadata
+    if metadata.get("external_structure_semantic_review_only") is True:
+        return None
     stream_type = _text(metadata.get("reading_order_stream_type")) or "body"
     stream_id = _text(metadata.get("reading_order_stream_id")) or "body-main"
     if (
@@ -1256,7 +1490,23 @@ def _transition_reason(source: "_ProposalMember", target: "_ProposalMember") -> 
 
 def _has_explicit_successor(element: ElementIR, target_id: str) -> bool:
     targets = element.metadata.get("external_structure_successor_ids")
-    return isinstance(targets, list) and target_id in {str(item) for item in targets}
+    if not isinstance(targets, list) or target_id not in {str(item) for item in targets}:
+        return False
+    records = element.metadata.get("external_structure_relation_edges")
+    if not isinstance(records, list):
+        return True
+    matching_records = [
+        record
+        for record in records
+        if isinstance(record, Mapping)
+        and _text(record.get("kind")) == "successor"
+        and _text(record.get("target_id")) == target_id
+    ]
+    return not matching_records or any(
+        record.get("review_only") is not True
+        and record.get("secondary_native_column_flow") is not True
+        for record in matching_records
+    )
 
 
 def _is_full_width_span(column_span: str) -> bool:

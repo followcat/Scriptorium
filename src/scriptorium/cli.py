@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -20,12 +21,23 @@ from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
-from .ocr import PpStructureAdapter, PaddleOcrAdapter, load_ocr_json, normalize_ocr_to_ir, write_ocr_json
+from .ocr import (
+    PpStructureAdapter,
+    PaddleOcrAdapter,
+    SuryaLayoutAdapter,
+    load_ocr_json,
+    normalize_ocr_to_ir,
+    write_ocr_json,
+)
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
-from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
+from .reading_order_sidecar import (
+    build_provider_consensus_sidecar,
+    reading_order_sidecar_summary,
+    write_reading_order_sidecar,
+)
 from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
@@ -72,6 +84,56 @@ def fetch_roor_command(
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("consensus-reading-sidecars")
+def consensus_reading_sidecars_command(
+    base_sidecar: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Native/base proposal that owns stable elements and local reading streams.",
+    ),
+    provider_sidecars: list[Path] = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Two or more independent provider proposal sidecars.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/reading-order.consensus.proposal.json"),
+        "--output",
+        "-o",
+        help="Review-only provider-consensus sidecar.",
+    ),
+    min_providers: int = typer.Option(
+        2,
+        min=2,
+        help="Minimum number of distinct provider sidecars that must propose the same edge.",
+    ),
+) -> None:
+    """Intersect independent model block-order proposals over stable element IDs."""
+
+    try:
+        base_payload = json.loads(base_sidecar.read_text(encoding="utf-8"))
+        providers = [
+            (str(path), json.loads(path.read_text(encoding="utf-8")))
+            for path in provider_sidecars
+        ]
+        payload = build_provider_consensus_sidecar(
+            base_payload,
+            providers,
+            min_provider_count=min_providers,
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    consensus = payload["provider_consensus"]
+    typer.echo(f"Provider-consensus sidecar: {output}")
+    typer.echo(f"Providers: {consensus['provider_count']}")
+    typer.echo(f"Consensus review edges: {consensus['consensus_edge_count']}")
+    typer.echo("Runtime reorder: disabled")
 
 
 @app.command("benchmark")
@@ -539,6 +601,90 @@ def run_pp_structure_command(
     typer.echo(f"Pages: {len(rendered.pages)}")
     typer.echo(f"Source type: {rendered.source_type}")
     typer.echo(f"Model: {payload.get('model')}")
+
+
+@app.command("run-surya-layout")
+def run_surya_layout_command(
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF or image source."),
+    output: Path = typer.Option(
+        Path("outputs/surya-layout.raw.json"),
+        "--output",
+        "-o",
+        help="Review-only Surya layout/order JSON for replay or A/B benchmarking.",
+    ),
+    dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for PDF source pages."),
+    input_kind: SourceKind = typer.Option("auto", help="Source type: auto, pdf, or image."),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image pixels into PDF points for image sources.",
+    ),
+    max_pages: Optional[int] = typer.Option(None, min=1, help="Limit model execution to the first N pages."),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Explicit 1-based source page ranges, for example 1-3,136. Cannot be combined with --max-pages.",
+    ),
+    device: str = typer.Option("cpu", help="Surya fast detector/order device: cpu, cuda, or mps."),
+    num_threads: Optional[int] = typer.Option(None, min=1, help="Optional CPU thread count for Surya."),
+    confidence_threshold: float = typer.Option(
+        0.4,
+        min=0.0,
+        max=1.0,
+        help="Fast layout detector confidence threshold.",
+    ),
+    batch_size: int = typer.Option(8, min=1, help="Fast layout detector batch size."),
+    checkpoint: Optional[str] = typer.Option(None, help="Optional Surya detector checkpoint or hf:// reference."),
+    order_checkpoint: Optional[str] = typer.Option(
+        None,
+        help="Optional Surya learned-order checkpoint or hf:// reference.",
+    ),
+    accept_model_license: bool = typer.Option(
+        False,
+        "--accept-model-license",
+        help=(
+            "Confirm acceptance of the modified AI Pubs OpenRAIL-M model-weight license. "
+            "Surya code is Apache-2.0, but its weights and outputs have additional terms."
+        ),
+    ),
+) -> None:
+    """Run Surya FastLayout with learned order; fail rather than use raster fallback."""
+
+    if not accept_model_license:
+        raise typer.BadParameter(
+            "Surya model weights require explicit license acceptance; pass --accept-model-license after review",
+            param_hint="--accept-model-license",
+        )
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    rendered = render_source(
+        source,
+        output.parent / f"{output.stem}.pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=page_indices,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
+    )
+    payload = SuryaLayoutAdapter(
+        checkpoint=checkpoint,
+        order_checkpoint=order_checkpoint,
+        device=device,
+        num_threads=num_threads,
+        confidence_threshold=confidence_threshold,
+        batch_size=batch_size,
+    ).analyze(
+        [page.background_image for page in rendered.pages],
+        page_indices=[page.page_index for page in rendered.pages],
+    )
+    output_path = write_ocr_json(payload, output)
+    typer.echo(f"Surya layout/order JSON: {output_path}")
+    typer.echo(f"Pages: {len(rendered.pages)}")
+    typer.echo(f"Source type: {rendered.source_type}")
+    typer.echo(f"Model: {payload.get('model')}")
+    typer.echo(f"Relation policy: {payload.get('relation_policy')}")
 
 
 @app.command()

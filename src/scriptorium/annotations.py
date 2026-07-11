@@ -561,6 +561,8 @@ def _append_target_caption(element: ElementIR, caption_id: str) -> None:
 
 
 def _external_structure_role(element: ElementIR) -> str | None:
+    if element.metadata.get("external_structure_semantic_review_only") is True:
+        return None
     label = str(element.metadata.get("external_structure_label") or "").strip().lower()
     if not label:
         return None

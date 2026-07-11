@@ -1304,6 +1304,297 @@ class PpStructureAdapter(PaddleOcrAdapter):
         return PPStructureV3(**options)
 
 
+class SuryaLayoutAdapter:
+    """Run Surya's fast layout detector with its learned reading-order head.
+
+    Surya silently falls back to raster order when the optional order head or
+    detector feature map is unavailable. That behavior is unsuitable for a
+    semantic-order benchmark, so this adapter uses the detector and order head
+    directly and fails closed instead of serializing fallback geometry as
+    learned evidence.
+    """
+
+    def __init__(
+        self,
+        *,
+        predictor_factory: Callable[..., Any] | None = None,
+        checkpoint: str | None = None,
+        order_checkpoint: str | None = None,
+        device: str | None = "cpu",
+        num_threads: int | None = None,
+        confidence_threshold: float = 0.4,
+        batch_size: int = 8,
+    ) -> None:
+        self.predictor_factory = predictor_factory
+        self.checkpoint = checkpoint
+        self.order_checkpoint = order_checkpoint
+        self.device = device
+        self.num_threads = num_threads
+        self.confidence_threshold = confidence_threshold
+        self.batch_size = batch_size
+
+    def analyze(
+        self,
+        image_paths: Sequence[str | Path],
+        *,
+        page_indices: Sequence[int] | None = None,
+    ) -> dict[str, Any]:
+        paths = [Path(image_path) for image_path in image_paths]
+        source_page_indices = _source_page_indices(paths, page_indices, provider="Surya")
+        predictor = self._create_predictor()
+        order_predictor = self._load_order_predictor(predictor)
+        order_max_boxes = _surya_order_max_boxes(order_predictor)
+        if self.predictor_factory is None and order_max_boxes is None:
+            raise RuntimeError(
+                "Unsupported Surya learned-order API: model capacity is unavailable, so raster fallback cannot be detected"
+            )
+
+        images: list[Image.Image] = []
+        try:
+            for image_path in paths:
+                with Image.open(image_path) as image:
+                    images.append(image.convert("RGB"))
+            detections = predictor.model.detect(
+                images,
+                threshold=self.confidence_threshold,
+                batch_size=self.batch_size,
+                return_features=True,
+            )
+            if len(detections) != len(images):
+                raise RuntimeError("Surya returned a different number of layout pages than it received")
+            pages = [
+                _surya_layout_page_payload(
+                    detections=page_detections,
+                    order_predictor=order_predictor,
+                    image=image,
+                    image_path=image_path,
+                    page_index=page_index,
+                )
+                for page_detections, image, image_path, page_index in zip(
+                    detections,
+                    images,
+                    paths,
+                    source_page_indices,
+                    strict=True,
+                )
+            ]
+        finally:
+            for image in images:
+                image.close()
+
+        return {
+            "source": "surya-fast-layout",
+            "model": self.checkpoint or "datalab-to/surya_layout2",
+            "order_model": self.order_checkpoint or "datalab-to/surya_layout2/order",
+            "provider_version": "surya-ocr-0.21.1",
+            "backend": "fast-layout-learned-order",
+            "relation_policy": "review-only",
+            "semantic_policy": "review-only",
+            "learned_order_required": True,
+            "learned_order_max_boxes": order_max_boxes,
+            "model_code_license": "Apache-2.0",
+            "model_weights_license": "AI-Pubs-OpenRAIL-M-modified",
+            "model_weights_license_url": "https://huggingface.co/datalab-to/surya_layout2/blob/main/LICENSE",
+            "pages": pages,
+        }
+
+    def _create_predictor(self) -> Any:
+        if self.device:
+            os.environ["FAST_DETECTOR_DEVICE"] = self.device
+        if self.order_checkpoint:
+            os.environ["FAST_ORDER_MODEL_CHECKPOINT"] = self.order_checkpoint
+        options: dict[str, Any] = {"use_order": True}
+        if self.checkpoint:
+            options["checkpoint"] = self.checkpoint
+        if self.num_threads is not None:
+            options["num_threads"] = self.num_threads
+        if self.predictor_factory is not None:
+            return self.predictor_factory(**options)
+        try:
+            from surya.fast_layout import FastLayoutPredictor  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "Surya is not installed. Use a dedicated environment with requirements-surya.txt "
+                "or replay a saved --structure-json result."
+            ) from exc
+        return FastLayoutPredictor(**options)
+
+    @staticmethod
+    def _load_order_predictor(predictor: Any) -> Any:
+        loader = getattr(predictor, "_load_order", None)
+        order_predictor = loader() if callable(loader) else getattr(predictor, "order", None)
+        if order_predictor is None:
+            raise RuntimeError(
+                "Surya's learned reading-order head did not load; refusing its raster-order fallback"
+            )
+        if not hasattr(predictor, "model") or not hasattr(predictor.model, "detect"):
+            raise RuntimeError("Unsupported Surya FastLayoutPredictor API: detector model is unavailable")
+        return order_predictor
+
+
+def _source_page_indices(
+    paths: Sequence[Path],
+    page_indices: Sequence[int] | None,
+    *,
+    provider: str,
+) -> list[int]:
+    if page_indices is None:
+        return list(range(len(paths)))
+    normalized = [int(page_index) for page_index in page_indices]
+    if len(normalized) != len(paths):
+        raise ValueError(f"page_indices must have one entry for every {provider} input image")
+    return normalized
+
+
+def _surya_layout_page_payload(
+    *,
+    detections: Any,
+    order_predictor: Any,
+    image: Image.Image,
+    image_path: Path,
+    page_index: int,
+) -> dict[str, Any]:
+    raw_detections = list(detections)
+    if raw_detections:
+        max_boxes = _surya_order_max_boxes(order_predictor)
+        if max_boxes is not None and len(raw_detections) > max_boxes:
+            raise RuntimeError(
+                f"Surya detected {len(raw_detections)} layout boxes, exceeding the learned-order "
+                f"capacity of {max_boxes}; refusing its raster-order fallback"
+            )
+        features = getattr(detections, "features", None)
+        if features is None:
+            raise RuntimeError(
+                "Surya's detector did not return encoder features; refusing raster-order fallback"
+            )
+        positions = list(
+            order_predictor.order_page(
+                features,
+                [detection["bbox"] for detection in raw_detections],
+                [detection["label"] for detection in raw_detections],
+                image.width,
+                image.height,
+            )
+        )
+    else:
+        positions = []
+    normalized_positions: list[int] = []
+    for position in positions:
+        try:
+            normalized_position = int(position)
+            exact_position = float(position)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("Surya's learned reading-order head returned an invalid position") from exc
+        if isinstance(position, bool) or exact_position != normalized_position:
+            raise RuntimeError("Surya's learned reading-order head returned a non-integer position")
+        normalized_positions.append(normalized_position)
+    if sorted(normalized_positions) != list(range(len(raw_detections))):
+        raise RuntimeError("Surya's learned reading-order head returned a non-permutation")
+
+    ordered: list[tuple[int, int, Mapping[str, Any]]] = sorted(
+        (
+            (int(position), detection_index, detection)
+            for detection_index, (detection, position) in enumerate(
+                zip(raw_detections, normalized_positions, strict=True)
+            )
+        ),
+        key=lambda item: (item[0], item[1]),
+    )
+    blocks: list[dict[str, Any]] = []
+    for position, detection_index, detection in ordered:
+        bbox = [float(value) for value in detection["bbox"]]
+        raw_label = str(detection.get("label") or "unknown")
+        block_id = f"surya-p{page_index + 1:04d}-b{position + 1:04d}"
+        blocks.append(
+            {
+                "id": block_id,
+                "type": "layout",
+                "bbox_px": bbox,
+                "block_label": _surya_layout_label(raw_label),
+                "block_order": position + 1,
+                "order_policy": "review-only",
+                "semantic_policy": "review-only",
+                "confidence": float(detection.get("score") or 0.0),
+                "surya_position": position,
+                "surya_detection_index": detection_index,
+                "surya_raw_label": raw_label,
+            }
+        )
+    successor_edges = [
+        {
+            "source": source_block["id"],
+            "target": target_block["id"],
+            "kind": "successor",
+            "review_required": True,
+            "relation_policy": "review-only",
+            "confidence": min(source_block["confidence"], target_block["confidence"]),
+            "provider": "surya-fast-layout",
+        }
+        for source_block, target_block in zip(blocks, blocks[1:], strict=False)
+    ]
+    return {
+        "page_index": page_index,
+        "input_path": str(image_path),
+        "image_width": image.width,
+        "image_height": image.height,
+        "relation_policy": "review-only",
+        "elements": blocks,
+        "successor_edges": successor_edges,
+    }
+
+
+def _surya_order_max_boxes(order_predictor: Any) -> int | None:
+    for owner in (order_predictor, getattr(order_predictor, "model", None)):
+        value = getattr(owner, "max_boxes", None)
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0:
+            return normalized
+
+    module_name = getattr(order_predictor.__class__, "__module__", "")
+    if not module_name:
+        return None
+    try:
+        module = __import__(module_name, fromlist=["MAX_BOXES"])
+        normalized = int(getattr(module, "MAX_BOXES", 0))
+    except (ImportError, TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
+
+
+def _surya_layout_label(value: str) -> str:
+    aliases = {
+        "blankpage": "blank_page",
+        "chemicalblock": "chemical_block",
+        "listgroup": "list",
+        "pagefooter": "footer",
+        "pageheader": "header",
+        "sectionheader": "section_header",
+        "tableofcontents": "table_of_contents",
+    }
+    normalized = "".join(char.lower() for char in value if char.isalnum())
+    if normalized in aliases:
+        return aliases[normalized]
+    words: list[str] = []
+    current = ""
+    for char in value.replace("-", "_").replace(" ", "_"):
+        if char == "_":
+            if current:
+                words.append(current.lower())
+                current = ""
+            continue
+        if char.isupper() and current:
+            words.append(current.lower())
+            current = char
+        else:
+            current += char
+    if current:
+        words.append(current.lower())
+    return "_".join(words) or "unknown"
+
+
 _PADDLE_PAGE_CONTEXT_WRAPPER_KEYS = frozenset(
     {"res", "result", "data", "raw_results", "results", "page_results", "pages"}
 )

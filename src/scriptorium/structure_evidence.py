@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -143,7 +144,7 @@ class StructureRegion:
     raw: dict[str, Any]
 
     def as_metadata(self) -> dict[str, Any]:
-        return {
+        metadata = {
             "page_index": self.page_index,
             "label": self.label,
             "bbox_px": self.bbox_px.as_list(),
@@ -154,6 +155,9 @@ class StructureRegion:
             "confidence": self.confidence,
             "source": self.source,
         }
+        if self.raw.get("_scriptorium_semantic_review_only") is True:
+            metadata["semantic_review_only"] = True
+        return metadata
 
 
 @dataclass(frozen=True)
@@ -181,6 +185,8 @@ class StructureRelationEdge:
             metadata["target_alias"] = str(target_alias)
         if source_alias or target_alias:
             metadata["has_endpoint_alias"] = True
+        if self.raw.get("_scriptorium_relation_review_only") is True:
+            metadata["review_only"] = True
         for key in (
             "source_kind",
             "docling_document_index",
@@ -348,6 +354,7 @@ def normalize_structure_evidence(
     """
 
     payload = normalize_paddleocr_vl_payload(payload)
+    root_payload = payload if isinstance(payload, Mapping) else {}
     regions: list[StructureRegion] = []
     regions.extend(_normalize_docling_evidence(payload, document, source=source))
     for fallback_page_index, page_payload in enumerate(_collect_page_payloads(payload)):
@@ -357,6 +364,9 @@ def normalize_structure_evidence(
             continue
         pixel_reference_size = _structure_payload_pixel_size(page_payload)
         for raw_block in _iter_blocks(page_payload):
+            normalized_raw_block = dict(raw_block)
+            if _structure_semantics_are_review_only(root_payload, page_payload, normalized_raw_block):
+                normalized_raw_block["_scriptorium_semantic_review_only"] = True
             block_order = _extract_order(raw_block)
             order_source = _extract_order_source(raw_block) if block_order is not None else None
             if block_order is None:
@@ -385,7 +395,7 @@ def normalize_structure_evidence(
                     text=_extract_text(raw_block),
                     confidence=_extract_confidence(raw_block),
                     source=source or _extract_source(payload, raw_block),
-                    raw=dict(raw_block),
+                    raw=normalized_raw_block,
                 )
             )
     return regions
@@ -404,6 +414,7 @@ def normalize_structure_relations(
     order for the page.
     """
 
+    root_payload = payload if isinstance(payload, Mapping) else {}
     edges: list[StructureRelationEdge] = []
     seen: set[tuple[int, str, str, str]] = set()
     def append(edge: StructureRelationEdge) -> None:
@@ -427,6 +438,8 @@ def normalize_structure_relations(
         endpoint_aliases = _page_relation_alias_map(page_payload)
         for kind, source_ref, target_ref, raw in _iter_relation_edges(page_payload):
             raw_edge = dict(raw)
+            if _relation_is_review_only(root_payload, page_payload, raw_edge):
+                raw_edge["_scriptorium_relation_review_only"] = True
             source_alias = _endpoint_alias(source_ref, endpoint_aliases)
             target_alias = _endpoint_alias(target_ref, endpoint_aliases)
             if source_alias:
@@ -1249,6 +1262,14 @@ def apply_structure_evidence(
         return document
     regions = normalize_structure_evidence(payload, document, source=source)
     relations = normalize_structure_relations(payload, document, source=source)
+    review_relation_count = sum(
+        relation.raw.get("_scriptorium_relation_review_only") is True
+        for relation in relations
+    )
+    review_region_count = sum(
+        region.raw.get("_scriptorium_semantic_review_only") is True
+        for region in regions
+    )
     streams = normalize_structure_streams(payload, document, source=source)
     regions_by_page: dict[int, list[StructureRegion]] = {}
     for region in regions:
@@ -1363,7 +1384,9 @@ def apply_structure_evidence(
         "version": "v1",
         "source": source_name,
         "region_count": len(regions),
+        "review_region_count": review_region_count,
         "relation_edge_count": len(relations),
+        "review_relation_edge_count": review_relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
         "resolved_relation_alias_edge_count": resolved_relation_alias_count,
         "resolved_relation_group_edge_count": resolved_relation_group_count,
@@ -1417,10 +1440,12 @@ def apply_structure_evidence(
         document,
         source=source_name,
         region_count=len(regions),
+        review_region_count=review_region_count,
         matched_count=matched_count,
         reordered_pages=reordered_pages,
         order_source_counts=dict(sorted(order_source_counts.items())),
         relation_count=len(relations),
+        review_relation_count=review_relation_count,
         resolved_relation_count=resolved_relation_count,
         resolved_relation_alias_count=resolved_relation_alias_count,
         resolved_relation_group_count=resolved_relation_group_count,
@@ -1449,7 +1474,9 @@ def apply_structure_evidence(
             payload={
                 "source": source_name,
                 "region_count": len(regions),
+                "review_region_count": review_region_count,
                 "relation_edge_count": len(relations),
+                "review_relation_edge_count": review_relation_count,
                 "resolved_relation_edge_count": resolved_relation_count,
                 "resolved_relation_alias_edge_count": resolved_relation_alias_count,
                 "resolved_relation_group_edge_count": resolved_relation_group_count,
@@ -1485,10 +1512,12 @@ def _update_semantic_layer_metadata(
     *,
     source: str,
     region_count: int,
+    review_region_count: int,
     matched_count: int,
     reordered_pages: int,
     order_source_counts: dict[str, int],
     relation_count: int,
+    review_relation_count: int,
     resolved_relation_count: int,
     resolved_relation_alias_count: int,
     resolved_relation_group_count: int,
@@ -1514,11 +1543,13 @@ def _update_semantic_layer_metadata(
     current = document.metadata.get("semantic_layer")
     semantic_layer = dict(current) if isinstance(current, dict) else {}
     semantic_driver = str(semantic_layer.get("driver") or "").strip()
-    structure_changes_selected_semantics = bool(relation_count or stream_count or reordered_pages)
+    executable_relation_count = max(0, relation_count - review_relation_count)
+    executable_region_count = max(0, region_count - review_region_count)
+    structure_changes_selected_semantics = bool(executable_relation_count or stream_count or reordered_pages)
     structure_drives_image_semantics = document.source_type == "image" and (
         (
             semantic_driver in {"structure-json", "structure-plus-ocr-fallback", "visual-only", ""}
-            and (region_count > 0 or relation_count > 0 or stream_count > 0)
+            and (executable_region_count > 0 or executable_relation_count > 0 or stream_count > 0)
         )
         or structure_changes_selected_semantics
     )
@@ -1526,10 +1557,12 @@ def _update_semantic_layer_metadata(
         "source": source,
         "role": "semantic-driver" if structure_drives_image_semantics else "augmenting-evidence",
         "region_count": region_count,
+        "review_region_count": review_region_count,
         "matched_element_count": matched_count,
         "reordered_page_count": reordered_pages,
         "order_source_counts": order_source_counts,
         "relation_edge_count": relation_count,
+        "review_relation_edge_count": review_relation_count,
         "resolved_relation_edge_count": resolved_relation_count,
         "resolved_relation_alias_edge_count": resolved_relation_alias_count,
         "resolved_relation_group_edge_count": resolved_relation_group_count,
@@ -2786,6 +2819,49 @@ def _extract_order_source(raw: dict[str, Any]) -> str:
     return str(value) if value else "explicit"
 
 
+def _structure_order_is_review_only(region: StructureRegion) -> bool:
+    policy = str(region.raw.get("order_policy") or "").strip().lower().replace("_", "-")
+    return policy == "review-only" or region.raw.get("order_review_required") is True
+
+
+def _structure_semantics_are_review_only(
+    root_payload: Mapping[str, Any],
+    page_payload: Mapping[str, Any],
+    raw_block: Mapping[str, Any],
+) -> bool:
+    policy = str(
+        raw_block.get("semantic_policy")
+        or page_payload.get("semantic_policy")
+        or root_payload.get("semantic_policy")
+        or ""
+    ).strip().lower().replace("_", "-")
+    return (
+        policy == "review-only"
+        or raw_block.get("semantic_review_required") is True
+        or page_payload.get("semantic_review_required") is True
+        or root_payload.get("semantic_review_required") is True
+    )
+
+
+def _relation_is_review_only(
+    root_payload: Mapping[str, Any],
+    page_payload: Mapping[str, Any],
+    raw_edge: Mapping[str, Any],
+) -> bool:
+    policy = str(
+        raw_edge.get("relation_policy")
+        or page_payload.get("relation_policy")
+        or root_payload.get("relation_policy")
+        or ""
+    ).strip().lower().replace("_", "-")
+    return (
+        policy == "review-only"
+        or raw_edge.get("review_required") is True
+        or page_payload.get("relation_review_required") is True
+        or root_payload.get("relation_review_required") is True
+    )
+
+
 def _extract_implicit_order_source(raw: dict[str, Any]) -> str:
     if str(raw.get("_scriptorium_structure_list_key") or "") == "table_res_list.table_cells":
         return "implicit-table-cell"
@@ -2851,6 +2927,9 @@ def _apply_page_regions(
             "coverage": round(coverage, 6),
             "text_similarity": round(text_similarity, 6),
         }
+        semantic_review_only = region.raw.get("_scriptorium_semantic_review_only") is True
+        if semantic_review_only:
+            structure_evidence["semantic_review_only"] = True
         if ordered_companion is not None:
             companion_region, companion_coverage, companion_text_similarity = ordered_companion
             structure_evidence["ordered_companion"] = {
@@ -2867,6 +2946,8 @@ def _apply_page_regions(
             }
         element.metadata["structure_evidence"] = structure_evidence
         element.metadata["external_structure_label"] = region.label
+        if semantic_review_only:
+            element.metadata["external_structure_semantic_review_only"] = True
         node_keys = _region_node_keys(region)
         if ordered_companion is not None:
             node_keys = _dedupe_texts([*node_keys, *_region_node_keys(ordered_companion[0])])
@@ -2878,10 +2959,11 @@ def _apply_page_regions(
             element.metadata["external_structure_order"] = order_region.order
         if order_region.order_source is not None:
             element.metadata["external_structure_order_source"] = order_region.order_source
-        if ordered_companion is not None:
+        if ordered_companion is not None or _structure_order_is_review_only(order_region):
             element.metadata["external_structure_order_review_only"] = True
-        _apply_external_structure_detail_metadata(element, region)
-        _apply_external_structure_reading_metadata(element, page, region)
+        if not semantic_review_only:
+            _apply_external_structure_detail_metadata(element, region)
+            _apply_external_structure_reading_metadata(element, page, region)
         if ordered_companion is not None:
             evidence = _reading_order_evidence(element)
             if "external-structure-parent-order-review-only" not in evidence:
@@ -2964,15 +3046,16 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             source_resolution,
             target_resolution,
         )
+        review_only = relation.raw.get("_scriptorium_relation_review_only") is True
 
         if source_resolution.is_group or target_resolution.is_group:
             stats.resolved_group_edge_count += 1
-        if source_resolution.is_group and not secondary_native_column_flow:
+        if source_resolution.is_group and not secondary_native_column_flow and not review_only:
             stats.group_internal_edge_count += _apply_structure_group_internal_successors(
                 source_resolution,
                 reference=relation.source_ref,
             )
-        if target_resolution.is_group and not secondary_native_column_flow:
+        if target_resolution.is_group and not secondary_native_column_flow and not review_only:
             stats.group_internal_edge_count += _apply_structure_group_internal_successors(
                 target_resolution,
                 reference=relation.target_ref,
@@ -3009,15 +3092,20 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             record["resolved_via_alias"] = True
         if secondary_native_column_flow:
             record["secondary_native_column_flow"] = True
+        if review_only:
+            record["review_only"] = True
         if record not in relation_records:
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
         stats.resolved_count += 1
         if source_alias_used or target_alias_used:
             stats.alias_resolved_count += 1
-        diagnostic["status"] = (
-            "resolved-secondary-native-column-flow" if secondary_native_column_flow else "resolved"
-        )
+        if review_only:
+            diagnostic["status"] = "resolved-review-only"
+        elif secondary_native_column_flow:
+            diagnostic["status"] = "resolved-secondary-native-column-flow"
+        else:
+            diagnostic["status"] = "resolved"
         diagnostic["source_boundary_element_id"] = source_element.id
         diagnostic["target_boundary_element_id"] = target_element.id
         stats.diagnostics.append(diagnostic)
@@ -4342,7 +4430,7 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
     participant_ids: set[str] = set()
     for source_index, element in enumerate(text_elements):
         for target_id in _string_list(element.metadata.get("external_structure_successor_ids")):
-            if _relation_target_is_secondary_native_column_flow(element, target_id, kind="successor"):
+            if _relation_target_is_non_executable(element, target_id, kind="successor"):
                 continue
             target_index = id_to_index.get(target_id)
             if target_index is None:
@@ -4350,7 +4438,7 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
             successor_edges.append((source_index, target_index))
             participant_ids.update({element.id, target_id})
         for target_id in _string_list(element.metadata.get("external_structure_precedence_target_ids")):
-            if _relation_target_is_secondary_native_column_flow(element, target_id, kind="precedence"):
+            if _relation_target_is_non_executable(element, target_id, kind="precedence"):
                 continue
             target_index = id_to_index.get(target_id)
             if target_index is None:
@@ -4388,7 +4476,7 @@ def _relation_order_for_elements(text_elements: list[ElementIR]) -> tuple[list[s
     return [text_elements[index].id for index in ordered_indices], participant_ids, stream_chains
 
 
-def _relation_target_is_secondary_native_column_flow(
+def _relation_target_is_non_executable(
     source: ElementIR,
     target_id: str,
     *,
@@ -4405,7 +4493,7 @@ def _relation_target_is_secondary_native_column_flow(
         and str(record.get("target_id") or "") == target_id
     ]
     return bool(matching_records) and all(
-        record.get("secondary_native_column_flow") is True
+        record.get("secondary_native_column_flow") is True or record.get("review_only") is True
         for record in matching_records
     )
 

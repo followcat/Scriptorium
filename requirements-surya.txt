@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Optional CPU/GPU layout detector plus learned reading-order head. Install in
+# a dedicated environment because Surya pins several image/model dependencies.
+# Code: Apache-2.0. Model weights and outputs: modified AI Pubs OpenRAIL-M;
+# review and explicitly accept that license before run-surya-layout downloads.
+surya-ocr==0.21.1

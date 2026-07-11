@@ -654,6 +654,61 @@ def test_structure_relation_edges_attach_to_matched_elements() -> None:
     assert "external_structure_order" not in by_id["a"].metadata
 
 
+def test_root_review_only_relation_policy_never_reorders_or_derives_streams() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("a", "A", BBox(x0=10, y0=10, x1=40, y1=20), 1),
+            ("c", "C", BBox(x0=110, y0=10, x1=140, y1=20), 2),
+            ("b", "B", BBox(x0=10, y0=30, x1=40, y1=40), 3),
+            ("d", "D", BBox(x0=110, y0=30, x1=140, y1=40), 4),
+        ]
+    )
+    boxes = [
+        {"id": element.id, "label": "text", "bbox": element.bbox_px.as_list(), "text": element.source_text}
+        for element in document.pages[0].elements
+    ]
+    boxes[0]["label"] = "table"
+    payload = {
+        "source": "review-order-model",
+        "relation_policy": "review-only",
+        "semantic_policy": "review-only",
+        "pages": [
+            {
+                "page_index": 0,
+                "layout_det_res": {"boxes": boxes},
+                "successor_edges": [["a", "b"], ["b", "c"], ["c", "d"]],
+            }
+        ],
+    }
+
+    relations = normalize_structure_relations(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert all(edge.raw["_scriptorium_relation_review_only"] is True for edge in relations)
+    assert [
+        element.id for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)
+    ] == ["a", "c", "b", "d"]
+    evidence = document.metadata["structure_evidence"]
+    assert evidence["review_region_count"] == 4
+    assert evidence["relation_edge_count"] == 3
+    assert evidence["review_relation_edge_count"] == 3
+    assert evidence["resolved_relation_edge_count"] == 3
+    assert evidence["relation_reordered_page_count"] == 0
+    assert evidence["relation_stream_count"] == 0
+    assert all(
+        diagnostic["status"] == "resolved-review-only"
+        for diagnostic in evidence["relation_resolution_by_page"][0]["edges"]
+    )
+    by_id = {element.id: element for element in document.pages[0].elements}
+    assert by_id["a"].metadata["external_structure_relation_edges"][0]["review_only"] is True
+    assert by_id["a"].metadata["external_structure_semantic_review_only"] is True
+    assert by_id["a"].metadata.get("column_span") != "table-external"
+    assert "external-structure-label" not in by_id["a"].metadata.get("reading_order_evidence", [])
+    annotate_document(document)
+    assert by_id["a"].metadata["role"] != "table-cell-text"
+    assert document.metadata["semantic_layer"]["structure_json"]["role"] == "augmenting-evidence"
+
+
 def test_structure_block_relations_and_streams_expand_to_matched_native_lines() -> None:
     document = _document_with_text_boxes(
         [

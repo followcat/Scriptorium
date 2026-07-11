@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from pathlib import Path
 
+import pytest
 from PIL import Image
+from typer.testing import CliRunner
 
+from scriptorium import cli
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.ocr import normalize_ocr_to_ir
 from scriptorium.pdf_render import render_source
 from scriptorium.reading_order_sidecar import (
+    EXPLICIT_BLOCK_ORDER_TRANSITION_KIND,
     SIDECAR_PROPOSAL_STATUS,
+    build_provider_consensus_sidecar,
     local_structure_successor_evidence,
     propose_reading_order_sidecar,
     reading_order_sidecar_summary,
@@ -70,6 +77,111 @@ def test_proposal_splits_multicolumn_body_into_local_successor_streams() -> None
         "stream_type_counts": {"body": 2, "sidebar-right": 1},
         "stream_origin_counts": {"column-partition": 2, "existing-local": 1},
     }
+
+
+def test_provider_consensus_keeps_only_independently_confirmed_review_edges() -> None:
+    document = _document(
+        [
+            _element("a", "A", 1, 10, 20, column_index=0),
+            _element("b", "B", 2, 10, 40, column_index=0),
+            _element("c", "C", 3, 10, 60, column_index=0),
+        ]
+    )
+    base = propose_reading_order_sidecar(document)
+    first = deepcopy(base)
+    second = deepcopy(base)
+    first["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", confidence=0.91, provider_source="pp-structure"),
+        _model_review_transition("b", "c", confidence=0.88, provider_source="pp-structure"),
+    ]
+    second["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", confidence=0.84, provider_source="surya"),
+        _model_review_transition("c", "b", confidence=0.86, provider_source="surya"),
+    ]
+
+    consensus = build_provider_consensus_sidecar(
+        base,
+        [("pp", first), ("surya", second)],
+    )
+
+    model_transitions = [
+        transition
+        for transition in consensus["pages"][0]["review_transitions"]
+        if transition.get("provenance", {}).get("kind") == EXPLICIT_BLOCK_ORDER_TRANSITION_KIND
+    ]
+    assert [(item["source"], item["target"]) for item in model_transitions] == [("a", "b")]
+    assert model_transitions[0]["confidence"] == 0.84
+    assert model_transitions[0]["reason"] == "independent-provider-consensus"
+    assert model_transitions[0]["review_required"] is True
+    assert model_transitions[0]["provenance"]["provider_consensus"] is True
+    assert [item["name"] for item in model_transitions[0]["provenance"]["providers"]] == [
+        "pp",
+        "surya",
+    ]
+    assert consensus["sidecar_status"] == "proposal"
+    assert consensus["provider_consensus"] == {
+        "policy": "review-only",
+        "minimum_provider_count": 2,
+        "provider_count": 2,
+        "providers": ["pp", "surya"],
+        "candidate_edge_count": 3,
+        "consensus_edge_count": 1,
+        "runtime_reorder": False,
+    }
+    assert consensus["summary"]["provider_consensus_transition_count"] == 1
+    assert base["pages"][0]["review_transitions"] == []
+
+
+def test_provider_consensus_rejects_mismatched_stable_elements() -> None:
+    base = propose_reading_order_sidecar(
+        _document([_element("a", "A", 1, 10, 20), _element("b", "B", 2, 10, 40)])
+    )
+    first = deepcopy(base)
+    second = deepcopy(base)
+    first["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", provider_source="first")
+    ]
+    second["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", provider_source="second")
+    ]
+    second["pages"][0]["document"][1]["text"] = "Different text"
+
+    with pytest.raises(ValueError, match="stable elements"):
+        build_provider_consensus_sidecar(base, [("first", first), ("second", second)])
+
+
+def test_provider_consensus_cli_writes_review_only_sidecar(tmp_path: Path) -> None:
+    base = propose_reading_order_sidecar(
+        _document([_element("a", "A", 1, 10, 20), _element("b", "B", 2, 10, 40)])
+    )
+    first = deepcopy(base)
+    second = deepcopy(base)
+    first["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", provider_source="first")
+    ]
+    second["pages"][0]["review_transitions"] = [
+        _model_review_transition("a", "b", provider_source="second")
+    ]
+    paths = [tmp_path / name for name in ("base.json", "first.json", "second.json")]
+    for path, payload in zip(paths, (base, first, second), strict=True):
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "consensus.json"
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "consensus-reading-sidecars",
+            *(str(path) for path in paths),
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Consensus review edges: 1" in result.output
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["sidecar_status"] == "proposal"
+    assert payload["provider_consensus"]["runtime_reorder"] is False
 
 
 def test_local_structure_evidence_exposes_only_native_grid_edges() -> None:
@@ -1029,6 +1141,27 @@ def _document(elements: list[ElementIR]) -> DocumentIR:
             )
         ],
     )
+
+
+def _model_review_transition(
+    source_id: str,
+    target_id: str,
+    *,
+    confidence: float = 0.9,
+    provider_source: str = "layout-model",
+) -> dict[str, object]:
+    return {
+        "source": source_id,
+        "target": target_id,
+        "reason": "explicit-structure-block-order",
+        "confidence": confidence,
+        "review_required": True,
+        "evidence": ["external-structure-block-order", "explicit-block-order"],
+        "provenance": {
+            "kind": EXPLICIT_BLOCK_ORDER_TRANSITION_KIND,
+            "structure_source": provider_source,
+        },
+    }
 
 
 def _element(
