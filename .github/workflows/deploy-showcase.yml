@@ -20,12 +20,31 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages-gate.outputs.enabled }}
     env:
       PAGES_ADMIN_TOKEN: ${{ secrets.PAGES_ADMIN_TOKEN }}
+      PAGES_ENABLED: ${{ vars.PAGES_ENABLED }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Select deployment mode
+        id: pages-gate
+        shell: bash
+        run: |
+          if [[ "${PAGES_ENABLED}" == "true" ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Upload GitHub-readable showcase
+        uses: actions/upload-artifact@v4
+        with:
+          name: scriptorium-showcase
+          path: docs/showcase
+          if-no-files-found: error
       - name: Configure Pages
+        if: ${{ steps.pages-gate.outputs.enabled == 'true' }}
         uses: actions/configure-pages@v5
         with:
           # An eligible repository can create a Pages site automatically only
@@ -33,7 +52,7 @@ jobs:
           token: ${{ env.PAGES_ADMIN_TOKEN || github.token }}
           enablement: ${{ env.PAGES_ADMIN_TOKEN != '' }}
       - name: Select GitHub Actions as Pages source
-        if: ${{ env.PAGES_ADMIN_TOKEN != '' }}
+        if: ${{ steps.pages-gate.outputs.enabled == 'true' && env.PAGES_ADMIN_TOKEN != '' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ env.PAGES_ADMIN_TOKEN }}
@@ -44,11 +63,27 @@ jobs:
               build_type: "workflow",
             });
       - name: Upload showcase
+        if: ${{ steps.pages-gate.outputs.enabled == 'true' }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/showcase
+      - name: Write summary
+        shell: bash
+        run: |
+          {
+            echo "## Scriptorium showcase"
+            echo
+            echo "The GitHub-rendered comparison is available at:"
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/showcase/README.md"
+            echo
+            echo "The complete static bundle is attached as \`scriptorium-showcase\`."
+            if [[ "${PAGES_ENABLED}" != "true" ]]; then
+              echo "Pages deployment was skipped because the repository variable \`PAGES_ENABLED\` is not \`true\`."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   deploy:
+    if: ${{ needs.build.outputs.pages_enabled == 'true' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
