@@ -404,3 +404,16 @@ Semantic sidecar 现在也会给诊断专用的 `protected_successor_consensus` 
 - Docling rule-based reading order 使用 above/below adjacency 和 horizontal overlap 几何。
 - Relation-based reading-order 和 graph/path-cover 方法提示应关注局部 successor edge，而不只看全局 y/x 排序。
 - 2026 的复杂布局阅读顺序研究进一步以 max-regret path cover 处理局部候选边，并说明应把同分/低 margin 边交给额外语义或结构证据，而非把几何 tie-break 当作事实: https://arxiv.org/html/2607.01018
+
+## Docling 审查型 Provider
+
+`scriptorium run-docling` 接受 PDF 和图片 source，同时写出 Docling 原始 JSON
+与标准化 structure payload。可选环境固定为 `docling==2.111.0`、
+`docling-core==2.86.0` 和 `docling-ibm-models==3.13.3`。Docling 代码及 IBM
+models 使用 MIT 许可，Heron checkpoint 使用 Apache-2.0。Heron 是学习式
+RT-DETR 布局检测器，但 Docling 后续 reading-order predictor 是规则式实现。
+
+标准化 payload 将语义、顺序和关系声明为 `review-only`，禁用 provider streams，
+将 external candidate 与 successor consensus 隔离，并设置
+`runtime_reorder: false`。已有的可信 OCR evidence 会被保留，review-only identifier
+也不能改变语义标注分母。A/B 应使用标准化 `--output`，而不是 `--raw-output`。

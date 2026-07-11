@@ -142,6 +142,19 @@ scriptorium run-opendataloader path/to/paper.pdf \
   --output outputs/paper.opendataloader.json
 ```
 
+Docling Heron 也可用于 PDF 或图片的布局候选。其标准化 JSON 默认是
+review-only，并与 runtime order 和 successor consensus 隔离：
+
+```bash
+pip install -r requirements-docling.txt
+
+scriptorium run-docling path/to/page.png \
+  --output outputs/page.docling.json
+```
+
+请将标准化的 `--output` 用于结构 A/B；`--raw-output` 仅用于审查原始 Docling
+结果。当前 held-out 结果不支持把 Docling reading order 提升为默认排序器。
+
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
 不会改变 runtime role、reading stream 或顺序：

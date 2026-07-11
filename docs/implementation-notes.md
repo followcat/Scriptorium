@@ -781,3 +781,18 @@ Latest caption-flow validation:
 | JD homepage screenshot PDF | `outputs/external/jd-home-caption-flow-v1` | 0.99576887 | n/a | 0 | `{}` | 0 | OCR anchors remain `recursive-xy-cut-v1` |
 
 The caption-flow path is covered by `tests/test_reading_order.py::test_cross_column_caption_creates_local_flow_break` and by the native PDF image fixture, which verifies that `Figure 1:` becomes annotation role `caption`, links to the adjacent `native-image` as a figure target, and exports both `data-scriptorium-reading-order-caption="figure"` and `data-scriptorium-caption-target-kind="figure"`.
+
+## Docling Review Provider
+
+`scriptorium run-docling` accepts PDF and image sources and writes raw Docling
+JSON plus a normalized structure payload. The optional environment pins
+`docling==2.111.0`, `docling-core==2.86.0`, and
+`docling-ibm-models==3.13.3`. Docling code and IBM models are MIT licensed; the
+Heron checkpoint is Apache-2.0. Heron is a learned RT-DETR layout detector, but
+Docling's downstream reading-order predictor is rule-based.
+
+The normalized payload marks semantics, order, and relations `review-only`,
+disables provider streams, isolates the external candidate from successor
+consensus, and sets `runtime_reorder: false`. Existing accepted OCR evidence is
+preserved separately, and review-only identifiers cannot change the semantic
+label denominator. Use normalized `--output`, not `--raw-output`, in A/B runs.

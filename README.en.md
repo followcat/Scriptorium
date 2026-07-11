@@ -145,6 +145,21 @@ scriptorium run-opendataloader path/to/paper.pdf \
   --output outputs/paper.opendataloader.json
 ```
 
+Docling Heron can also provide layout candidates for PDFs or images. Its
+normalized JSON is review-only and isolated from runtime order and successor
+consensus:
+
+```bash
+pip install -r requirements-docling.txt
+
+scriptorium run-docling path/to/page.png \
+  --output outputs/page.docling.json
+```
+
+Use the normalized `--output` for structure A/B runs; `--raw-output` is only
+for inspecting Docling's original result. Current held-out evidence does not
+support promoting Docling reading order to the default orderer.
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,

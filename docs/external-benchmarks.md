@@ -508,3 +508,23 @@ New benchmark reports also include `reading_order_stream_count`, `reading_order_
 The box-flow, relation-graph, and successor-consensus disagreement ratios are not correctness scores. Pairwise disagreement flags broad candidate-order differences: PUMA's box-flow ratio is `0.17460108`, while relation graph is `0.16306211`; JD's box-flow ratio is `0.42778588`, while relation graph is `0.21624958`. Successor disagreement is stricter about immediate next-node edges: PUMA improves from 199/509 box-flow disagreements to 166/509 relation-graph disagreements, and JD improves from 127/133 to 117/133. These values support keeping relation graph and successor consensus as candidate signals, but PUMA and JD still need semantic sidecars or external Paddle/PP-Structure/Docling evidence before changing selected ordering rules.
 
 JD is image-only by design. The latest run keeps the same source-preservation score while adding 134 transparent `native-ocr` editable anchors. Its OCR text now stays out of the mixed-table strategy after the duplicate-slot formula/table guard and is handled by recursive XY-Cut. Its reading risk is high because text is available but no semantic sidecar exists yet; that is a better diagnostic than the previous 0-text low-risk result.
+
+## Docling ROOR Full Validation
+
+The isolated Docling experiment uses all 49 pages of the official ROOR
+validation split, with official `ro_linkings` withheld from extraction and used
+only for scoring. Both A/B branches share the same layout-anchor OCR JSON.
+
+| Candidate | Correct | Labelled | Accuracy |
+|---|---:|---:|---:|
+| Selected native, both branches | 1274 | 2612 | 0.48774885 |
+| Isolated Docling external candidate | 785 | 1888 | 0.41578390 |
+| Native successor consensus | 1043 | 2612 | 0.39931087 |
+
+Docling produced a fully comparable candidate on 38 pages: 3 better, 3 equal,
+and 32 worse than selected native order. Safety invariants stayed unchanged:
+241 grid-island elements, 92 stream-level and 49 page-level
+`needs-structure-evidence` cases, visual similarity 1.0, zero provider streams,
+and zero reordered pages. The run yielded 1,916 review regions and 1,522 review
+relations. This is negative generalization evidence: Docling remains an
+isolated review candidate and is not a runtime orderer.
