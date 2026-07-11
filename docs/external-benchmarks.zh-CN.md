@@ -535,3 +535,26 @@ external candidate 在已标注后继上为 `13/16`（`0.8125`）。selected nat
 声明代码许可，项目不集成该 provider。本次运行同时发现并验证了通用隔离契约修复：
 native 与 structure 分支的 successor consensus 都保持 `8/16`，page recommendation
 都保持 `needs-structure-evidence`。
+
+## ROOR 训练的 Relation Ranker
+
+可复现 ranker 使用官方 train split 中 122 个文档拟合，并用 UID hash 划出的 27 个
+train 文档校准。validation 评分前阈值已固定为 `0.16`；calibration precision 为
+`0.66132556`、recall 为 `0.64857143`、F1 为 `0.65488640`。项目跟踪的 49 页
+validation 与 train index 没有样本重叠。
+
+| 指标 | Native selected | Trained external |
+|---|---:|---:|
+| candidate 解码后命中的官方 relation / 总数 | 1274/2612 | 1513/2612 |
+| 官方 relation accuracy | 0.48774885 | 0.57924962 |
+| 直接预测边 precision | n/a | 0.68715305 |
+| 直接预测边 recall | n/a | 0.66347626 |
+| 直接预测边 F1 | n/a | 0.67510713 |
+
+external candidate 的 relation accuracy 绝对提升 `0.09150077`，并在 49 页中的 34 页
+成为最佳候选。模型预测 2,522 条 review edge，其中 2,494 条解析到 IR 元素。视觉
+相似度、grid-island 数、selected order 和重排页数均不变。过滤 isolated relation
+provenance 后，两分支的 stream recommendation 也完全一致，包括 92 个
+`needs-structure-evidence` stream。该结果足以继续把模型作为独立候选开发，但还不足以
+提升到 runtime order：解码后 accuracy 仍只有 0.579，且部分多页/form-like 样本的
+直接 precision 较低。

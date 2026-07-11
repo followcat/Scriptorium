@@ -803,3 +803,26 @@ isolation marker to every matched element and resolved relation endpoint. The
 external candidate remains sidecar-scored, while successor consensus and
 page/stream recommendations are computed from the same native candidates as
 the control branch.
+
+## Trainable Relation Ranker
+
+The optional `requirements-relation-ranker.txt` path trains a
+`HistGradientBoostingClassifier` over normalized source/target geometry,
+overlap, direction, size, and small text-shape features. Training reads only
+the official ROOR `data.train.txt`. A SHA-256 UID partition reserves an internal
+calibration subset; threshold selection maximizes top-successor relation F1 on
+that subset. Validation files and benchmark sidecars are never opened by the
+trainer.
+
+`train-relation-ranker` writes a local joblib model and adjacent manifest with
+the feature schema, train-index digest, fit/calibration counts, dataset license,
+threshold, calibration metrics, sklearn version, and model SHA-256.
+`run-relation-ranker` verifies the digest before loading, rejects any input that
+already contains successor/`ro_linkings` answers, and emits confidence-bearing
+review-only edges with `candidate_consensus_policy: isolated` and
+`runtime_reorder: false`. Joblib can execute code while loading; only locally
+generated bundles are trusted.
+
+Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
+rounding both sides to the same coordinate. This keeps a one-pixel crop instead
+of aborting image-source benchmarks with `cannot write empty image`.

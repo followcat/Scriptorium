@@ -160,6 +160,22 @@ Use the normalized `--output` for structure A/B runs; `--raw-output` is only
 for inspecting Docling's original result. Current held-out evidence does not
 support promoting Docling reading order to the default orderer.
 
+For actual successor-relation research, a lightweight ranker can be trained
+locally from the official ROOR train split. Input structure JSON must not
+contain answer relations, and output remains review-only:
+
+```bash
+pip install -r requirements-relation-ranker.txt
+scriptorium train-relation-ranker path/to/ROOR-Datasets/data \
+  -o outputs/models/relation-ranker.joblib
+scriptorium run-relation-ranker page.structure.json \
+  --model outputs/models/relation-ranker.joblib \
+  -o outputs/page.relations.json
+```
+
+Only load locally generated joblib models. The adjacent manifest verifies its
+SHA-256 digest and records the training split and calibration metrics.
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,

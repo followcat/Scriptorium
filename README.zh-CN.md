@@ -155,6 +155,20 @@ scriptorium run-docling path/to/page.png \
 请将标准化的 `--output` 用于结构 A/B；`--raw-output` 仅用于审查原始 Docling
 结果。当前 held-out 结果不支持把 Docling reading order 提升为默认排序器。
 
+需要研究真正的 successor relation 时，可以从 ROOR 官方 train split 本地训练轻量
+ranker。输入必须是不含答案 relation 的 structure JSON，输出默认 review-only：
+
+```bash
+pip install -r requirements-relation-ranker.txt
+scriptorium train-relation-ranker path/to/ROOR-Datasets/data \
+  -o outputs/models/relation-ranker.joblib
+scriptorium run-relation-ranker page.structure.json \
+  --model outputs/models/relation-ranker.joblib \
+  -o outputs/page.relations.json
+```
+
+只加载本机生成的 joblib 模型；manifest 会校验 SHA-256 并记录训练拆分与校准指标。
+
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
 不会改变 runtime role、reading stream 或顺序：
