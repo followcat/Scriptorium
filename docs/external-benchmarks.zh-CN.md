@@ -287,9 +287,23 @@ Image A/B 现在使用双输入边界：`--ocr-json` 在两侧创建完全相同
 | PP-StructureV3，Transformer-XL pp. 1-3 | 12 | 5 / 5 | `1.0` | `5/41`（`0.12195122`） | 0 | `0.0` |
 | PP-StructureV3，固定 ROOR 前缀 5 页 | 4 | 4 / 4 | `1.0` | `4/205`（`0.01951220`） | 0 | `0.0` |
 
-10 条已标注 transition 均正确是正向信号，但覆盖仍太稀疏，不足以把 block order 提升为 runtime constraint。Ordered-parent fusion 把 Transformer 的正确覆盖从 `3/41` 提高到 `5/41`；review-only 隔离后 selected successor delta、order-driven reorder 和 visual delta 都保持 0。不过该 structure 分支仍有 strict anchor-path coverage 回退（`0.78048780 -> 0.24390244`），并新增 3 个 stream 级 `needs-structure-evidence`，原因是既有模型 block-stream partition 在该样本上切得过碎；review transition 只让总 reviewable path coverage 保持 `1.0`，没有修复 strict/local 回退。
+10 条已标注 transition 均正确是正向信号，但覆盖仍太稀疏，不足以把 block order 提升为 runtime constraint。Ordered-parent fusion 把 Transformer 的正确覆盖从 `3/41` 提高到 `5/41`；review-only 隔离后 selected successor delta、order-driven reorder 和 visual delta 都保持 0。进一步把模型 block 改为从属 subgroup 后，Transformer 的 strict anchor-path coverage 从 native `0.78048780` 提升到 structure `0.80487805`，reviewable path 两侧均为 `1.0`，stream `needs-structure-evidence` 从 `3` 降到 `2`。
 
 固定 ROOR 五页是 `82251504`、`82837252`、`85201976`、`86263525`、`93106788`，不是按结果选择。4 条提案全部来自 `86263525`，该页为 `4/24` 正确，并把 stream `needs-structure-evidence` 从 `4` 降到 `2`；其余四页没有满足 guard 的提案。五页的 strict transition、order-driven reorder、selected successor delta 和 visual delta 全部为 0。产物位于 `outputs/research/*-block-transitions-v3` 与 `outputs/research/roor-pp-structure-block-transitions-v4`。
+
+### Secondary block subgroup v1
+
+Ordered model block 只有在所有成员共享同一个 native flow segment 和 column 时才会派生。它现在写入 `external_structure_stream_*` 且标记 `primary = false`，不再覆盖主 `reading_order_stream_*`；HTML 同时输出独立的 `data-scriptorium-structure-stream-*`，供翻译器在稳定主流内按 paragraph/block 分组。Block transition 的 review provenance 仍保留。
+
+| Provider / 样本 | Derived blocks / members | Stream needs：native -> structure | Strict anchor path | 其他结果 |
+|---|---:|---:|---:|---|
+| PaddleOCR-VL 1.6，Attention p. 1 | 2 / 17 | `0 -> 0` | `0.33333333 -> 0.33333333` | 2 个 block review 候选保持不变；successor/visual delta 为 0。 |
+| PP-StructureV3 runner，Attention p. 1 | 2 / 17 | `0 -> 0` | `0.33333333 -> 0.33333333` | 1 个未标注 block review 候选保持不变；successor/visual delta 为 0。 |
+| PP-StructureV3，Transformer-XL pp. 1-3 | 21 / 158 | `3 -> 2` | `0.78048780 -> 0.80487805` | 12 个候选仍为 `5/5`；successor-consensus disagreement `-26`，selected successor/visual delta 为 0。 |
+| PP-StructureV3，JD 首页 | 5 / 29 | `1 -> 1` | 无标签 | 修复旧的 `1 -> 2` stream 回退，同时保留 successor-consensus disagreement `-62`；visual delta 为 0。 |
+| PP-StructureV3，PUMA p. 5 | 4 / 15 | `0 -> 0` | 无标签 | 主流诊断和 visual delta 均不变。 |
+
+JD/PUMA 没有人工 relation 标签，因此其行只证明“没有再因 block 分组制造主流碎片”，不是语义正确率。产物位于 `outputs/research/*-secondary-block-streams-v1`。
 
 ### Evidence-gated local promotion v1
 

@@ -293,9 +293,23 @@ Image A/B runs now have two explicit inputs: `--ocr-json` creates the same text/
 | PP-StructureV3, Transformer-XL pp. 1-3 | 12 | 5 / 5 | `1.0` | `5/41` (`0.12195122`) | 0 | `0.0` |
 | PP-StructureV3, fixed five-page ROOR prefix | 4 | 4 / 4 | `1.0` | `4/205` (`0.01951220`) | 0 | `0.0` |
 
-All ten labelled transitions are correct, which is encouraging, but coverage remains too sparse to promote block order into runtime constraints. Ordered-parent fusion raises Transformer correct coverage from `3/41` to `5/41`; after isolating it as review-only evidence, selected-successor delta, order-driven reorder, and visual delta all remain zero. The structure branch still regresses strict anchor-path coverage (`0.78048780 -> 0.24390244`) and adds three stream-level `needs-structure-evidence` recommendations because the existing model-block stream partition is too fragmented on this sample. Review transitions keep total reviewable path coverage at `1.0`, but do not repair that strict/local regression.
+All ten labelled transitions are correct, which is encouraging, but coverage remains too sparse to promote block order into runtime constraints. Ordered-parent fusion raises Transformer correct coverage from `3/41` to `5/41`; after isolating it as review-only evidence, selected-successor delta, order-driven reorder, and visual delta all remain zero. Making model blocks secondary subgroups then raises Transformer strict anchor-path coverage from native `0.78048780` to structure `0.80487805`, keeps reviewable path coverage at `1.0` in both branches, and reduces stream `needs-structure-evidence` from `3` to `2`.
 
 The fixed ROOR pages are `82251504`, `82837252`, `85201976`, `86263525`, and `93106788`; they were not selected by result. All four proposals come from `86263525`, score `4/24`, and reduce its stream `needs-structure-evidence` count from `4` to `2`; the other four pages do not satisfy the proposal guards. Strict transitions, order-driven reorders, selected-successor deltas, and visual deltas are zero across all five. Outputs are under `outputs/research/*-block-transitions-v3` and `outputs/research/roor-pp-structure-block-transitions-v4`.
+
+### Secondary block subgroups v1
+
+An ordered model block is derived only when all members share one native flow segment and column. It is now stored in `external_structure_stream_*` with `primary = false` instead of replacing the primary `reading_order_stream_*`. HTML exposes the second layer through `data-scriptorium-structure-stream-*`, allowing a translator to batch paragraphs/blocks inside a stable primary stream. Review provenance for block transitions remains intact.
+
+| Provider / sample | Derived blocks / members | Stream needs: native -> structure | Strict anchor path | Other result |
+|---|---:|---:|---:|---|
+| PaddleOCR-VL 1.6, Attention p. 1 | 2 / 17 | `0 -> 0` | `0.33333333 -> 0.33333333` | Two block-review candidates remain; successor and visual deltas are zero. |
+| PP-StructureV3 runner, Attention p. 1 | 2 / 17 | `0 -> 0` | `0.33333333 -> 0.33333333` | One unlabelled block-review candidate remains; successor and visual deltas are zero. |
+| PP-StructureV3, Transformer-XL pp. 1-3 | 21 / 158 | `3 -> 2` | `0.78048780 -> 0.80487805` | All 12 candidates remain with `5/5` labelled correctness; successor-consensus disagreement is `-26`, while selected-successor and visual deltas are zero. |
+| PP-StructureV3, JD homepage | 5 / 29 | `1 -> 1` | unlabelled | Repairs the previous `1 -> 2` stream regression while retaining successor-consensus disagreement `-62`; visual delta is zero. |
+| PP-StructureV3, PUMA p. 5 | 4 / 15 | `0 -> 0` | unlabelled | Primary-stream diagnostics and visual delta remain unchanged. |
+
+JD and PUMA have no human relation labels, so those rows demonstrate that block grouping no longer creates primary-stream fragmentation; they are not semantic-accuracy claims. Outputs are under `outputs/research/*-secondary-block-streams-v1`.
 
 ### Evidence-gated local promotion v1
 
