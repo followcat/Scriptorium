@@ -9,6 +9,7 @@ from scriptorium.ocr import normalize_ocr_to_ir
 from scriptorium.pdf_render import render_source
 from scriptorium.reading_order_sidecar import (
     SIDECAR_PROPOSAL_STATUS,
+    local_structure_successor_evidence,
     propose_reading_order_sidecar,
     reading_order_sidecar_summary,
 )
@@ -66,6 +67,81 @@ def test_proposal_splits_multicolumn_body_into_local_successor_streams() -> None
         "review_transition_count": 2,
         "stream_type_counts": {"body": 2, "sidebar-right": 1},
         "stream_origin_counts": {"column-partition": 2, "existing-local": 1},
+    }
+
+
+def test_local_structure_evidence_exposes_only_native_grid_edges() -> None:
+    document = _document(
+        [
+            _element(
+                "native-one",
+                "Native one",
+                1,
+                10,
+                20,
+                stream_id="grid-island-001",
+                stream_type="grid-island",
+            ),
+            _element(
+                "native-two",
+                "Native two",
+                2,
+                100,
+                20,
+                stream_id="grid-island-001",
+                stream_type="grid-island",
+            ),
+            _element(
+                "native-three",
+                "Native three",
+                3,
+                10,
+                40,
+                stream_id="grid-island-001",
+                stream_type="grid-island",
+            ),
+            _element(
+                "model-one",
+                "Model one",
+                4,
+                10,
+                80,
+                stream_id="external-grid-001",
+                stream_type="grid-island",
+            ),
+            _element(
+                "model-two",
+                "Model two",
+                5,
+                100,
+                80,
+                stream_id="external-grid-001",
+                stream_type="grid-island",
+            ),
+        ]
+    )
+    for element in document.pages[0].elements[3:]:
+        element.metadata["external_structure_stream_id"] = "model-grid-001"
+
+    evidence = local_structure_successor_evidence(propose_reading_order_sidecar(document))
+
+    assert evidence == {
+        0: {
+            "streams": (
+                {
+                    "stream_id": "grid-island-001",
+                    "stream_type": "grid-island",
+                    "potential_successor_edges": (
+                        ("native-one", "native-two"),
+                        ("native-two", "native-three"),
+                    ),
+                    "successor_edges": (
+                        ("native-one", "native-two"),
+                        ("native-two", "native-three"),
+                    ),
+                },
+            )
+        }
     }
 
 

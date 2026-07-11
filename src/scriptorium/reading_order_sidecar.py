@@ -25,6 +25,15 @@ REVIEW_EDGE_PROMOTION_CONFIDENCE = 0.82
 REVIEW_EDGE_RELATION_GRAPH_SCORE = 0.86
 REVIEW_EDGE_GEOMETRY_SCORE = 0.82
 
+# These edge markers are emitted only by the native table/grid island path.
+# They are deliberately narrower than generic existing-local streams: a
+# benchmark can rely on them as local structure evidence without turning a
+# sidecar's full selected order into another page-wide candidate vote.
+LOCAL_STRUCTURE_STREAM_EVIDENCE = {
+    "table-island": "table-local-order",
+    "grid-island": "grid-local-order",
+}
+
 
 STREAMABLE_EXTERNAL_BLOCK_LABELS = frozenset(
     {
@@ -174,6 +183,107 @@ def reading_order_sidecar_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
         "stream_type_counts": _count_mapping(summary.get("stream_type_counts")),
         "stream_origin_counts": _count_mapping(summary.get("stream_origin_counts")),
     }
+
+
+def local_structure_successor_evidence(payload: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    """Return strict native table/grid successor evidence grouped by page.
+
+    A proposal may contain many useful local edges, including inferred body
+    streams and external-model relations.  This helper exposes only the
+    stricter native table/grid-island edges marked by ``table-local-order`` or
+    ``grid-local-order``.  Consumers must keep them page-local: they provide
+    evidence for a stream's internal sequence, never a cross-stream handoff
+    or an extra full-page candidate order.
+    """
+
+    raw_pages = payload.get("pages")
+    if not isinstance(raw_pages, list):
+        return {}
+
+    evidence_by_page: dict[int, dict[str, Any]] = {}
+    for raw_page in raw_pages:
+        if not isinstance(raw_page, Mapping):
+            continue
+        page_index = _optional_int(raw_page.get("page_index"))
+        raw_streams = raw_page.get("reading_streams")
+        if page_index is None or not isinstance(raw_streams, list):
+            continue
+
+        streams: list[dict[str, Any]] = []
+        for raw_stream in raw_streams:
+            if not isinstance(raw_stream, Mapping):
+                continue
+            stream_type = _text(raw_stream.get("type"))
+            edge_marker = LOCAL_STRUCTURE_STREAM_EVIDENCE.get(stream_type)
+            if edge_marker is None:
+                continue
+            stream_id = _text(raw_stream.get("id"))
+            members = _sidecar_member_ids(raw_stream.get("members"))
+            if not stream_id or len(members) < 2:
+                continue
+
+            potential_edges = tuple(zip(members, members[1:], strict=False))
+            strict_edges = _strict_local_sidecar_edges(
+                raw_stream.get("successor_edges"),
+                potential_edges,
+                edge_marker,
+            )
+            if not strict_edges:
+                continue
+            streams.append(
+                {
+                    "stream_id": stream_id,
+                    "stream_type": stream_type,
+                    "potential_successor_edges": potential_edges,
+                    "successor_edges": strict_edges,
+                }
+            )
+
+        if streams:
+            evidence_by_page[page_index] = {"streams": tuple(streams)}
+    return evidence_by_page
+
+
+def _sidecar_member_ids(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    members: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        member_id = _text(item)
+        if not member_id or member_id in seen:
+            continue
+        members.append(member_id)
+        seen.add(member_id)
+    return members
+
+
+def _strict_local_sidecar_edges(
+    value: Any,
+    potential_edges: tuple[tuple[str, str], ...],
+    marker: str,
+) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list):
+        return ()
+    potential_edge_set = set(potential_edges)
+    edges: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        if not isinstance(item, Mapping) or bool(item.get("review_required")):
+            continue
+        edge = (_text(item.get("source")), _text(item.get("target")))
+        evidence = item.get("evidence")
+        if (
+            not all(edge)
+            or edge in seen
+            or edge not in potential_edge_set
+            or not isinstance(evidence, list)
+            or marker not in {_text(entry) for entry in evidence}
+        ):
+            continue
+        edges.append(edge)
+        seen.add(edge)
+    return tuple(edges)
 
 
 def is_unaccepted_reading_order_sidecar(payload: Any) -> bool:
@@ -797,6 +907,9 @@ def _successor_edge(
     elif source.details.origin == "external-structure-block":
         confidence = min(confidence, 0.76)
         evidence.append("structure-block-membership")
+    elif source.details.origin == "existing-structure":
+        confidence = min(confidence, 0.76)
+        evidence.append("external-stream-membership")
     elif source.details.stream_type in {"table-island", "table-grid"}:
         confidence = max(confidence, 0.88)
         evidence.append("table-local-order")

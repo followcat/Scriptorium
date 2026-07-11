@@ -20,7 +20,12 @@ from .ocr import normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_source
 from .quality import compare_source_to_pdf_rendering, inspect_fidelity_replacement_layout
-from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
+from .reading_order_sidecar import (
+    local_structure_successor_evidence,
+    propose_reading_order_sidecar,
+    reading_order_sidecar_summary,
+    write_reading_order_sidecar,
+)
 from .reading_order import (
     infer_box_flow_order,
     infer_relation_graph_order,
@@ -1045,7 +1050,7 @@ def _run_case(
     )
     timings["semantic_compare_seconds"] = _elapsed(start)
 
-    stats = _document_stats(document)
+    stats = _document_stats(document, reading_order_sidecar=reading_order_sidecar)
     replacement_stats = _fidelity_replacement_stats(document, html_mode, replacement_layout)
     reading_order_risk = _reading_order_risk_metrics(document, semantic_quality)
     semantic_layer = document.metadata.get("semantic_layer") if isinstance(document.metadata, dict) else {}
@@ -1256,6 +1261,25 @@ def _run_case(
         "reading_order_candidate_page_diagnostics": stats["reading_order_candidate_page_diagnostics"],
         "reading_order_candidate_page_recommendation_counts": stats[
             "reading_order_candidate_page_recommendation_counts"
+        ],
+        "reading_order_local_structure_stream_count": stats["reading_order_local_structure_stream_count"],
+        "reading_order_local_structure_potential_successor_edge_count": stats[
+            "reading_order_local_structure_potential_successor_edge_count"
+        ],
+        "reading_order_local_structure_successor_edge_count": stats[
+            "reading_order_local_structure_successor_edge_count"
+        ],
+        "reading_order_local_structure_successor_coverage": stats[
+            "reading_order_local_structure_successor_coverage"
+        ],
+        "reading_order_local_structure_selected_successor_edge_count": stats[
+            "reading_order_local_structure_selected_successor_edge_count"
+        ],
+        "reading_order_local_structure_reference_successor_coverage": stats[
+            "reading_order_local_structure_reference_successor_coverage"
+        ],
+        "reading_order_local_structure_consensus_disagreement_edge_count": stats[
+            "reading_order_local_structure_consensus_disagreement_edge_count"
         ],
         "reading_order_candidate_stream_diagnostics": stats["reading_order_candidate_stream_diagnostics"],
         "reading_order_candidate_stream_count": stats["reading_order_candidate_stream_count"],
@@ -1568,7 +1592,11 @@ def _run_calibrated_case(
     return selected
 
 
-def _document_stats(document: DocumentIR) -> dict[str, Any]:
+def _document_stats(
+    document: DocumentIR,
+    *,
+    reading_order_sidecar: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     elements = [element for page in document.pages for element in page.elements]
     text_elements = [element for element in elements if element.source_text.strip()]
     raster_elements = [element for element in elements if element.metadata.get("raster_fallback")]
@@ -1632,12 +1660,21 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     box_flow_diagnostics = _reading_order_box_flow_diagnostics(document)
     relation_graph_diagnostics = _reading_order_relation_graph_diagnostics(document)
     successor_consensus_diagnostics = _reading_order_successor_consensus_diagnostics(document)
-    candidate_page_diagnostics = _reading_order_candidate_page_diagnostics(document)
+    if reading_order_sidecar is None:
+        reading_order_sidecar = propose_reading_order_sidecar(document)
+    local_structure_evidence_by_page = local_structure_successor_evidence(reading_order_sidecar)
+    candidate_page_diagnostics = _reading_order_candidate_page_diagnostics(
+        document,
+        local_structure_evidence_by_page=local_structure_evidence_by_page,
+    )
     candidate_page_recommendation_counts = Counter(
         str(page_diagnostic.get("recommendation") or "unknown")
         for page_diagnostic in candidate_page_diagnostics
     )
-    candidate_stream_diagnostics = _reading_order_candidate_stream_diagnostics(document)
+    candidate_stream_diagnostics = _reading_order_candidate_stream_diagnostics(
+        document,
+        local_structure_evidence_by_page=local_structure_evidence_by_page,
+    )
     candidate_stream_recommendation_counts = Counter(
         str(stream_diagnostic.get("recommendation") or "unknown")
         for stream_diagnostic in candidate_stream_diagnostics
@@ -1786,6 +1823,7 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
         "reading_order_candidate_page_recommendation_counts": dict(
             sorted(candidate_page_recommendation_counts.items())
         ),
+        **_local_structure_evidence_summary(candidate_page_diagnostics),
         "reading_order_candidate_stream_diagnostics": candidate_stream_diagnostics,
         "reading_order_candidate_stream_count": len(candidate_stream_diagnostics),
         "reading_order_candidate_stream_recommendation_counts": dict(
@@ -2436,7 +2474,15 @@ def _successor_consensus_support_diagnostics(document: DocumentIR) -> dict[str, 
     }
 
 
-def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict[str, Any]]:
+def _reading_order_candidate_page_diagnostics(
+    document: DocumentIR,
+    *,
+    local_structure_evidence_by_page: dict[int, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if local_structure_evidence_by_page is None:
+        local_structure_evidence_by_page = local_structure_successor_evidence(
+            propose_reading_order_sidecar(document)
+        )
     diagnostics: list[dict[str, Any]] = []
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
@@ -2451,7 +2497,23 @@ def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict
         )
         pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
         successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
-        recommendation, reason = _reading_order_candidate_page_recommendation(consensus, successor)
+        local_structure = _local_structure_candidate_diagnostics(
+            text_elements,
+            reference_order,
+            consensus.ordered_indices,
+            local_structure_evidence_by_page.get(page.page_index),
+        )
+        recommendation, reason = _reading_order_candidate_page_recommendation(
+            consensus,
+            successor,
+            local_structure_successor_coverage=local_structure["local_structure_successor_coverage"],
+            local_structure_selected_successor_coverage=local_structure[
+                "local_structure_selected_successor_coverage"
+            ],
+            local_structure_reference_successor_coverage=local_structure[
+                "local_structure_reference_successor_coverage"
+            ],
+        )
         diagnostics.append(
             {
                 "page_index": page.page_index,
@@ -2468,6 +2530,7 @@ def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict
                 "consensus_successor_edge_count": successor.edge_count,
                 "consensus_successor_disagreement_count": successor.disagreement_count,
                 "consensus_successor_disagreement_ratio": successor.disagreement_ratio,
+                **local_structure,
                 "recommendation": recommendation,
                 "reason": reason,
             }
@@ -2475,7 +2538,15 @@ def _reading_order_candidate_page_diagnostics(document: DocumentIR) -> list[dict
     return diagnostics
 
 
-def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[dict[str, Any]]:
+def _reading_order_candidate_stream_diagnostics(
+    document: DocumentIR,
+    *,
+    local_structure_evidence_by_page: dict[int, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if local_structure_evidence_by_page is None:
+        local_structure_evidence_by_page = local_structure_successor_evidence(
+            propose_reading_order_sidecar(document)
+        )
     diagnostics: list[dict[str, Any]] = []
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
@@ -2502,10 +2573,23 @@ def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[di
             explicit_successor_edge_count, explicit_successor_coverage = _explicit_successor_coverage(
                 stream_elements
             )
+            local_structure = _local_structure_candidate_diagnostics(
+                stream_elements,
+                reference_order,
+                consensus.ordered_indices,
+                local_structure_evidence_by_page.get(page.page_index),
+            )
             recommendation, reason = _reading_order_candidate_page_recommendation(
                 consensus,
                 successor,
                 explicit_successor_coverage=explicit_successor_coverage,
+                local_structure_successor_coverage=local_structure["local_structure_successor_coverage"],
+                local_structure_selected_successor_coverage=local_structure[
+                    "local_structure_selected_successor_coverage"
+                ],
+                local_structure_reference_successor_coverage=local_structure[
+                    "local_structure_reference_successor_coverage"
+                ],
             )
             diagnostics.append(
                 {
@@ -2527,6 +2611,7 @@ def _reading_order_candidate_stream_diagnostics(document: DocumentIR) -> list[di
                     "consensus_successor_disagreement_ratio": successor.disagreement_ratio,
                     "explicit_successor_edge_count": explicit_successor_edge_count,
                     "explicit_successor_coverage": explicit_successor_coverage,
+                    **local_structure,
                     "recommendation": recommendation,
                     "reason": reason,
                 }
@@ -2539,9 +2624,22 @@ def _reading_order_candidate_page_recommendation(
     successor_disagreement: Any,
     *,
     explicit_successor_coverage: float = 0.0,
+    local_structure_successor_coverage: float = 0.0,
+    local_structure_selected_successor_coverage: float = 0.0,
+    local_structure_reference_successor_coverage: float = 0.0,
 ) -> tuple[str, str]:
     if successor_disagreement.edge_count and explicit_successor_coverage >= 1.0:
         return "keep-selected-external-successors", "selected local edges are fully confirmed by structure evidence"
+    if (
+        successor_disagreement.edge_count
+        and local_structure_successor_coverage >= 1.0
+        and local_structure_selected_successor_coverage >= 1.0
+        and local_structure_reference_successor_coverage >= 1.0
+    ):
+        return (
+            "keep-selected-local-structure",
+            "selected local edges are fully confirmed by native table/grid structure",
+        )
     if consensus.agreement_level == "unavailable":
         return "unavailable", "not enough candidate successor evidence"
     if successor_disagreement.disagreement_count == 0:
@@ -2564,6 +2662,148 @@ def _explicit_successor_coverage(stream_elements: list[Any]) -> tuple[int, float
         for source, target in zip(stream_elements, stream_elements[1:], strict=False)
     )
     return explicit_edge_count, round(explicit_edge_count / edge_count, 8)
+
+
+def _local_structure_candidate_diagnostics(
+    text_elements: list[Any],
+    reference_order: list[int],
+    consensus_order: list[int],
+    page_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Measure strict table/grid sidecar edges without changing global consensus.
+
+    Native local structure is strong evidence for the order *inside* an
+    independently detected table/grid island, but says nothing about a handoff
+    to the next body stream.  The generic candidate consensus remains
+    unchanged here; these fields make that distinction auditable.
+    """
+
+    default = {
+        "local_structure_stream_count": 0,
+        "local_structure_potential_successor_edge_count": 0,
+        "local_structure_successor_edge_count": 0,
+        "local_structure_successor_coverage": 0.0,
+        "local_structure_selected_successor_edge_count": 0,
+        "local_structure_selected_successor_coverage": 0.0,
+        "local_structure_reference_successor_coverage": 0.0,
+        "local_structure_consensus_disagreement_edge_count": 0,
+        "local_structure_consensus_disagreement_coverage": 0.0,
+    }
+    if not page_evidence:
+        return default
+
+    streams = page_evidence.get("streams")
+    if not isinstance(streams, (list, tuple)):
+        return default
+
+    element_ids = {str(element.id) for element in text_elements}
+    potential_edges: set[tuple[str, str]] = set()
+    strict_edges: set[tuple[str, str]] = set()
+    stream_count = 0
+    for stream in streams:
+        if not isinstance(stream, dict):
+            continue
+        stream_potential = {
+            (str(source), str(target))
+            for source, target in stream.get("potential_successor_edges", ())
+            if str(source) in element_ids and str(target) in element_ids
+        }
+        stream_strict = {
+            (str(source), str(target))
+            for source, target in stream.get("successor_edges", ())
+            if str(source) in element_ids and str(target) in element_ids
+        }
+        if not stream_potential and not stream_strict:
+            continue
+        stream_count += 1
+        potential_edges.update(stream_potential)
+        strict_edges.update(stream_strict)
+
+    if not potential_edges and not strict_edges:
+        return default
+
+    reference_ids = [str(text_elements[index].id) for index in reference_order]
+    consensus_ids = [str(text_elements[index].id) for index in consensus_order]
+    reference_edges = set(zip(reference_ids, reference_ids[1:], strict=False))
+    consensus_edges = set(zip(consensus_ids, consensus_ids[1:], strict=False))
+    selected_edges = strict_edges & reference_edges
+    consensus_disagreements = selected_edges - consensus_edges
+    strict_edge_count = len(strict_edges)
+    reference_edge_count = len(reference_edges)
+    potential_edge_count = len(potential_edges)
+    return {
+        "local_structure_stream_count": stream_count,
+        "local_structure_potential_successor_edge_count": potential_edge_count,
+        "local_structure_successor_edge_count": strict_edge_count,
+        "local_structure_successor_coverage": round(
+            strict_edge_count / max(potential_edge_count, 1),
+            8,
+        ),
+        "local_structure_selected_successor_edge_count": len(selected_edges),
+        "local_structure_selected_successor_coverage": round(
+            len(selected_edges) / max(strict_edge_count, 1),
+            8,
+        ),
+        "local_structure_reference_successor_coverage": round(
+            len(selected_edges) / max(reference_edge_count, 1),
+            8,
+        ),
+        "local_structure_consensus_disagreement_edge_count": len(consensus_disagreements),
+        "local_structure_consensus_disagreement_coverage": round(
+            len(consensus_disagreements) / max(strict_edge_count, 1),
+            8,
+        ),
+    }
+
+
+def _local_structure_evidence_summary(
+    page_diagnostics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize page-local structure evidence without double-counting streams."""
+
+    return {
+        "reading_order_local_structure_stream_count": sum(
+            int(diagnostic["local_structure_stream_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_potential_successor_edge_count": sum(
+            int(diagnostic["local_structure_potential_successor_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_successor_edge_count": sum(
+            int(diagnostic["local_structure_successor_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_successor_coverage": _weighted_local_structure_coverage(
+            page_diagnostics,
+            numerator="local_structure_successor_edge_count",
+            denominator="local_structure_potential_successor_edge_count",
+        ),
+        "reading_order_local_structure_selected_successor_edge_count": sum(
+            int(diagnostic["local_structure_selected_successor_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_reference_successor_coverage": _weighted_local_structure_coverage(
+            page_diagnostics,
+            numerator="local_structure_selected_successor_edge_count",
+            denominator="consensus_successor_edge_count",
+        ),
+        "reading_order_local_structure_consensus_disagreement_edge_count": sum(
+            int(diagnostic["local_structure_consensus_disagreement_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+    }
+
+
+def _weighted_local_structure_coverage(
+    diagnostics: list[dict[str, Any]],
+    *,
+    numerator: str,
+    denominator: str,
+) -> float:
+    numerator_total = sum(int(diagnostic[numerator]) for diagnostic in diagnostics)
+    denominator_total = sum(int(diagnostic[denominator]) for diagnostic in diagnostics)
+    return round(numerator_total / denominator_total, 8) if denominator_total else 0.0
 
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:

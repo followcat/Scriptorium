@@ -196,6 +196,9 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_successor_consensus_low_agreement_page_count" in case for case in report["cases"])
     assert all("reading_order_candidate_page_diagnostics" in case for case in report["cases"])
     assert all("reading_order_candidate_page_recommendation_counts" in case for case in report["cases"])
+    assert all("reading_order_local_structure_stream_count" in case for case in report["cases"])
+    assert all("reading_order_local_structure_successor_edge_count" in case for case in report["cases"])
+    assert all("reading_order_local_structure_successor_coverage" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_diagnostics" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_count" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_recommendation_counts" in case for case in report["cases"])
@@ -825,6 +828,35 @@ def test_candidate_stream_diagnostics_trust_complete_explicit_successors() -> No
     assert diagnostics[0]["explicit_successor_edge_count"] == 2
     assert diagnostics[0]["explicit_successor_coverage"] == 1.0
     assert diagnostics[0]["recommendation"] == "keep-selected-external-successors"
+
+
+def test_candidate_stream_diagnostics_keep_native_grid_structure_local() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("grid-one", "Grid one.", BBox(x0=10, y0=10, x1=70, y1=20), 1, None),
+            ("grid-two", "Grid two.", BBox(x0=100, y0=10, x1=160, y1=20), 2, None),
+            ("grid-three", "Grid three.", BBox(x0=10, y0=35, x1=70, y1=45), 3, None),
+            ("body-one", "Body one.", BBox(x0=10, y0=80, x1=160, y1=90), 4, None),
+            ("body-two", "Body two.", BBox(x0=10, y0=100, x1=160, y1=110), 5, None),
+        ]
+    )
+    for element in document.pages[0].elements[:3]:
+        element.metadata["reading_order_stream_id"] = "grid-island-001"
+        element.metadata["reading_order_stream_type"] = "grid-island"
+    for element in document.pages[0].elements[3:]:
+        element.metadata["reading_order_stream_id"] = "body-main"
+        element.metadata["reading_order_stream_type"] = "body"
+
+    page_diagnostics = _reading_order_candidate_page_diagnostics(document)
+    stream_diagnostics = _reading_order_candidate_stream_diagnostics(document)
+    by_stream = {diagnostic["stream_id"]: diagnostic for diagnostic in stream_diagnostics}
+
+    assert page_diagnostics[0]["local_structure_successor_edge_count"] == 2
+    assert page_diagnostics[0]["local_structure_reference_successor_coverage"] == 0.5
+    assert by_stream["grid-island-001"]["local_structure_successor_edge_count"] == 2
+    assert by_stream["grid-island-001"]["local_structure_successor_coverage"] == 1.0
+    assert by_stream["grid-island-001"]["local_structure_reference_successor_coverage"] == 1.0
+    assert by_stream["grid-island-001"]["recommendation"] == "keep-selected-local-structure"
 
 
 def test_semantic_candidate_arbitration_recommends_better_candidate() -> None:
