@@ -885,6 +885,22 @@ successors skip floating groups, matching the official evaluator's separate
 body and floating chains. `benchmark-comphrdoc-relations` loads one model and
 runs the same pages with structure-role fusion disabled and enabled.
 
+`train-floating-ranker` reads only the pinned Comp-HRDoc official train member.
+Pages are split by document-id hash, preventing pages from one paper from
+crossing fit/calibration. Each graphical block is paired with its official
+caption as a positive and nearby same-page text blocks as hard negatives. The
+27 shallow features cover graphical kind, normalized pair geometry, overlap,
+relative direction, block line count, text length, and caption prefixes. The
+model is a balanced histogram gradient booster. Its threshold is selected only
+on the train-derived calibration partition. Prediction applies a one-to-one,
+margin-first assignment and emits isolated review-only edges; answer-bearing
+inputs are rejected and runtime reorder remains disabled.
+
+The generated manifest records archive/member hashes, split policy, 4,102 fit
+pages, 1,073 calibration pages, 49,763 examples, 5,638 positives, threshold
+`0.27`, and calibration precision/recall/F1
+`0.87851662/0.95020747/0.91295681`.
+
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture
 for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577

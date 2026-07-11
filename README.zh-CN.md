@@ -188,8 +188,11 @@ scriptorium fetch-comphrdoc --max-pages 5 \
 ```bash
 scriptorium fetch-comphrdoc-relations --sample-count 250 \
   --out-dir data/external/comphrdoc-relations
+scriptorium train-floating-ranker /path/to/CompHRDoc.zip \
+  --output outputs/models/floating-ranker.joblib
 scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
-  --model outputs/models/relation-ranker.joblib
+  --model outputs/models/relation-ranker.joblib \
+  --floating-model outputs/models/floating-ranker.joblib
 ```
 
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重

@@ -195,8 +195,11 @@ prefix without downloading or redistributing page images, then run a reproducibl
 ```bash
 scriptorium fetch-comphrdoc-relations --sample-count 250 \
   --out-dir data/external/comphrdoc-relations
+scriptorium train-floating-ranker /path/to/CompHRDoc.zip \
+  --output outputs/models/floating-ranker.joblib
 scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
-  --model outputs/models/relation-ranker.joblib
+  --model outputs/models/relation-ranker.joblib \
+  --floating-model outputs/models/floating-ranker.joblib
 ```
 
 Install the optional Surya FastLayout provider in a dedicated environment. The

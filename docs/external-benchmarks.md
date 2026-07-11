@@ -669,11 +669,20 @@ images are downloaded or redistributed. The same model is scored twice:
 |---|---:|---:|---:|---:|
 | Native ranker | 8895 / 10681 / 10465 | 0.83278719 | 0.84997611 | 0.84129386 |
 | Native + structure role | 9182 / 10959 / 10465 | 0.83785017 | 0.87740086 | 0.85716953 |
+| Native + trained floating | 9208 / 10963 / 10465 | 0.83991608 | 0.87988533 | 0.85943625 |
 
 The F1 delta is `+0.01587567`. Structure-role edges alone score 295/342
 correct against 347 graphical labels: precision `0.86257310`, recall
 `0.85014409`, F1 `0.85631350`. This supersedes the optimistic 18/18 result as
 the stronger generalization evidence. Caption text heuristics and fixed geometry
 remain insufficient for all document families, so role fusion stays review-only.
-The next experiment should train a float-pair gate only on Comp-HRDoc train
-annotations and keep this test prefix untouched.
+The follow-up experiment was constrained to train a float-pair gate only on
+Comp-HRDoc train annotations while keeping this test prefix untouched.
+
+That train-only gate is now implemented. Its graphical edges score 321/356
+correct against 347 labels: precision `0.90168539`, recall `0.92507205`, F1
+`0.91322902`. Overall F1 improves by `+0.01814239` over native and by
+`+0.00226672` over the heuristic fusion. Threshold `0.27` comes only from the
+official-train document-hash calibration split; the 250-page test prefix was
+not used to select it. The learned gate remains review-only pending confidence
+reliability and document-family rejection analysis.
