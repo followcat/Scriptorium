@@ -17,7 +17,11 @@ from .benchmark import (
     run_benchmark,
     run_structure_ab_benchmark,
 )
-from .comphrdoc_benchmark import fetch_comphrdoc_benchmark_samples
+from .comphrdoc_benchmark import (
+    benchmark_comphrdoc_relation_corpus,
+    fetch_comphrdoc_benchmark_samples,
+    fetch_comphrdoc_relation_corpus,
+)
 from .docling_provider import DoclingAdapter
 from .fixture import create_fixture
 from .html_edits import apply_html_edit_patch
@@ -131,6 +135,55 @@ def fetch_comphrdoc_command(
     typer.echo(f"Source PDF: {result.source_pdf_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("fetch-comphrdoc-relations")
+def fetch_comphrdoc_relations_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/comphrdoc-relations"),
+        help="Directory for answer-free floating relation anchors and semantic sidecars.",
+    ),
+    sample_count: int = typer.Option(
+        250,
+        min=1,
+        help="First N floating test pages in published image-name order.",
+    ),
+    refresh: bool = typer.Option(False, help="Rewrite derived corpus files."),
+) -> None:
+    """Build a cross-document Comp-HRDoc relation corpus without PDF images."""
+
+    try:
+        result = fetch_comphrdoc_relation_corpus(
+            out_dir,
+            sample_count=sample_count,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--sample-count") from exc
+    typer.echo(f"Comp-HRDoc relation samples: {result.sample_count}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+    typer.echo(f"Semantic sidecars: {result.out_dir / 'semantic'}")
+
+
+@app.command("benchmark-comphrdoc-relations")
+def benchmark_comphrdoc_relations_command(
+    corpus_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
+    model: Path = typer.Option(..., "--model", exists=True, readable=True),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """A/B score structure-role fusion on a Comp-HRDoc relation corpus."""
+
+    try:
+        result = benchmark_comphrdoc_relation_corpus(corpus_dir, model, output=output)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    summary = result.report["summary"]
+    typer.echo(f"Samples: {result.report['sample_count']}")
+    typer.echo(f"Native ranker F1: {summary['native-ranker']['f1']}")
+    typer.echo(f"Native plus structure-role F1: {summary['native-plus-structure-role']['f1']}")
+    typer.echo(f"F1 delta: {result.report['f1_delta']}")
+    typer.echo(f"Report: {result.report_path}")
 
 
 @app.command("consensus-reading-sidecars")
@@ -868,16 +921,29 @@ def run_relation_ranker_command(
         "-o",
         help="Isolated review-only successor relation JSON.",
     ),
+    structure_role_fusion: bool = typer.Option(
+        True,
+        "--structure-role-fusion/--no-structure-role-fusion",
+        help="Fuse explicit figure/table roles with local caption geometry.",
+    ),
 ) -> None:
     """Predict review-only relations from answer-free structure anchors."""
 
     try:
         raw_payload = json.loads(structure_json.read_text(encoding="utf-8"))
         if _is_document_ir_payload(raw_payload):
-            result = predict_document_relations(DocumentIR.model_validate(raw_payload), model)
+            result = predict_document_relations(
+                DocumentIR.model_validate(raw_payload),
+                model,
+                structure_role_fusion=structure_role_fusion,
+            )
         else:
             payload = load_structure_json(structure_json)
-            result = predict_structure_relations(payload, model)
+            result = predict_structure_relations(
+                payload,
+                model,
+                structure_role_fusion=structure_role_fusion,
+            )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="structure_json") from exc
     output_path = write_ocr_json(result.structure_payload, output)

@@ -150,6 +150,15 @@ def test_prediction_prefers_explicit_figure_caption_relation(
     ]
     assert result.structure_payload["relation_ranker"]["structure_role_edge_count"] == 1
 
+    baseline = predict_structure_relations(
+        payload,
+        "model.joblib",
+        structure_role_fusion=False,
+    )
+    assert baseline.structure_payload["relation_ranker"]["structure_role_fusion"] is False
+    assert baseline.structure_payload["relation_ranker"]["structure_role_edge_count"] == 0
+    assert all(edge.get("relation_origin") is None for edge in baseline.structure_payload["successor_edges"])
+
 
 def test_prediction_orders_table_caption_before_explicit_table(
     monkeypatch: pytest.MonkeyPatch,

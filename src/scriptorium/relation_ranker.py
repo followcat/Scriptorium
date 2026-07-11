@@ -129,18 +129,27 @@ def train_relation_ranker(
 def predict_structure_relations(
     payload: Mapping[str, Any],
     model_path: str | Path,
+    *,
+    structure_role_fusion: bool = True,
 ) -> RelationRankerPredictionResult:
     """Predict isolated review-only successors for one ROOR-style structure page."""
 
     if _payload_contains_answer_relations(payload):
         raise ValueError("input structure JSON must not contain ro_linkings or successor relations")
     bundle, manifest = load_relation_ranker(model_path)
-    return _predict_roor_page_relations(payload, bundle=bundle, manifest=manifest)
+    return _predict_roor_page_relations(
+        payload,
+        bundle=bundle,
+        manifest=manifest,
+        structure_role_fusion=structure_role_fusion,
+    )
 
 
 def predict_document_relations(
     document: DocumentIR,
     model_path: str | Path,
+    *,
+    structure_role_fusion: bool = True,
 ) -> RelationRankerPredictionResult:
     """Predict source-neutral review relations for every text-bearing IR page."""
 
@@ -170,6 +179,7 @@ def predict_document_relations(
             page_payload,
             bundle=bundle,
             manifest=manifest,
+            structure_role_fusion=structure_role_fusion,
         )
         predicted_edges = prediction.structure_payload["successor_edges"]
         pages.append(
@@ -222,6 +232,7 @@ def predict_document_relations(
                 "predicted_edge_count": edge_count,
                 "predicted_branch_edge_count": branch_edge_count,
                 "model_sha256": manifest.get("model_sha256"),
+                "structure_role_fusion": structure_role_fusion,
             },
         },
         edge_count,
@@ -235,6 +246,7 @@ def _predict_roor_page_relations(
     *,
     bundle: Mapping[str, Any],
     manifest: Mapping[str, Any],
+    structure_role_fusion: bool = True,
 ) -> RelationRankerPredictionResult:
     document = payload.get("document")
     image = payload.get("img")
@@ -247,7 +259,11 @@ def _predict_roor_page_relations(
     threshold = float(bundle["threshold"])
     branch_estimator = bundle.get("branch_estimator")
     branch_threshold = float(bundle.get("branch_threshold", 1.1))
-    structure_role_edges = _structure_role_successors(segments, width=width, height=height)
+    structure_role_edges = (
+        _structure_role_successors(segments, width=width, height=height)
+        if structure_role_fusion
+        else {}
+    )
     protected_sources = set(structure_role_edges)
 
     successor_edges: list[dict[str, Any]] = []
@@ -354,6 +370,7 @@ def _predict_roor_page_relations(
                 "predicted_edge_count": len(successor_edges),
                 "predicted_branch_edge_count": branch_edge_count,
                 "structure_role_edge_count": len(structure_role_edges),
+                "structure_role_fusion": structure_role_fusion,
                 **_prediction_reliability(
                     selected_features,
                     selected_confidences,
