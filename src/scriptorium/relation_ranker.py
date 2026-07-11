@@ -399,13 +399,25 @@ def _structure_role_successors(
             candidates,
             key=lambda item: _normalized_center_distance(graphical, item, width, height),
         )
-        claimed_caption_ids.add(caption["id"])
+        caption_block = _caption_block(caption, segments)
+        claimed_caption_ids.update(item["id"] for item in caption_block)
         evidence = [f"explicit-{kind}-role", "caption-label", "local-float-caption"]
         if kind == "figure":
-            result[graphical["id"]] = (caption["id"], evidence)
+            result[graphical["id"]] = (caption_block[0]["id"], evidence)
         else:
-            result[caption["id"]] = (graphical["id"], evidence)
+            result[caption_block[-1]["id"]] = (graphical["id"], evidence)
     return result
+
+
+def _caption_block(
+    caption: Mapping[str, Any],
+    segments: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    block_id = caption.get("block_id")
+    if block_id is None:
+        return [caption]
+    members = [segment for segment in segments if segment.get("block_id") == block_id]
+    return sorted(members, key=lambda item: (float(item["box"][1]), float(item["box"][0]))) or [caption]
 
 
 def _segment_kind(segment: Mapping[str, Any]) -> str:
@@ -470,11 +482,8 @@ def _is_local_caption(
     overlap_ratio = horizontal_overlap / max(1.0, min(gx1 - gx0, cx1 - cx0))
     if overlap_ratio < 0.25:
         return False
-    if kind == "figure":
-        gap = cy0 - gy1
-    else:
-        gap = gy0 - cy1
-    return -0.01 * height <= gap <= 0.12 * height and abs((cx0 + cx1) - (gx0 + gx1)) <= width
+    gap = max(0.0, cy0 - gy1, gy0 - cy1)
+    return gap <= 0.12 * height and abs((cx0 + cx1) - (gx0 + gx1)) <= width
 
 
 def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:

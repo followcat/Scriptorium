@@ -61,12 +61,52 @@ def test_fetch_comphrdoc_separates_layout_anchors_from_order_labels(
     second_structure = json.loads(result.samples[1].structure_path.read_text(encoding="utf-8"))
     second_semantic = json.loads(result.samples[1].semantic_sidecar_path.read_text(encoding="utf-8"))
     assert second_structure["document"][0]["type"] == "figure"
+    assert second_structure["document"][0]["block_id"] == "comphrdoc-p0002-b0001"
     assert second_structure["document"][0]["text"] == "[figure p0002 g0001]"
     assert second_semantic["ro_linkings"] == [
         ["comphrdoc-p0002-l0001", "comphrdoc-p0002-l0002"]
     ]
     with fitz.open(result.source_pdf_path) as pdf:
         assert len(pdf) == 2
+
+
+def test_table_floating_order_is_independent_of_annotation_sequence() -> None:
+    caption = {
+        "reading_order_id": 4,
+        "reading_order_label": 2,
+        "in_page_id": 1,
+        "category_id": 3,
+        "textline_contents": ["Table 1. Results", "Caption continuation"],
+        "textline_polys": [
+            [10, 70, 90, 70, 90, 78, 10, 78],
+            [10, 80, 90, 80, 90, 88, 10, 88],
+        ],
+    }
+    table = {
+        "reading_order_id": 4,
+        "reading_order_label": 0,
+        "in_page_id": 2,
+        "category_id": 2,
+        "bbox": [10, 10, 80, 55, 0],
+        "textline_contents": [],
+        "textline_polys": [],
+    }
+
+    for annotations in ([caption, table], [table, caption]):
+        structure, semantic = comphrdoc._page_payloads(
+            "sample",
+            0,
+            100,
+            100,
+            annotations,
+        )
+        table_id = next(node["id"] for node in structure["document"] if node["type"] == "table")
+        caption_tail_id = next(
+            node["id"]
+            for node in structure["document"]
+            if node["text"] == "Caption continuation"
+        )
+        assert [caption_tail_id, table_id] in semantic["ro_linkings"]
 
 
 def _annotation_archive() -> bytes:

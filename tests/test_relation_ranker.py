@@ -156,8 +156,19 @@ def test_prediction_orders_table_caption_before_explicit_table(
 ) -> None:
     payload = _answer_free_payload()
     payload["document"] = [
-        {"id": "caption", "box": [10, 10, 90, 20], "text": "Table 1. Results"},
-        {"id": "table", "box": [10, 23, 90, 70], "text": "[table]", "type": "table"},
+        {
+            "id": "caption-1",
+            "box": [10, 73, 90, 80],
+            "text": "Table 1. Results",
+            "block_id": "caption-block",
+        },
+        {
+            "id": "caption-2",
+            "box": [10, 82, 90, 89],
+            "text": "continued caption",
+            "block_id": "caption-block",
+        },
+        {"id": "table", "box": [10, 10, 90, 70], "text": "[table]", "type": "table"},
     ]
     monkeypatch.setattr(
         relation_ranker,
@@ -168,7 +179,7 @@ def test_prediction_orders_table_caption_before_explicit_table(
     result = predict_structure_relations(payload, "model.joblib")
 
     assert [(edge["source"], edge["target"]) for edge in result.structure_payload["successor_edges"]] == [
-        ("caption", "table")
+        ("caption-2", "table")
     ]
 
 

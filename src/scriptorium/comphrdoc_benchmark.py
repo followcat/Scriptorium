@@ -242,6 +242,7 @@ def _page_payloads(
         contents = annotation.get("textline_contents")
         polygons = annotation.get("textline_polys")
         block_node_ids: list[str] = []
+        block_id = f"comphrdoc-p{page_index + 1:04d}-b{int(annotation.get('in_page_id', 0)) + 1:04d}"
         if isinstance(contents, list) and isinstance(polygons, list):
             for content, polygon in zip(contents, polygons, strict=False):
                 bbox = _polygon_bbox(polygon)
@@ -249,7 +250,16 @@ def _page_payloads(
                 if bbox is None or not text:
                     continue
                 node_id = f"comphrdoc-p{page_index + 1:04d}-l{len(nodes) + 1:04d}"
-                nodes.append({"id": node_id, "box": bbox, "text": text, "words": [], "type": "text"})
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "box": bbox,
+                        "text": text,
+                        "words": [],
+                        "type": "text",
+                        "block_id": block_id,
+                    }
+                )
                 block_node_ids.append(node_id)
         graphical_kind = _graphical_kind(annotation)
         if not block_node_ids and graphical_kind is not None:
@@ -264,6 +274,7 @@ def _page_payloads(
                         "text": text,
                         "words": [],
                         "type": graphical_kind,
+                        "block_id": block_id,
                     }
                 )
                 block_node_ids.append(node_id)
@@ -277,21 +288,28 @@ def _page_payloads(
         following = annotation_node_ids[index + 1] if index + 1 < len(annotation_node_ids) else []
         if current and following:
             edges.append([current[-1], following[0]])
-    for index, annotation in enumerate(annotations[:-1]):
-        graphical_kind = _graphical_kind(annotation)
-        if graphical_kind is None:
+    floating_groups: dict[int, list[int]] = {}
+    for index, annotation in enumerate(annotations):
+        floating_groups.setdefault(int(annotation.get("reading_order_id", -1)), []).append(index)
+    for group_indices in floating_groups.values():
+        if not any(int(annotations[index].get("reading_order_label", 0)) == 2 for index in group_indices):
             continue
-        following_annotation = annotations[index + 1]
-        if int(following_annotation.get("reading_order_id", -1)) != int(annotation.get("reading_order_id", -2)):
-            continue
-        graphical = annotation_node_ids[index] if index < len(annotation_node_ids) else []
-        caption = annotation_node_ids[index + 1] if index + 1 < len(annotation_node_ids) else []
-        if not graphical or not caption:
-            continue
-        if graphical_kind == "figure":
-            edges.append([graphical[-1], caption[0]])
-        else:
-            edges.append([caption[-1], graphical[0]])
+        graphical_indices = [index for index in group_indices if _graphical_kind(annotations[index]) is not None]
+        text_indices = [index for index in group_indices if _graphical_kind(annotations[index]) is None]
+        for graphical_index in graphical_indices:
+            graphical_kind = _graphical_kind(annotations[graphical_index])
+            graphical = annotation_node_ids[graphical_index]
+            caption_nodes = [
+                node_id
+                for text_index in text_indices
+                for node_id in annotation_node_ids[text_index]
+            ]
+            if not graphical or not caption_nodes:
+                continue
+            if graphical_kind == "figure":
+                edges.append([graphical[-1], caption_nodes[0]])
+            else:
+                edges.append([caption_nodes[-1], graphical[0]])
     base = {
         "uid": f"{document_id}_{page_index}",
         "img": {
