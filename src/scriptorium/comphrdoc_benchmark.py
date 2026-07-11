@@ -284,6 +284,7 @@ def benchmark_comphrdoc_relation_corpus(
     corpus_dir: str | Path,
     model_path: str | Path,
     *,
+    floating_model_path: str | Path | None = None,
     output: str | Path | None = None,
 ) -> CompHrDocRelationBenchmarkResult:
     """Score relation-role fusion on an answer-separated Comp-HRDoc corpus."""
@@ -299,6 +300,15 @@ def benchmark_comphrdoc_relation_corpus(
         raise ValueError("unsupported Comp-HRDoc relation corpus schema")
     bundle, model_manifest = relation_ranker.load_relation_ranker(model_path)
     modes = {"native-ranker": False, "native-plus-structure-role": True}
+    floating_bundle = None
+    floating_manifest = None
+    if floating_model_path is not None:
+        from . import floating_ranker
+
+        floating_bundle, floating_manifest = floating_ranker.load_floating_relation_ranker(
+            floating_model_path
+        )
+        modes["native-plus-trained-floating"] = False
     totals = {name: _empty_relation_totals() for name in modes}
     page_results: list[dict[str, Any]] = []
     for sample in manifest.get("samples", []):
@@ -326,14 +336,26 @@ def benchmark_comphrdoc_relation_corpus(
                 manifest=model_manifest,
                 structure_role_fusion=enabled,
             ).structure_payload
-            predicted = {
-                (edge["source"], edge["target"])
-                for edge in prediction.get("successor_edges", [])
-            }
+            prediction_edges = list(prediction.get("successor_edges", []))
+            if mode == "native-plus-trained-floating":
+                assert floating_bundle is not None and floating_manifest is not None
+                learned = floating_ranker._predict_floating_relations(
+                    structure,
+                    bundle=floating_bundle,
+                    manifest=floating_manifest,
+                )
+                learned_sources = {edge["source"] for edge in learned.successor_edges}
+                prediction_edges = [
+                    edge for edge in prediction_edges if edge["source"] not in learned_sources
+                ] + learned.successor_edges
+                role_origin = "trained-floating-pair"
+            else:
+                role_origin = "structure-role-geometry"
+            predicted = {(edge["source"], edge["target"]) for edge in prediction_edges}
             role_predicted = {
                 (edge["source"], edge["target"])
-                for edge in prediction.get("successor_edges", [])
-                if edge.get("relation_origin") == "structure-role-geometry"
+                for edge in prediction_edges
+                if edge.get("relation_origin") == role_origin
             }
             metrics = _relation_counts(predicted, truth)
             role_metrics = _relation_counts(role_predicted, graphical_truth)
@@ -348,6 +370,9 @@ def benchmark_comphrdoc_relation_corpus(
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "model_sha256": model_manifest.get("model_sha256"),
+        "floating_model_sha256": (
+            floating_manifest.get("model_sha256") if floating_manifest is not None else None
+        ),
         "sample_count": len(page_results),
         "selection": manifest.get("selection"),
         "inference_inputs_are_answer_free": manifest.get("inference_inputs_are_answer_free"),
@@ -355,6 +380,11 @@ def benchmark_comphrdoc_relation_corpus(
         "f1_delta": round(fused_f1 - baseline_f1, 8),
         "pages": page_results,
     }
+    if "native-plus-trained-floating" in summarized:
+        report["trained_floating_f1_delta"] = round(
+            summarized["native-plus-trained-floating"]["f1"] - baseline_f1,
+            8,
+        )
     report_path = Path(output) if output is not None else corpus / "relation_benchmark_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

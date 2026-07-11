@@ -24,6 +24,7 @@ from .comphrdoc_benchmark import (
 )
 from .docling_provider import DoclingAdapter
 from .fixture import create_fixture
+from .floating_ranker import predict_floating_relations, train_floating_relation_ranker
 from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
@@ -170,18 +171,34 @@ def fetch_comphrdoc_relations_command(
 def benchmark_comphrdoc_relations_command(
     corpus_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
     model: Path = typer.Option(..., "--model", exists=True, readable=True),
+    floating_model: Path | None = typer.Option(
+        None,
+        "--floating-model",
+        exists=True,
+        readable=True,
+    ),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ) -> None:
     """A/B score structure-role fusion on a Comp-HRDoc relation corpus."""
 
     try:
-        result = benchmark_comphrdoc_relation_corpus(corpus_dir, model, output=output)
+        result = benchmark_comphrdoc_relation_corpus(
+            corpus_dir,
+            model,
+            floating_model_path=floating_model,
+            output=output,
+        )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
     summary = result.report["summary"]
     typer.echo(f"Samples: {result.report['sample_count']}")
     typer.echo(f"Native ranker F1: {summary['native-ranker']['f1']}")
     typer.echo(f"Native plus structure-role F1: {summary['native-plus-structure-role']['f1']}")
+    if "native-plus-trained-floating" in summary:
+        typer.echo(
+            "Native plus trained floating F1: "
+            f"{summary['native-plus-trained-floating']['f1']}"
+        )
     typer.echo(f"F1 delta: {result.report['f1_delta']}")
     typer.echo(f"Report: {result.report_path}")
 
@@ -898,6 +915,62 @@ def train_relation_ranker_command(
     typer.echo(f"Successor threshold: {result.manifest['successor_threshold']}")
     typer.echo(f"Branch calibration F1: {result.manifest['branch_calibration']['f1']}")
     typer.echo(f"Branch threshold: {result.manifest['branch_threshold']}")
+
+
+@app.command("train-floating-ranker")
+def train_floating_ranker_command(
+    annotation_archive: Path = typer.Argument(..., exists=True, readable=True),
+    output: Path = typer.Option(Path("outputs/models/floating-ranker.joblib"), "--output", "-o"),
+    calibration_fraction: float = typer.Option(0.2, min=0.05, max=0.5),
+    negative_candidates: int = typer.Option(12, min=1),
+    seed: int = typer.Option(29),
+) -> None:
+    """Train a review-only float/caption pair gate from Comp-HRDoc train."""
+
+    try:
+        result = train_floating_relation_ranker(
+            annotation_archive,
+            output,
+            calibration_fraction=calibration_fraction,
+            negative_candidates=negative_candidates,
+            random_seed=seed,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="annotation_archive") from exc
+    typer.echo(f"Floating ranker model: {result.model_path}")
+    typer.echo(f"Floating ranker manifest: {result.manifest_path}")
+    typer.echo(f"Calibration F1: {result.manifest['calibration']['f1']}")
+    typer.echo(f"Pair threshold: {result.manifest['threshold']}")
+
+
+@app.command("run-floating-ranker")
+def run_floating_ranker_command(
+    structure_json: Path = typer.Argument(..., exists=True, readable=True),
+    model: Path = typer.Option(..., "--model", exists=True, readable=True),
+    output: Path = typer.Option(Path("outputs/floating-ranker.structure.json"), "--output", "-o"),
+) -> None:
+    """Predict isolated review-only float/caption relations."""
+
+    try:
+        payload = load_structure_json(structure_json)
+        result = predict_floating_relations(payload, model)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="structure_json") from exc
+    normalized = dict(payload)
+    normalized.update(
+        {
+            "source": "scriptorium-trained-floating-ranker",
+            "relation_policy": "review-only",
+            "runtime_reorder": False,
+            "successor_edges": result.successor_edges,
+            "floating_ranker": result.diagnostics,
+        }
+    )
+    output_path = write_ocr_json(normalized, output)
+    typer.echo(f"Floating relation JSON: {output_path}")
+    typer.echo(f"Graphical sources: {result.graphical_source_count}")
+    typer.echo(f"Candidate pairs: {result.candidate_pair_count}")
+    typer.echo(f"Predicted edges: {len(result.successor_edges)}")
 
 
 @app.command("run-relation-ranker")

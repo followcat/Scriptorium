@@ -8,6 +8,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import fitz
 
 import scriptorium.comphrdoc_benchmark as comphrdoc
+import scriptorium.floating_ranker as floating_ranker
 import scriptorium.relation_ranker as relation_ranker
 from scriptorium.comphrdoc_benchmark import (
     COMPHRDOC_ANNOTATION_MEMBER,
@@ -215,6 +216,56 @@ def test_relation_corpus_benchmark_reports_role_fusion_ab(
         "f1": 1.0,
     }
     assert result.report_path.is_file()
+
+
+def test_relation_corpus_benchmark_can_score_trained_floating_mode(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    archive = _annotation_archive()
+    monkeypatch.setattr(comphrdoc, "COMPHRDOC_ARCHIVE_SHA256", hashlib.sha256(archive).hexdigest())
+    corpus = fetch_comphrdoc_relation_corpus(
+        tmp_path / "relations",
+        sample_count=1,
+        downloader=lambda _: archive,
+    )
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: ({"estimator": _DownwardEstimator(), "threshold": 0.5}, {"model_sha256": "base"}),
+    )
+    monkeypatch.setattr(
+        floating_ranker,
+        "load_floating_relation_ranker",
+        lambda _: ({}, {"model_sha256": "floating"}),
+    )
+    monkeypatch.setattr(
+        floating_ranker,
+        "_predict_floating_relations",
+        lambda *args, **kwargs: floating_ranker.FloatingRankerPredictionResult(
+            [
+                {
+                    "source": "comphrdoc-p0002-l0001",
+                    "target": "comphrdoc-p0002-l0002",
+                    "relation_origin": "trained-floating-pair",
+                }
+            ],
+            1,
+            1,
+            {},
+        ),
+    )
+
+    result = benchmark_comphrdoc_relation_corpus(
+        corpus.out_dir,
+        tmp_path / "base.joblib",
+        floating_model_path=tmp_path / "floating.joblib",
+    )
+
+    trained = result.report["summary"]["native-plus-trained-floating"]
+    assert trained["graphical"]["correct"] == 1
+    assert result.report["floating_model_sha256"] == "floating"
+    assert "trained_floating_f1_delta" in result.report
 
 
 class _DownwardEstimator:
