@@ -95,6 +95,7 @@ pip install -e .
 scriptorium convert \
   path/to/page.png \
   --input-kind image \
+  --ocr-json path/to/page.ocr.json \
   --structure-json path/to/page.structure.json \
   --out-dir outputs/image-source
 

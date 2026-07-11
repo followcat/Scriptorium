@@ -274,18 +274,22 @@ Transformer-XL 是本 proposal layer 的有标注检查。在 `outputs/external/
 
 但这个 direct 指标不足以评估 `ordered-subsequence` 语义 sidecar：标签可以跳过未标注的 IR 节点。新的路径指标会检查相邻标注锚点之间是否存在路径，同时不允许路径穿过另一个已标注锚点。native-only 的 strict 局部路径 coverage 为 `32/41`（`0.78048780`），包含 review graph path 后为 `41/41`（`1.0`）；native-plus-structure 分别为 strict local `30/41`、strict 加 local review `32/41`、reviewable graph `41/41`。native 中最后的 9 条 anchor transition 只依赖跨 stream 的 review handoff，因此仍不可自动执行。这修正了部分标签的计分缺口，但不把 review transition 宣称为安全的自动版面约束。
 
-### 显式 block-order review transition v1
+### 显式 block-order review transition v2
 
 Paddle layout 输出经常只有有序 block，没有 successor relation。Sidecar schema `1.1` 只把唯一、显式编号、数值连续的 primary text block 转成带完整 provenance 的 review transition。Secondary 内容和非线性 island 都是断点，缺失数值 order 时不能跨越，strict transition 数固定为 0。新的 benchmark 字段把这些模型提案与 native 局部边、通用 selected-order handoff 分开计分。
+
+Image A/B 现在使用双输入边界：`--ocr-json` 在两侧创建完全相同的 text/bbox anchors，`--structure-json` 只进入 structure 分支。PP-Structure 中精确但无序的 OCR 行可以关联到唯一的显式 ordered parent；精确 anchor 仍拥有 label/bbox/confidence，parent order 只作为 `ordered_companion` review 证据，不能触发 runtime partial order 或派生 block stream。不同 order 的重叠 parent 会被拒绝。ROOR 的 `ro_linkings` 只存在于相邻评测 sidecar，输入 anchors 已删除全部答案关系。
 
 | Provider / 样本 | Review candidates | 已标注 / 正确 | Precision | 标签覆盖 | Strict | Visual delta |
 |---|---:|---:|---:|---:|---:|---:|
 | PaddleOCR-VL 1.6，Attention p. 1 | 2 | 1 / 1 | `1.0` | `1/9`（`0.11111111`） | 0 | `0.0` |
 | PP-StructureV3 runner，Attention p. 1 | 1 | 0 / 0 | 不可用 | `0/9` | 0 | `0.0` |
-| PP-StructureV3，Transformer-XL pp. 1-3 | 12 | 3 / 3 | `1.0` | `3/41`（`0.07317073`） | 0 | `0.0` |
-| PP-StructureV3，两个固定 ROOR 表单页 | 0 | 0 / 0 | 不可用 | 0 | 0 | `0.0` |
+| PP-StructureV3，Transformer-XL pp. 1-3 | 12 | 5 / 5 | `1.0` | `5/41`（`0.12195122`） | 0 | `0.0` |
+| PP-StructureV3，固定 ROOR 前缀 5 页 | 4 | 4 / 4 | `1.0` | `4/205`（`0.01951220`） | 0 | `0.0` |
 
-有标注 precision 是正向信号，但目前只覆盖 4 条人工标注边，不足以把 block order 提升为 runtime constraint。Transformer 的 structure 分支还出现 strict anchor-path coverage 回退（`0.78048780 -> 0.24390244`），并新增 3 个 stream 级 `needs-structure-evidence`，原因是现有模型 block stream partition 在该样本上切得过碎。Review transition 让总 reviewable path coverage 保持 `1.0`，但没有修复 strict/local 回退。两个 ROOR 表单没有生成提案，因为匹配到的 explicit tier 不连续，或被 table/secondary region 打断；这只能证明 guard 生效，不能证明模型准确。产物位于 `outputs/research/*-block-transitions-v1`。
+10 条已标注 transition 均正确是正向信号，但覆盖仍太稀疏，不足以把 block order 提升为 runtime constraint。Ordered-parent fusion 把 Transformer 的正确覆盖从 `3/41` 提高到 `5/41`；review-only 隔离后 selected successor delta、order-driven reorder 和 visual delta 都保持 0。不过该 structure 分支仍有 strict anchor-path coverage 回退（`0.78048780 -> 0.24390244`），并新增 3 个 stream 级 `needs-structure-evidence`，原因是既有模型 block-stream partition 在该样本上切得过碎；review transition 只让总 reviewable path coverage 保持 `1.0`，没有修复 strict/local 回退。
+
+固定 ROOR 五页是 `82251504`、`82837252`、`85201976`、`86263525`、`93106788`，不是按结果选择。4 条提案全部来自 `86263525`，该页为 `4/24` 正确，并把 stream `needs-structure-evidence` 从 `4` 降到 `2`；其余四页没有满足 guard 的提案。五页的 strict transition、order-driven reorder、selected successor delta 和 visual delta 全部为 0。产物位于 `outputs/research/*-block-transitions-v3` 与 `outputs/research/roor-pp-structure-block-transitions-v4`。
 
 ### Evidence-gated local promotion v1
 
