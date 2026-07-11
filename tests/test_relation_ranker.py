@@ -114,6 +114,64 @@ def test_prediction_can_emit_calibrated_second_successors(monkeypatch: pytest.Mo
     assert all(edge["branch_confidence"] == 0.9 for edge in branch_edges)
 
 
+def test_prediction_prefers_explicit_figure_caption_relation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _answer_free_payload()
+    payload["document"] = [
+        {"id": "figure", "box": [10, 10, 90, 45], "text": "[figure]", "type": "figure"},
+        {"id": "caption", "box": [15, 48, 85, 58], "text": "Figure 1. Overview"},
+        {"id": "body", "box": [10, 70, 90, 80], "text": "Body text."},
+    ]
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: ({"estimator": _FakeEstimator(), "threshold": 0.5}, {"model_sha256": "abc123"}),
+    )
+
+    result = predict_structure_relations(payload, "model.joblib")
+
+    figure_edges = [
+        edge for edge in result.structure_payload["successor_edges"] if edge["source"] == "figure"
+    ]
+    assert figure_edges == [
+        {
+            "source": "figure",
+            "target": "caption",
+            "kind": "successor",
+            "confidence": 0.95,
+            "review_required": True,
+            "relation_policy": "review-only",
+            "provider": "scriptorium-trained-relation-ranker",
+            "rank": 1,
+            "relation_origin": "structure-role-geometry",
+            "evidence": ["explicit-figure-role", "caption-label", "local-float-caption"],
+        }
+    ]
+    assert result.structure_payload["relation_ranker"]["structure_role_edge_count"] == 1
+
+
+def test_prediction_orders_table_caption_before_explicit_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _answer_free_payload()
+    payload["document"] = [
+        {"id": "caption", "box": [10, 10, 90, 20], "text": "Table 1. Results"},
+        {"id": "table", "box": [10, 23, 90, 70], "text": "[table]", "type": "table"},
+    ]
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: ({"estimator": _FakeEstimator(), "threshold": 0.5}, {"model_sha256": "abc123"}),
+    )
+
+    result = predict_structure_relations(payload, "model.joblib")
+
+    assert [(edge["source"], edge["target"]) for edge in result.structure_payload["successor_edges"]] == [
+        ("caption", "table")
+    ]
+
+
 def test_document_ir_prediction_emits_page_local_generic_structure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

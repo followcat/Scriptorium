@@ -58,6 +58,13 @@ def test_fetch_comphrdoc_separates_layout_anchors_from_order_labels(
     assert manifest["selection"] == "fixed-document-page-prefix"
     assert manifest["structure_input"]["relations_removed"] is True
     assert manifest["samples"][0]["relation_count"] == 2
+    second_structure = json.loads(result.samples[1].structure_path.read_text(encoding="utf-8"))
+    second_semantic = json.loads(result.samples[1].semantic_sidecar_path.read_text(encoding="utf-8"))
+    assert second_structure["document"][0]["type"] == "figure"
+    assert second_structure["document"][0]["text"] == "[figure p0002 g0001]"
+    assert second_semantic["ro_linkings"] == [
+        ["comphrdoc-p0002-l0001", "comphrdoc-p0002-l0002"]
+    ]
     with fitz.open(result.source_pdf_path) as pdf:
         assert len(pdf) == 2
 
@@ -92,10 +99,21 @@ def _annotation_archive() -> bytes:
             {
                 "image_id": 2,
                 "reading_order_id": 1,
+                "reading_order_label": 2,
+                "in_page_id": 0,
+                "category_id": 1,
+                "bbox": [10, 10, 80, 40, 0],
+                "textline_contents": [],
+                "textline_polys": [],
+            },
+            {
+                "image_id": 2,
+                "reading_order_id": 1,
                 "reading_order_label": 0,
                 "in_page_id": 1,
-                "textline_contents": ["Page two"],
-                "textline_polys": [[10, 10, 90, 10, 90, 20, 10, 20]],
+                "category_id": 3,
+                "textline_contents": ["Figure caption"],
+                "textline_polys": [[10, 55, 90, 55, 90, 65, 10, 65]],
             },
         ],
     }

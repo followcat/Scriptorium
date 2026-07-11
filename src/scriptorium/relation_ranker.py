@@ -247,12 +247,19 @@ def _predict_roor_page_relations(
     threshold = float(bundle["threshold"])
     branch_estimator = bundle.get("branch_estimator")
     branch_threshold = float(bundle.get("branch_threshold", 1.1))
+    structure_role_edges = _structure_role_successors(segments, width=width, height=height)
+    protected_sources = set(structure_role_edges)
 
     successor_edges: list[dict[str, Any]] = []
     selected_features: list[list[float]] = []
     selected_confidences: list[float] = []
     branch_edge_count = 0
     for source_segment in segments:
+        if source_segment["id"] in protected_sources or _segment_kind(source_segment) in {
+            "figure",
+            "table",
+        }:
+            continue
         targets = [target for target in segments if target["id"] != source_segment["id"]]
         if not targets:
             continue
@@ -306,6 +313,22 @@ def _predict_roor_page_relations(
         selected_confidences.append(scores[second_index])
         branch_edge_count += 1
 
+    for source_id, (target_id, evidence) in structure_role_edges.items():
+        successor_edges.append(
+            {
+                "source": source_id,
+                "target": target_id,
+                "kind": "successor",
+                "confidence": 0.95,
+                "review_required": True,
+                "relation_policy": "review-only",
+                "provider": RELATION_PROVIDER_SOURCE,
+                "rank": 1,
+                "relation_origin": "structure-role-geometry",
+                "evidence": evidence,
+            }
+        )
+
     normalized = dict(payload)
     normalized.pop("label_entities", None)
     normalized.pop("label_linkings", None)
@@ -330,6 +353,7 @@ def _predict_roor_page_relations(
                 "source_count": len(segments),
                 "predicted_edge_count": len(successor_edges),
                 "predicted_branch_edge_count": branch_edge_count,
+                "structure_role_edge_count": len(structure_role_edges),
                 **_prediction_reliability(
                     selected_features,
                     selected_confidences,
@@ -345,6 +369,112 @@ def _predict_roor_page_relations(
         len(segments),
         branch_edge_count,
     )
+
+
+def _structure_role_successors(
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    width: float,
+    height: float,
+) -> dict[Any, tuple[Any, list[str]]]:
+    """Derive review-only float/caption links from explicit structure roles."""
+
+    captions = [segment for segment in segments if _is_caption_segment(segment)]
+    result: dict[Any, tuple[Any, list[str]]] = {}
+    claimed_caption_ids: set[Any] = set()
+    for graphical in segments:
+        kind = _segment_kind(graphical)
+        if kind not in {"figure", "table"}:
+            continue
+        candidates = [
+            caption
+            for caption in captions
+            if caption["id"] not in claimed_caption_ids
+            and _caption_matches_kind(caption, kind)
+            and _is_local_caption(graphical, caption, kind=kind, width=width, height=height)
+        ]
+        if not candidates:
+            continue
+        caption = min(
+            candidates,
+            key=lambda item: _normalized_center_distance(graphical, item, width, height),
+        )
+        claimed_caption_ids.add(caption["id"])
+        evidence = [f"explicit-{kind}-role", "caption-label", "local-float-caption"]
+        if kind == "figure":
+            result[graphical["id"]] = (caption["id"], evidence)
+        else:
+            result[caption["id"]] = (graphical["id"], evidence)
+    return result
+
+
+def _segment_kind(segment: Mapping[str, Any]) -> str:
+    value = str(segment.get("type") or segment.get("block_label") or "").strip().lower()
+    aliases = {
+        "fig": "figure",
+        "picture": "figure",
+        "image": "figure",
+        "tab": "table",
+        "table_caption": "caption-table",
+        "figure_caption": "caption-figure",
+    }
+    return aliases.get(value, value.replace("_", "-"))
+
+
+def _is_caption_segment(segment: Mapping[str, Any]) -> bool:
+    kind = _segment_kind(segment)
+    if kind in {"caption", "caption-figure", "caption-table"}:
+        return True
+    text = str(segment.get("text") or segment.get("block_content") or "").lstrip()
+    normalized = text.casefold()
+    return normalized.startswith(
+        (
+            "figure ",
+            "figure\u00a0",
+            "fig. ",
+            "fig ",
+            "table ",
+            "table\u00a0",
+            "\u56fe ",
+            "\u56fe\u8868 ",
+            "\u8868 ",
+        )
+    )
+
+
+def _caption_matches_kind(segment: Mapping[str, Any], kind: str) -> bool:
+    segment_kind = _segment_kind(segment)
+    if segment_kind == "caption":
+        return True
+    if segment_kind.startswith("caption-"):
+        return segment_kind == f"caption-{kind}"
+    text = str(segment.get("text") or segment.get("block_content") or "").lstrip().casefold()
+    if kind == "figure":
+        return text.startswith(
+            ("figure ", "figure\u00a0", "fig. ", "fig ", "\u56fe ", "\u56fe\u8868 ")
+        )
+    return text.startswith(("table ", "table\u00a0", "\u8868 "))
+
+
+def _is_local_caption(
+    graphical: Mapping[str, Any],
+    caption: Mapping[str, Any],
+    *,
+    kind: str,
+    width: float,
+    height: float,
+) -> bool:
+    gx0, gy0, gx1, gy1 = (float(value) for value in graphical["box"])
+    cx0, cy0, cx1, cy1 = (float(value) for value in caption["box"])
+    horizontal_overlap = max(0.0, min(gx1, cx1) - max(gx0, cx0))
+    overlap_ratio = horizontal_overlap / max(1.0, min(gx1 - gx0, cx1 - cx0))
+    if overlap_ratio < 0.25:
+        return False
+    if kind == "figure":
+        gap = cy0 - gy1
+    else:
+        gap = gy0 - cy1
+    return -0.01 * height <= gap <= 0.12 * height and abs((cx0 + cx1) - (gx0 + gx1)) <= width
 
 
 def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:

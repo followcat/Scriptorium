@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -240,17 +241,32 @@ def _page_payloads(
     for annotation in annotations:
         contents = annotation.get("textline_contents")
         polygons = annotation.get("textline_polys")
-        if not isinstance(contents, list) or not isinstance(polygons, list):
-            continue
         block_node_ids: list[str] = []
-        for content, polygon in zip(contents, polygons, strict=False):
-            bbox = _polygon_bbox(polygon)
-            text = str(content or "").strip()
-            if bbox is None or not text:
-                continue
-            node_id = f"comphrdoc-p{page_index + 1:04d}-l{len(nodes) + 1:04d}"
-            nodes.append({"id": node_id, "box": bbox, "text": text, "words": []})
-            block_node_ids.append(node_id)
+        if isinstance(contents, list) and isinstance(polygons, list):
+            for content, polygon in zip(contents, polygons, strict=False):
+                bbox = _polygon_bbox(polygon)
+                text = str(content or "").strip()
+                if bbox is None or not text:
+                    continue
+                node_id = f"comphrdoc-p{page_index + 1:04d}-l{len(nodes) + 1:04d}"
+                nodes.append({"id": node_id, "box": bbox, "text": text, "words": [], "type": "text"})
+                block_node_ids.append(node_id)
+        graphical_kind = _graphical_kind(annotation)
+        if not block_node_ids and graphical_kind is not None:
+            bbox = _annotation_bbox(annotation.get("bbox"))
+            if bbox is not None:
+                node_id = f"comphrdoc-p{page_index + 1:04d}-l{len(nodes) + 1:04d}"
+                text = f"[{graphical_kind} p{page_index + 1:04d} g{int(annotation.get('in_page_id', 0)) + 1:04d}]"
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "box": bbox,
+                        "text": text,
+                        "words": [],
+                        "type": graphical_kind,
+                    }
+                )
+                block_node_ids.append(node_id)
         for source, target in zip(block_node_ids, block_node_ids[1:], strict=False):
             edges.append([source, target])
         annotation_node_ids.append(block_node_ids)
@@ -261,6 +277,21 @@ def _page_payloads(
         following = annotation_node_ids[index + 1] if index + 1 < len(annotation_node_ids) else []
         if current and following:
             edges.append([current[-1], following[0]])
+    for index, annotation in enumerate(annotations[:-1]):
+        graphical_kind = _graphical_kind(annotation)
+        if graphical_kind is None:
+            continue
+        following_annotation = annotations[index + 1]
+        if int(following_annotation.get("reading_order_id", -1)) != int(annotation.get("reading_order_id", -2)):
+            continue
+        graphical = annotation_node_ids[index] if index < len(annotation_node_ids) else []
+        caption = annotation_node_ids[index + 1] if index + 1 < len(annotation_node_ids) else []
+        if not graphical or not caption:
+            continue
+        if graphical_kind == "figure":
+            edges.append([graphical[-1], caption[0]])
+        else:
+            edges.append([caption[-1], graphical[0]])
     base = {
         "uid": f"{document_id}_{page_index}",
         "img": {
@@ -295,3 +326,23 @@ def _polygon_bbox(value: Any) -> list[float] | None:
         return None
     bbox = [min(xs), min(ys), max(xs), max(ys)]
     return bbox if bbox[2] > bbox[0] and bbox[3] > bbox[1] else None
+
+
+def _graphical_kind(annotation: Mapping[str, Any]) -> str | None:
+    try:
+        category_id = int(annotation.get("category_id"))
+    except (TypeError, ValueError):
+        return None
+    return {1: "figure", 2: "table"}.get(category_id)
+
+
+def _annotation_bbox(value: Any) -> list[float] | None:
+    if not isinstance(value, list) or len(value) < 4:
+        return None
+    try:
+        x, y, width, height = (float(item) for item in value[:4])
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return [x, y, x + width, y + height]
