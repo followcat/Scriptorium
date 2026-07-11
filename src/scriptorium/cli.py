@@ -17,6 +17,7 @@ from .benchmark import (
     run_benchmark,
     run_structure_ab_benchmark,
 )
+from .comphrdoc_benchmark import fetch_comphrdoc_benchmark_samples
 from .docling_provider import DoclingAdapter
 from .fixture import create_fixture
 from .html_edits import apply_html_edit_patch
@@ -99,6 +100,35 @@ def fetch_roor_command(
     typer.echo(f"ROOR split: {result.split}")
     typer.echo(f"Samples: {len(result.samples)}")
     typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Images: {result.out_dir / 'images'}")
+    typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("fetch-comphrdoc")
+def fetch_comphrdoc_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/comphrdoc-test"),
+        help="Directory for rendered test pages, answer-free anchors, and relation sidecars.",
+    ),
+    document_id: str = typer.Option("1401.3699", help="Fixed Comp-HRDoc test arXiv document id."),
+    max_pages: int = typer.Option(5, min=1, help="First N pages, selected independently of results."),
+    refresh: bool = typer.Option(False, help="Rewrite downloaded and derived benchmark files."),
+) -> None:
+    """Fetch a fixed Comp-HRDoc test prefix for cross-domain order scoring."""
+
+    try:
+        result = fetch_comphrdoc_benchmark_samples(
+            out_dir,
+            document_id=document_id,
+            max_pages=max_pages,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--document-id") from exc
+    typer.echo(f"Comp-HRDoc document: {document_id}")
+    typer.echo(f"Samples: {len(result.samples)}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Source PDF: {result.source_pdf_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
 
