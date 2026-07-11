@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -1118,10 +1119,10 @@ def _write_crop(page: RenderedPage, bbox: BBox, crop_root: Path, order: int) -> 
     crop_path = page_dir / f"element_{order:04d}.png"
     with Image.open(page.background_image) as image:
         box = (
-            int(round(bbox.x0)),
-            int(round(bbox.y0)),
-            int(round(bbox.x1)),
-            int(round(bbox.y1)),
+            max(0, min(image.width - 1, math.floor(bbox.x0))),
+            max(0, min(image.height - 1, math.floor(bbox.y0))),
+            max(1, min(image.width, math.ceil(bbox.x1))),
+            max(1, min(image.height, math.ceil(bbox.y1))),
         )
         image.crop(box).save(crop_path)
     return str(crop_path)

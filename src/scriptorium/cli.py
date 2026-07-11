@@ -41,6 +41,7 @@ from .reading_order_sidecar import (
     reading_order_sidecar_summary,
     write_reading_order_sidecar,
 )
+from .relation_ranker import predict_structure_relations, train_relation_ranker
 from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
@@ -750,6 +751,90 @@ def run_docling_command(
     typer.echo(f"Docling raw JSON: {provider_raw_path}")
     typer.echo(f"Text items: {len(result.raw_payload.get('texts', []))}")
     typer.echo(f"Table items: {len(result.raw_payload.get('tables', []))}")
+    typer.echo("Runtime reorder: disabled")
+
+
+@app.command("train-relation-ranker")
+def train_relation_ranker_command(
+    dataset_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="ROOR data directory containing data.train.txt and jsons/.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/models/relation-ranker.joblib"),
+        "--output",
+        "-o",
+        help="Locally generated joblib model path.",
+    ),
+    calibration_fraction: float = typer.Option(
+        0.2,
+        min=0.05,
+        max=0.5,
+        help="UID-hash holdout fraction taken only from the official train split.",
+    ),
+    negative_candidates: int = typer.Option(
+        20,
+        min=1,
+        help="Nearest negative targets retained per source during training.",
+    ),
+    seed: int = typer.Option(17, help="Deterministic estimator seed."),
+) -> None:
+    """Train a review-only successor ranker without reading validation labels."""
+
+    try:
+        result = train_relation_ranker(
+            dataset_dir,
+            output,
+            calibration_fraction=calibration_fraction,
+            random_seed=seed,
+            negative_candidates=negative_candidates,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="dataset_dir") from exc
+    calibration = result.manifest["calibration"]
+    typer.echo(f"Relation ranker model: {result.model_path}")
+    typer.echo(f"Relation ranker manifest: {result.manifest_path}")
+    typer.echo(f"Calibration documents: {calibration['document_count']}")
+    typer.echo(f"Calibration F1: {calibration['f1']}")
+    typer.echo(f"Successor threshold: {result.manifest['successor_threshold']}")
+
+
+@app.command("run-relation-ranker")
+def run_relation_ranker_command(
+    structure_json: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Answer-free ROOR-style structure JSON.",
+    ),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        exists=True,
+        readable=True,
+        help="Locally generated relation-ranker joblib model.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/relation-ranker.structure.json"),
+        "--output",
+        "-o",
+        help="Isolated review-only successor relation JSON.",
+    ),
+) -> None:
+    """Predict review-only relations from answer-free structure anchors."""
+
+    try:
+        payload = load_structure_json(structure_json)
+        result = predict_structure_relations(payload, model)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="structure_json") from exc
+    output_path = write_ocr_json(result.structure_payload, output)
+    typer.echo(f"Relation structure JSON: {output_path}")
+    typer.echo(f"Source segments: {result.source_count}")
+    typer.echo(f"Predicted successor edges: {result.predicted_edge_count}")
     typer.echo("Runtime reorder: disabled")
 
 

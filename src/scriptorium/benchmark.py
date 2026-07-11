@@ -2997,10 +2997,24 @@ def _explicit_successor_coverage(stream_elements: list[Any]) -> tuple[int, float
     if edge_count == 0:
         return 0, 0.0
     explicit_edge_count = sum(
-        int(str(target.id) in _metadata_id_list(source, "external_structure_successor_ids"))
+        int(str(target.id) in _diagnostic_external_successor_ids(source))
         for source, target in zip(stream_elements, stream_elements[1:], strict=False)
     )
     return explicit_edge_count, round(explicit_edge_count / edge_count, 8)
+
+
+def _diagnostic_external_successor_ids(element: Any) -> list[str]:
+    relation_records = element.metadata.get("external_structure_relation_edges")
+    if not isinstance(relation_records, list):
+        return _metadata_id_list(element, "external_structure_successor_ids")
+    return [
+        str(record.get("target_id"))
+        for record in relation_records
+        if isinstance(record, dict)
+        and record.get("kind") == "successor"
+        and record.get("candidate_consensus_isolated") is not True
+        and record.get("target_id") is not None
+    ]
 
 
 def _local_structure_strict_index_edges(

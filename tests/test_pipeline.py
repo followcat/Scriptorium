@@ -6,9 +6,35 @@ from PIL import Image
 from scriptorium.fixture import create_fixture
 from scriptorium.html_export import export_html, page_replacement_geometries
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
-from scriptorium.ocr import load_ocr_json, normalize_ocr_to_ir
+from scriptorium.ocr import _write_crop, load_ocr_json, normalize_ocr_to_ir
 from scriptorium.pdf_export import print_html_to_pdf
-from scriptorium.pdf_render import render_pdf
+from scriptorium.pdf_render import RenderedPage, render_pdf
+
+
+def test_crop_preserves_subpixel_positive_bbox(tmp_path: Path) -> None:
+    background = tmp_path / "page.png"
+    Image.new("RGB", (100, 100), "white").save(background)
+    page = RenderedPage(
+        page_index=0,
+        width_pt=100,
+        height_pt=100,
+        width_px=100,
+        height_px=100,
+        render_dpi=72,
+        scale_x=1,
+        scale_y=1,
+        background_image=background,
+    )
+
+    crop_path = _write_crop(
+        page,
+        BBox(x0=10.1, y0=10.1, x1=10.4, y1=10.4),
+        tmp_path / "crops",
+        1,
+    )
+
+    with Image.open(crop_path) as crop:
+        assert crop.size == (1, 1)
 
 
 def test_fixture_pipeline_exports_html(tmp_path: Path) -> None:

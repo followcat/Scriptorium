@@ -993,6 +993,43 @@ def test_candidate_stream_diagnostics_trust_complete_explicit_successors() -> No
     assert diagnostics[0]["recommendation"] == "keep-selected-external-successors"
 
 
+def test_candidate_stream_diagnostics_ignore_isolated_explicit_successors() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("first", "First.", BBox(x0=10, y0=10, x1=70, y1=20), 1, None),
+            ("second", "Second.", BBox(x0=10, y0=50, x1=70, y1=60), 2, None),
+            ("third", "Third.", BBox(x0=10, y0=30, x1=70, y1=40), 3, None),
+        ]
+    )
+    elements = document.pages[0].elements
+    for element in elements:
+        element.metadata["reading_order_stream_id"] = "body-main"
+        element.metadata["reading_order_stream_type"] = "body"
+        element.metadata["external_structure_candidate_consensus_isolated"] = True
+    elements[0].metadata["external_structure_successor_ids"] = ["second"]
+    elements[1].metadata["external_structure_successor_ids"] = ["third"]
+    elements[0].metadata["external_structure_relation_edges"] = [
+        {
+            "kind": "successor",
+            "target_id": "second",
+            "candidate_consensus_isolated": True,
+        }
+    ]
+    elements[1].metadata["external_structure_relation_edges"] = [
+        {
+            "kind": "successor",
+            "target_id": "third",
+            "candidate_consensus_isolated": True,
+        }
+    ]
+
+    diagnostics = _reading_order_candidate_stream_diagnostics(document)
+
+    assert diagnostics[0]["explicit_successor_edge_count"] == 0
+    assert diagnostics[0]["explicit_successor_coverage"] == 0.0
+    assert diagnostics[0]["recommendation"] != "keep-selected-external-successors"
+
+
 def test_candidate_stream_diagnostics_keep_native_grid_structure_local() -> None:
     document = _document_with_candidate_text_boxes(
         [
