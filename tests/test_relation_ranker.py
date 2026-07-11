@@ -7,9 +7,11 @@ import pytest
 from typer.testing import CliRunner
 
 from scriptorium import cli, relation_ranker
+from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.relation_ranker import (
     RelationRankerPredictionResult,
     RelationRankerTrainingResult,
+    predict_document_relations,
     predict_structure_relations,
 )
 
@@ -60,6 +62,7 @@ def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.Mo
     assert payload["runtime_reorder"] is False
     assert result.source_count == 3
     assert result.predicted_edge_count == 2
+    assert payload["relation_ranker"]["feature_envelope_available"] is False
     assert payload["successor_edges"] == [
         {
             "source": 10,
@@ -109,6 +112,65 @@ def test_prediction_can_emit_calibrated_second_successors(monkeypatch: pytest.Mo
     assert result.predicted_branch_edge_count == 2
     assert len(branch_edges) == 2
     assert all(edge["branch_confidence"] == 0.9 for edge in branch_edges)
+
+
+def test_document_ir_prediction_emits_page_local_generic_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = DocumentIR(
+        source="page.png",
+        source_type="image",
+        render_dpi=72,
+        page_count=1,
+        pages=[
+            PageIR(
+                page_index=4,
+                width_pt=100,
+                height_pt=100,
+                width_px=100,
+                height_px=100,
+                render_dpi=72,
+                scale_x=1,
+                scale_y=1,
+                background_image="page.png",
+                elements=[
+                    ElementIR(
+                        id=f"line-{index}",
+                        page_index=4,
+                        type="text",
+                        bbox_pdf=BBox(x0=10, y0=y, x1=90, y1=y + 10),
+                        bbox_px=BBox(x0=10, y0=y, x1=90, y1=y + 10),
+                        source_text=text,
+                        reading_order=index,
+                    )
+                    for index, (y, text) in enumerate(
+                        [(10, "First line."), (30, "Second line."), (50, "Third line.")],
+                        start=1,
+                    )
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: (
+            {"estimator": _FakeEstimator(), "threshold": 0.5},
+            {"model_sha256": "abc123"},
+        ),
+    )
+
+    result = predict_document_relations(document, "model.joblib")
+
+    payload = result.structure_payload
+    assert payload["input_kind"] == "document-ir"
+    assert payload["candidate_consensus_policy"] == "isolated"
+    assert payload["pages"][0]["page_index"] == 4
+    assert payload["pages"][0]["elements"][0]["coordinate_space"] == "pdf"
+    assert payload["pages"][0]["successor_edges"][0]["source"] == "line-1"
+    assert payload["pages"][0]["relation_ranker"]["feature_envelope_available"] is False
+    assert result.source_count == 3
+    assert result.predicted_edge_count == 2
 
 
 @pytest.mark.parametrize("relation_key", ["ro_linkings", "successor_edges", "reading_order_edges"])

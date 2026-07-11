@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .models import DocumentIR
+
 
 RELATION_RANKER_SCHEMA = "scriptorium-relation-ranker/v1"
 RELATION_FEATURE_VERSION = "roor-pair-geometry-text-branch-v2"
@@ -63,6 +65,7 @@ def train_relation_ranker(
         fit_documents,
         negative_candidates=negative_candidates,
     )
+    feature_envelope = _feature_envelope(x_train)
     estimator, sklearn_version = _fit_estimator(x_train, y_train, random_seed=random_seed)
     threshold, calibration = _calibrate_top_successor_threshold(estimator, calibration_documents)
     branch_estimator = _fit_branch_estimator(
@@ -87,6 +90,7 @@ def train_relation_ranker(
         "estimator": estimator,
         "branch_estimator": branch_estimator,
         "branch_threshold": branch_threshold,
+        "feature_envelope": feature_envelope,
     }
     joblib = _joblib_module()
     joblib.dump(bundle, output_path)
@@ -104,6 +108,8 @@ def train_relation_ranker(
         "calibration_document_count": len(calibration_documents),
         "training_example_count": len(y_train),
         "training_positive_count": int(sum(y_train)),
+        "feature_count": len(feature_envelope["lower"]),
+        "feature_envelope_quantiles": [0.01, 0.99],
         "negative_candidates_per_source": negative_candidates,
         "calibration_fraction": calibration_fraction,
         "successor_threshold": threshold,
@@ -128,6 +134,108 @@ def predict_structure_relations(
 
     if _payload_contains_answer_relations(payload):
         raise ValueError("input structure JSON must not contain ro_linkings or successor relations")
+    bundle, manifest = load_relation_ranker(model_path)
+    return _predict_roor_page_relations(payload, bundle=bundle, manifest=manifest)
+
+
+def predict_document_relations(
+    document: DocumentIR,
+    model_path: str | Path,
+) -> RelationRankerPredictionResult:
+    """Predict source-neutral review relations for every text-bearing IR page."""
+
+    bundle, manifest = load_relation_ranker(model_path)
+    pages: list[dict[str, Any]] = []
+    source_count = 0
+    edge_count = 0
+    branch_edge_count = 0
+    for page in document.pages:
+        text_elements = [element for element in page.elements if element.source_text.strip()]
+        page_payload = {
+            "uid": f"{document.id}-page-{page.page_index + 1}",
+            "img": {
+                "width": page.width_pt,
+                "height": page.height_pt,
+            },
+            "document": [
+                {
+                    "id": element.id,
+                    "box": element.bbox_pdf.as_list(),
+                    "text": element.source_text,
+                }
+                for element in text_elements
+            ],
+        }
+        prediction = _predict_roor_page_relations(
+            page_payload,
+            bundle=bundle,
+            manifest=manifest,
+        )
+        predicted_edges = prediction.structure_payload["successor_edges"]
+        pages.append(
+            {
+                "page_index": page.page_index,
+                "source_page_number": page.page_index + 1,
+                "coordinate_origin": "TOPLEFT",
+                "relation_policy": "review-only",
+                "elements": [
+                    {
+                        "id": element.id,
+                        "block_label": "text",
+                        "block_content": element.source_text,
+                        "bbox_pdf": element.bbox_pdf.as_list(),
+                        "coordinate_space": "pdf",
+                        "semantic_policy": "review-only",
+                        "order_policy": "review-only",
+                    }
+                    for element in text_elements
+                ],
+                "successor_edges": predicted_edges,
+                "relation_ranker": prediction.structure_payload["relation_ranker"],
+            }
+        )
+        source_count += prediction.source_count
+        edge_count += prediction.predicted_edge_count
+        branch_edge_count += prediction.predicted_branch_edge_count
+
+    return RelationRankerPredictionResult(
+        {
+            "source": RELATION_PROVIDER_SOURCE,
+            "model": RELATION_FEATURE_VERSION,
+            "provider_version": str(manifest.get("model_sha256") or "unknown")[:16],
+            "provider_code_license": "project-license",
+            "training_dataset": "ROOR official train split",
+            "training_dataset_license": RELATION_DATASET_LICENSE,
+            "semantic_policy": "review-only",
+            "order_policy": "review-only",
+            "relation_policy": "review-only",
+            "candidate_consensus_policy": "isolated",
+            "runtime_reorder": False,
+            "input_kind": "document-ir",
+            "input_document_id": document.id,
+            "pages": pages,
+            "relation_ranker": {
+                "feature_version": RELATION_FEATURE_VERSION,
+                "threshold": float(bundle["threshold"]),
+                "branch_threshold": float(bundle.get("branch_threshold", 1.1)),
+                "source_count": source_count,
+                "predicted_edge_count": edge_count,
+                "predicted_branch_edge_count": branch_edge_count,
+                "model_sha256": manifest.get("model_sha256"),
+            },
+        },
+        edge_count,
+        source_count,
+        branch_edge_count,
+    )
+
+
+def _predict_roor_page_relations(
+    payload: Mapping[str, Any],
+    *,
+    bundle: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> RelationRankerPredictionResult:
     document = payload.get("document")
     image = payload.get("img")
     if not isinstance(document, list) or not isinstance(image, Mapping):
@@ -135,13 +243,14 @@ def predict_structure_relations(
     segments = [_validated_segment(segment) for segment in document]
     width = _positive_float(image.get("width"), "img.width")
     height = _positive_float(image.get("height"), "img.height")
-    bundle, manifest = load_relation_ranker(model_path)
     estimator = bundle["estimator"]
     threshold = float(bundle["threshold"])
     branch_estimator = bundle.get("branch_estimator")
     branch_threshold = float(bundle.get("branch_threshold", 1.1))
 
     successor_edges: list[dict[str, Any]] = []
+    selected_features: list[list[float]] = []
+    selected_confidences: list[float] = []
     branch_edge_count = 0
     for source_segment in segments:
         targets = [target for target in segments if target["id"] != source_segment["id"]]
@@ -167,6 +276,8 @@ def predict_structure_relations(
                 "rank": 1,
             }
         )
+        selected_features.append(features[best_index])
+        selected_confidences.append(confidence)
         if branch_estimator is None or len(ranked_indices) < 2:
             continue
         ranked = [(scores[index], targets[index], features[index]) for index in ranked_indices]
@@ -191,6 +302,8 @@ def predict_structure_relations(
                 "rank": 2,
             }
         )
+        selected_features.append(features[second_index])
+        selected_confidences.append(scores[second_index])
         branch_edge_count += 1
 
     normalized = dict(payload)
@@ -217,6 +330,11 @@ def predict_structure_relations(
                 "source_count": len(segments),
                 "predicted_edge_count": len(successor_edges),
                 "predicted_branch_edge_count": branch_edge_count,
+                **_prediction_reliability(
+                    selected_features,
+                    selected_confidences,
+                    bundle.get("feature_envelope"),
+                ),
                 "model_sha256": manifest.get("model_sha256"),
             },
         }
@@ -326,6 +444,60 @@ def _fit_estimator(
     )
     estimator.fit(features, labels)
     return estimator, sklearn.__version__
+
+
+def _feature_envelope(features: Sequence[Sequence[float]]) -> dict[str, list[float]]:
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError("Install requirements-relation-ranker.txt to train a relation ranker") from exc
+    matrix = np.asarray(features, dtype=float)
+    return {
+        "lower": [round(float(value), 10) for value in np.quantile(matrix, 0.01, axis=0)],
+        "upper": [round(float(value), 10) for value in np.quantile(matrix, 0.99, axis=0)],
+    }
+
+
+def _prediction_reliability(
+    features: Sequence[Sequence[float]],
+    confidences: Sequence[float],
+    envelope: Any,
+) -> dict[str, Any]:
+    if not features:
+        return {
+            "mean_pair_confidence": None,
+            "feature_outlier_edge_count": 0,
+            "feature_outlier_edge_ratio": 0.0,
+            "feature_outlier_value_ratio": 0.0,
+        }
+    lower = envelope.get("lower") if isinstance(envelope, Mapping) else None
+    upper = envelope.get("upper") if isinstance(envelope, Mapping) else None
+    if not isinstance(lower, list) or not isinstance(upper, list) or len(lower) != len(upper):
+        return {
+            "mean_pair_confidence": round(sum(confidences) / len(confidences), 8),
+            "feature_outlier_edge_count": 0,
+            "feature_outlier_edge_ratio": 0.0,
+            "feature_outlier_value_ratio": 0.0,
+            "feature_envelope_available": False,
+        }
+    outlier_edges = 0
+    outlier_values = 0
+    value_count = 0
+    for row in features:
+        row_outlier = False
+        for value, minimum, maximum in zip(row, lower, upper, strict=True):
+            is_outlier = float(value) < float(minimum) or float(value) > float(maximum)
+            outlier_values += int(is_outlier)
+            value_count += 1
+            row_outlier = row_outlier or is_outlier
+        outlier_edges += int(row_outlier)
+    return {
+        "mean_pair_confidence": round(sum(confidences) / len(confidences), 8),
+        "feature_outlier_edge_count": outlier_edges,
+        "feature_outlier_edge_ratio": round(outlier_edges / len(features), 8),
+        "feature_outlier_value_ratio": round(outlier_values / value_count, 8),
+        "feature_envelope_available": True,
+    }
 
 
 def _fit_branch_estimator(

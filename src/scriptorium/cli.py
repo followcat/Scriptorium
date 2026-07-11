@@ -41,13 +41,26 @@ from .reading_order_sidecar import (
     reading_order_sidecar_summary,
     write_reading_order_sidecar,
 )
-from .relation_ranker import predict_structure_relations, train_relation_ranker
+from .relation_ranker import (
+    predict_document_relations,
+    predict_structure_relations,
+    train_relation_ranker,
+)
 from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
 
 app = typer.Typer(help="Scriptorium core conversion tools.")
+
+
+def _is_document_ir_payload(payload: object) -> bool:
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("pages"), list)
+        and "page_count" in payload
+        and "render_dpi" in payload
+    )
 
 
 @app.command()
@@ -810,7 +823,7 @@ def run_relation_ranker_command(
         ...,
         exists=True,
         readable=True,
-        help="Answer-free ROOR-style structure JSON.",
+        help="Answer-free ROOR-style structure JSON or a DocumentIR JSON file.",
     ),
     model: Path = typer.Option(
         ...,
@@ -829,8 +842,12 @@ def run_relation_ranker_command(
     """Predict review-only relations from answer-free structure anchors."""
 
     try:
-        payload = load_structure_json(structure_json)
-        result = predict_structure_relations(payload, model)
+        raw_payload = json.loads(structure_json.read_text(encoding="utf-8"))
+        if _is_document_ir_payload(raw_payload):
+            result = predict_document_relations(DocumentIR.model_validate(raw_payload), model)
+        else:
+            payload = load_structure_json(structure_json)
+            result = predict_structure_relations(payload, model)
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="structure_json") from exc
     output_path = write_ocr_json(result.structure_payload, output)
