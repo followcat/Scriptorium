@@ -43,7 +43,7 @@ It merges source text, images, vector drawings, OCR output, and external structu
 | Document editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
 | Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, browser-measured fitting, and mask/overflow/conflict diagnostics. |
 | Papers, annual reports, and portal pages | Multi-column body flow, table islands, card grids, footnotes, sidebars, page artifacts, and local reading streams. |
-| OCR/layout-model validation | PaddleOCR-VL, PP-Structure, Docling, and ROOR-style JSON fusion where OCR/structure JSON can drive image-source semantics, plus native-only vs native-plus-structure A/B benchmarks. |
+| OCR/layout-model validation | PaddleOCR-VL, PP-Structure, Docling, OpenDataLoader, and ROOR-style JSON fusion where OCR/structure JSON can drive image-source semantics, plus native-only vs native-plus-structure A/B benchmarks. |
 | Conversion quality regression | Print HTML back to PDF and measure visual similarity, page/size match, semantic order, and risk metrics. |
 
 ## Why Not Just Screenshots
@@ -133,6 +133,18 @@ The default runner is layout-focused. Add `--table-recognition` or
 The JSON is evidence, not an automatic replacement for native PDF text or a
 claim that a whole-page reading order is unambiguous.
 
+For digital PDFs, the Apache-2.0 OpenDataLoader XY-Cut++ CPU provider is another
+option. It requires Java 11+ and always emits review-only evidence without
+changing runtime order:
+
+```bash
+pip install -r requirements-opendataloader.txt
+
+scriptorium run-opendataloader path/to/paper.pdf \
+  --page-ranges 1-3 \
+  --output outputs/paper.opendataloader.json
+```
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,
@@ -190,7 +202,7 @@ scriptorium compare-pdf \
   --out-dir outputs/sample/pdf-quality
 ```
 
-External OCR/layout models are optional. Without OCR or structure JSON, an image source still keeps the full-page visual layer; with OCR or Paddle/PP-Structure/Docling/ROOR-style structure JSON it gains transparent text anchors and reading-stream evidence.
+External OCR/layout models are optional. Without OCR or structure JSON, an image source still keeps the full-page visual layer; with OCR or Paddle/PP-Structure/Docling/ROOR-style structure JSON it gains transparent text anchors and reading-stream evidence. OpenDataLoader itself is PDF-only and does not change the first-class image-source path.
 
 Optional OCR dependencies live in `requirements-ocr.txt`. Image-only OCR fallback also requires the system `tesseract` binary and language data; local PP-StructureV3 runs need the version-specific Paddle CPU compatibility settings in the [implementation notes](docs/implementation-notes.md#external-structure-evidence-fusion).
 
@@ -226,6 +238,7 @@ Main modules:
 |---|---|
 | `native_pdf.py` | Extract native text, images, drawings, and page geometry. |
 | `structure_evidence.py` | Normalize PaddleOCR-VL / PP-Structure / Docling / ROOR-style structure evidence. |
+| `opendataloader_provider.py` | Run OpenDataLoader XY-Cut++ and emit review-only block/relation JSON. |
 | `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source; for image sources, structure JSON can be the semantic driver. |
 | `reading_order.py` | Build multi-column flow, table islands, card grids, footnotes, sidebars, captions, and reading streams. |
 | `html_export.py` | Export structured/fidelity HTML with edit and translation anchors. |

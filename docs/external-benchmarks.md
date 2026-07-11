@@ -315,6 +315,29 @@ The ROOR run reduces stream `needs-structure-evidence` by four, but the held-out
 
 Artifacts are under `outputs/research/surya-fast-layout-roor-v1/fixed-five-semantic-isolated-ab` and `outputs/research/surya-fast-layout-heldout-v1/*-semantic-isolated-ab`. The result is a review provider, not a runtime reading-order driver.
 
+### OpenDataLoader XY-Cut++ review v1
+
+OpenDataLoader PDF 2.4.7 provides an Apache-2.0 deterministic XY-Cut++ path on
+CPU/Java. `scriptorium run-opendataloader` preserves raw JSON and emits a
+normalized replay with stable ids, top-left PDF coordinates, and review-only
+block order and successor edges. The CLI output was regenerated from the source
+PDFs before this A/B run; no saved hand-written sidecar was used.
+
+| Sample | Blocks / provider edges | Block review candidates | Labelled / correct | Full external successor | Stream needs delta | Runtime / visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention p. 1 | 22 / 21 | 4 | 1 / 1 | `9/9` (`1.0`) | `+1` | 0 / `0.0` |
+| Transformer-XL pp. 1-3 | 57 / 54 | 29 | 11 / 11 | `34/41` (`0.82926829`) | `-1` | 0 / `0.0` |
+
+Transformer's external candidate materially exceeds Surya's held-out `21/41`,
+but still loses to selected native order at `41/41`. Its labelled block-review
+edges are precise on this sample, but are not independent enough or broad enough
+to authorize runtime promotion. Intersecting OpenDataLoader with the existing
+PP-StructureV3 proposal produces 9 consensus edges from 32 unique provider
+candidates; 4 are labelled and all 4 are correct (`4/41` coverage). This remains
+review-noise reduction, not an accepted relation model. Outputs are under
+`outputs/research/opendataloader-xycut-v1`; reproducibility reruns are under its
+ignored `replay-cli` directory.
+
 ### Independent provider consensus v1
 
 `scriptorium consensus-reading-sidecars` intersects explicit block-order review transitions from at least two independent providers. It rejects mismatched page sets or stable document fingerprints (element id, text, and PDF bbox), preserves provider/confidence provenance, and always writes an unaccepted review-only proposal with `runtime_reorder: false`.

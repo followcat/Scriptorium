@@ -202,6 +202,20 @@ scriptorium benchmark-structure-ab page.png \
 
 真实 PP-StructureV3 CPU 运行现已覆盖 Attention 第 1 页、Transformer-XL 第 1-3 页、JD 第 1 页、PUMA 的图文混排第 5 页，以及启用表格识别的比亚迪财务报告第 136 页。PaddleOCR-VL 1.6 对 PUMA 第 5 页的真实重放还在 96 与 144 DPI 同时验证了模型画布映射：同一份 raw JSON 在两个 DPI 下都匹配 24 个元素、没有 selected reorder、没有 candidate-disagreement delta；其中 4 条保守 block 派生流覆盖 17 条 native 正文行，且不改变这些结果。两篇有标注论文在融合后仍保持 `1.0` pair 和 successor accuracy；Transformer 第 1 页重放派生出 6 条同列 block 流、覆盖 85 个成员，successor accuracy 仍为 `1.0`。JD 没有派生 block 流，正确保留其 35 个 native grid-island 成员。这些是局部翻译边界，不是语义顺序正确率声明：PUMA 和 JD 仍缺少人工 relation sidecar，PUMA 的伪翻译 conflict 总量也还没有下降。Transformer-XL 第 1-3 页的 stream `needs-structure-evidence` 减少 1，consensus successor disagreement 减少 26。比亚迪表格运行把 10 个单元格映射到一个 row-major `table-island`，可以正确归因 replacement conflict，但不声称总 conflict 已降低。对于图片和扫描 PDF，模型证据可以成为主文本源；对于数字 PDF，它应优先补 role/order/table/formula 证据，同时保留 native text/style。当前 CPU 环境可通过 `requirements-ocr.txt` 安装；PaddlePaddle 3.3 下，需要在导入 Paddle 前设置 `PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=0`、`FLAGS_enable_pir_api=0`，并以 `enable_mkldnn=False` 创建 PP-StructureV3，绕开当前 PIR/oneDNN 兼容问题。这些是版本相关设置，不属于 Scriptorium 核心依赖。
 
+OpenDataLoader PDF 2.4.7 是面向数字 PDF 的 Apache-2.0、确定性 CPU/Java
+provider。使用 Java 11+ 安装 `requirements-opendataloader.txt`，再运行
+`scriptorium run-opendataloader`。Adapter 请求 XY-Cut 顺序，同时保存 raw 与
+normalized replay JSON，把 PDF bottom-left bbox 转成 Scriptorium 的 top-left PDF
+坐标，并生成稳定的 `opendataloader-p####-b####` id。无效 block 会断开 relation
+chain，不会把前后节点错误相连。Provider 文档中合法但不在抽样 `DocumentIR`
+中的页面会跳过并记录诊断；超过 provider 声明总页数的 page number 会被拒绝。
+
+结构融合会自动识别 raw OpenDataLoader JSON。它的 block label、order 和相邻
+successor edge 全部带 semantic/order/relation `review-only` policy，因此可以独立
+评分或与另一 provider 求交，但不能改变 role、stream、semantic ownership 或
+runtime order。该 provider 仍是 PDF-only；image source 继续由 OCR/layout JSON
+主导语义路径。
+
 Surya FastLayout 是独立的可选 provider，因为它会固定一组模型/图像依赖，而且权重许可比 Apache-2.0 代码许可多出额外条款。应在专用环境安装 `requirements-surya.txt`，审阅 modified AI Pubs OpenRAIL-M 权重/输出许可后再传入 `--accept-model-license`：
 
 ```bash

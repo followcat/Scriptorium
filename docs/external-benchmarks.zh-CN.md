@@ -309,6 +309,27 @@ ROOR 运行让 stream `needs-structure-evidence` 减少 4，但 held-out Transfo
 
 产物位于 `outputs/research/surya-fast-layout-roor-v1/fixed-five-semantic-isolated-ab` 和 `outputs/research/surya-fast-layout-heldout-v1/*-semantic-isolated-ab`。结论是保留为 review provider，不作为 runtime reading-order driver。
 
+### OpenDataLoader XY-Cut++ review v1
+
+OpenDataLoader PDF 2.4.7 提供 Apache-2.0、确定性的 CPU/Java XY-Cut++ 路径。
+`scriptorium run-opendataloader` 会保留 raw JSON，并输出带稳定 id、top-left PDF
+坐标及 review-only block order/successor edge 的 normalized replay。本次 A/B 前已
+从源 PDF 重新生成 CLI 输出，没有使用手写保存的 sidecar。
+
+| 样本 | Blocks / provider edges | Block review candidates | 已标注 / 正确 | 完整 external successor | Stream needs delta | Runtime / visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention p. 1 | 22 / 21 | 4 | 1 / 1 | `9/9`（`1.0`） | `+1` | 0 / `0.0` |
+| Transformer-XL pp. 1-3 | 57 / 54 | 29 | 11 / 11 | `34/41`（`0.82926829`） | `-1` | 0 / `0.0` |
+
+Transformer 的 external candidate 明显高于 Surya held-out 的 `21/41`，但仍低于
+selected native order 的 `41/41`。该样本上的已标注 block-review edge 很精确，
+但独立性和覆盖仍不足以允许 runtime promotion。OpenDataLoader 与现有
+PP-StructureV3 proposal 求交后，从 32 条 provider 唯一候选得到 9 条 consensus
+edge，其中 4 条有标签且全部正确（覆盖 `4/41`）。它仍是降低 review 噪声的工具，
+不是 accepted relation model。产物位于
+`outputs/research/opendataloader-xycut-v1`；可复现重跑位于被忽略的 `replay-cli`
+子目录。
+
 ### 独立 provider consensus v1
 
 `scriptorium consensus-reading-sidecars` 会对至少两个独立 provider 的显式 block-order review transition 求交。它会拒绝 page 集合不一致或 stable document fingerprint（element id、text、PDF bbox）不一致的输入，保留 provider/confidence provenance，并始终输出尚未 accepted 的 review-only proposal，且 `runtime_reorder: false`。

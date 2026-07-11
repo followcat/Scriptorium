@@ -231,6 +231,23 @@ scriptorium benchmark-structure-ab page.png \
 
 The benchmark command accepts one or more `--ocr-json` and `--structure-json` files, matched by argument order or by names such as `<source-stem>.ocr.json` and `<source-stem>.structure.json`. Reports retain OCR/structure provenance for each case. Real PP-StructureV3 CPU runs now cover Attention page 1, Transformer-XL pages 1-3, JD page 1, a PUMA mixed image/text page, and BYD financial-report page 136 with table recognition. A real PaddleOCR-VL 1.6 replay of PUMA p. 5 also validates the model-canvas mapping at both 96 and 144 DPI: the same raw JSON yields 24 matched elements, no selected reorder, and no candidate-disagreement delta at either DPI. Its four conservative block-derived streams cover 17 native body lines without changing that result. The labelled papers retain `1.0` pair and successor accuracy after fusion; the Transformer p. 1 replay derives six same-column block streams across 85 members while preserving successor accuracy `1.0`. JD derives none, correctly leaving its 35 native grid-island members intact. These are local translation boundaries, not a semantic-order accuracy claim: PUMA and JD still lack human relation sidecars, and PUMA's pseudo-translation conflict total remains unchanged. Across Transformer-XL pages 1-3, stream `needs-structure-evidence` decreases by 1 and consensus successor disagreement by 26. The BYD table run maps 10 cells into one row-major `table-island`, making table replacement conflicts attributable without claiming a total conflict reduction. For images and scanned PDFs, model evidence can become the primary text source; for digital papers, it should first be used as role/order/table/formula evidence while preserving native text and style.
 
+OpenDataLoader PDF 2.4.7 is an Apache-2.0, deterministic CPU/Java provider for
+digital PDFs. Install `requirements-opendataloader.txt` with Java 11+ and run
+`scriptorium run-opendataloader`. The adapter requests XY-Cut order, saves both
+raw and normalized replay JSON, converts bottom-left PDF boxes to Scriptorium's
+top-left PDF coordinates, and emits stable `opendataloader-p####-b####` ids.
+Malformed blocks break relation chains instead of joining their neighbors.
+Pages that are valid in the provider document but absent from a sampled
+`DocumentIR` are skipped with diagnostics; page numbers beyond the declared
+document size are rejected.
+
+Raw OpenDataLoader JSON is auto-detected by structure fusion. Its block labels,
+orders, and adjacent successor edges all carry semantic/order/relation
+`review-only` policies, so they can be scored and intersected with another
+provider without changing roles, streams, semantic ownership, or runtime order.
+The provider remains PDF-only; image sources continue to use OCR/layout JSON as
+their primary semantic path.
+
 Surya FastLayout is a separate optional provider because it pins model/image dependencies and its weights have terms beyond the Apache-2.0 code license. Install `requirements-surya.txt` in a dedicated environment and pass `--accept-model-license` only after reviewing the modified AI Pubs OpenRAIL-M weight/output license:
 
 ```bash
