@@ -14,6 +14,7 @@ from scriptorium.reading_order import (
     infer_semantic_reading_order,
     infer_successor_consensus_order,
     pairwise_order_disagreement,
+    protected_successor_consensus_diagnostics,
     successor_order_disagreement,
     successor_consensus_diagnostics,
 )
@@ -472,6 +473,44 @@ def test_successor_consensus_diagnostics_downgrades_cycle_conflict() -> None:
     assert sorted(diagnostics.ordered_indices) == [0, 1, 2, 3]
     assert diagnostics.selected_edge_coverage_ratio < 1
     assert diagnostics.agreement_level != "high"
+
+
+def test_protected_successor_consensus_keeps_local_edge_out_of_candidate_vote() -> None:
+    diagnostics = protected_successor_consensus_diagnostics(
+        {
+            "visual_yx": [0, 1, 2, 3],
+            "box_flow": [0, 2, 3, 1],
+            "relation_graph": [0, 2, 3, 1],
+        },
+        protected_edges=[(0, 1)],
+        item_count=4,
+        base_order=[0, 1, 2, 3],
+    )
+
+    assert diagnostics.ordered_indices == [0, 1, 2, 3]
+    assert diagnostics.protected_edge_requested_count == 1
+    assert diagnostics.protected_edge_selected_count == 1
+    assert diagnostics.protected_edge_unresolved_count == 0
+    assert diagnostics.protected_edge_rejected_cycle_count == 0
+    # The hard edge has no synthetic candidate vote.
+    assert diagnostics.selected_edge_support_ratio < 1
+
+
+def test_protected_successor_consensus_reports_invalid_local_constraints() -> None:
+    diagnostics = protected_successor_consensus_diagnostics(
+        {"candidate": [0, 1, 2]},
+        protected_edges=[(0, 1), (0, 2), (1, 0), (1, 1), (4, 0)],
+        item_count=3,
+        base_order=[0, 1, 2],
+    )
+
+    assert diagnostics.protected_edge_requested_count == 5
+    assert diagnostics.protected_edge_selected_count == 1
+    assert diagnostics.protected_edge_unresolved_count == 4
+    assert diagnostics.protected_edge_rejected_outgoing_conflict_count == 1
+    assert diagnostics.protected_edge_rejected_cycle_count == 1
+    assert diagnostics.protected_edge_rejected_self_loop_count == 1
+    assert diagnostics.protected_edge_rejected_unknown_count == 1
 
 
 def test_box_flow_fallback_orders_relaxed_irregular_columns() -> None:

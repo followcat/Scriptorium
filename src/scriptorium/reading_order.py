@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from itertools import combinations
 import re
@@ -294,6 +295,34 @@ class SuccessorConsensusDiagnostics:
     conflicted_edge_count: int
     conflicted_edge_ratio: float
     agreement_level: str
+    protected_edge_requested_count: int = 0
+    protected_edge_selected_count: int = 0
+    protected_edge_unresolved_count: int = 0
+    protected_edge_rejected_unknown_count: int = 0
+    protected_edge_rejected_self_loop_count: int = 0
+    protected_edge_rejected_outgoing_conflict_count: int = 0
+    protected_edge_rejected_incoming_conflict_count: int = 0
+    protected_edge_rejected_cycle_count: int = 0
+
+
+@dataclass(frozen=True)
+class _ProtectedSuccessorEdgeSelection:
+    successor_by_item: dict[int, int]
+    predecessor_by_item: dict[int, int]
+    requested_edge_count: int
+    rejected_unknown_count: int
+    rejected_self_loop_count: int
+    rejected_outgoing_conflict_count: int
+    rejected_incoming_conflict_count: int
+    rejected_cycle_count: int
+
+    @property
+    def selected_edge_count(self) -> int:
+        return len(self.successor_by_item)
+
+    @property
+    def unresolved_edge_count(self) -> int:
+        return self.requested_edge_count - self.selected_edge_count
 
 
 def infer_semantic_reading_order(
@@ -543,10 +572,59 @@ def successor_consensus_diagnostics(
     item_count: int | None = None,
     base_order: list[int] | None = None,
 ) -> SuccessorConsensusDiagnostics:
+    """Report an unconstrained successor-consensus path cover.
+
+    This is the generic candidate vote.  Call
+    :func:`protected_successor_consensus_diagnostics` when a caller has
+    independently verified local successor relations that must be preserved
+    before candidate edges are considered.
+    """
+
+    return _successor_consensus_diagnostics(
+        candidate_orders,
+        item_count=item_count,
+        base_order=base_order,
+        protected_edges=(),
+    )
+
+
+def protected_successor_consensus_diagnostics(
+    candidate_orders: dict[str, list[int]] | list[list[int]],
+    *,
+    protected_edges: Iterable[tuple[int, int]],
+    item_count: int | None = None,
+    base_order: list[int] | None = None,
+) -> SuccessorConsensusDiagnostics:
+    """Return successor consensus with independent local edges as hard constraints.
+
+    ``protected_edges`` are not candidate votes.  Valid non-conflicting edges
+    are inserted before the weighted path cover, so later generic edges cannot
+    replace their source or target.  Invalid, branching, and cyclic constraints
+    remain explicitly unresolved in the returned diagnostics.  The function is
+    deliberately a diagnostic primitive; callers decide whether a constrained
+    candidate is suitable for any runtime order change.
+    """
+
+    return _successor_consensus_diagnostics(
+        candidate_orders,
+        item_count=item_count,
+        base_order=base_order,
+        protected_edges=protected_edges,
+    )
+
+
+def _successor_consensus_diagnostics(
+    candidate_orders: dict[str, list[int]] | list[list[int]],
+    *,
+    item_count: int | None,
+    base_order: list[int] | None,
+    protected_edges: Iterable[tuple[int, int]],
+) -> SuccessorConsensusDiagnostics:
     raw_orders = candidate_orders.values() if isinstance(candidate_orders, dict) else candidate_orders
     normalized_orders = [_dedupe_order(order) for order in raw_orders]
     normalized_orders = [order for order in normalized_orders if len(order) >= 2]
     candidate_count = len(normalized_orders)
+    normalized_protected_edges = _dedupe_successor_edges(protected_edges)
 
     if base_order is None:
         base_order = []
@@ -567,13 +645,10 @@ def successor_consensus_diagnostics(
             if item not in universe:
                 universe.append(item)
     if not universe:
-        return _empty_successor_consensus_diagnostics()
-    if not normalized_orders:
-        return _successor_consensus_diagnostics_from_edges(
-            universe,
-            edge_votes=Counter(),
-            selected_edges={},
-            candidate_count=0,
+        return _empty_successor_consensus_diagnostics(
+            protected_edge_requested_count=len(normalized_protected_edges),
+            protected_edge_unresolved_count=len(normalized_protected_edges),
+            protected_edge_rejected_unknown_count=len(normalized_protected_edges),
         )
 
     edge_votes: Counter[tuple[int, int]] = Counter()
@@ -582,15 +657,13 @@ def successor_consensus_diagnostics(
         for source, target in zip(clean_order, clean_order[1:]):
             if source != target:
                 edge_votes[(source, target)] += 1
-    if not edge_votes:
-        return _successor_consensus_diagnostics_from_edges(
-            universe,
-            edge_votes=edge_votes,
-            selected_edges={},
-            candidate_count=candidate_count,
-        )
 
     base_rank = {item: rank for rank, item in enumerate(universe)}
+    protected_selection = _select_protected_successor_edges(
+        normalized_protected_edges,
+        universe=universe,
+        base_rank=base_rank,
+    )
     outgoing_votes: dict[int, list[int]] = {}
     incoming_votes: dict[int, list[int]] = {}
     for (source, target), vote_count in edge_votes.items():
@@ -615,8 +688,8 @@ def successor_consensus_diagnostics(
             edge[1],
         ),
     )
-    successor_by_item: dict[int, int] = {}
-    predecessor_by_item: dict[int, int] = {}
+    successor_by_item = dict(protected_selection.successor_by_item)
+    predecessor_by_item = dict(protected_selection.predecessor_by_item)
     for source, target in ranked_edges:
         if source in successor_by_item or target in predecessor_by_item:
             continue
@@ -632,6 +705,7 @@ def successor_consensus_diagnostics(
         selected_edges=successor_by_item,
         candidate_count=candidate_count,
         ordered_indices=ordered_indices,
+        protected_selection=protected_selection,
     )
 
 
@@ -700,7 +774,90 @@ def _dedupe_order(order: list[int]) -> list[int]:
     return deduped
 
 
-def _empty_successor_consensus_diagnostics() -> SuccessorConsensusDiagnostics:
+def _dedupe_successor_edges(edges: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
+    deduped: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for source, target in edges:
+        edge = (source, target)
+        if edge in seen:
+            continue
+        seen.add(edge)
+        deduped.append(edge)
+    return deduped
+
+
+def _select_protected_successor_edges(
+    protected_edges: list[tuple[int, int]],
+    *,
+    universe: list[int],
+    base_rank: dict[int, int],
+) -> _ProtectedSuccessorEdgeSelection:
+    """Select a valid acyclic subset of hard successor constraints.
+
+    A strict local edge must never silently become a generic vote.  It is
+    either installed before candidate arbitration or assigned a concrete
+    unresolved reason.  Ordering by the stable base order keeps an invalid
+    conflicting payload reproducible for review.
+    """
+
+    universe_set = set(universe)
+    successor_by_item: dict[int, int] = {}
+    predecessor_by_item: dict[int, int] = {}
+    rejected_unknown_count = 0
+    rejected_self_loop_count = 0
+    rejected_outgoing_conflict_count = 0
+    rejected_incoming_conflict_count = 0
+    rejected_cycle_count = 0
+    ranked_edges = sorted(
+        protected_edges,
+        key=lambda edge: (
+            base_rank.get(edge[0], 1_000_000),
+            base_rank.get(edge[1], 1_000_000),
+            edge[0],
+            edge[1],
+        ),
+    )
+    for source, target in ranked_edges:
+        if source not in universe_set or target not in universe_set:
+            rejected_unknown_count += 1
+            continue
+        if source == target:
+            rejected_self_loop_count += 1
+            continue
+        if source in successor_by_item:
+            rejected_outgoing_conflict_count += 1
+            continue
+        if target in predecessor_by_item:
+            rejected_incoming_conflict_count += 1
+            continue
+        if _relation_graph_would_cycle(source, target, successor_by_item):
+            rejected_cycle_count += 1
+            continue
+        successor_by_item[source] = target
+        predecessor_by_item[target] = source
+    return _ProtectedSuccessorEdgeSelection(
+        successor_by_item=successor_by_item,
+        predecessor_by_item=predecessor_by_item,
+        requested_edge_count=len(protected_edges),
+        rejected_unknown_count=rejected_unknown_count,
+        rejected_self_loop_count=rejected_self_loop_count,
+        rejected_outgoing_conflict_count=rejected_outgoing_conflict_count,
+        rejected_incoming_conflict_count=rejected_incoming_conflict_count,
+        rejected_cycle_count=rejected_cycle_count,
+    )
+
+
+def _empty_successor_consensus_diagnostics(
+    *,
+    protected_edge_requested_count: int = 0,
+    protected_edge_selected_count: int = 0,
+    protected_edge_unresolved_count: int = 0,
+    protected_edge_rejected_unknown_count: int = 0,
+    protected_edge_rejected_self_loop_count: int = 0,
+    protected_edge_rejected_outgoing_conflict_count: int = 0,
+    protected_edge_rejected_incoming_conflict_count: int = 0,
+    protected_edge_rejected_cycle_count: int = 0,
+) -> SuccessorConsensusDiagnostics:
     return SuccessorConsensusDiagnostics(
         ordered_indices=[],
         candidate_count=0,
@@ -716,6 +873,14 @@ def _empty_successor_consensus_diagnostics() -> SuccessorConsensusDiagnostics:
         conflicted_edge_count=0,
         conflicted_edge_ratio=0.0,
         agreement_level="unavailable",
+        protected_edge_requested_count=protected_edge_requested_count,
+        protected_edge_selected_count=protected_edge_selected_count,
+        protected_edge_unresolved_count=protected_edge_unresolved_count,
+        protected_edge_rejected_unknown_count=protected_edge_rejected_unknown_count,
+        protected_edge_rejected_self_loop_count=protected_edge_rejected_self_loop_count,
+        protected_edge_rejected_outgoing_conflict_count=protected_edge_rejected_outgoing_conflict_count,
+        protected_edge_rejected_incoming_conflict_count=protected_edge_rejected_incoming_conflict_count,
+        protected_edge_rejected_cycle_count=protected_edge_rejected_cycle_count,
     )
 
 
@@ -726,6 +891,7 @@ def _successor_consensus_diagnostics_from_edges(
     selected_edges: dict[int, int],
     candidate_count: int,
     ordered_indices: list[int] | None = None,
+    protected_selection: _ProtectedSuccessorEdgeSelection | None = None,
 ) -> SuccessorConsensusDiagnostics:
     ordered_indices = list(universe) if ordered_indices is None else ordered_indices
     candidate_edge_count = sum(edge_votes.values())
@@ -749,6 +915,16 @@ def _successor_consensus_diagnostics_from_edges(
         if edge[0] in conflicted_sources or edge[1] in conflicted_targets
     }
     conflicted_edge_ratio = round(len(conflicted_edges) / max(len(edge_votes), 1), 8) if edge_votes else 0.0
+    protected_selection = protected_selection or _ProtectedSuccessorEdgeSelection(
+        successor_by_item={},
+        predecessor_by_item={},
+        requested_edge_count=0,
+        rejected_unknown_count=0,
+        rejected_self_loop_count=0,
+        rejected_outgoing_conflict_count=0,
+        rejected_incoming_conflict_count=0,
+        rejected_cycle_count=0,
+    )
     return SuccessorConsensusDiagnostics(
         ordered_indices=ordered_indices,
         candidate_count=candidate_count,
@@ -770,6 +946,14 @@ def _successor_consensus_diagnostics_from_edges(
             candidate_count,
             selected_edge_count,
         ),
+        protected_edge_requested_count=protected_selection.requested_edge_count,
+        protected_edge_selected_count=protected_selection.selected_edge_count,
+        protected_edge_unresolved_count=protected_selection.unresolved_edge_count,
+        protected_edge_rejected_unknown_count=protected_selection.rejected_unknown_count,
+        protected_edge_rejected_self_loop_count=protected_selection.rejected_self_loop_count,
+        protected_edge_rejected_outgoing_conflict_count=protected_selection.rejected_outgoing_conflict_count,
+        protected_edge_rejected_incoming_conflict_count=protected_selection.rejected_incoming_conflict_count,
+        protected_edge_rejected_cycle_count=protected_selection.rejected_cycle_count,
     )
 
 

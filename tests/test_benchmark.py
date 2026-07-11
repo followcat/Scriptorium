@@ -401,6 +401,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "mean_semantic_structure_relation_relation_successor_accuracy" in report["summary"]
     assert "mean_semantic_structure_relation_stream_successor_accuracy" in report["summary"]
     assert "mean_semantic_successor_consensus_successor_accuracy" in report["summary"]
+    assert report["summary"]["mean_semantic_protected_successor_consensus_successor_accuracy"] is None
     assert "mean_semantic_external_structure_successor_accuracy" in report["summary"]
     assert "total_semantic_ignored_text_count" in report["summary"]
     assert all(case["semantic_ground_truth_available"] for case in report["cases"])
@@ -854,9 +855,15 @@ def test_candidate_stream_diagnostics_keep_native_grid_structure_local() -> None
 
     assert page_diagnostics[0]["local_structure_successor_edge_count"] == 2
     assert page_diagnostics[0]["local_structure_reference_successor_coverage"] == 0.5
+    assert page_diagnostics[0]["local_structure_protected_successor_edge_count"] == 2
+    assert page_diagnostics[0]["local_structure_unresolved_successor_edge_count"] == 0
+    assert page_diagnostics[0]["local_structure_constrained_consensus_disagreement_edge_count"] == 0
     assert by_stream["grid-island-001"]["local_structure_successor_edge_count"] == 2
     assert by_stream["grid-island-001"]["local_structure_successor_coverage"] == 1.0
     assert by_stream["grid-island-001"]["local_structure_reference_successor_coverage"] == 1.0
+    assert by_stream["grid-island-001"]["local_structure_protected_successor_edge_count"] == 2
+    assert by_stream["grid-island-001"]["local_structure_unresolved_successor_edge_count"] == 0
+    assert by_stream["grid-island-001"]["local_structure_constrained_consensus_disagreement_edge_count"] == 0
     assert by_stream["grid-island-001"]["recommendation"] == "keep-selected-local-structure"
 
 
@@ -1466,6 +1473,9 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "reading_order_local_structure_stream_delta" in comparison
     assert "reading_order_local_structure_successor_edge_delta" in comparison
     assert "reading_order_local_structure_consensus_disagreement_edge_delta" in comparison
+    assert "reading_order_local_structure_protected_successor_edge_delta" in comparison
+    assert "reading_order_local_structure_unresolved_successor_edge_delta" in comparison
+    assert "reading_order_local_structure_constrained_consensus_disagreement_edge_delta" in comparison
     assert "stream_keep_selected_local_structure_delta" in comparison
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
@@ -1490,12 +1500,16 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["cases_with_stream_assignment_missing_improvement"] == 0
     assert "total_reading_order_local_structure_stream_delta" in report["summary"]
     assert "total_reading_order_local_structure_successor_edge_delta" in report["summary"]
+    assert "total_reading_order_local_structure_protected_successor_edge_delta" in report["summary"]
+    assert "total_reading_order_local_structure_unresolved_successor_edge_delta" in report["summary"]
     assert "semantic_external_structure_successor_accuracy" not in csv_text
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
     assert "fidelity_replacement_same_stream_conflict_target_delta" in csv_text
     assert "fidelity_replacement_cross_stream_conflict_target_delta" in csv_text
     assert "reading_order_local_structure_successor_edge_delta" in csv_text
+    assert "reading_order_local_structure_protected_successor_edge_delta" in csv_text
+    assert "reading_order_local_structure_unresolved_successor_edge_delta" in csv_text
     assert "stream_keep_selected_local_structure_delta" in csv_text
     assert "semantic_relation_missing_text_delta" in csv_text
     assert "reading_order_proposal_semantic_successor_coverage_delta" in csv_text

@@ -32,6 +32,7 @@ from .reading_order import (
     infer_relation_graph_selected_edge_diagnostics,
     infer_successor_consensus_order,
     pairwise_order_disagreement,
+    protected_successor_consensus_diagnostics,
     successor_order_disagreement,
     successor_consensus_diagnostics,
 )
@@ -63,8 +64,10 @@ SEMANTIC_ORDER_CANDIDATES: tuple[str, ...] = (
     "relation_graph",
     "structure_relation",
     "successor_consensus",
+    "protected_successor_consensus",
     "external_structure",
 )
+DIAGNOSTIC_ONLY_SEMANTIC_ORDER_CANDIDATES = frozenset({"protected_successor_consensus"})
 
 
 def run_benchmark(
@@ -379,6 +382,39 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "reading_order_local_structure_consensus_disagreement_edge_count",
         ),
+        "native_reading_order_local_structure_protected_successor_edge_count": native_case[
+            "reading_order_local_structure_protected_successor_edge_count"
+        ],
+        "structure_reading_order_local_structure_protected_successor_edge_count": structure_case[
+            "reading_order_local_structure_protected_successor_edge_count"
+        ],
+        "reading_order_local_structure_protected_successor_edge_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_protected_successor_edge_count",
+        ),
+        "native_reading_order_local_structure_unresolved_successor_edge_count": native_case[
+            "reading_order_local_structure_unresolved_successor_edge_count"
+        ],
+        "structure_reading_order_local_structure_unresolved_successor_edge_count": structure_case[
+            "reading_order_local_structure_unresolved_successor_edge_count"
+        ],
+        "reading_order_local_structure_unresolved_successor_edge_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_unresolved_successor_edge_count",
+        ),
+        "native_reading_order_local_structure_constrained_consensus_disagreement_edge_count": native_case[
+            "reading_order_local_structure_constrained_consensus_disagreement_edge_count"
+        ],
+        "structure_reading_order_local_structure_constrained_consensus_disagreement_edge_count": structure_case[
+            "reading_order_local_structure_constrained_consensus_disagreement_edge_count"
+        ],
+        "reading_order_local_structure_constrained_consensus_disagreement_edge_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_constrained_consensus_disagreement_edge_count",
+        ),
         "native_stream_keep_selected_local_structure_count": native_stream_local_structure,
         "structure_stream_keep_selected_local_structure_count": structure_stream_local_structure,
         "stream_keep_selected_local_structure_delta": (
@@ -677,6 +713,18 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
             int(values["reading_order_local_structure_consensus_disagreement_edge_delta"] or 0)
             for values in comparisons
         ),
+        "total_reading_order_local_structure_protected_successor_edge_delta": sum(
+            int(values["reading_order_local_structure_protected_successor_edge_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_reading_order_local_structure_unresolved_successor_edge_delta": sum(
+            int(values["reading_order_local_structure_unresolved_successor_edge_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_reading_order_local_structure_constrained_consensus_disagreement_edge_delta": sum(
+            int(values["reading_order_local_structure_constrained_consensus_disagreement_edge_delta"] or 0)
+            for values in comparisons
+        ),
         "total_stream_keep_selected_local_structure_delta": sum(
             int(values["stream_keep_selected_local_structure_delta"])
             for values in comparisons
@@ -892,6 +940,15 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_reading_order_local_structure_consensus_disagreement_edge_count",
         "structure_reading_order_local_structure_consensus_disagreement_edge_count",
         "reading_order_local_structure_consensus_disagreement_edge_delta",
+        "native_reading_order_local_structure_protected_successor_edge_count",
+        "structure_reading_order_local_structure_protected_successor_edge_count",
+        "reading_order_local_structure_protected_successor_edge_delta",
+        "native_reading_order_local_structure_unresolved_successor_edge_count",
+        "structure_reading_order_local_structure_unresolved_successor_edge_count",
+        "reading_order_local_structure_unresolved_successor_edge_delta",
+        "native_reading_order_local_structure_constrained_consensus_disagreement_edge_count",
+        "structure_reading_order_local_structure_constrained_consensus_disagreement_edge_count",
+        "reading_order_local_structure_constrained_consensus_disagreement_edge_delta",
         "native_stream_keep_selected_local_structure_count",
         "structure_stream_keep_selected_local_structure_count",
         "stream_keep_selected_local_structure_delta",
@@ -1362,6 +1419,33 @@ def _run_case(
         ],
         "reading_order_local_structure_consensus_disagreement_coverage": stats[
             "reading_order_local_structure_consensus_disagreement_coverage"
+        ],
+        "reading_order_local_structure_protected_successor_edge_count": stats[
+            "reading_order_local_structure_protected_successor_edge_count"
+        ],
+        "reading_order_local_structure_unresolved_successor_edge_count": stats[
+            "reading_order_local_structure_unresolved_successor_edge_count"
+        ],
+        "reading_order_local_structure_constraint_rejected_unknown_edge_count": stats[
+            "reading_order_local_structure_constraint_rejected_unknown_edge_count"
+        ],
+        "reading_order_local_structure_constraint_rejected_self_loop_edge_count": stats[
+            "reading_order_local_structure_constraint_rejected_self_loop_edge_count"
+        ],
+        "reading_order_local_structure_constraint_rejected_outgoing_conflict_edge_count": stats[
+            "reading_order_local_structure_constraint_rejected_outgoing_conflict_edge_count"
+        ],
+        "reading_order_local_structure_constraint_rejected_incoming_conflict_edge_count": stats[
+            "reading_order_local_structure_constraint_rejected_incoming_conflict_edge_count"
+        ],
+        "reading_order_local_structure_constraint_rejected_cycle_edge_count": stats[
+            "reading_order_local_structure_constraint_rejected_cycle_edge_count"
+        ],
+        "reading_order_local_structure_constrained_consensus_disagreement_edge_count": stats[
+            "reading_order_local_structure_constrained_consensus_disagreement_edge_count"
+        ],
+        "reading_order_local_structure_constrained_consensus_disagreement_coverage": stats[
+            "reading_order_local_structure_constrained_consensus_disagreement_coverage"
         ],
         "reading_order_candidate_stream_diagnostics": stats["reading_order_candidate_stream_diagnostics"],
         "reading_order_candidate_stream_count": stats["reading_order_candidate_stream_count"],
@@ -2577,6 +2661,16 @@ def _reading_order_candidate_page_diagnostics(
             item_count=len(text_elements),
             base_order=reference_order,
         )
+        protected_edges = _local_structure_strict_index_edges(
+            text_elements,
+            local_structure_evidence_by_page.get(page.page_index),
+        )
+        protected_consensus = protected_successor_consensus_diagnostics(
+            source_candidates,
+            protected_edges=protected_edges,
+            item_count=len(text_elements),
+            base_order=reference_order,
+        )
         pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
         successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
         local_structure = _local_structure_candidate_diagnostics(
@@ -2584,6 +2678,8 @@ def _reading_order_candidate_page_diagnostics(
             reference_order,
             consensus.ordered_indices,
             local_structure_evidence_by_page.get(page.page_index),
+            constrained_consensus_order=protected_consensus.ordered_indices,
+            protected_consensus=protected_consensus,
         )
         recommendation, reason = _reading_order_candidate_page_recommendation(
             consensus,
@@ -2650,6 +2746,16 @@ def _reading_order_candidate_stream_diagnostics(
                 item_count=len(stream_elements),
                 base_order=reference_order,
             )
+            protected_edges = _local_structure_strict_index_edges(
+                stream_elements,
+                local_structure_evidence_by_page.get(page.page_index),
+            )
+            protected_consensus = protected_successor_consensus_diagnostics(
+                source_candidates,
+                protected_edges=protected_edges,
+                item_count=len(stream_elements),
+                base_order=reference_order,
+            )
             pairwise = pairwise_order_disagreement(reference_order, consensus.ordered_indices)
             successor = successor_order_disagreement(reference_order, consensus.ordered_indices)
             explicit_successor_edge_count, explicit_successor_coverage = _explicit_successor_coverage(
@@ -2660,6 +2766,8 @@ def _reading_order_candidate_stream_diagnostics(
                 reference_order,
                 consensus.ordered_indices,
                 local_structure_evidence_by_page.get(page.page_index),
+                constrained_consensus_order=protected_consensus.ordered_indices,
+                protected_consensus=protected_consensus,
             )
             recommendation, reason = _reading_order_candidate_page_recommendation(
                 consensus,
@@ -2746,11 +2854,49 @@ def _explicit_successor_coverage(stream_elements: list[Any]) -> tuple[int, float
     return explicit_edge_count, round(explicit_edge_count / edge_count, 8)
 
 
+def _local_structure_strict_index_edges(
+    text_elements: list[Any],
+    page_evidence: dict[str, Any] | None,
+) -> tuple[tuple[int, int], ...]:
+    """Map strict native table/grid sidecar edges to a candidate's item indices.
+
+    This is intentionally narrower than the generic selected stream metadata:
+    only sidecar edges carrying native ``table-local-order`` or
+    ``grid-local-order`` evidence reach the protected path-cover candidate.
+    """
+
+    if not page_evidence:
+        return ()
+    streams = page_evidence.get("streams")
+    if not isinstance(streams, (list, tuple)):
+        return ()
+    id_to_index = {str(element.id): index for index, element in enumerate(text_elements)}
+    edges: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for stream in streams:
+        if not isinstance(stream, dict):
+            continue
+        for source, target in stream.get("successor_edges", ()):
+            source_index = id_to_index.get(str(source))
+            target_index = id_to_index.get(str(target))
+            if source_index is None or target_index is None:
+                continue
+            edge = (source_index, target_index)
+            if edge in seen:
+                continue
+            seen.add(edge)
+            edges.append(edge)
+    return tuple(edges)
+
+
 def _local_structure_candidate_diagnostics(
     text_elements: list[Any],
     reference_order: list[int],
     consensus_order: list[int],
     page_evidence: dict[str, Any] | None,
+    *,
+    constrained_consensus_order: list[int] | None = None,
+    protected_consensus: Any | None = None,
 ) -> dict[str, Any]:
     """Measure strict table/grid sidecar edges without changing global consensus.
 
@@ -2770,6 +2916,15 @@ def _local_structure_candidate_diagnostics(
         "local_structure_reference_successor_coverage": 0.0,
         "local_structure_consensus_disagreement_edge_count": 0,
         "local_structure_consensus_disagreement_coverage": 0.0,
+        "local_structure_protected_successor_edge_count": 0,
+        "local_structure_unresolved_successor_edge_count": 0,
+        "local_structure_constraint_rejected_unknown_edge_count": 0,
+        "local_structure_constraint_rejected_self_loop_edge_count": 0,
+        "local_structure_constraint_rejected_outgoing_conflict_edge_count": 0,
+        "local_structure_constraint_rejected_incoming_conflict_edge_count": 0,
+        "local_structure_constraint_rejected_cycle_edge_count": 0,
+        "local_structure_constrained_consensus_disagreement_edge_count": 0,
+        "local_structure_constrained_consensus_disagreement_coverage": 0.0,
     }
     if not page_evidence:
         return default
@@ -2806,10 +2961,16 @@ def _local_structure_candidate_diagnostics(
 
     reference_ids = [str(text_elements[index].id) for index in reference_order]
     consensus_ids = [str(text_elements[index].id) for index in consensus_order]
+    constrained_ids = [
+        str(text_elements[index].id)
+        for index in (constrained_consensus_order or consensus_order)
+    ]
     reference_edges = set(zip(reference_ids, reference_ids[1:], strict=False))
     consensus_edges = set(zip(consensus_ids, consensus_ids[1:], strict=False))
+    constrained_consensus_edges = set(zip(constrained_ids, constrained_ids[1:], strict=False))
     selected_edges = strict_edges & reference_edges
     consensus_disagreements = selected_edges - consensus_edges
+    constrained_consensus_disagreements = strict_edges - constrained_consensus_edges
     strict_edge_count = len(strict_edges)
     reference_edge_count = len(reference_edges)
     potential_edge_count = len(potential_edges)
@@ -2833,6 +2994,34 @@ def _local_structure_candidate_diagnostics(
         "local_structure_consensus_disagreement_edge_count": len(consensus_disagreements),
         "local_structure_consensus_disagreement_coverage": round(
             len(consensus_disagreements) / max(strict_edge_count, 1),
+            8,
+        ),
+        "local_structure_protected_successor_edge_count": int(
+            getattr(protected_consensus, "protected_edge_selected_count", 0) or 0
+        ),
+        "local_structure_unresolved_successor_edge_count": int(
+            getattr(protected_consensus, "protected_edge_unresolved_count", 0) or 0
+        ),
+        "local_structure_constraint_rejected_unknown_edge_count": int(
+            getattr(protected_consensus, "protected_edge_rejected_unknown_count", 0) or 0
+        ),
+        "local_structure_constraint_rejected_self_loop_edge_count": int(
+            getattr(protected_consensus, "protected_edge_rejected_self_loop_count", 0) or 0
+        ),
+        "local_structure_constraint_rejected_outgoing_conflict_edge_count": int(
+            getattr(protected_consensus, "protected_edge_rejected_outgoing_conflict_count", 0) or 0
+        ),
+        "local_structure_constraint_rejected_incoming_conflict_edge_count": int(
+            getattr(protected_consensus, "protected_edge_rejected_incoming_conflict_count", 0) or 0
+        ),
+        "local_structure_constraint_rejected_cycle_edge_count": int(
+            getattr(protected_consensus, "protected_edge_rejected_cycle_count", 0) or 0
+        ),
+        "local_structure_constrained_consensus_disagreement_edge_count": len(
+            constrained_consensus_disagreements
+        ),
+        "local_structure_constrained_consensus_disagreement_coverage": round(
+            len(constrained_consensus_disagreements) / max(strict_edge_count, 1),
             8,
         ),
     }
@@ -2884,6 +3073,43 @@ def _local_structure_evidence_summary(
             numerator="local_structure_consensus_disagreement_edge_count",
             denominator="local_structure_successor_edge_count",
         ),
+        "reading_order_local_structure_protected_successor_edge_count": sum(
+            int(diagnostic["local_structure_protected_successor_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_unresolved_successor_edge_count": sum(
+            int(diagnostic["local_structure_unresolved_successor_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constraint_rejected_unknown_edge_count": sum(
+            int(diagnostic["local_structure_constraint_rejected_unknown_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constraint_rejected_self_loop_edge_count": sum(
+            int(diagnostic["local_structure_constraint_rejected_self_loop_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constraint_rejected_outgoing_conflict_edge_count": sum(
+            int(diagnostic["local_structure_constraint_rejected_outgoing_conflict_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constraint_rejected_incoming_conflict_edge_count": sum(
+            int(diagnostic["local_structure_constraint_rejected_incoming_conflict_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constraint_rejected_cycle_edge_count": sum(
+            int(diagnostic["local_structure_constraint_rejected_cycle_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constrained_consensus_disagreement_edge_count": sum(
+            int(diagnostic["local_structure_constrained_consensus_disagreement_edge_count"])
+            for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_constrained_consensus_disagreement_coverage": _weighted_local_structure_coverage(
+            page_diagnostics,
+            numerator="local_structure_constrained_consensus_disagreement_edge_count",
+            denominator="local_structure_successor_edge_count",
+        ),
     }
 
 
@@ -2900,11 +3126,19 @@ def _weighted_local_structure_coverage(
 
 def _semantic_candidate_orders(document: DocumentIR) -> dict[str, dict[int, list[str]]]:
     orders: dict[str, dict[int, list[str]]] = {candidate_name: {} for candidate_name in SEMANTIC_ORDER_CANDIDATES}
+    local_structure_evidence_by_page = local_structure_successor_evidence(
+        propose_reading_order_sidecar(document)
+    )
     for page in document.pages:
         text_elements = [element for element in page.elements if element.source_text.strip()]
         if len(text_elements) < 2:
             continue
-        candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=True)
+        candidates = _candidate_index_orders(
+            text_elements,
+            page,
+            include_successor_consensus=True,
+            local_structure_evidence=local_structure_evidence_by_page.get(page.page_index),
+        )
         for candidate_name, candidate_order in candidates.items():
             orders[candidate_name][page.page_index] = [str(text_elements[index].id) for index in candidate_order]
     return orders
@@ -2915,6 +3149,7 @@ def _candidate_index_orders(
     page: Any,
     *,
     include_successor_consensus: bool,
+    local_structure_evidence: dict[str, Any] | None = None,
 ) -> dict[str, list[int]]:
     bboxes = [element.bbox_pdf for element in text_elements]
     candidates = {
@@ -2941,7 +3176,20 @@ def _candidate_index_orders(
     if structure_relation_order:
         candidates["structure_relation"] = structure_relation_order
     if include_successor_consensus:
-        candidates["successor_consensus"] = _successor_consensus_candidate_order(text_elements, page)
+        source_candidates = dict(candidates)
+        candidates["successor_consensus"] = infer_successor_consensus_order(
+            source_candidates,
+            item_count=len(text_elements),
+            base_order=_selected_candidate_order(text_elements),
+        )
+        protected_edges = _local_structure_strict_index_edges(text_elements, local_structure_evidence)
+        if protected_edges:
+            candidates["protected_successor_consensus"] = protected_successor_consensus_diagnostics(
+                source_candidates,
+                protected_edges=protected_edges,
+                item_count=len(text_elements),
+                base_order=_selected_candidate_order(text_elements),
+            ).ordered_indices
     return candidates
 
 
@@ -3495,6 +3743,43 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_reading_order_local_structure_consensus_disagreement_coverage": _ratio_from_case_sums(
             cases,
             numerator_key="reading_order_local_structure_consensus_disagreement_edge_count",
+            denominator_key="reading_order_local_structure_successor_edge_count",
+        ),
+        "total_reading_order_local_structure_protected_successor_edges": sum(
+            int(case["reading_order_local_structure_protected_successor_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_unresolved_successor_edges": sum(
+            int(case["reading_order_local_structure_unresolved_successor_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constraint_rejected_unknown_edges": sum(
+            int(case["reading_order_local_structure_constraint_rejected_unknown_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constraint_rejected_self_loop_edges": sum(
+            int(case["reading_order_local_structure_constraint_rejected_self_loop_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constraint_rejected_outgoing_conflict_edges": sum(
+            int(case["reading_order_local_structure_constraint_rejected_outgoing_conflict_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constraint_rejected_incoming_conflict_edges": sum(
+            int(case["reading_order_local_structure_constraint_rejected_incoming_conflict_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constraint_rejected_cycle_edges": sum(
+            int(case["reading_order_local_structure_constraint_rejected_cycle_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_constrained_consensus_disagreement_edges": sum(
+            int(case["reading_order_local_structure_constrained_consensus_disagreement_edge_count"])
+            for case in cases
+        ),
+        "mean_reading_order_local_structure_constrained_consensus_disagreement_coverage": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_local_structure_constrained_consensus_disagreement_edge_count",
             denominator_key="reading_order_local_structure_successor_edge_count",
         ),
         "total_reading_order_proposal_streams": sum(
@@ -4197,6 +4482,15 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_local_structure_reference_successor_coverage",
         "reading_order_local_structure_consensus_disagreement_edge_count",
         "reading_order_local_structure_consensus_disagreement_coverage",
+        "reading_order_local_structure_protected_successor_edge_count",
+        "reading_order_local_structure_unresolved_successor_edge_count",
+        "reading_order_local_structure_constraint_rejected_unknown_edge_count",
+        "reading_order_local_structure_constraint_rejected_self_loop_edge_count",
+        "reading_order_local_structure_constraint_rejected_outgoing_conflict_edge_count",
+        "reading_order_local_structure_constraint_rejected_incoming_conflict_edge_count",
+        "reading_order_local_structure_constraint_rejected_cycle_edge_count",
+        "reading_order_local_structure_constrained_consensus_disagreement_edge_count",
+        "reading_order_local_structure_constrained_consensus_disagreement_coverage",
         "reading_order_candidate_stream_count",
         "reading_order_candidate_stream_recommendation_counts",
         "table_region_count",
@@ -4991,6 +5285,8 @@ def _semantic_candidate_arbitration_metrics(
     valid_relation_candidates: list[tuple[str, float, float]] = []
     valid_stream_candidates: list[tuple[str, float, float]] = []
     for candidate_name, metrics in candidate_metrics.items():
+        if candidate_name in DIAGNOSTIC_ONLY_SEMANTIC_ORDER_CANDIDATES:
+            continue
         if not isinstance(metrics, dict):
             continue
         try:
@@ -5380,6 +5676,14 @@ def _empty_semantic_candidate_summary() -> dict[str, Any]:
 def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for candidate_name in SEMANTIC_ORDER_CANDIDATES:
+        diagnostic_candidate_available = any(
+            isinstance((case.get("semantic_candidate_order_metrics") or {}).get(candidate_name), dict)
+            for case in cases
+        )
+        diagnostic_candidate_unavailable = (
+            candidate_name in DIAGNOSTIC_ONLY_SEMANTIC_ORDER_CANDIDATES
+            and not diagnostic_candidate_available
+        )
         pairwise_correct = sum(int(case[f"semantic_{candidate_name}_pairwise_correct_count"]) for case in cases)
         pairwise_total = sum(int(case[f"semantic_{candidate_name}_pairwise_total_count"]) for case in cases)
         successor_correct = sum(int(case[f"semantic_{candidate_name}_successor_correct_count"]) for case in cases)
@@ -5408,13 +5712,15 @@ def _semantic_candidate_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
         stream_precedence_total = sum(
             int(case[f"semantic_{candidate_name}_stream_precedence_total_count"]) for case in cases
         )
-        summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = round(
-            pairwise_correct / pairwise_total if pairwise_total else 1.0,
-            8,
+        summary[f"mean_semantic_{candidate_name}_order_pair_accuracy"] = (
+            None
+            if diagnostic_candidate_unavailable
+            else round(pairwise_correct / pairwise_total if pairwise_total else 1.0, 8)
         )
-        summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = round(
-            successor_correct / successor_total if successor_total else 1.0,
-            8,
+        summary[f"mean_semantic_{candidate_name}_successor_accuracy"] = (
+            None
+            if diagnostic_candidate_unavailable
+            else round(successor_correct / successor_total if successor_total else 1.0, 8)
         )
         summary[f"total_semantic_{candidate_name}_successor_correct_count"] = successor_correct
         summary[f"total_semantic_{candidate_name}_successor_count"] = successor_total
