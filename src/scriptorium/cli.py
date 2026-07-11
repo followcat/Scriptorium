@@ -149,6 +149,16 @@ def benchmark_command(
             "raster uses the rendered page image; auto benchmarks both for fidelity mode."
         ),
     ),
+    ocr_json: Optional[list[Path]] = typer.Option(
+        None,
+        "--ocr-json",
+        exists=True,
+        readable=True,
+        help=(
+            "Optional OCR/layout-anchor JSON used to create text nodes before structure fusion. "
+            "For multiple sources, pass files in source order or use matching names."
+        ),
+    ),
     structure_json: Optional[list[Path]] = typer.Option(
         None,
         "--structure-json",
@@ -173,6 +183,7 @@ def benchmark_command(
         max_pages=max_pages,
         page_ranges=page_ranges,
         structure_jsons=structure_json,
+        ocr_jsons=ocr_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -194,6 +205,8 @@ def benchmark_command(
     typer.echo(f"Image DPI: {report.get('image_dpi')}")
     typer.echo(f"Max pages: {report.get('max_pages')}")
     typer.echo(f"Page ranges: {report.get('page_ranges')}")
+    typer.echo(f"OCR JSON files: {report.get('ocr_json_count')}")
+    typer.echo(f"Structure JSON files: {report.get('structure_json_count')}")
     typer.echo(f"Font profile: {report.get('font_profile')}")
     typer.echo(f"Raster policy: {report.get('raster_policy')}")
     typer.echo(f"OCR fallback: {report.get('ocr_fallback')}")
@@ -228,6 +241,16 @@ def benchmark_structure_ab_command(
         exists=True,
         readable=True,
         help="PaddleOCR-VL/PP-StructureV3/Docling JSON evidence. Pass files in PDF order or use matching names.",
+    ),
+    ocr_json: Optional[list[Path]] = typer.Option(
+        None,
+        "--ocr-json",
+        exists=True,
+        readable=True,
+        help=(
+            "Optional OCR/layout-anchor JSON shared by both A/B branches. "
+            "Structure JSON remains exclusive to the native-plus-structure branch."
+        ),
     ),
     dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for visual comparison."),
     input_kind: SourceKind = typer.Option(
@@ -301,6 +324,7 @@ def benchmark_structure_ab_command(
         image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
+        ocr_jsons=ocr_json,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -320,6 +344,7 @@ def benchmark_structure_ab_command(
     typer.echo(f"Input kind: {report.get('input_kind')}")
     typer.echo(f"Image DPI: {report.get('image_dpi')}")
     typer.echo(f"Page ranges: {report.get('page_ranges')}")
+    typer.echo(f"OCR JSON files: {report.get('ocr_json_count')}")
     typer.echo(f"Mean visual similarity delta: {report['summary'].get('mean_visual_similarity_delta')}")
     typer.echo(f"Mean reading-order risk delta: {report['summary'].get('mean_reading_order_risk_score_delta')}")
     typer.echo(f"Grid-island element delta: {report['summary'].get('total_grid_island_element_delta')}")

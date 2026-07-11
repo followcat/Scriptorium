@@ -1702,6 +1702,143 @@ def test_pp_structure_ocr_formula_and_seal_results_are_region_evidence() -> None
     assert by_id["seal"].metadata["role"] == "seal-text"
 
 
+def test_unordered_ocr_regions_inherit_unique_explicit_parent_block_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("na", "N/A", BBox(x0=12, y0=14, x1=42, y1=24), 1),
+            ("date", "DATE", BBox(x0=50, y0=14, x1=82, y1=24), 2),
+            ("next", "Next section", BBox(x0=12, y0=40, x1=90, y1=52), 3),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 180, 56],
+                    "block_order": 7,
+                    "block_content": "N/A DATE",
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 76, 190, 110],
+                    "block_order": 8,
+                    "block_content": "Next section",
+                },
+            ],
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 84, 48], [100, 28, 164, 48], [24, 80, 180, 104]],
+                "rec_texts": ["N/A", "DATE", "Next section"],
+                "rec_scores": [0.98, 0.97, 0.96],
+            },
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    by_id = {element.id: element for element in document.pages[0].elements}
+
+    assert by_id["na"].metadata["external_structure_order"] == 7
+    assert by_id["date"].metadata["external_structure_order"] == 7
+    assert by_id["next"].metadata["external_structure_order"] == 8
+    assert by_id["na"].metadata["external_structure_order_review_only"] is True
+    assert by_id["na"].metadata["structure_evidence"]["bbox_pdf"] == [12.0, 14.0, 42.0, 24.0]
+    assert by_id["na"].metadata["structure_evidence"]["confidence"] == 0.98
+    assert by_id["na"].metadata["structure_evidence"]["ordered_companion"]["bbox_pdf"] == [
+        10.0,
+        10.0,
+        90.0,
+        28.0,
+    ]
+
+
+def test_ordered_parent_companion_is_review_only_for_runtime_order() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("first", "First line", BBox(x0=12, y0=14, x1=70, y1=24), 1),
+            ("second", "Second line", BBox(x0=12, y0=40, x1=76, y1=50), 2),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 76, 180, 110],
+                    "block_order": 1,
+                    "block_content": "Second line continuation",
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 180, 56],
+                    "block_order": 2,
+                    "block_content": "First line continuation",
+                },
+            ],
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 140, 48], [24, 80, 152, 100]],
+                "rec_texts": ["First line", "Second line"],
+                "rec_scores": [0.99, 0.98],
+            },
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+
+    assert [element.id for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)] == [
+        "first",
+        "second",
+    ]
+    assert document.metadata["structure_evidence"]["order_reordered_page_count"] == 0
+    assert document.metadata["structure_evidence"]["derived_block_stream_member_count"] == 0
+    assert all(
+        element.metadata["external_structure_order_review_only"] is True
+        for element in document.pages[0].elements
+    )
+
+
+def test_unordered_region_does_not_choose_between_conflicting_explicit_parents() -> None:
+    document = _document_with_text_boxes(
+        [("line", "Shared line", BBox(x0=12, y0=14, x1=70, y1=24), 1)]
+    )
+    payload = {
+        "source": "overlapping-layout-model",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_label": "text",
+                    "block_bbox": [20, 20, 180, 56],
+                    "block_order": 1,
+                    "block_content": "Shared line A",
+                },
+                {
+                    "block_label": "text",
+                    "block_bbox": [18, 18, 190, 60],
+                    "block_order": 2,
+                    "block_content": "Shared line B",
+                },
+            ],
+            "overall_ocr_res": {
+                "rec_boxes": [[24, 28, 140, 48]],
+                "rec_texts": ["Shared line"],
+                "rec_scores": [0.99],
+            },
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    line = document.pages[0].elements[0]
+
+    assert "external_structure_order" not in line.metadata
+    assert line.metadata["structure_evidence"]["text"] == "Shared line"
+    assert line.metadata["structure_evidence"]["confidence"] == 0.99
+    assert "ordered_companion" not in line.metadata["structure_evidence"]
+
+
 def test_pp_structure_region_ids_resolve_relations_and_stream_members() -> None:
     document = _document_with_text_boxes(
         [

@@ -1139,14 +1139,15 @@ def _explicit_structure_block_key(element: ElementIR) -> "_ExplicitStructureBloc
     structure = metadata.get("structure_evidence")
     if not isinstance(structure, Mapping):
         return None
-    order = _optional_int(structure.get("order"))
-    if order is None or _text(structure.get("order_source")).lower() != "explicit":
+    block_structure = _explicit_structure_block_evidence(structure)
+    order = _optional_int(block_structure.get("order"))
+    if order is None or _text(block_structure.get("order_source")).lower() != "explicit":
         return None
     if _text(metadata.get("external_structure_order_source")).lower() not in {"", "explicit"}:
         return None
-    source = _text(structure.get("source"))
-    label = _normalize_external_label(structure.get("label") or metadata.get("external_structure_label"))
-    bbox = structure.get("bbox_pdf")
+    source = _text(block_structure.get("source"))
+    label = _normalize_external_label(block_structure.get("label") or metadata.get("external_structure_label"))
+    bbox = block_structure.get("bbox_pdf")
     if not source or not label or not isinstance(bbox, list) or len(bbox) != 4:
         return None
     try:
@@ -1182,10 +1183,15 @@ def _block_is_primary_transition_candidate(block: "_ExplicitStructureBlock") -> 
         structure = metadata.get("structure_evidence")
         if not isinstance(structure, Mapping):
             return False
-        coverage = _safe_float(structure.get("coverage"))
+        coverage = _safe_float(_explicit_structure_block_evidence(structure).get("coverage"))
         if coverage is None or coverage < 0.5:
             return False
     return True
+
+
+def _explicit_structure_block_evidence(structure: Mapping[str, Any]) -> Mapping[str, Any]:
+    companion = structure.get("ordered_companion")
+    return companion if isinstance(companion, Mapping) else structure
 
 
 def _structure_block_confidence(block: "_ExplicitStructureBlock") -> float:
@@ -1194,7 +1200,7 @@ def _structure_block_confidence(block: "_ExplicitStructureBlock") -> float:
         structure = element.metadata.get("structure_evidence")
         if not isinstance(structure, Mapping):
             continue
-        confidence = _safe_float(structure.get("confidence"))
+        confidence = _safe_float(_explicit_structure_block_evidence(structure).get("confidence"))
         if confidence is not None:
             values.append(confidence)
     return min(values) if values else 1.0

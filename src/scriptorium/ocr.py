@@ -64,7 +64,12 @@ STRUCTURE_COMPLETION_LABELS = frozenset(
 def load_ocr_json(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     normalized = normalize_paddleocr_vl_payload(payload)
-    return normalized if isinstance(normalized, dict) else payload
+    result = normalized if isinstance(normalized, dict) else payload
+    # The loader is an explicit role boundary. A payload may contain
+    # ``document`` anchors and still be used as OCR/layout input rather than as
+    # the provider that owns semantic structure.
+    result["_scriptorium_payload_kind"] = "ocr-json"
+    return result
 
 
 def write_ocr_json(payload: Mapping[str, Any], path: str | Path) -> Path:
@@ -395,6 +400,9 @@ def _bbox_inner_coverage(inner: BBox, outer: BBox) -> float:
 
 
 def _semantic_payload_kind(payload: dict[str, Any]) -> str:
+    explicit_kind = str(payload.get("_scriptorium_payload_kind") or "").strip()
+    if explicit_kind in {"ocr-json", "structure-json"}:
+        return explicit_kind
     if _payload_contains_any_key(
         payload,
         {

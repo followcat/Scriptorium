@@ -563,6 +563,122 @@ def test_benchmark_can_score_image_source_with_structure_json(tmp_path: Path) ->
     assert "image_dpi" in csv_text
 
 
+def test_structure_ab_uses_shared_ocr_anchors_and_separate_structure_evidence(tmp_path: Path) -> None:
+    image_path = _create_image_source(tmp_path)
+    image_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["IMAGE SOURCE", "STRUCTURE JSON TEXT"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ocr_json = tmp_path / f"{image_path.stem}.ocr.json"
+    ocr_json.write_text(
+        json.dumps(
+            {
+                "source": "stable-layout-anchors",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "elements": [
+                            {
+                                "id": "anchor-title",
+                                "type": "text",
+                                "bbox_px": [40, 42, 360, 88],
+                                "text": "IMAGE SOURCE",
+                                "confidence": 0.99,
+                            },
+                            {
+                                "id": "anchor-body",
+                                "type": "text",
+                                "bbox_px": [42, 126, 420, 160],
+                                "text": "STRUCTURE JSON TEXT",
+                                "confidence": 0.99,
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    structure_json = tmp_path / f"{image_path.stem}.structure.json"
+    structure_json.write_text(
+        json.dumps(
+            {
+                "source": "independent-layout-model",
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "parsing_res_list": [
+                            {
+                                "block_label": "title",
+                                "block_bbox": [40, 42, 360, 88],
+                                "block_order": 1,
+                                "block_content": "IMAGE SOURCE",
+                                "confidence": 0.95,
+                            },
+                            {
+                                "block_label": "paragraph",
+                                "block_bbox": [42, 126, 420, 160],
+                                "block_order": 2,
+                                "block_content": "STRUCTURE JSON TEXT",
+                                "confidence": 0.94,
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_structure_ab_benchmark(
+        [image_path],
+        tmp_path / "dual-evidence-ab",
+        [structure_json],
+        dpi=96,
+        input_kind="image",
+        image_dpi=96,
+        ocr_jsons=[ocr_json],
+        ocr_fallback="off",
+        html_mode="structured",
+    )
+    comparison = report["cases"][0]
+    native_document = DocumentIR.load(comparison["native_ir"])
+    structure_document = DocumentIR.load(comparison["structure_ir"])
+
+    def anchor_inventory(document: DocumentIR) -> list[tuple[str, list[float]]]:
+        return [
+            (element.source_text, element.bbox_px.as_list())
+            for element in document.pages[0].elements
+            if element.source_text.strip()
+        ]
+
+    assert report["ocr_json_count"] == 1
+    assert report["structure_json_count"] == 1
+    assert comparison["native_ocr_json"] == str(ocr_json.resolve())
+    assert comparison["structure_ocr_json"] == str(ocr_json.resolve())
+    assert comparison["structure_json"] == str(structure_json.resolve())
+    assert anchor_inventory(native_document) == anchor_inventory(structure_document)
+    assert native_document.metadata["semantic_layer"]["driver"] == "ocr-json"
+    assert structure_document.metadata["semantic_layer"]["driver"] == "ocr-json"
+    assert structure_document.metadata["semantic_layer"]["structure_json"]["role"] == "augmenting-evidence"
+    assert comparison["structure_evidence_matched_element_count"] == 2
+    assert comparison["native_reading_order_proposal_review_block_transition_count"] == 0
+    assert comparison["structure_reading_order_proposal_review_block_transition_count"] == 1
+    assert comparison["structure_reading_order_proposal_semantic_review_block_transition_precision"] == 1.0
+    assert comparison["structure_reading_order_proposal_strict_block_transition_count"] == 0
+
+
 def test_reading_order_geometry_profile_separates_text_flow_columns_from_tables() -> None:
     text_flow_boxes: list[BBox] = []
     table_boxes: list[BBox] = []

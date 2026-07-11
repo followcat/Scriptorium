@@ -1513,8 +1513,14 @@ def _update_semantic_layer_metadata(
 ) -> None:
     current = document.metadata.get("semantic_layer")
     semantic_layer = dict(current) if isinstance(current, dict) else {}
+    semantic_driver = str(semantic_layer.get("driver") or "").strip()
+    structure_changes_selected_semantics = bool(relation_count or stream_count or reordered_pages)
     structure_drives_image_semantics = document.source_type == "image" and (
-        region_count > 0 or relation_count > 0 or stream_count > 0
+        (
+            semantic_driver in {"structure-json", "structure-plus-ocr-fallback", "visual-only", ""}
+            and (region_count > 0 or relation_count > 0 or stream_count > 0)
+        )
+        or structure_changes_selected_semantics
     )
     semantic_layer["structure_json"] = {
         "source": source,
@@ -2826,7 +2832,14 @@ def _apply_page_regions(
         region, coverage, text_similarity = match
         if coverage < min_coverage and text_similarity < min_text_similarity:
             continue
-        element.metadata["structure_evidence"] = {
+        ordered_companion = _best_explicit_order_companion(
+            element,
+            region,
+            regions,
+            min_coverage=min_coverage,
+            min_text_similarity=min_text_similarity,
+        )
+        structure_evidence = {
             "source": region.source,
             "label": region.label,
             "order": region.order,
@@ -2838,16 +2851,43 @@ def _apply_page_regions(
             "coverage": round(coverage, 6),
             "text_similarity": round(text_similarity, 6),
         }
+        if ordered_companion is not None:
+            companion_region, companion_coverage, companion_text_similarity = ordered_companion
+            structure_evidence["ordered_companion"] = {
+                "source": companion_region.source,
+                "label": companion_region.label,
+                "order": companion_region.order,
+                "order_source": companion_region.order_source,
+                "text": companion_region.text,
+                "confidence": companion_region.confidence,
+                "bbox_pdf": companion_region.bbox_pdf.as_list(),
+                "bbox_px": companion_region.bbox_px.as_list(),
+                "coverage": round(companion_coverage, 6),
+                "text_similarity": round(companion_text_similarity, 6),
+            }
+        element.metadata["structure_evidence"] = structure_evidence
         element.metadata["external_structure_label"] = region.label
-        element.metadata["external_structure_node_keys"] = _region_node_keys(region)
+        node_keys = _region_node_keys(region)
+        if ordered_companion is not None:
+            node_keys = _dedupe_texts([*node_keys, *_region_node_keys(ordered_companion[0])])
+        element.metadata["external_structure_node_keys"] = node_keys
         if region.confidence is not None:
             element.metadata["external_structure_confidence"] = region.confidence
-        if region.order is not None:
-            element.metadata["external_structure_order"] = region.order
-        if region.order_source is not None:
-            element.metadata["external_structure_order_source"] = region.order_source
+        order_region = ordered_companion[0] if ordered_companion is not None else region
+        if order_region.order is not None:
+            element.metadata["external_structure_order"] = order_region.order
+        if order_region.order_source is not None:
+            element.metadata["external_structure_order_source"] = order_region.order_source
+        if ordered_companion is not None:
+            element.metadata["external_structure_order_review_only"] = True
         _apply_external_structure_detail_metadata(element, region)
         _apply_external_structure_reading_metadata(element, page, region)
+        if ordered_companion is not None:
+            evidence = _reading_order_evidence(element)
+            if "external-structure-parent-order-review-only" not in evidence:
+                evidence.append("external-structure-parent-order-review-only")
+            element.metadata["reading_order_evidence"] = evidence
+            element.metadata["reading_order_evidence_summary"] = ",".join(evidence)
         matched_count += 1
     return matched_count
 
@@ -3290,6 +3330,8 @@ def _derived_block_stream_signature(
     if str(metadata.get("external_structure_stream_id") or "").strip():
         return None
     if metadata.get("external_structure_order_diagnostic_only") is True:
+        return None
+    if metadata.get("external_structure_order_review_only") is True:
         return None
     if str(metadata.get("reading_order_scope") or "body").strip() != "body":
         return None
@@ -4004,6 +4046,50 @@ def _best_region_match(element: ElementIR, regions: list[StructureRegion]) -> tu
     return region, coverage, text_similarity
 
 
+def _best_explicit_order_companion(
+    element: ElementIR,
+    anchor_region: StructureRegion,
+    regions: list[StructureRegion],
+    *,
+    min_coverage: float,
+    min_text_similarity: float,
+) -> tuple[StructureRegion, float, float] | None:
+    """Combine a precise unordered anchor with its unique ordered parent block."""
+
+    if anchor_region.order is not None and anchor_region.order_source == "explicit":
+        return None
+    anchor_label = _normalize_structure_label(anchor_region.label)
+    candidates: list[tuple[float, float, float, StructureRegion, float, float]] = []
+    for region in regions:
+        if region is anchor_region:
+            continue
+        if region.order is None or region.order_source != "explicit":
+            continue
+        if region.source != anchor_region.source:
+            continue
+        if _normalize_structure_label(region.label) != anchor_label:
+            continue
+        coverage = _bbox_coverage(element.bbox_pdf, region.bbox_pdf)
+        text_similarity = _text_similarity(element.source_text, region.text)
+        if coverage < min_coverage and text_similarity < max(min_text_similarity, 0.8):
+            continue
+        score = coverage * 0.75 + text_similarity * 0.25
+        specificity = -max(region.bbox_pdf.width * region.bbox_pdf.height, 1.0)
+        candidates.append((score, text_similarity, specificity, region, coverage, text_similarity))
+    if not candidates:
+        return None
+
+    # Overlapping explicit blocks with different orders are not a safe parent
+    # relation. Keep the precise unordered anchor instead of selecting one by
+    # an arbitrary score tie-break.
+    orders = {candidate[3].order for candidate in candidates}
+    if len(orders) != 1:
+        return None
+    best = max(candidates, key=lambda candidate: candidate[:3])
+    _score, _similarity_rank, _specificity, region, coverage, text_similarity = best
+    return region, coverage, text_similarity
+
+
 def _bbox_coverage(inner: BBox, outer: BBox) -> float:
     intersection_width = max(0.0, min(inner.x1, outer.x1) - max(inner.x0, outer.x0))
     intersection_height = max(0.0, min(inner.y1, outer.y1) - max(inner.y0, outer.y0))
@@ -4148,6 +4234,8 @@ def _external_structure_order_participates(element: ElementIR) -> bool:
     if _optional_int(metadata.get("external_structure_order")) is None:
         return False
     if metadata.get("external_structure_order_diagnostic_only") is True:
+        return False
+    if metadata.get("external_structure_order_review_only") is True:
         return False
     # Docling's full body traversal is useful region evidence, but only its
     # same-container local runs become executable relation edges.  Do not turn

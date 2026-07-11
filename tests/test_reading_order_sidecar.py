@@ -517,6 +517,34 @@ def test_explicit_consecutive_primary_blocks_add_provenance_rich_review_transiti
     assert [element.id for element in sorted((first, source_boundary, target_boundary, last), key=lambda item: item.reading_order)] == original_order
 
 
+def test_review_only_parent_order_still_proposes_block_transition() -> None:
+    source = _element("source", "Source", 1, 10, 20)
+    target = _element("target", "Target", 2, 120, 20)
+    _attach_structure_block((source,), order=4, label="paragraph", bbox=[10, 18, 90, 34])
+    _attach_structure_block((target,), order=5, label="paragraph", bbox=[120, 18, 200, 34])
+    for element in (source, target):
+        structure = element.metadata["structure_evidence"]
+        element.metadata["structure_evidence"] = {
+            **structure,
+            "order": None,
+            "order_source": None,
+            "ordered_companion": dict(structure),
+        }
+        element.metadata["external_structure_order_review_only"] = True
+
+    proposal = propose_reading_order_sidecar(_document([source, target]))
+
+    assert proposal["summary"]["strict_block_transition_count"] == 0
+    assert proposal["summary"]["review_block_transition_count"] == 1
+    transition = next(
+        item
+        for item in proposal["pages"][0]["review_transitions"]
+        if item.get("provenance", {}).get("kind") == "external-structure-explicit-block-order-v1"
+    )
+    assert transition["source"] == "source"
+    assert transition["target"] == "target"
+
+
 def test_secondary_or_missing_block_order_is_a_transition_boundary() -> None:
     body_before = _element("body-before", "Body before", 1, 10, 20)
     sidebar = _element(

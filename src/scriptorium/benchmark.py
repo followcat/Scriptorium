@@ -16,7 +16,7 @@ from .benchmark_fixtures import create_benchmark_fixtures
 from .html_export import FidelityBackground, HtmlTextFit, export_html, page_replacement_geometries
 from .models import BBox, DocumentIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
-from .ocr import normalize_ocr_to_ir
+from .ocr import load_ocr_json, normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_source
 from .quality import compare_source_to_pdf_rendering, inspect_fidelity_replacement_layout
@@ -79,6 +79,7 @@ def run_benchmark(
     max_pages: int | None = None,
     page_ranges: str | None = None,
     structure_jsons: list[str | Path] | None = None,
+    ocr_jsons: list[str | Path] | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
     ocr_fallback: OcrFallback = "image-only",
@@ -103,6 +104,7 @@ def run_benchmark(
     input_sources = [Path(source) for source in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
     case_output_slugs = _benchmark_case_output_slugs(input_sources)
     structure_json_by_source = _structure_json_by_source(input_sources, structure_jsons or [])
+    ocr_json_by_source = _ocr_json_by_source(input_sources, ocr_jsons or [])
 
     cases: list[dict[str, Any]] = []
     for source_path, case_output_slug in zip(input_sources, case_output_slugs):
@@ -124,6 +126,7 @@ def run_benchmark(
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
                     structure_json=structure_json_by_source.get(source_path.resolve()),
+                    ocr_json=ocr_json_by_source.get(source_path.resolve()),
                     raster_policy=raster_policy,
                     ocr_fallback=ocr_fallback,
                     ocr_language=ocr_language,
@@ -149,6 +152,7 @@ def run_benchmark(
                     page_ranges=page_ranges_request,
                     page_indices=page_indices_request,
                     structure_json=structure_json_by_source.get(source_path.resolve()),
+                    ocr_json=ocr_json_by_source.get(source_path.resolve()),
                     font_profile=font_profile,
                     raster_policy=raster_policy,
                     ocr_fallback=ocr_fallback,
@@ -171,6 +175,8 @@ def run_benchmark(
         "max_pages": max_pages_request,
         "page_ranges": page_ranges_request,
         "sampled_page_numbers": [index + 1 for index in page_indices_request] if page_indices_request else None,
+        "ocr_json_count": len(ocr_json_by_source),
+        "structure_json_count": len(structure_json_by_source),
         "font_profile": font_profile,
         "raster_policy": raster_policy,
         "ocr_fallback": ocr_fallback,
@@ -199,6 +205,7 @@ def run_structure_ab_benchmark(
     image_dpi: int = 96,
     max_pages: int | None = None,
     page_ranges: str | None = None,
+    ocr_jsons: list[str | Path] | None = None,
     font_profile: BenchmarkFontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
     ocr_fallback: OcrFallback = "image-only",
@@ -224,6 +231,7 @@ def run_structure_ab_benchmark(
         image_dpi=image_dpi,
         max_pages=max_pages,
         page_ranges=page_ranges,
+        ocr_jsons=ocr_jsons,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -244,6 +252,7 @@ def run_structure_ab_benchmark(
         max_pages=max_pages,
         page_ranges=page_ranges,
         structure_jsons=structure_jsons,
+        ocr_jsons=ocr_jsons,
         font_profile=font_profile,
         raster_policy=raster_policy,
         ocr_fallback=ocr_fallback,
@@ -271,6 +280,8 @@ def run_structure_ab_benchmark(
             for index in (_page_indices_request(_page_ranges_request(page_ranges), _max_pages_request(max_pages)) or [])
         ]
         or None,
+        "ocr_json_count": len(ocr_jsons or []),
+        "structure_json_count": len(structure_jsons),
         "font_profile": font_profile,
         "raster_policy": raster_policy,
         "ocr_fallback": ocr_fallback,
@@ -336,6 +347,9 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "source_pdf": structure_case["source_pdf"],
         "native_ir": native_case["ir"],
         "structure_ir": structure_case["ir"],
+        "native_ocr_json": native_case.get("ocr_json"),
+        "structure_ocr_json": structure_case.get("ocr_json"),
+        "structure_json": structure_case.get("structure_json"),
         "native_visual_similarity": native_case["visual_similarity"],
         "structure_visual_similarity": structure_case["visual_similarity"],
         "visual_similarity_delta": _numeric_delta(structure_case, native_case, "visual_similarity"),
@@ -1002,6 +1016,9 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "name",
         "source",
         "source_pdf",
+        "native_ocr_json",
+        "structure_ocr_json",
+        "structure_json",
         "native_visual_similarity",
         "structure_visual_similarity",
         "visual_similarity_delta",
@@ -1161,6 +1178,7 @@ def _run_case(
     page_ranges: str | None = None,
     page_indices: tuple[int, ...] | None = None,
     structure_json: Path | None = None,
+    ocr_json: Path | None = None,
     font_profile: FontProfile = "browser-default",
     raster_policy: RasterPolicy = "dense",
     ocr_fallback: OcrFallback = "image-only",
@@ -1190,7 +1208,8 @@ def _run_case(
 
     start = time.perf_counter()
     structure_payload = load_structure_json(structure_json) if structure_json is not None else None
-    if rendered.source_type == "pdf":
+    ocr_payload = load_ocr_json(ocr_json) if ocr_json is not None else None
+    if rendered.source_type == "pdf" and ocr_payload is None:
         document = extract_native_pdf_to_ir(
             rendered,
             font_profile=font_profile,
@@ -1203,7 +1222,7 @@ def _run_case(
     else:
         document = normalize_ocr_to_ir(
             rendered,
-            structure_payload,
+            ocr_payload if ocr_payload is not None else structure_payload,
             crop_dir=out_dir / "crops",
             ocr_fallback=ocr_fallback,
             ocr_language=ocr_language,
@@ -1303,6 +1322,8 @@ def _run_case(
         "max_pages": max_pages,
         "page_ranges": page_ranges,
         "sampled_page_numbers": [index + 1 for index in page_indices] if page_indices else None,
+        "ocr_json": str(ocr_json) if ocr_json is not None else None,
+        "structure_json": str(structure_json) if structure_json is not None else None,
         "ir": str(ir_path),
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
@@ -1748,6 +1769,7 @@ def _run_calibrated_case(
     page_ranges: str | None,
     page_indices: tuple[int, ...] | None,
     structure_json: Path | None,
+    ocr_json: Path | None,
     raster_policy: RasterPolicy,
     ocr_fallback: OcrFallback,
     ocr_language: str,
@@ -1771,6 +1793,7 @@ def _run_calibrated_case(
             page_ranges=page_ranges,
             page_indices=page_indices,
             structure_json=structure_json,
+            ocr_json=ocr_json,
             font_profile=profile,
             raster_policy=raster_policy,
             ocr_fallback=ocr_fallback,
@@ -4640,6 +4663,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "max_pages",
         "page_ranges",
         "sampled_page_numbers",
+        "ocr_json",
+        "structure_json",
         "page_count",
         "element_count",
         "editable_element_count",
@@ -5318,11 +5343,24 @@ def _benchmark_case_output_slugs(input_sources: list[Path]) -> list[str]:
 
 
 def _structure_json_by_source(input_sources: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:
-    if not structure_jsons:
+    return _evidence_json_by_source(input_sources, structure_jsons, evidence_name="structure")
+
+
+def _ocr_json_by_source(input_sources: list[Path], ocr_jsons: list[str | Path]) -> dict[Path, Path]:
+    return _evidence_json_by_source(input_sources, ocr_jsons, evidence_name="OCR")
+
+
+def _evidence_json_by_source(
+    input_sources: list[Path],
+    evidence_jsons: list[str | Path],
+    *,
+    evidence_name: str,
+) -> dict[Path, Path]:
+    if not evidence_jsons:
         return {}
 
     sources = [source.resolve() for source in input_sources]
-    paths = [Path(path).resolve() for path in structure_jsons]
+    paths = [Path(path).resolve() for path in evidence_jsons]
     if len(paths) == 1 and len(sources) == 1:
         return {sources[0]: paths[0]}
     if len(paths) == len(sources):
@@ -5337,7 +5375,7 @@ def _structure_json_by_source(input_sources: list[Path], structure_jsons: list[s
     mapping: dict[Path, Path] = {}
     unmatched: list[Path] = []
     for path in paths:
-        source = source_keys.get(_structure_match_key(path))
+        source = source_keys.get(_evidence_match_key(path))
         if source is None:
             unmatched.append(path)
             continue
@@ -5346,14 +5384,14 @@ def _structure_json_by_source(input_sources: list[Path], structure_jsons: list[s
     if unmatched or len(mapping) != len(paths):
         names = ", ".join(str(path) for path in unmatched or paths)
         raise ValueError(
-            "Could not match structure JSON files to sources. "
+            f"Could not match {evidence_name} JSON files to sources. "
             "Pass one JSON for one source, pass the same number of sources and JSON files, "
-            f"or use matching names such as <source-stem>.structure.json. Unmatched: {names}"
+            f"or use matching names such as <source-stem>.{evidence_name.lower()}.json. Unmatched: {names}"
         )
     return mapping
 
 
-def _structure_match_key(path: Path) -> str:
+def _evidence_match_key(path: Path) -> str:
     name = path.name
     if name.endswith(".json"):
         name = name[:-5]
