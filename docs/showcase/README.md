@@ -10,9 +10,8 @@ GitHub Pages is unavailable. The left side is a tracked source page; the right
 side is a fresh Chromium screenshot of the generated HTML in this repository.
 
 The standalone interactive bundle remains at [`index.html`](index.html). A
-workflow run also publishes the complete `scriptorium-showcase` artifact. When
-GitHub Pages is available, set the repository Actions variable
-`PAGES_ENABLED=true` to deploy the same bundle.
+workflow run also publishes the complete `scriptorium-showcase` artifact and
+deploys the same bundle to GitHub Pages.
 
 ## Multi-column paper
 
