@@ -312,6 +312,20 @@ Relation graph 现在报告选择时的替代边，而不是只给出序列化 c
 
 合并摘要：平均视觉相似度为 `0.81937118`，最大差异为 `0.32268996`，平均差异为 `0.10016847`，p95 差异为 `0.30295399`；总翻译元素 `567`，总 overflow `326`，总 conflict `475`，总冲突目标 `578`。本次共约束 `396` 个 replacement mask、`672` 个方向边。和同输入的 v1 baseline 相比，conflict 减少 `90`，冲突目标减少 `321`，overflow 不变；这说明它提高了 mask 安全性，而不是解决长译文 fitting。`grid_island_element_count` 合计 `66`，其中 PUMA 为 31，JD 为 35。
 
+### Browser-Layout Fit v3
+
+`outputs/external/translation-stress-browser-fit-v2` 在 v3 browser-layout replacement pass 后重跑同样 15 页。三个选中的 case 都使用 raster fidelity；生成 HTML 会在 Chromium 切换到 print media、字体 ready 后实测，并为每个 case 写出 `quality/fidelity_replacement_layout_report.json` sidecar。导出 PDF 前会执行同一轮 fitting。
+
+| 样本 | 页数 | 选择路径 | 视觉相似度 | 静态估算 Overflow | Chromium 实测裁切 | 实际平均 Fit | Browser Fitted / 行高压缩 | 深色 Mask | 页数/尺寸匹配 |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 年报 | 12 | `fidelity/raster` | 0.89910421 | 187 | 0 | 0.95120879 | 398 / 13 | 101 | yes / yes |
+| JD 首页截图 PDF | 1 | `fidelity/raster` | 0.95797219 | 97 | 79 | 0.67350577 | 104 / 8 | 0 | yes / yes |
+| Hacker News 打印 PDF | 2 | `fidelity/raster` | 0.92572866 | 42 | 2 | 0.92540769 | 65 / 60 | 0 | yes / yes |
+
+合并视觉相似度为 `0.92760169`；max / mean / p95 diff 为 `0.10089579` / `0.04620805` / `0.09823334`。全部 567 个 replacement 都经过 browser fitting；实际平均 fit scale 为 `0.89731428`，静态为 `0.66695203`，81 个选择压缩行高，101 个使用深色背景采样 mask。本运行记录 326 个静态估算 overflow 和 81 个浏览器实测裁切；它们刻意是不同指标，不能写成直接的 `326 -> 81` 前后降幅。按实测 clipping policy，conflict 为 400，冲突目标为 578。
+
+这是端到端分数，不是单变量因果归因：PUMA 在 v3 选择 raster，而历史 padding-only 表选择 SVG；本运行还包含 print-DPI 坐标修复和深色 mask 行为。JD 剩余的 79 个真实裁切是最主要的通用 reflow 目标，应通过局部 stream/region layout 解决，而不是写样例特例。
+
 同一次运行的页级候选建议为：`keep-selected-low-consensus: 1`、`keep-selected-supported: 5`、`needs-structure-evidence: 7`、`review-disagreement: 2`。流级诊断更关注局部结构：`keep-selected-low-consensus: 5`、`keep-selected-supported: 39`、`needs-structure-evidence: 17`、`review-consensus: 1`、`review-disagreement: 1`。
 
 之前 JD-only 的翻译压力测试暴露了 Chromium 额外尾部空白页：真实页面 diff 是 `0.12536428`，但报告被额外空白导出页主导，导致 case 被记为 `visual_similarity = 0.0`。现在 `print_html_to_pdf()` 只删除超出源页数的尾部空白伪页，因此 JD stress 分数回到 `0.87463572`，而真正有内容的溢出页仍会被保留和评分。

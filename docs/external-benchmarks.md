@@ -318,6 +318,20 @@ This confirms that a margin gate is not a substitute for semantic structure: it 
 
 Combined summary: mean visual similarity is `0.81937118`, max diff is `0.32268996`, mean diff is `0.10016847`, p95 diff is `0.30295399`, total translation elements are `567`, total overflows are `326`, total conflicts are `475`, and total conflict targets are `578`. The run constrains `396` replacement masks across `672` directional sides. Against the v1 baseline on the same inputs, that is `90` fewer conflicts and `321` fewer conflict targets with unchanged overflow, so the result is a mask-safety improvement rather than a long-text fitting improvement. `grid_island_element_count` totals `66`: 31 from PUMA and 35 from JD.
 
+### Browser-Layout Fit v3
+
+`outputs/external/translation-stress-browser-fit-v2` reruns the same 15 pages after the v3 browser-layout replacement pass. It uses raster fidelity for all three selected cases, measures the generated HTML in Chromium after print media and fonts are ready, and writes a `quality/fidelity_replacement_layout_report.json` sidecar for each case. The resulting PDF is produced only after the same fitting pass has run.
+
+| Sample | Pages | Selected Path | Visual Similarity | Static Estimated Overflow | Actual Chromium Clips | Actual Mean Fit | Browser Fitted / Line-Height Compacted | Dark Masks | Page/Size Match |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| PUMA 2024 Annual Report | 12 | `fidelity/raster` | 0.89910421 | 187 | 0 | 0.95120879 | 398 / 13 | 101 | yes / yes |
+| JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.95797219 | 97 | 79 | 0.67350577 | 104 / 8 | 0 | yes / yes |
+| Hacker News print PDF | 2 | `fidelity/raster` | 0.92572866 | 42 | 2 | 0.92540769 | 65 / 60 | 0 | yes / yes |
+
+The combined visual similarity is `0.92760169`; max / mean / p95 diff are `0.10089579` / `0.04620805` / `0.09823334`. All 567 replacements were browser-fitted; the mean actual fit scale is `0.89731428` versus static `0.66695203`, 81 selected compact line height, and 101 used a sampled dark mask. The run records 326 static estimated overflows and 81 actual browser clips. Those are intentionally different measures, so they are not a direct `326 -> 81` before/after reduction. It records 400 conflicts and 578 conflict targets under the measured clipping policy.
+
+This is an end-to-end score, not an isolated causal attribution: PUMA selects raster in v3 whereas the historical padding-only table selected SVG, and the run also contains the print-DPI coordinate correction and dark-mask behavior. The remaining 79 actual clips on JD are the primary generic reflow target; they should be addressed through local stream/region layout rather than sample-specific rules.
+
 The same run reports page-level candidate recommendations as `keep-selected-low-consensus: 1`, `keep-selected-supported: 5`, `needs-structure-evidence: 7`, and `review-disagreement: 2`. Stream-level diagnostics are stricter on local flows: `keep-selected-low-consensus: 5`, `keep-selected-supported: 39`, `needs-structure-evidence: 17`, `review-consensus: 1`, and `review-disagreement: 1`.
 
 A previous JD-only stress run exposed a Chromium extra blank tail page: the real page diff was `0.12536428`, but the report was dominated by an extra blank exported page and scored the case as `visual_similarity = 0.0`. `print_html_to_pdf()` now removes only trailing blank artifact pages beyond the expected source page count, so the JD stress score is `0.87463572` and real nonblank overflow pages remain measurable.

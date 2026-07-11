@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import time
@@ -18,7 +19,7 @@ from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_p
 from .ocr import normalize_ocr_to_ir
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_source
-from .quality import compare_source_to_pdf_rendering
+from .quality import compare_source_to_pdf_rendering, inspect_fidelity_replacement_layout
 from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
 from .reading_order import (
     infer_box_flow_order,
@@ -92,10 +93,11 @@ def run_benchmark(
     fidelity_background_request = _fidelity_background_request(fidelity_background)
     translation_stress_request = _translation_stress_request(translation_stress)
     input_sources = [Path(source) for source in pdfs] if pdfs else create_benchmark_fixtures(target / "fixtures")
+    case_output_slugs = _benchmark_case_output_slugs(input_sources)
     structure_json_by_source = _structure_json_by_source(input_sources, structure_jsons or [])
 
     cases: list[dict[str, Any]] = []
-    for source_path in input_sources:
+    for source_path, case_output_slug in zip(input_sources, case_output_slugs):
         if (
             font_profile == "auto"
             or html_mode_request == "auto"
@@ -106,7 +108,7 @@ def run_benchmark(
             cases.append(
                 _run_calibrated_case(
                     source_path,
-                    target / "cases" / source_path.stem,
+                    target / "cases" / case_output_slug,
                     dpi=dpi,
                     input_kind=input_kind,
                     image_dpi=image_dpi,
@@ -131,7 +133,7 @@ def run_benchmark(
             cases.append(
                 _run_case(
                     source_path,
-                    target / "cases" / source_path.stem,
+                    target / "cases" / case_output_slug,
                     dpi=dpi,
                     input_kind=input_kind,
                     image_dpi=image_dpi,
@@ -996,6 +998,15 @@ def _run_case(
     timings["export_html_seconds"] = _elapsed(start)
 
     start = time.perf_counter()
+    replacement_layout_report_path = out_dir / "quality" / "fidelity_replacement_layout_report.json"
+    replacement_layout = (
+        inspect_fidelity_replacement_layout(html_path, replacement_layout_report_path)
+        if html_mode == "fidelity"
+        else _empty_fidelity_replacement_layout()
+    )
+    timings["replacement_layout_seconds"] = _elapsed(start)
+
+    start = time.perf_counter()
     export_name = f"{html_mode}-{fidelity_background}-export.pdf" if html_mode == "fidelity" else f"{html_mode}-export.pdf"
     exported_pdf = print_html_to_pdf(
         html_path,
@@ -1035,7 +1046,7 @@ def _run_case(
     timings["semantic_compare_seconds"] = _elapsed(start)
 
     stats = _document_stats(document)
-    replacement_stats = _fidelity_replacement_stats(document, html_mode)
+    replacement_stats = _fidelity_replacement_stats(document, html_mode, replacement_layout)
     reading_order_risk = _reading_order_risk_metrics(document, semantic_quality)
     semantic_layer = document.metadata.get("semantic_layer") if isinstance(document.metadata, dict) else {}
     if not isinstance(semantic_layer, dict):
@@ -1063,6 +1074,9 @@ def _run_case(
         "html": str(html_path),
         "exported_pdf": str(exported_pdf),
         "quality_report": str(out_dir / "quality" / quality_report_name),
+        "fidelity_replacement_layout_report": str(replacement_layout_report_path)
+        if html_mode == "fidelity"
+        else None,
         "semantic_report": str(out_dir / "semantic" / "semantic_quality_report.json"),
         "reading_order_sidecar_proposal": str(reading_order_sidecar_path),
         "reading_order_sidecar_proposal_semantic_report": str(
@@ -1277,7 +1291,26 @@ def _run_case(
             "translation_stress_char_expansion_ratio"
         ],
         "fidelity_replacement_element_count": replacement_stats["fidelity_replacement_element_count"],
+        "fidelity_replacement_layout_measurement_available": replacement_stats[
+            "fidelity_replacement_layout_measurement_available"
+        ],
+        "fidelity_replacement_layout_measured_count": replacement_stats[
+            "fidelity_replacement_layout_measured_count"
+        ],
+        "fidelity_replacement_estimated_overflow_count": replacement_stats[
+            "fidelity_replacement_estimated_overflow_count"
+        ],
         "fidelity_replacement_overflow_count": replacement_stats["fidelity_replacement_overflow_count"],
+        "fidelity_replacement_browser_fit_count": replacement_stats["fidelity_replacement_browser_fit_count"],
+        "fidelity_replacement_line_height_compacted_count": replacement_stats[
+            "fidelity_replacement_line_height_compacted_count"
+        ],
+        "fidelity_replacement_sampled_background_mask_count": replacement_stats[
+            "fidelity_replacement_sampled_background_mask_count"
+        ],
+        "fidelity_replacement_mask_color_source_counts": replacement_stats[
+            "fidelity_replacement_mask_color_source_counts"
+        ],
         "fidelity_replacement_conflict_count": replacement_stats["fidelity_replacement_conflict_count"],
         "fidelity_replacement_conflict_target_count": replacement_stats[
             "fidelity_replacement_conflict_target_count"
@@ -1296,6 +1329,12 @@ def _run_case(
         ],
         "fidelity_replacement_min_fit_scale": replacement_stats["fidelity_replacement_min_fit_scale"],
         "fidelity_replacement_mean_fit_scale": replacement_stats["fidelity_replacement_mean_fit_scale"],
+        "fidelity_replacement_static_min_fit_scale": replacement_stats[
+            "fidelity_replacement_static_min_fit_scale"
+        ],
+        "fidelity_replacement_static_mean_fit_scale": replacement_stats[
+            "fidelity_replacement_static_mean_fit_scale"
+        ],
         "fidelity_replacement_policy_counts": replacement_stats["fidelity_replacement_policy_counts"],
         "fidelity_replacement_conflict_target_stream_type_counts": replacement_stats[
             "fidelity_replacement_conflict_target_stream_type_counts"
@@ -1839,11 +1878,22 @@ def _document_stats(document: DocumentIR) -> dict[str, Any]:
     }
 
 
-def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> dict[str, Any]:
+def _fidelity_replacement_stats(
+    document: DocumentIR,
+    html_mode: HtmlMode,
+    replacement_layout: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if html_mode != "fidelity":
         return _empty_fidelity_replacement_stats()
 
-    geometries: list[dict[str, object]] = []
+    layout = replacement_layout or _empty_fidelity_replacement_layout()
+    layout_available = bool(layout.get("available"))
+    layout_by_id = {
+        str(entry.get("element_id")): entry
+        for entry in layout.get("elements", [])
+        if isinstance(entry, dict) and str(entry.get("element_id") or "").strip()
+    }
+    replacement_records: list[dict[str, object]] = []
     stream_groups: dict[tuple[int, str, str], dict[str, Any]] = {}
     stream_type_counts: Counter[str] = Counter()
     stream_type_overflow_counts: Counter[str] = Counter()
@@ -1855,25 +1905,59 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
     conflict_target_stream_id_counts: Counter[str] = Counter()
     conflict_stream_type_pair_counts: Counter[str] = Counter()
     conflict_stream_id_pair_counts: Counter[str] = Counter()
+    mask_color_source_counts: Counter[str] = Counter()
     same_stream_conflict_target_count = 0
     cross_stream_conflict_target_count = 0
     padding_constrained_count = 0
     padding_constraint_side_count = 0
+    layout_measured_count = 0
+    estimated_overflow_count = 0
+    browser_fit_count = 0
+    line_height_compacted_count = 0
+    sampled_background_mask_count = 0
+
     for page in document.pages:
         page_geometries = page_replacement_geometries(page, "fidelity")
         elements_by_id = {element.id: element for element in page.elements}
         for element_id, geometry in page_geometries.items():
             element = elements_by_id.get(element_id)
             stream_id, stream_type = _replacement_stream_metadata(element)
-            overflow = bool(geometry.get("overflow"))
-            conflict = bool(geometry.get("conflict"))
-            conflict_target_count = _replacement_conflict_target_count(geometry)
+            layout_entry = layout_by_id.get(element_id)
+            measured = layout_available and layout_entry is not None
+            estimated_overflow = bool(geometry.get("estimated_overflow", geometry.get("overflow")))
+            overflow = bool(layout_entry.get("overflow")) if measured else estimated_overflow
+            conflict_ids = _replacement_conflict_ids(geometry)
+            conflict = bool(conflict_ids or overflow)
             padding_constrained = bool(geometry.get("padding_constrained"))
             padding_side_count = int(geometry.get("padding_constraint_side_count") or 0)
-            fit_scale = geometry.get("fit_scale")
-            fit_scale_float = float(fit_scale) if fit_scale is not None else None
+            static_fit_scale = _float_or_none(geometry.get("fit_scale"))
+            fit_scale = _float_or_none(layout_entry.get("fit_scale")) if measured else static_fit_scale
+            browser_fit = bool(measured and layout_entry.get("fit_policy") == "browser-layout-v1")
+            declared_line_height = _float_or_none(layout_entry.get("declared_line_height")) if measured else None
+            rendered_line_height = _float_or_none(layout_entry.get("rendered_line_height")) if measured else None
+            line_height_compacted = bool(
+                declared_line_height is not None
+                and rendered_line_height is not None
+                and rendered_line_height < declared_line_height - 0.01
+            )
+            mask_color_source = str(geometry.get("mask_color_source") or "white-default")
 
-            geometries.append(geometry)
+            replacement_records.append(
+                {
+                    "geometry": geometry,
+                    "estimated_overflow": estimated_overflow,
+                    "overflow": overflow,
+                    "conflict": conflict,
+                    "fit_scale": fit_scale,
+                    "static_fit_scale": static_fit_scale,
+                }
+            )
+            layout_measured_count += int(measured)
+            estimated_overflow_count += int(estimated_overflow)
+            browser_fit_count += int(browser_fit)
+            line_height_compacted_count += int(line_height_compacted)
+            mask_color_source_counts[mask_color_source] += 1
+            sampled_background_mask_count += int(mask_color_source == "edge-sampled-dark-background")
             stream_type_counts[stream_type] += 1
             stream_id_counts[stream_id] += 1
             if overflow:
@@ -1892,6 +1976,7 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
                     "stream_id": stream_id,
                     "stream_type": stream_type,
                     "element_count": 0,
+                    "estimated_overflow_count": 0,
                     "overflow_count": 0,
                     "conflict_count": 0,
                     "conflict_target_count": 0,
@@ -1899,23 +1984,33 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
                     "cross_stream_conflict_target_count": 0,
                     "padding_constrained_count": 0,
                     "padding_constraint_side_count": 0,
+                    "layout_measured_count": 0,
+                    "browser_fit_count": 0,
+                    "line_height_compacted_count": 0,
                     "conflict_target_stream_type_counts": Counter(),
                     "conflict_target_stream_id_counts": Counter(),
                     "conflict_stream_type_pair_counts": Counter(),
                     "conflict_stream_id_pair_counts": Counter(),
                     "fit_scales": [],
+                    "static_fit_scales": [],
                 },
             )
             group["element_count"] += 1
+            group["estimated_overflow_count"] += int(estimated_overflow)
             group["overflow_count"] += int(overflow)
             group["conflict_count"] += int(conflict)
-            group["conflict_target_count"] += conflict_target_count
+            group["conflict_target_count"] += len(conflict_ids)
             group["padding_constrained_count"] += int(padding_constrained)
             group["padding_constraint_side_count"] += padding_side_count
-            if fit_scale_float is not None:
-                group["fit_scales"].append(fit_scale_float)
+            group["layout_measured_count"] += int(measured)
+            group["browser_fit_count"] += int(browser_fit)
+            group["line_height_compacted_count"] += int(line_height_compacted)
+            if fit_scale is not None:
+                group["fit_scales"].append(fit_scale)
+            if static_fit_scale is not None:
+                group["static_fit_scales"].append(static_fit_scale)
 
-            for target_id in _replacement_conflict_ids(geometry):
+            for target_id in conflict_ids:
                 target = elements_by_id.get(target_id)
                 target_stream_id, target_stream_type = _replacement_stream_metadata(target)
                 type_pair = f"{stream_type}=>{target_stream_type}"
@@ -1934,13 +2029,23 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
                 group["conflict_stream_type_pair_counts"][type_pair] += 1
                 group["conflict_stream_id_pair_counts"][id_pair] += 1
 
-    fit_scales = [float(geometry["fit_scale"]) for geometry in geometries if geometry.get("fit_scale") is not None]
-    policy_counts = Counter(str(geometry.get("policy") or "unknown") for geometry in geometries)
-    conflict_target_count = sum(_replacement_conflict_target_count(geometry) for geometry in geometries)
+    fit_scales = [record["fit_scale"] for record in replacement_records if record["fit_scale"] is not None]
+    static_fit_scales = [
+        record["static_fit_scale"] for record in replacement_records if record["static_fit_scale"] is not None
+    ]
+    policy_counts = Counter(str(record["geometry"].get("policy") or "unknown") for record in replacement_records)
+    conflict_target_count = sum(len(_replacement_conflict_ids(record["geometry"])) for record in replacement_records)
     return {
-        "fidelity_replacement_element_count": len(geometries),
-        "fidelity_replacement_overflow_count": sum(1 for geometry in geometries if bool(geometry.get("overflow"))),
-        "fidelity_replacement_conflict_count": sum(1 for geometry in geometries if bool(geometry.get("conflict"))),
+        "fidelity_replacement_element_count": len(replacement_records),
+        "fidelity_replacement_layout_measurement_available": layout_available,
+        "fidelity_replacement_layout_measured_count": layout_measured_count,
+        "fidelity_replacement_estimated_overflow_count": estimated_overflow_count,
+        "fidelity_replacement_overflow_count": sum(1 for record in replacement_records if bool(record["overflow"])),
+        "fidelity_replacement_browser_fit_count": browser_fit_count,
+        "fidelity_replacement_line_height_compacted_count": line_height_compacted_count,
+        "fidelity_replacement_sampled_background_mask_count": sampled_background_mask_count,
+        "fidelity_replacement_mask_color_source_counts": dict(sorted(mask_color_source_counts.items())),
+        "fidelity_replacement_conflict_count": sum(1 for record in replacement_records if bool(record["conflict"])),
         "fidelity_replacement_conflict_target_count": conflict_target_count,
         "fidelity_replacement_same_stream_conflict_target_count": same_stream_conflict_target_count,
         "fidelity_replacement_cross_stream_conflict_target_count": cross_stream_conflict_target_count,
@@ -1948,6 +2053,10 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
         "fidelity_replacement_padding_constraint_side_count": padding_constraint_side_count,
         "fidelity_replacement_min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
         "fidelity_replacement_mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
+        "fidelity_replacement_static_min_fit_scale": round(min(static_fit_scales), 8) if static_fit_scales else None,
+        "fidelity_replacement_static_mean_fit_scale": (
+            round(sum(static_fit_scales) / len(static_fit_scales), 8) if static_fit_scales else None
+        ),
         "fidelity_replacement_policy_counts": dict(sorted(policy_counts.items())),
         "fidelity_replacement_conflict_target_stream_type_counts": dict(
             sorted(conflict_target_stream_type_counts.items())
@@ -1969,10 +2078,34 @@ def _fidelity_replacement_stats(document: DocumentIR, html_mode: HtmlMode) -> di
     }
 
 
+def _empty_fidelity_replacement_layout() -> dict[str, Any]:
+    return {
+        "available": False,
+        "measurement_policy": "browser-dom-v1",
+        "elements": [],
+    }
+
+
+def _float_or_none(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _empty_fidelity_replacement_stats() -> dict[str, Any]:
     return {
         "fidelity_replacement_element_count": 0,
+        "fidelity_replacement_layout_measurement_available": False,
+        "fidelity_replacement_layout_measured_count": 0,
+        "fidelity_replacement_estimated_overflow_count": 0,
         "fidelity_replacement_overflow_count": 0,
+        "fidelity_replacement_browser_fit_count": 0,
+        "fidelity_replacement_line_height_compacted_count": 0,
+        "fidelity_replacement_sampled_background_mask_count": 0,
+        "fidelity_replacement_mask_color_source_counts": {},
         "fidelity_replacement_conflict_count": 0,
         "fidelity_replacement_conflict_target_count": 0,
         "fidelity_replacement_same_stream_conflict_target_count": 0,
@@ -1981,6 +2114,8 @@ def _empty_fidelity_replacement_stats() -> dict[str, Any]:
         "fidelity_replacement_padding_constraint_side_count": 0,
         "fidelity_replacement_min_fit_scale": None,
         "fidelity_replacement_mean_fit_scale": None,
+        "fidelity_replacement_static_min_fit_scale": None,
+        "fidelity_replacement_static_mean_fit_scale": None,
         "fidelity_replacement_policy_counts": {},
         "fidelity_replacement_conflict_target_stream_type_counts": {},
         "fidelity_replacement_conflict_target_stream_id_counts": {},
@@ -2018,12 +2153,14 @@ def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], di
     diagnostics: list[dict[str, Any]] = []
     for group in sorted(stream_groups.values(), key=lambda item: (item["page_index"], item["stream_type"], item["stream_id"])):
         fit_scales = [float(value) for value in group["fit_scales"]]
+        static_fit_scales = [float(value) for value in group["static_fit_scales"]]
         diagnostics.append(
             {
                 "page_index": int(group["page_index"]),
                 "stream_id": str(group["stream_id"]),
                 "stream_type": str(group["stream_type"]),
                 "element_count": int(group["element_count"]),
+                "estimated_overflow_count": int(group["estimated_overflow_count"]),
                 "overflow_count": int(group["overflow_count"]),
                 "conflict_count": int(group["conflict_count"]),
                 "conflict_target_count": int(group["conflict_target_count"]),
@@ -2031,6 +2168,9 @@ def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], di
                 "cross_stream_conflict_target_count": int(group["cross_stream_conflict_target_count"]),
                 "padding_constrained_count": int(group["padding_constrained_count"]),
                 "padding_constraint_side_count": int(group["padding_constraint_side_count"]),
+                "layout_measured_count": int(group["layout_measured_count"]),
+                "browser_fit_count": int(group["browser_fit_count"]),
+                "line_height_compacted_count": int(group["line_height_compacted_count"]),
                 "conflict_target_stream_type_counts": dict(
                     sorted(group["conflict_target_stream_type_counts"].items())
                 ),
@@ -2039,6 +2179,10 @@ def _replacement_stream_diagnostics(stream_groups: dict[tuple[int, str, str], di
                 "conflict_stream_id_pair_counts": dict(sorted(group["conflict_stream_id_pair_counts"].items())),
                 "min_fit_scale": round(min(fit_scales), 8) if fit_scales else None,
                 "mean_fit_scale": round(sum(fit_scales) / len(fit_scales), 8) if fit_scales else None,
+                "static_min_fit_scale": round(min(static_fit_scales), 8) if static_fit_scales else None,
+                "static_mean_fit_scale": (
+                    round(sum(static_fit_scales) / len(static_fit_scales), 8) if static_fit_scales else None
+                ),
             }
         )
     return diagnostics
@@ -3351,8 +3495,29 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_fidelity_replacement_elements": sum(
             int(case["fidelity_replacement_element_count"]) for case in cases
         ),
+        "fidelity_replacement_layout_measurement_case_count": sum(
+            int(bool(case["fidelity_replacement_layout_measurement_available"])) for case in cases
+        ),
+        "total_fidelity_replacement_layout_measured": sum(
+            int(case["fidelity_replacement_layout_measured_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_estimated_overflows": sum(
+            int(case["fidelity_replacement_estimated_overflow_count"]) for case in cases
+        ),
         "total_fidelity_replacement_overflows": sum(
             int(case["fidelity_replacement_overflow_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_browser_fits": sum(
+            int(case["fidelity_replacement_browser_fit_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_line_height_compacted": sum(
+            int(case["fidelity_replacement_line_height_compacted_count"]) for case in cases
+        ),
+        "total_fidelity_replacement_sampled_background_masks": sum(
+            int(case["fidelity_replacement_sampled_background_mask_count"]) for case in cases
+        ),
+        "fidelity_replacement_mask_color_source_counts": _sum_case_count_dicts(
+            cases, "fidelity_replacement_mask_color_source_counts"
         ),
         "total_fidelity_replacement_conflicts": sum(
             int(case["fidelity_replacement_conflict_count"]) for case in cases
@@ -3376,6 +3541,14 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_fidelity_replacement_fit_scale": _weighted_optional_case_mean(
             cases,
             value_key="fidelity_replacement_mean_fit_scale",
+            weight_key="fidelity_replacement_element_count",
+        ),
+        "min_fidelity_replacement_static_fit_scale": _min_optional_case_float(
+            cases, "fidelity_replacement_static_min_fit_scale"
+        ),
+        "mean_fidelity_replacement_static_fit_scale": _weighted_optional_case_mean(
+            cases,
+            value_key="fidelity_replacement_static_mean_fit_scale",
             weight_key="fidelity_replacement_element_count",
         ),
         "fidelity_replacement_policy_counts": _sum_case_count_dicts(cases, "fidelity_replacement_policy_counts"),
@@ -3669,7 +3842,14 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "translation_stress_translated_char_count",
         "translation_stress_char_expansion_ratio",
         "fidelity_replacement_element_count",
+        "fidelity_replacement_layout_measurement_available",
+        "fidelity_replacement_layout_measured_count",
+        "fidelity_replacement_estimated_overflow_count",
         "fidelity_replacement_overflow_count",
+        "fidelity_replacement_browser_fit_count",
+        "fidelity_replacement_line_height_compacted_count",
+        "fidelity_replacement_sampled_background_mask_count",
+        "fidelity_replacement_mask_color_source_counts",
         "fidelity_replacement_conflict_count",
         "fidelity_replacement_conflict_target_count",
         "fidelity_replacement_same_stream_conflict_target_count",
@@ -3678,6 +3858,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "fidelity_replacement_padding_constraint_side_count",
         "fidelity_replacement_min_fit_scale",
         "fidelity_replacement_mean_fit_scale",
+        "fidelity_replacement_static_min_fit_scale",
+        "fidelity_replacement_static_mean_fit_scale",
         "fidelity_replacement_policy_counts",
         "fidelity_replacement_conflict_target_stream_type_counts",
         "fidelity_replacement_conflict_target_stream_id_counts",
@@ -4118,6 +4300,31 @@ def _page_extraction_count(document: DocumentIR, key: str, expected: Any) -> int
 
 def _ocr_fallback_applied_page_count(document: DocumentIR) -> int:
     return _page_extraction_count(document, "ocr_fallback_status", "applied")
+
+
+def _benchmark_case_output_slugs(input_sources: list[Path]) -> list[str]:
+    """Keep benchmark artifacts distinct when unrelated inputs share a filename."""
+
+    stem_counts = Counter(source.stem for source in input_sources)
+    candidates = [
+        source.stem
+        if stem_counts[source.stem] == 1
+        else f"{source.parent.name or 'source'}-{source.stem}"
+        for source in input_sources
+    ]
+    candidate_counts = Counter(candidates)
+    seen: Counter[str] = Counter()
+    slugs: list[str] = []
+    for source, candidate in zip(input_sources, candidates):
+        slug = candidate
+        if candidate_counts[candidate] > 1:
+            digest = hashlib.sha1(str(source.resolve()).encode("utf-8")).hexdigest()[:8]
+            slug = f"{candidate}-{digest}"
+        seen[slug] += 1
+        if seen[slug] > 1:
+            slug = f"{slug}-{seen[slug]}"
+        slugs.append(slug)
+    return slugs
 
 
 def _structure_json_by_source(input_sources: list[Path], structure_jsons: list[str | Path]) -> dict[Path, Path]:

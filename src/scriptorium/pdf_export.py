@@ -58,6 +58,18 @@ def _print_html_with_playwright(
         try:
             page = browser.new_page(device_scale_factor=1)
             page.goto(source.resolve().as_uri(), wait_until="networkidle")
+            page.emulate_media(media="print")
+            page.evaluate(
+                """async () => {
+                    const fitting = window.ScriptoriumFitting;
+                    if (fitting && fitting.ready) {
+                      await fitting.ready;
+                    }
+                    if (fitting && fitting.fitAll) {
+                      fitting.fitAll();
+                    }
+                }"""
+            )
             page.pdf(path=str(target), print_background=True, prefer_css_page_size=True)
         finally:
             browser.close()

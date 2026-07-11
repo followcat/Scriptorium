@@ -7,6 +7,7 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from scriptorium.benchmark import (
+    _benchmark_case_output_slugs,
     _external_structure_candidate_order,
     _fidelity_replacement_stats,
     _page_reading_order_geometry_profile,
@@ -33,6 +34,19 @@ def _readable_test_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFo
     if font_path.exists():
         return ImageFont.truetype(str(font_path), size=size)
     return ImageFont.load_default()
+
+
+def test_benchmark_case_output_slugs_disambiguate_duplicate_input_names(tmp_path: Path) -> None:
+    jd = tmp_path / "jd-home" / "input.pdf"
+    portal = tmp_path / "portal" / "input.pdf"
+    jd.parent.mkdir()
+    portal.parent.mkdir()
+    jd.touch()
+    portal.touch()
+
+    slugs = _benchmark_case_output_slugs([jd, portal])
+
+    assert slugs == ["jd-home-input", "portal-input"]
 
 
 def _create_image_only_text_pdf(tmp_path: Path) -> Path:
@@ -1118,7 +1132,11 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
     assert stats["fidelity_replacement_padding_constraint_side_count"] == 1
     assert stats["fidelity_replacement_min_fit_scale"] < 1
     assert stats["fidelity_replacement_mean_fit_scale"] > stats["fidelity_replacement_min_fit_scale"]
-    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v2": 2}
+    assert stats["fidelity_replacement_layout_measurement_available"] is False
+    assert stats["fidelity_replacement_layout_measured_count"] == 0
+    assert stats["fidelity_replacement_estimated_overflow_count"] == 1
+    assert stats["fidelity_replacement_browser_fit_count"] == 0
+    assert stats["fidelity_replacement_policy_counts"] == {"fidelity-replacement-fit-v3-browser": 2}
     assert stats["fidelity_replacement_conflict_target_stream_type_counts"] == {"grid-island": 1}
     assert stats["fidelity_replacement_conflict_target_stream_id_counts"] == {"grid-island-001": 1}
     assert stats["fidelity_replacement_conflict_stream_type_pair_counts"] == {"grid-island=>grid-island": 1}
@@ -1144,6 +1162,63 @@ def test_fidelity_replacement_stats_measure_translation_fit_and_conflicts() -> N
     assert diagnostics["grid-island-001"]["conflict_stream_type_pair_counts"] == {"grid-island=>grid-island": 1}
     assert structured_stats["fidelity_replacement_element_count"] == 0
     assert structured_stats["fidelity_replacement_stream_diagnostics"] == []
+
+
+def test_fidelity_replacement_stats_prefer_measured_browser_layout() -> None:
+    replacement = ElementIR(
+        id="replace",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=10, y0=10, x1=90, y1=24),
+        bbox_px=BBox(x0=10, y0=10, x1=90, y1=24),
+        source_text="Buy now",
+        translated_text="A much longer translated replacement line",
+        style_hint={"font_size_px": 14, "line_height": 1.1, "font_family": "Arial"},
+    )
+    document = DocumentIR(
+        source_pdf="synthetic.pdf",
+        render_dpi=72,
+        page_count=1,
+        pages=[
+            PageIR(
+                page_index=0,
+                width_pt=120,
+                height_pt=80,
+                width_px=120,
+                height_px=80,
+                render_dpi=72,
+                scale_x=1,
+                scale_y=1,
+                background_image="page.png",
+                elements=[replacement],
+            )
+        ],
+    )
+
+    measured = {
+        "available": True,
+        "elements": [
+            {
+                "element_id": "replace",
+                "overflow": False,
+                "fit_scale": 0.91,
+                "fit_policy": "browser-layout-v1",
+                "declared_line_height": 1.1,
+                "rendered_line_height": 1.0,
+            }
+        ],
+    }
+
+    stats = _fidelity_replacement_stats(document, "fidelity", measured)
+
+    assert stats["fidelity_replacement_layout_measurement_available"] is True
+    assert stats["fidelity_replacement_layout_measured_count"] == 1
+    assert stats["fidelity_replacement_estimated_overflow_count"] == 1
+    assert stats["fidelity_replacement_overflow_count"] == 0
+    assert stats["fidelity_replacement_browser_fit_count"] == 1
+    assert stats["fidelity_replacement_line_height_compacted_count"] == 1
+    assert stats["fidelity_replacement_min_fit_scale"] == 0.91
+    assert stats["fidelity_replacement_static_min_fit_scale"] == 0.62
 
 
 def test_benchmark_can_auto_select_fidelity_background(tmp_path: Path) -> None:

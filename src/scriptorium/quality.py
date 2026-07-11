@@ -13,6 +13,119 @@ from .models import DocumentIR
 from .pdf_render import SourceKind, render_pdf, render_source
 
 
+def inspect_fidelity_replacement_layout(
+    html_path: str | Path,
+    out_path: str | Path,
+    chrome_executable: str | None = None,
+) -> dict[str, Any]:
+    """Measure replacement clipping after the exported HTML has fitted in Chromium."""
+
+    target = Path(out_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    report: dict[str, Any]
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(**chromium_launch_kwargs(chrome_executable))
+            try:
+                page = browser.new_page(device_scale_factor=1)
+                page.goto(Path(html_path).resolve().as_uri(), wait_until="networkidle")
+                page.emulate_media(media="print")
+                page.evaluate(
+                    """async () => {
+                        const fitting = window.ScriptoriumFitting;
+                        if (fitting && fitting.ready) {
+                          await fitting.ready;
+                        }
+                        if (fitting && fitting.fitAll) {
+                          fitting.fitAll();
+                        }
+                    }"""
+                )
+                elements = page.eval_on_selector_all(
+                    '.element[data-scriptorium-has-replacement="true"]',
+                    """nodes => nodes.map(node => {
+                        const computed = getComputedStyle(node);
+                        const declaredLineHeight = Number.parseFloat(
+                          node.style.getPropertyValue("--line-height") || computed.getPropertyValue("--line-height") || "0"
+                        );
+                        const renderedLineHeight = Number.parseFloat(
+                          node.dataset.scriptoriumReplacementRenderedLineHeight || "0"
+                        );
+                        const renderedScale = Number.parseFloat(
+                          node.dataset.scriptoriumReplacementRenderedFitScale
+                          || node.dataset.scriptoriumReplacementFitScale
+                          || "1"
+                        );
+                        const horizontalOverflow = node.scrollWidth > node.clientWidth + 1;
+                        const verticalOverflow = node.scrollHeight > node.clientHeight + 1;
+                        return {
+                          element_id: node.dataset.scriptoriumElementId || node.id,
+                          estimated_overflow: node.dataset.scriptoriumReplacementEstimatedOverflow === "true",
+                          rendered_overflow: node.dataset.scriptoriumReplacementRenderedOverflow === "true",
+                          overflow: horizontalOverflow || verticalOverflow,
+                          horizontal_overflow: horizontalOverflow,
+                          vertical_overflow: verticalOverflow,
+                          client_width: node.clientWidth,
+                          client_height: node.clientHeight,
+                          scroll_width: node.scrollWidth,
+                          scroll_height: node.scrollHeight,
+                          fit_scale: Number.isFinite(renderedScale) ? renderedScale : null,
+                          declared_line_height: Number.isFinite(declaredLineHeight) ? declaredLineHeight : null,
+                          rendered_line_height: Number.isFinite(renderedLineHeight) ? renderedLineHeight : null,
+                          fit_policy: node.dataset.scriptoriumReplacementRenderedFitPolicy || null,
+                        };
+                      })""",
+                )
+            finally:
+                browser.close()
+
+        report = _fidelity_replacement_layout_report(elements)
+    except Exception as exc:
+        report = {
+            "available": False,
+            "measurement_policy": "browser-dom-v1",
+            "error": str(exc),
+            "element_count": 0,
+            "overflow_count": 0,
+            "horizontal_overflow_count": 0,
+            "vertical_overflow_count": 0,
+            "fitted_element_count": 0,
+            "line_height_compacted_count": 0,
+            "elements": [],
+        }
+
+    target.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
+
+
+def _fidelity_replacement_layout_report(elements: list[dict[str, Any]]) -> dict[str, Any]:
+    overflow_count = sum(1 for element in elements if bool(element.get("overflow")))
+    horizontal_overflow_count = sum(1 for element in elements if bool(element.get("horizontal_overflow")))
+    vertical_overflow_count = sum(1 for element in elements if bool(element.get("vertical_overflow")))
+    fitted_element_count = sum(1 for element in elements if element.get("fit_policy") == "browser-layout-v1")
+    line_height_compacted_count = sum(
+        1
+        for element in elements
+        if isinstance(element.get("declared_line_height"), (int, float))
+        and isinstance(element.get("rendered_line_height"), (int, float))
+        and float(element["rendered_line_height"]) < float(element["declared_line_height"]) - 0.01
+    )
+    return {
+        "available": True,
+        "measurement_policy": "browser-dom-v1",
+        "error": None,
+        "element_count": len(elements),
+        "overflow_count": overflow_count,
+        "horizontal_overflow_count": horizontal_overflow_count,
+        "vertical_overflow_count": vertical_overflow_count,
+        "fitted_element_count": fitted_element_count,
+        "line_height_compacted_count": line_height_compacted_count,
+        "elements": elements,
+    }
+
+
 def compare_html_to_rendered_pdf(
     document: DocumentIR,
     html_path: str | Path,

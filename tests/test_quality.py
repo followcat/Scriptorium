@@ -3,8 +3,15 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
+from scriptorium.html_export import export_html
+from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.pdf_render import render_pdf
-from scriptorium.quality import compare_images, compare_pdf_renderings
+from scriptorium.quality import (
+    _fidelity_replacement_layout_report,
+    compare_images,
+    compare_pdf_renderings,
+    inspect_fidelity_replacement_layout,
+)
 
 
 def test_compare_images_penalizes_dimension_mismatch(tmp_path: Path) -> None:
@@ -24,6 +31,82 @@ def test_compare_images_penalizes_dimension_mismatch(tmp_path: Path) -> None:
     assert report["diff_ratio"] > 0
     assert report["actual_width"] == 120
     assert diff.exists()
+
+
+def test_fidelity_replacement_layout_report_counts_browser_measurements() -> None:
+    report = _fidelity_replacement_layout_report(
+        [
+            {
+                "element_id": "fit",
+                "overflow": False,
+                "horizontal_overflow": False,
+                "vertical_overflow": False,
+                "fit_policy": "browser-layout-v1",
+                "declared_line_height": 1.12,
+                "rendered_line_height": 1.0,
+            },
+            {
+                "element_id": "clipped",
+                "overflow": True,
+                "horizontal_overflow": False,
+                "vertical_overflow": True,
+                "fit_policy": None,
+                "declared_line_height": 1.12,
+                "rendered_line_height": None,
+            },
+        ]
+    )
+
+    assert report["available"] is True
+    assert report["element_count"] == 2
+    assert report["overflow_count"] == 1
+    assert report["vertical_overflow_count"] == 1
+    assert report["fitted_element_count"] == 1
+    assert report["line_height_compacted_count"] == 1
+
+
+def test_inspect_fidelity_replacement_layout_measures_exported_html(tmp_path: Path) -> None:
+    background = tmp_path / "page.png"
+    Image.new("RGB", (240, 160), "white").save(background)
+    replacement = ElementIR(
+        id="replace",
+        page_index=0,
+        type="text",
+        bbox_pdf=BBox(x0=15, y0=12, x1=75, y1=24),
+        bbox_px=BBox(x0=30, y0=24, x1=150, y1=48),
+        source_text="Source",
+        translated_text="A translated replacement that needs browser fitting.",
+        style_hint={"font_size_px": 18, "line_height": 1.1, "text_color": "rgb(0, 0, 0)"},
+    )
+    document = DocumentIR(
+        source_pdf="synthetic.pdf",
+        render_dpi=144,
+        page_count=1,
+        pages=[
+            PageIR(
+                page_index=0,
+                width_pt=120,
+                height_pt=80,
+                width_px=240,
+                height_px=160,
+                render_dpi=144,
+                scale_x=2,
+                scale_y=2,
+                background_image=str(background),
+                elements=[replacement],
+            )
+        ],
+    )
+    html_path = export_html(document, tmp_path / "fidelity", display_mode="fidelity")
+
+    report = inspect_fidelity_replacement_layout(html_path, tmp_path / "layout.json")
+
+    assert report["available"] is True
+    assert report["element_count"] == 1
+    assert report["fitted_element_count"] == 1
+    assert report["elements"][0]["element_id"] == "replace"
+    assert report["elements"][0]["fit_policy"] == "browser-layout-v1"
+    assert (tmp_path / "layout.json").is_file()
 
 
 def test_compare_pdf_renderings_penalizes_page_count_mismatch(tmp_path: Path) -> None:

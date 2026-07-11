@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+import re
 import shutil
 from pathlib import Path
 from typing import Literal
 
 from jinja2 import Environment, PackageLoader, select_autoescape
+from PIL import Image, ImageStat
 
 from .models import BBox, DisplayMode, DocumentIR, ElementIR, PageIR
 
@@ -341,12 +343,16 @@ def _replacement_candidates(page: PageIR, display_mode: DisplayMode) -> dict[str
     if display_mode != "fidelity":
         return {}
 
+    background = _replacement_background_image(page)
     geometries: dict[str, dict[str, object]] = {}
     for element in page.elements:
         if not has_replacement_text(element, display_mode):
             continue
         geometry = _base_replacement_geometry(element, page, page.elements)
         if geometry is not None:
+            mask_color, mask_color_source = _replacement_mask_color(element, background)
+            geometry["mask_color"] = mask_color
+            geometry["mask_color_source"] = mask_color_source
             geometries[element.id] = geometry
 
     for element in page.elements:
@@ -439,11 +445,12 @@ def _base_replacement_geometry(
         "padding_constraint_ids": constraint_ids,
         "padding_constraint_summary": constraint_summary,
         "fit_scale": scale,
+        "estimated_overflow": overflow,
         "overflow": overflow,
         "estimated_text_width": round(text_width, 4),
         "estimated_text_height": round(fitted_height, 4),
         "estimated_line_count": fitted_line_count,
-        "policy": "fidelity-replacement-fit-v2",
+        "policy": "fidelity-replacement-fit-v3-browser",
         "conflict": overflow,
         "conflict_ids": [],
         "conflict_summary": "",
@@ -531,6 +538,107 @@ def _is_mask_background_container(container: BBox, target: BBox) -> bool:
         and container.x1 >= target.x1
         and container.y1 >= target.y1
     )
+
+
+def _replacement_background_image(page: PageIR) -> Image.Image | None:
+    try:
+        with Image.open(page.background_image) as source:
+            return source.convert("RGB")
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _replacement_mask_color(element: ElementIR, background: Image.Image | None) -> tuple[str, str]:
+    text_color = _css_rgb(element.style_hint.get("text_color"))
+    if background is None or text_color is None or _rgb_luminance(text_color) < 0.72:
+        return "#fff", "white-default"
+
+    sampled = _edge_sample_rgb(background, element.bbox_px)
+    if sampled is None or _rgb_luminance(sampled) > 0.58:
+        return "#fff", "white-default"
+    return f"rgb({sampled[0]}, {sampled[1]}, {sampled[2]})", "edge-sampled-dark-background"
+
+
+def _edge_sample_rgb(image: Image.Image, bbox: BBox) -> tuple[int, int, int] | None:
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return None
+
+    pad = max(2, min(6, int(round(min(max(bbox.height, 1.0), 24.0) * 0.24))))
+    outer_x0 = max(0, int(math.floor(bbox.x0 - pad)))
+    outer_y0 = max(0, int(math.floor(bbox.y0 - pad)))
+    outer_x1 = min(width, int(math.ceil(bbox.x1 + pad)))
+    outer_y1 = min(height, int(math.ceil(bbox.y1 + pad)))
+    inner_x0 = max(outer_x0, min(width, int(math.floor(bbox.x0))))
+    inner_y0 = max(outer_y0, min(height, int(math.floor(bbox.y0))))
+    inner_x1 = max(inner_x0, min(width, int(math.ceil(bbox.x1))))
+    inner_y1 = max(inner_y0, min(height, int(math.ceil(bbox.y1))))
+    if outer_x1 <= outer_x0 or outer_y1 <= outer_y0:
+        return None
+
+    strips = [
+        (outer_x0, outer_y0, outer_x1, inner_y0),
+        (outer_x0, inner_y1, outer_x1, outer_y1),
+        (outer_x0, inner_y0, inner_x0, inner_y1),
+        (inner_x1, inner_y0, outer_x1, inner_y1),
+    ]
+    totals = [0.0, 0.0, 0.0]
+    pixel_count = 0
+    for left, top, right, bottom in strips:
+        if right <= left or bottom <= top:
+            continue
+        strip = image.crop((left, top, right, bottom))
+        count = strip.width * strip.height
+        if count <= 0:
+            continue
+        mean = ImageStat.Stat(strip).mean
+        for index, value in enumerate(mean[:3]):
+            totals[index] += value * count
+        pixel_count += count
+    if pixel_count <= 0:
+        return None
+    return (
+        int(round(totals[0] / pixel_count)),
+        int(round(totals[1] / pixel_count)),
+        int(round(totals[2] / pixel_count)),
+    )
+
+
+def _css_rgb(value: object) -> tuple[int, int, int] | None:
+    text = str(value or "").strip().lower()
+    if text.startswith("#"):
+        hex_value = text[1:]
+        if len(hex_value) == 3:
+            try:
+                return (
+                    int(hex_value[0] * 2, 16),
+                    int(hex_value[1] * 2, 16),
+                    int(hex_value[2] * 2, 16),
+                )
+            except ValueError:
+                return None
+        if len(hex_value) == 6:
+            try:
+                return (
+                    int(hex_value[0:2], 16),
+                    int(hex_value[2:4], 16),
+                    int(hex_value[4:6], 16),
+                )
+            except ValueError:
+                return None
+    match = re.fullmatch(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,[^)]*)?\s*\)", text)
+    if not match:
+        return None
+    return (
+        max(0, min(255, int(match.group(1)))),
+        max(0, min(255, int(match.group(2)))),
+        max(0, min(255, int(match.group(3)))),
+    )
+
+
+def _rgb_luminance(rgb: tuple[int, int, int]) -> float:
+    red, green, blue = (channel / 255.0 for channel in rgb)
+    return red * 0.2126 + green * 0.7152 + blue * 0.0722
 
 
 def _horizontal_overlap_ratio(first: BBox, second: BBox) -> float:

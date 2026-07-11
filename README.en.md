@@ -41,7 +41,7 @@ It merges source text, images, vector drawings, OCR output, and external structu
 | Use case | What Scriptorium provides |
 |---|---|
 | Document editing experiments | Local text nodes that can be addressed, replaced, and written back through HTML/IR. |
-| Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, mask/fit/overflow/conflict diagnostics. |
+| Document translation re-rendering | Source-preserving visual layers, `translated_text` replacements, browser-measured fitting, and mask/overflow/conflict diagnostics. |
 | Papers, annual reports, and portal pages | Multi-column body flow, table islands, card grids, footnotes, sidebars, page artifacts, and local reading streams. |
 | OCR/layout-model validation | PaddleOCR-VL, PP-Structure, Docling, and ROOR-style JSON fusion where OCR/structure JSON can drive image-source semantics, plus native-only vs native-plus-structure A/B benchmarks. |
 | Conversion quality regression | Print HTML back to PDF and measure visual similarity, page/size match, semantic order, and risk metrics. |
@@ -53,7 +53,7 @@ Many PDF-to-HTML / OCR-to-HTML tools render a whole page image and overlay a hid
 Scriptorium supports two output paths:
 
 - `structured`: rebuild text, images, and shapes with HTML/SVG where possible, making structure and editability easy to inspect.
-- `fidelity`: preserve an SVG/raster source visual layer while keeping recognized text and structure nodes as transparent coordinate anchors; edited or translated nodes print as local replacement overlays.
+- `fidelity`: preserve an SVG/raster source visual layer while keeping recognized text and structure nodes as transparent coordinate anchors; edited or translated nodes print as browser-fitted local replacement overlays.
 
 HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style id, reading order, reading stream, translation target, and replacement risk. See [Implementation notes](docs/implementation-notes.md) for the full model.
 
@@ -248,12 +248,12 @@ Representative current scores are shown below. Exact commands, sources, checksum
 
 ## Editing and Translation
 
-`source_text` always preserves the original recognized text. Local edits go to `edited_text`; translations go to `translated_text`. In fidelity mode, unchanged nodes stay hidden during print, while edited or translated nodes become local white-mask replacement layers.
+`source_text` always preserves the original recognized text. Local edits go to `edited_text`; translations go to `translated_text`. In fidelity mode, unchanged nodes stay hidden during print, while edited or translated nodes become local source-aware mask replacement layers.
 
 Translation re-rendering currently focuses on three hard problems:
 
-- Fitting longer translations back into the source bbox, with scale-down and overflow reporting.
-- Masking source text without damaging neighboring elements. The v2 compositor stops each mask side at adjacent visible boxes and records constrained sides/ids; this reduces collateral masking, but does not create extra room for long translations.
+- Fitting longer translations back into the source bbox. Chromium measures the real glyph layout after fonts load, searches a bounded scale, and can compact line height before reporting actual clipping; the static estimate remains separately available for fallback and triage.
+- Masking source text without damaging neighboring elements. Each mask side stops at adjacent visible boxes; light source text on a dark raster edge can use a sampled dark mask instead of the default white. Print conversion also maps source render pixels to 96-DPI CSS coordinates, so replacement boxes, padding, and font sizes retain their position in the exported PDF.
 - Translating multi-column body flows, table islands, card grids, and sidebars as separate reading streams.
 
 This is not a full end-user document editor yet. It is a measurable conversion core that exposes the right risks for a future UI, review workflow, or stronger model-based structure evidence.

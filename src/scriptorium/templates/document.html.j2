@@ -97,9 +97,10 @@
     body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
       color: var(--text-color, #111) !important;
       -webkit-text-fill-color: currentColor;
-      background: rgba(255, 255, 255, 0.88);
+      background: var(--replacement-mask-color, #fff);
       padding: var(--replacement-padding-top, 0px) var(--replacement-padding-right, 0px) var(--replacement-padding-bottom, 0px) var(--replacement-padding-left, 0px);
       font-size: calc(var(--font-size, 12px) * var(--replacement-fit-scale, 1));
+      line-height: var(--replacement-line-height, var(--line-height, 1.15));
       overflow: hidden;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -324,6 +325,10 @@
       }
       body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
         display: block !important;
+        left: var(--print-left) !important;
+        top: var(--print-top) !important;
+        width: var(--print-width) !important;
+        height: var(--print-height) !important;
         overflow: hidden;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
@@ -331,9 +336,10 @@
         text-align-last: auto;
         color: var(--text-color, #111) !important;
         -webkit-text-fill-color: currentColor;
-        background: #fff;
-        padding: var(--replacement-padding-top, 0px) var(--replacement-padding-right, 0px) var(--replacement-padding-bottom, 0px) var(--replacement-padding-left, 0px);
-        font-size: calc(var(--font-size, 12px) * var(--replacement-fit-scale, 1));
+        background: var(--replacement-mask-color, #fff);
+        padding: var(--print-replacement-padding-top, var(--replacement-padding-top, 0px)) var(--print-replacement-padding-right, var(--replacement-padding-right, 0px)) var(--print-replacement-padding-bottom, var(--replacement-padding-bottom, 0px)) var(--print-replacement-padding-left, var(--replacement-padding-left, 0px));
+        font-size: calc(var(--print-font-size, var(--font-size, 12px)) * var(--replacement-fit-scale, 1));
+        line-height: var(--replacement-line-height, var(--line-height, 1.15));
         outline: 0;
         z-index: 2;
       }
@@ -348,6 +354,7 @@
     {% for page in pages %}
     {% set page_ir = page.ir %}
     {% set layout_scale = 1.3333333333333333 if display_mode == 'structured' else 1 %}
+    {% set print_layout_scale = 96 / page_ir.render_dpi if display_mode == 'fidelity' else 1 %}
     {% set page_width = page_ir.width_pt * layout_scale if display_mode == 'structured' else page_ir.width_px %}
     {% set page_height = page_ir.height_pt * layout_scale if display_mode == 'structured' else page_ir.height_px %}
     <section
@@ -405,9 +412,16 @@
         data-scriptorium-replacement-policy="{{ replacement.policy if replacement else '' }}"
         data-scriptorium-replacement-fit-scale="{{ replacement.fit_scale if replacement else '' }}"
         data-scriptorium-replacement-overflow="{{ 'true' if replacement and replacement.overflow else 'false' }}"
+        data-scriptorium-replacement-estimated-overflow="{{ 'true' if replacement and replacement.estimated_overflow else 'false' }}"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
         data-scriptorium-replacement-conflict="{{ 'true' if replacement and replacement.conflict else 'false' }}"
         data-scriptorium-replacement-conflict-ids="{{ replacement.conflict_summary if replacement else '' }}"
         data-scriptorium-replacement-mask-padding="{{ replacement.padding_top if replacement else '' }},{{ replacement.padding_right if replacement else '' }},{{ replacement.padding_bottom if replacement else '' }},{{ replacement.padding_left if replacement else '' }}"
+        data-scriptorium-replacement-mask-color="{{ replacement.mask_color if replacement else '' }}"
+        data-scriptorium-replacement-mask-color-source="{{ replacement.mask_color_source if replacement else '' }}"
         data-scriptorium-replacement-padding-constrained="{{ 'true' if replacement and replacement.padding_constrained else 'false' }}"
         data-scriptorium-replacement-padding-constraint-ids="{{ replacement.padding_constraint_ids|join(',') if replacement else '' }}"
         data-scriptorium-replacement-padding-constraints="{{ replacement.padding_constraint_summary if replacement else '' }}"
@@ -448,7 +462,12 @@
           top: {{ '%.3f'|format(render_box.y0 * layout_scale) }}px;
           width: {{ '%.3f'|format(render_box.width * layout_scale) }}px;
           height: {{ '%.3f'|format(render_box.height * layout_scale) }}px;
+          --print-left: {{ '%.3f'|format(render_box.x0 * print_layout_scale) }}px;
+          --print-top: {{ '%.3f'|format(render_box.y0 * print_layout_scale) }}px;
+          --print-width: {{ '%.3f'|format(render_box.width * print_layout_scale) }}px;
+          --print-height: {{ '%.3f'|format(render_box.height * print_layout_scale) }}px;
           --font-size: {{ element.style_hint.get('font_size_px', 12) }}px;
+          --print-font-size: {{ '%.4f'|format(element.style_hint.get('font_size_px', 12) * print_layout_scale) }}px;
           --line-height: {{ element.style_hint.get('line_height', 1.15) }};
           --font-family: {{ element.style_hint.get('font_family', 'serif') }};
           --font-weight: {{ element.style_hint.get('font_weight', 400) }};
@@ -462,6 +481,11 @@
           --replacement-padding-right: {{ replacement.padding_right if replacement else 0 }}px;
           --replacement-padding-bottom: {{ replacement.padding_bottom if replacement else 0 }}px;
           --replacement-padding-left: {{ replacement.padding_left if replacement else 0 }}px;
+          --replacement-mask-color: {{ replacement.mask_color if replacement else '#fff' }};
+          --print-replacement-padding-top: {{ '%.4f'|format((replacement.padding_top if replacement else 0) * print_layout_scale) }}px;
+          --print-replacement-padding-right: {{ '%.4f'|format((replacement.padding_right if replacement else 0) * print_layout_scale) }}px;
+          --print-replacement-padding-bottom: {{ '%.4f'|format((replacement.padding_bottom if replacement else 0) * print_layout_scale) }}px;
+          --print-replacement-padding-left: {{ '%.4f'|format((replacement.padding_left if replacement else 0) * print_layout_scale) }}px;
         "
       ><span class="element-label">{{ element.type }} #{{ element.reading_order }}</span>{% if line_shape %}<svg class="shape-line" viewBox="0 0 {{ line_shape.width }} {{ line_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><line x1="{{ line_shape.x0 }}" y1="{{ line_shape.y0 }}" x2="{{ line_shape.x1 }}" y2="{{ line_shape.y1 }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ element.style_hint.get('border_width_pt', 1) }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt"></line></svg>{% elif vector_shape %}<svg class="shape-vector" viewBox="0 0 {{ vector_shape.width }} {{ vector_shape.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ vector_shape.path }}" fill="{{ element.style_hint.get('fill_color', 'transparent') }}" fill-opacity="{{ annotation_attr(element, 'fill_opacity', '1') }}" fill-rule="{{ vector_shape.fill_rule }}" stroke="{{ element.style_hint.get('stroke_color', 'transparent') }}" stroke-width="{{ vector_shape.stroke_width }}" stroke-opacity="{{ annotation_attr(element, 'stroke_opacity', '1') }}" stroke-linecap="butt" stroke-linejoin="miter"></path></svg>{% elif element.type == 'image' and element_crop %}<img class="embedded-image" src="{{ element_crop }}" alt="" draggable="false">{% elif use_svg_text_fit and svg_text_fit %}<svg class="text-fit-layer" viewBox="0 0 {{ svg_text_fit.width }} {{ svg_text_fit.height }}" preserveAspectRatio="none" aria-hidden="true">{% for run in svg_text_fit.runs %}<text xml:space="preserve" x="{{ run.x }}" y="{{ run.y }}" textLength="{{ run.text_length }}" lengthAdjust="spacingAndGlyphs" fill="{{ run.text_color }}" font-family="{{ run.font_family }}" font-size="{{ run.font_size }}" font-weight="{{ run.font_weight }}" font-style="{{ run.font_style }}">{{ run.text }}</text>{% endfor %}</svg><span class="editable-text-proxy" contenteditable="{{ 'true' if is_text_node and display_mode in ['structured', 'source', 'edited', 'translated', 'bilingual', 'fidelity'] else 'false' }}" spellcheck="false">{{ element_text(element, display_mode) }}</span>{% elif text_runs %}{% for run in text_runs %}{% set run_style = run.style %}{% set run_box = run.bbox_pdf if display_mode == 'structured' else run.bbox_px %}<span
           class="text-run"
@@ -489,6 +513,128 @@
     </section>
     {% endfor %}
   </main>
+  <script>
+    (() => {
+      const replacementSelector = '.element[data-scriptorium-has-replacement="true"]';
+      const minScale = 0.62;
+      const minLineHeight = 1.0;
+      const measurementTolerance = 1;
+
+      function number(value, fallback) {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      }
+
+      function declaredScale(owner) {
+        return Math.max(minScale, Math.min(1, number(owner.dataset.scriptoriumReplacementFitScale, 1)));
+      }
+
+      function declaredLineHeight(owner) {
+        const inline = owner.style.getPropertyValue("--line-height");
+        const computed = getComputedStyle(owner).getPropertyValue("--line-height");
+        return Math.max(minLineHeight, number(inline || computed, 1.15));
+      }
+
+      function hasOverflow(owner) {
+        return owner.scrollWidth > owner.clientWidth + measurementTolerance
+          || owner.scrollHeight > owner.clientHeight + measurementTolerance;
+      }
+
+      function setFit(owner, scale, lineHeight) {
+        owner.style.setProperty("--replacement-fit-scale", scale.toFixed(4));
+        owner.style.setProperty("--replacement-line-height", lineHeight.toFixed(4));
+      }
+
+      function maxFittingScale(owner, lineHeight) {
+        setFit(owner, minScale, lineHeight);
+        if (hasOverflow(owner)) {
+          return { scale: minScale, fits: false };
+        }
+        setFit(owner, 1, lineHeight);
+        if (!hasOverflow(owner)) {
+          return { scale: 1, fits: true };
+        }
+        let low = minScale;
+        let high = 1;
+        for (let iteration = 0; iteration < 12; iteration += 1) {
+          const middle = (low + high) / 2;
+          setFit(owner, middle, lineHeight);
+          if (hasOverflow(owner)) {
+            high = middle;
+          } else {
+            low = middle;
+          }
+        }
+        return { scale: low, fits: true };
+      }
+
+      function reset(owner) {
+        owner.style.setProperty("--replacement-fit-scale", declaredScale(owner).toFixed(4));
+        owner.style.removeProperty("--replacement-line-height");
+        owner.dataset.scriptoriumReplacementRenderedOverflow = "";
+        owner.dataset.scriptoriumReplacementRenderedFitScale = "";
+        owner.dataset.scriptoriumReplacementRenderedLineHeight = "";
+        owner.dataset.scriptoriumReplacementRenderedFitPolicy = "";
+        owner.dataset.scriptoriumReplacementOverflow = owner.dataset.scriptoriumReplacementEstimatedOverflow || "false";
+      }
+
+      function fit(owner) {
+        if (!owner || owner.dataset.scriptoriumHasReplacement !== "true") {
+          if (owner) {
+            reset(owner);
+          }
+          return null;
+        }
+
+        const lineHeight = declaredLineHeight(owner);
+        let selected = {
+          ...maxFittingScale(owner, lineHeight),
+          lineHeight,
+        };
+        if (lineHeight > minLineHeight) {
+          const compact = {
+            ...maxFittingScale(owner, minLineHeight),
+            lineHeight: minLineHeight,
+          };
+          if (compact.fits && compact.scale > selected.scale + 0.01) {
+            selected = compact;
+          }
+        }
+
+        setFit(owner, selected.scale, selected.lineHeight);
+        const overflow = hasOverflow(owner);
+        owner.dataset.scriptoriumReplacementRenderedOverflow = overflow ? "true" : "false";
+        owner.dataset.scriptoriumReplacementRenderedFitScale = selected.scale.toFixed(4);
+        owner.dataset.scriptoriumReplacementRenderedLineHeight = selected.lineHeight.toFixed(4);
+        owner.dataset.scriptoriumReplacementRenderedFitPolicy = "browser-layout-v1";
+        owner.dataset.scriptoriumReplacementOverflow = overflow ? "true" : "false";
+        return {
+          overflow,
+          scale: selected.scale,
+          lineHeight: selected.lineHeight,
+          fits: selected.fits,
+        };
+      }
+
+      function fitAll() {
+        return Array.from(document.querySelectorAll(replacementSelector)).map(fit).filter(Boolean);
+      }
+
+      fitAll();
+      const fontReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+      const ready = Promise.resolve(fontReady).catch(() => undefined).then(() => fitAll());
+      window.addEventListener("beforeprint", fitAll);
+      const printMedia = window.matchMedia && window.matchMedia("print");
+      if (printMedia && printMedia.addEventListener) {
+        printMedia.addEventListener("change", event => {
+          if (event.matches) {
+            fitAll();
+          }
+        });
+      }
+      window.ScriptoriumFitting = Object.freeze({ fit, fitAll, reset, ready });
+    })();
+  </script>
   <script>
     (() => {
       const format = "scriptorium-html-edits/v1";
@@ -602,6 +748,9 @@
         if (persistEdit) {
           persist();
         }
+        if (window.ScriptoriumFitting) {
+          window.ScriptoriumFitting.fit(owner);
+        }
       }
 
       function setText(owner, text) {
@@ -659,6 +808,9 @@
           owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
           owner.dataset.scriptoriumEditedText = original.editedText;
           owner.dataset.scriptoriumTranslatedText = original.translatedText;
+          if (window.ScriptoriumFitting) {
+            window.ScriptoriumFitting.fit(owner);
+          }
         }
         changed.clear();
         try {
