@@ -3259,14 +3259,15 @@ def _apply_relation_derived_streams(page: PageIR, *, source: str) -> tuple[int, 
 
 
 def _apply_derived_block_streams(page: PageIR, *, source: str) -> list[StructureReadingStream]:
-    """Promote coherent explicit model blocks into translation-local streams.
+    """Record coherent explicit model blocks as translation-local substreams.
 
     A layout parser often knows paragraph or column boundaries without exposing
     relation edges. Those boundaries are useful for translation replacement,
-    but must never become a page-wide order claim. Keep each matched native
-    line in its selected local sequence and derive a stream only when all
-    members share one native flow segment and column. Stronger native islands
-    and explicit external streams always win.
+    but must never become a page-wide order claim or fragment an already stable
+    native column into unrelated primary streams. Keep each matched line in its
+    selected primary stream and record a secondary block subgroup only when all
+    members share one native flow segment and column. Explicit relation streams
+    and stronger native islands always win.
     """
 
     groups: dict[tuple[str, str, int, tuple[float, float, float, float]], list[ElementIR]] = {}
@@ -3308,7 +3309,12 @@ def _apply_derived_block_streams(page: PageIR, *, source: str) -> list[Structure
             },
         )
         for stream_index, element in enumerate(members, start=1):
-            _apply_external_stream_metadata(element, stream, stream_index)
+            _apply_external_stream_metadata(
+                element,
+                stream,
+                stream_index,
+                preserve_native_primary=True,
+            )
             element.metadata["external_structure_stream_block_derived"] = True
             element.metadata["external_structure_stream_block_order"] = order
             element.metadata["external_structure_stream_block_label"] = label

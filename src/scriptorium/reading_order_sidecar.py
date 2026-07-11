@@ -1173,7 +1173,9 @@ def _block_is_primary_transition_candidate(block: "_ExplicitStructureBlock") -> 
             return False
         if _text(metadata.get("reading_order_stream_type") or "body") != "body":
             return False
-        if _has_secondary_structure_stream(metadata):
+        if _has_secondary_structure_stream(metadata) and not metadata.get(
+            "external_structure_stream_block_derived"
+        ):
             return False
         if metadata.get("reading_order_caption_type"):
             return False

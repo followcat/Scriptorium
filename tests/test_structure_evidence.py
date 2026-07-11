@@ -1,5 +1,7 @@
 from scriptorium.annotations import annotate_document
+from scriptorium.html_export import export_html
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
+from scriptorium.reading_order_sidecar import propose_reading_order_sidecar
 from scriptorium.structure_evidence import (
     apply_structure_evidence,
     normalize_structure_evidence,
@@ -133,7 +135,7 @@ def test_structure_evidence_does_not_match_punctuation_to_unrelated_model_text()
     assert "structure_evidence" not in by_id["stray-punctuation"].metadata
 
 
-def test_explicit_structure_blocks_derive_local_translation_streams() -> None:
+def test_explicit_structure_blocks_derive_local_translation_streams(tmp_path) -> None:
     document = _document_with_text_boxes(
         [
             ("first-a", "First paragraph line A", BBox(x0=10, y0=20, x1=150, y1=30), 1),
@@ -170,16 +172,39 @@ def test_explicit_structure_blocks_derive_local_translation_streams() -> None:
     assert document.metadata["structure_evidence"]["derived_block_stream_count"] == 2
     assert document.metadata["structure_evidence"]["derived_block_stream_member_count"] == 4
     assert [by_id[element_id].reading_order for element_id in ("first-a", "first-b", "second-a", "second-b")] == [1, 2, 3, 4]
-    assert {by_id[element_id].metadata["reading_order_stream_id"] for element_id in ("first-a", "first-b")} == {
+    assert {
+        by_id[element_id].metadata["reading_order_stream_id"]
+        for element_id in ("first-a", "first-b", "second-a", "second-b")
+    } == {"body-main"}
+    assert {by_id[element_id].metadata["external_structure_stream_id"] for element_id in ("first-a", "first-b")} == {
         "external-block-body-001-001"
     }
-    assert {by_id[element_id].metadata["reading_order_stream_id"] for element_id in ("second-a", "second-b")} == {
-        "external-block-body-001-002"
-    }
+    assert {
+        by_id[element_id].metadata["external_structure_stream_id"] for element_id in ("second-a", "second-b")
+    } == {"external-block-body-001-002"}
+    assert all(
+        by_id[element_id].metadata["external_structure_stream_primary"] is False
+        for element_id in ("first-a", "first-b", "second-a", "second-b")
+    )
     assert all(
         by_id[element_id].metadata["external_structure_stream_block_derived"] is True
         for element_id in ("first-a", "first-b", "second-a", "second-b")
     )
+    proposal = propose_reading_order_sidecar(document)
+    assert proposal["summary"]["strict_block_transition_count"] == 0
+    assert proposal["summary"]["review_block_transition_count"] == 1
+    transition = next(
+        item
+        for item in proposal["pages"][0]["review_transitions"]
+        if item.get("provenance", {}).get("kind") == "external-structure-explicit-block-order-v1"
+    )
+    assert transition["source"] == "first-b"
+    assert transition["target"] == "second-a"
+    html = export_html(document, tmp_path / "html", display_mode="structured").read_text(encoding="utf-8")
+    assert 'data-scriptorium-translation-stream-id="body-main"' in html
+    assert 'data-scriptorium-structure-stream-id="external-block-body-001-001"' in html
+    assert 'data-scriptorium-structure-stream-primary="false"' in html
+    assert 'data-scriptorium-structure-stream-kind="derived-block"' in html
 
 
 def test_derived_block_stream_does_not_bridge_native_columns() -> None:

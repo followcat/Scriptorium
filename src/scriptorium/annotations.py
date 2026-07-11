@@ -176,6 +176,17 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             "reading_order_stream_id": element.metadata.get("reading_order_stream_id"),
             "reading_order_stream_type": element.metadata.get("reading_order_stream_type"),
             "reading_order_stream_index": element.metadata.get("reading_order_stream_index"),
+            "structure_stream_id": element.metadata.get("external_structure_stream_id"),
+            "structure_stream_type": element.metadata.get("external_structure_stream_type"),
+            "structure_stream_index": element.metadata.get("external_structure_stream_index"),
+            "structure_stream_primary": _optional_bool_token(
+                element.metadata.get("external_structure_stream_primary")
+            ),
+            "structure_stream_kind": (
+                "derived-block"
+                if element.metadata.get("external_structure_stream_block_derived") is True
+                else None
+            ),
             "reading_order_confidence": float(element.metadata.get("reading_order_confidence") or 0.0),
             "reading_order_evidence": _reading_order_evidence(element),
             "reading_order_evidence_summary": element.metadata.get("reading_order_evidence_summary", ""),
@@ -195,6 +206,14 @@ def _annotate_page(page: PageIR, style_registry: dict[str, dict[str, object]]) -
             element.metadata["layout_group_kind"] = layout_group_kind
     _annotate_caption_targets(page, layout_regions)
     return layout_regions
+
+
+def _optional_bool_token(value: object) -> str | None:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return None
 
 
 def _median_font_size(elements: list[ElementIR]) -> float:
