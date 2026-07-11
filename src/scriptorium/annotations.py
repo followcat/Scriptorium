@@ -54,6 +54,7 @@ STRUCTURE_ROLE_MAP = {
     "product_grid": "card-text",
     "references": "references",
     "seal": "seal-text",
+    "aside_text": "sidebar-text",
     "sidebar_text": "sidebar-text",
     "table": "table-cell-text",
     "table_caption": "caption",

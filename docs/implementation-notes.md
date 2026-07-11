@@ -174,6 +174,8 @@ This is an explicit fidelity/editability tradeoff: ordinary text, tables, separa
 
 PaddleOCR-VL, PP-StructureV3, and Docling are best treated as optional evidence providers rather than replacements for native PDF extraction. Native extraction usually gives better font/style/bbox fidelity for digital PDFs, while document models can add missing OCR, layout labels, table/formula/chart regions, and reading-order block predictions.
 
+Paddle's documented `aside_text` layout label is normalized as a sidebar translation stream, alongside `sidebar_text`. This keeps page-side repository metadata, marginal notes, and similar secondary content out of the main body stream while retaining a visible, editable anchor.
+
 `src/scriptorium/structure_evidence.py` implements the current bridge:
 
 - `normalize_structure_evidence(payload, document)` accepts common Paddle JSON shapes, including `parsing_res_list` blocks with `block_bbox`, `block_label`, `block_content`, and `block_order`.

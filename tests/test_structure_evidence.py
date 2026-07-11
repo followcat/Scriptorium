@@ -2026,6 +2026,35 @@ def test_external_structure_labels_feed_reading_stream_scopes() -> None:
     assert by_id["footer"].metadata["role"] == "page-number"
 
 
+def test_paddle_aside_text_label_creates_a_sidebar_translation_stream() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("body", "Main article paragraph.", BBox(x0=28, y0=44, x1=142, y1=56), 1),
+            ("aside", "Repository metadata", BBox(x0=154, y0=38, x1=190, y1=94), 2),
+        ]
+    )
+    payload = {
+        "source": "paddleocr-vl",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                _pp_region("body", "text", "Main article paragraph.", 1, document),
+                _pp_region("aside", "aside_text", "Repository metadata", None, document),
+            ],
+        },
+    }
+
+    apply_structure_evidence(document, payload)
+    annotate_document(document)
+    aside = next(element for element in document.pages[0].elements if element.id == "aside")
+
+    assert aside.metadata["reading_order_scope"] == "sidebar"
+    assert aside.metadata["reading_order_sidebar_type"] == "right"
+    assert aside.metadata["reading_order_stream_id"] == "sidebar-right"
+    assert aside.metadata["reading_order_stream_type"] == "sidebar-right"
+    assert aside.metadata["role"] == "sidebar-text"
+
+
 def test_external_card_grid_label_creates_grid_translation_stream() -> None:
     document = _document_with_text_boxes(
         [

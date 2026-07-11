@@ -145,6 +145,8 @@ scriptorium print-pdf outputs/html/index.html --pdf outputs/edited.pdf
 
 PaddleOCR-VL、PP-StructureV3 和 Docling 应该作为可选证据提供者，而不是替换原生 PDF 提取。数字 PDF 的 native extraction 通常更适合保留字体、样式和 bbox；模型输出更适合补充 OCR、layout label、table/formula/chart region 和阅读顺序预测。
 
+Paddle 官方的 `aside_text` 布局标签会和 `sidebar_text` 一样归一化为 sidebar 翻译流。这样页面边侧的版本信息、边注等次要内容仍保留可见和可编辑锚点，但不会混入正文流。
+
 `src/scriptorium/structure_evidence.py` 当前提供：
 
 - `normalize_structure_evidence(payload, document)`: 接受 Paddle 风格 JSON，包括带 `block_bbox`、`block_label`、`block_content`、`block_order` 的 `parsing_res_list`。

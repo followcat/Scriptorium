@@ -3875,7 +3875,14 @@ def _apply_external_structure_reading_metadata(
         element.metadata["column_span"] = "footnote"
         return
 
-    if normalized_label in {"sidebar", "sidebar_text", "side_bar", "marginalia", "margin_note"}:
+    if normalized_label in {
+        "aside_text",
+        "sidebar",
+        "sidebar_text",
+        "side_bar",
+        "marginalia",
+        "margin_note",
+    }:
         sidebar_type = "right" if _center_x(element.bbox_pdf) >= page.width_pt / 2 else "left"
         element.metadata["reading_order_scope"] = "sidebar"
         element.metadata["reading_order_sidebar_type"] = sidebar_type
