@@ -316,6 +316,16 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "reading_order_candidate_stream_recommendation_counts",
         recommendations=("review-consensus", "review-disagreement"),
     )
+    native_stream_local_structure = _recommendation_count(
+        native_case,
+        "reading_order_candidate_stream_recommendation_counts",
+        recommendations=("keep-selected-local-structure",),
+    )
+    structure_stream_local_structure = _recommendation_count(
+        structure_case,
+        "reading_order_candidate_stream_recommendation_counts",
+        recommendations=("keep-selected-local-structure",),
+    )
 
     return {
         "name": structure_case["name"],
@@ -336,6 +346,44 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "native_grid_island_element_count": native_case["grid_island_element_count"],
         "structure_grid_island_element_count": structure_case["grid_island_element_count"],
         "grid_island_element_delta": _numeric_delta(structure_case, native_case, "grid_island_element_count"),
+        "native_reading_order_local_structure_stream_count": native_case[
+            "reading_order_local_structure_stream_count"
+        ],
+        "structure_reading_order_local_structure_stream_count": structure_case[
+            "reading_order_local_structure_stream_count"
+        ],
+        "reading_order_local_structure_stream_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_stream_count",
+        ),
+        "native_reading_order_local_structure_successor_edge_count": native_case[
+            "reading_order_local_structure_successor_edge_count"
+        ],
+        "structure_reading_order_local_structure_successor_edge_count": structure_case[
+            "reading_order_local_structure_successor_edge_count"
+        ],
+        "reading_order_local_structure_successor_edge_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_successor_edge_count",
+        ),
+        "native_reading_order_local_structure_consensus_disagreement_edge_count": native_case[
+            "reading_order_local_structure_consensus_disagreement_edge_count"
+        ],
+        "structure_reading_order_local_structure_consensus_disagreement_edge_count": structure_case[
+            "reading_order_local_structure_consensus_disagreement_edge_count"
+        ],
+        "reading_order_local_structure_consensus_disagreement_edge_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_local_structure_consensus_disagreement_edge_count",
+        ),
+        "native_stream_keep_selected_local_structure_count": native_stream_local_structure,
+        "structure_stream_keep_selected_local_structure_count": structure_stream_local_structure,
+        "stream_keep_selected_local_structure_delta": (
+            structure_stream_local_structure - native_stream_local_structure
+        ),
         "native_translation_stress_element_count": native_case["translation_stress_element_count"],
         "structure_translation_stress_element_count": structure_case["translation_stress_element_count"],
         "translation_stress_element_delta": _numeric_delta(
@@ -617,6 +665,22 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
             values["reading_order_risk_score_delta"] for values in comparisons
         ),
         "total_grid_island_element_delta": sum(int(values["grid_island_element_delta"] or 0) for values in comparisons),
+        "total_reading_order_local_structure_stream_delta": sum(
+            int(values["reading_order_local_structure_stream_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_reading_order_local_structure_successor_edge_delta": sum(
+            int(values["reading_order_local_structure_successor_edge_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_reading_order_local_structure_consensus_disagreement_edge_delta": sum(
+            int(values["reading_order_local_structure_consensus_disagreement_edge_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_stream_keep_selected_local_structure_delta": sum(
+            int(values["stream_keep_selected_local_structure_delta"])
+            for values in comparisons
+        ),
         "total_translation_stress_element_delta": sum(
             int(values["translation_stress_element_delta"] or 0) for values in comparisons
         ),
@@ -819,6 +883,18 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_grid_island_element_count",
         "structure_grid_island_element_count",
         "grid_island_element_delta",
+        "native_reading_order_local_structure_stream_count",
+        "structure_reading_order_local_structure_stream_count",
+        "reading_order_local_structure_stream_delta",
+        "native_reading_order_local_structure_successor_edge_count",
+        "structure_reading_order_local_structure_successor_edge_count",
+        "reading_order_local_structure_successor_edge_delta",
+        "native_reading_order_local_structure_consensus_disagreement_edge_count",
+        "structure_reading_order_local_structure_consensus_disagreement_edge_count",
+        "reading_order_local_structure_consensus_disagreement_edge_delta",
+        "native_stream_keep_selected_local_structure_count",
+        "structure_stream_keep_selected_local_structure_count",
+        "stream_keep_selected_local_structure_delta",
         "native_translation_stress_element_count",
         "structure_translation_stress_element_count",
         "translation_stress_element_delta",
@@ -1275,11 +1351,17 @@ def _run_case(
         "reading_order_local_structure_selected_successor_edge_count": stats[
             "reading_order_local_structure_selected_successor_edge_count"
         ],
+        "reading_order_local_structure_selected_successor_coverage": stats[
+            "reading_order_local_structure_selected_successor_coverage"
+        ],
         "reading_order_local_structure_reference_successor_coverage": stats[
             "reading_order_local_structure_reference_successor_coverage"
         ],
         "reading_order_local_structure_consensus_disagreement_edge_count": stats[
             "reading_order_local_structure_consensus_disagreement_edge_count"
+        ],
+        "reading_order_local_structure_consensus_disagreement_coverage": stats[
+            "reading_order_local_structure_consensus_disagreement_coverage"
         ],
         "reading_order_candidate_stream_diagnostics": stats["reading_order_candidate_stream_diagnostics"],
         "reading_order_candidate_stream_count": stats["reading_order_candidate_stream_count"],
@@ -2783,6 +2865,11 @@ def _local_structure_evidence_summary(
             int(diagnostic["local_structure_selected_successor_edge_count"])
             for diagnostic in page_diagnostics
         ),
+        "reading_order_local_structure_selected_successor_coverage": _weighted_local_structure_coverage(
+            page_diagnostics,
+            numerator="local_structure_selected_successor_edge_count",
+            denominator="local_structure_successor_edge_count",
+        ),
         "reading_order_local_structure_reference_successor_coverage": _weighted_local_structure_coverage(
             page_diagnostics,
             numerator="local_structure_selected_successor_edge_count",
@@ -2791,6 +2878,11 @@ def _local_structure_evidence_summary(
         "reading_order_local_structure_consensus_disagreement_edge_count": sum(
             int(diagnostic["local_structure_consensus_disagreement_edge_count"])
             for diagnostic in page_diagnostics
+        ),
+        "reading_order_local_structure_consensus_disagreement_coverage": _weighted_local_structure_coverage(
+            page_diagnostics,
+            numerator="local_structure_consensus_disagreement_edge_count",
+            denominator="local_structure_successor_edge_count",
         ),
     }
 
@@ -3365,6 +3457,46 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_streams": sum(int(case["reading_order_stream_count"]) for case in cases),
         "reading_order_stream_type_counts": _sum_case_count_dicts(cases, "reading_order_stream_type_counts"),
         "reading_order_stream_id_counts": _sum_case_count_dicts(cases, "reading_order_stream_id_counts"),
+        "total_reading_order_local_structure_streams": sum(
+            int(case["reading_order_local_structure_stream_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_potential_successor_edges": sum(
+            int(case["reading_order_local_structure_potential_successor_edge_count"])
+            for case in cases
+        ),
+        "total_reading_order_local_structure_successor_edges": sum(
+            int(case["reading_order_local_structure_successor_edge_count"])
+            for case in cases
+        ),
+        "mean_reading_order_local_structure_successor_coverage": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_local_structure_successor_edge_count",
+            denominator_key="reading_order_local_structure_potential_successor_edge_count",
+        ),
+        "total_reading_order_local_structure_selected_successor_edges": sum(
+            int(case["reading_order_local_structure_selected_successor_edge_count"])
+            for case in cases
+        ),
+        "mean_reading_order_local_structure_selected_successor_coverage": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_local_structure_selected_successor_edge_count",
+            denominator_key="reading_order_local_structure_successor_edge_count",
+        ),
+        "mean_reading_order_local_structure_reference_successor_coverage": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_local_structure_selected_successor_edge_count",
+            denominator_key="reading_order_successor_consensus_successor_edge_count",
+        ),
+        "total_reading_order_local_structure_consensus_disagreement_edges": sum(
+            int(case["reading_order_local_structure_consensus_disagreement_edge_count"])
+            for case in cases
+        ),
+        "mean_reading_order_local_structure_consensus_disagreement_coverage": _ratio_from_case_sums(
+            cases,
+            numerator_key="reading_order_local_structure_consensus_disagreement_edge_count",
+            denominator_key="reading_order_local_structure_successor_edge_count",
+        ),
         "total_reading_order_proposal_streams": sum(
             int(case["reading_order_proposal_stream_count"]) for case in cases
         ),
@@ -4056,6 +4188,15 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_successor_consensus_low_agreement_page_count",
         "reading_order_successor_consensus_unavailable_page_count",
         "reading_order_candidate_page_recommendation_counts",
+        "reading_order_local_structure_stream_count",
+        "reading_order_local_structure_potential_successor_edge_count",
+        "reading_order_local_structure_successor_edge_count",
+        "reading_order_local_structure_successor_coverage",
+        "reading_order_local_structure_selected_successor_edge_count",
+        "reading_order_local_structure_selected_successor_coverage",
+        "reading_order_local_structure_reference_successor_coverage",
+        "reading_order_local_structure_consensus_disagreement_edge_count",
+        "reading_order_local_structure_consensus_disagreement_coverage",
         "reading_order_candidate_stream_count",
         "reading_order_candidate_stream_recommendation_counts",
         "table_region_count",

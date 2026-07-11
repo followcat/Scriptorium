@@ -199,6 +199,7 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_local_structure_stream_count" in case for case in report["cases"])
     assert all("reading_order_local_structure_successor_edge_count" in case for case in report["cases"])
     assert all("reading_order_local_structure_successor_coverage" in case for case in report["cases"])
+    assert all("reading_order_local_structure_consensus_disagreement_edge_count" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_diagnostics" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_count" in case for case in report["cases"])
     assert all("reading_order_candidate_stream_recommendation_counts" in case for case in report["cases"])
@@ -1014,6 +1015,8 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_successor_consensus_conflicted_edge_ratio" in csv_text
     assert "successor_consensus_arbitration_element_count" in csv_text
     assert "reading_order_candidate_page_recommendation_counts" in csv_text
+    assert "reading_order_local_structure_successor_edge_count" in csv_text
+    assert "reading_order_local_structure_consensus_disagreement_edge_count" in csv_text
     assert "reading_order_candidate_stream_count" in csv_text
     assert "reading_order_candidate_stream_recommendation_counts" in csv_text
     assert "semantic_candidate_order_metrics" in csv_text
@@ -1460,6 +1463,10 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert comparison["structure_evidence_order_reordered_page_count"] >= 0
     assert comparison["structure_evidence_order_source_counts"] == {"explicit": 1}
     assert comparison["structure_grid_island_element_count"] >= comparison["native_grid_island_element_count"]
+    assert "reading_order_local_structure_stream_delta" in comparison
+    assert "reading_order_local_structure_successor_edge_delta" in comparison
+    assert "reading_order_local_structure_consensus_disagreement_edge_delta" in comparison
+    assert "stream_keep_selected_local_structure_delta" in comparison
     assert "visual_similarity_delta" in comparison
     assert "stream_needs_structure_evidence_delta" in comparison
     assert "semantic_relation_missing_text_delta" in comparison
@@ -1481,11 +1488,15 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert report["summary"]["cases_with_relation_missing_text_improvement"] == 0
     assert report["summary"]["cases_with_stream_missing_text_improvement"] == 0
     assert report["summary"]["cases_with_stream_assignment_missing_improvement"] == 0
+    assert "total_reading_order_local_structure_stream_delta" in report["summary"]
+    assert "total_reading_order_local_structure_successor_edge_delta" in report["summary"]
     assert "semantic_external_structure_successor_accuracy" not in csv_text
     assert "translation_stress_element_delta" in csv_text
     assert "fidelity_replacement_conflict_delta" in csv_text
     assert "fidelity_replacement_same_stream_conflict_target_delta" in csv_text
     assert "fidelity_replacement_cross_stream_conflict_target_delta" in csv_text
+    assert "reading_order_local_structure_successor_edge_delta" in csv_text
+    assert "stream_keep_selected_local_structure_delta" in csv_text
     assert "semantic_relation_missing_text_delta" in csv_text
     assert "reading_order_proposal_semantic_successor_coverage_delta" in csv_text
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage_delta" in csv_text
