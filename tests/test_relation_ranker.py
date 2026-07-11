@@ -33,6 +33,11 @@ class _FakeEstimator:
         return [[1 - score, score] for score in scores]
 
 
+class _FakeBranchEstimator:
+    def predict_proba(self, features: list[list[float]]) -> list[list[float]]:
+        return [[0.1, 0.9] for _ in features]
+
+
 def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         relation_ranker,
@@ -64,6 +69,7 @@ def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.Mo
             "review_required": True,
             "relation_policy": "review-only",
             "provider": "scriptorium-trained-relation-ranker",
+            "rank": 1,
         },
         {
             "source": 20,
@@ -73,8 +79,36 @@ def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.Mo
             "review_required": True,
             "relation_policy": "review-only",
             "provider": "scriptorium-trained-relation-ranker",
+            "rank": 1,
         },
     ]
+
+
+def test_prediction_can_emit_calibrated_second_successors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: (
+            {
+                "estimator": _FakeEstimator(),
+                "threshold": 0.5,
+                "branch_estimator": _FakeBranchEstimator(),
+                "branch_threshold": 0.7,
+            },
+            {"model_sha256": "abc123"},
+        ),
+    )
+
+    result = predict_structure_relations(_answer_free_payload(), "model.joblib")
+
+    branch_edges = [
+        edge
+        for edge in result.structure_payload["successor_edges"]
+        if edge["rank"] == 2
+    ]
+    assert result.predicted_branch_edge_count == 2
+    assert len(branch_edges) == 2
+    assert all(edge["branch_confidence"] == 0.9 for edge in branch_edges)
 
 
 @pytest.mark.parametrize("relation_key", ["ro_linkings", "successor_edges", "reading_order_edges"])
@@ -101,6 +135,8 @@ def test_cli_writes_relation_ranker_outputs(tmp_path: Path, monkeypatch: pytest.
     training_manifest = {
         "calibration": {"document_count": 4, "f1": 0.75},
         "successor_threshold": 0.42,
+        "branch_calibration": {"document_count": 4, "f1": 0.78},
+        "branch_threshold": 0.65,
     }
     monkeypatch.setattr(
         cli,
@@ -139,4 +175,5 @@ def test_cli_writes_relation_ranker_outputs(tmp_path: Path, monkeypatch: pytest.
     assert "Calibration F1: 0.75" in train_result.output
     assert run_result.exit_code == 0, run_result.output
     assert "Predicted successor edges: 0" in run_result.output
+    assert "Predicted branch edges: 0" in run_result.output
     assert json.loads(output_path.read_text(encoding="utf-8"))["document"][0]["id"] == 10

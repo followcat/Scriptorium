@@ -800,6 +800,8 @@ def train_relation_ranker_command(
     typer.echo(f"Calibration documents: {calibration['document_count']}")
     typer.echo(f"Calibration F1: {calibration['f1']}")
     typer.echo(f"Successor threshold: {result.manifest['successor_threshold']}")
+    typer.echo(f"Branch calibration F1: {result.manifest['branch_calibration']['f1']}")
+    typer.echo(f"Branch threshold: {result.manifest['branch_threshold']}")
 
 
 @app.command("run-relation-ranker")
@@ -835,6 +837,7 @@ def run_relation_ranker_command(
     typer.echo(f"Relation structure JSON: {output_path}")
     typer.echo(f"Source segments: {result.source_count}")
     typer.echo(f"Predicted successor edges: {result.predicted_edge_count}")
+    typer.echo(f"Predicted branch edges: {result.predicted_branch_edge_count}")
     typer.echo("Runtime reorder: disabled")
 
 

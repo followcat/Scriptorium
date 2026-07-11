@@ -11,7 +11,7 @@ from typing import Any
 
 
 RELATION_RANKER_SCHEMA = "scriptorium-relation-ranker/v1"
-RELATION_FEATURE_VERSION = "roor-pair-geometry-text-v1"
+RELATION_FEATURE_VERSION = "roor-pair-geometry-text-branch-v2"
 RELATION_PROVIDER_SOURCE = "scriptorium-trained-relation-ranker"
 RELATION_DATASET_LICENSE = "CC-BY-4.0"
 DEFAULT_NEGATIVE_CANDIDATES = 20
@@ -29,6 +29,7 @@ class RelationRankerPredictionResult:
     structure_payload: dict[str, Any]
     predicted_edge_count: int
     source_count: int
+    predicted_branch_edge_count: int = 0
 
 
 def train_relation_ranker(
@@ -64,6 +65,17 @@ def train_relation_ranker(
     )
     estimator, sklearn_version = _fit_estimator(x_train, y_train, random_seed=random_seed)
     threshold, calibration = _calibrate_top_successor_threshold(estimator, calibration_documents)
+    branch_estimator = _fit_branch_estimator(
+        estimator,
+        fit_documents,
+        random_seed=random_seed + 6,
+    )
+    branch_threshold, branch_calibration = _calibrate_branch_threshold(
+        estimator,
+        branch_estimator,
+        calibration_documents,
+        top_threshold=threshold,
+    )
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,6 +85,8 @@ def train_relation_ranker(
         "feature_version": RELATION_FEATURE_VERSION,
         "threshold": threshold,
         "estimator": estimator,
+        "branch_estimator": branch_estimator,
+        "branch_threshold": branch_threshold,
     }
     joblib = _joblib_module()
     joblib.dump(bundle, output_path)
@@ -94,6 +108,8 @@ def train_relation_ranker(
         "calibration_fraction": calibration_fraction,
         "successor_threshold": threshold,
         "calibration": calibration,
+        "branch_threshold": branch_threshold,
+        "branch_calibration": branch_calibration,
         "random_seed": random_seed,
         "scikit_learn_version": sklearn_version,
         "model_sha256": model_sha256,
@@ -122,8 +138,11 @@ def predict_structure_relations(
     bundle, manifest = load_relation_ranker(model_path)
     estimator = bundle["estimator"]
     threshold = float(bundle["threshold"])
+    branch_estimator = bundle.get("branch_estimator")
+    branch_threshold = float(bundle.get("branch_threshold", 1.1))
 
     successor_edges: list[dict[str, Any]] = []
+    branch_edge_count = 0
     for source_segment in segments:
         targets = [target for target in segments if target["id"] != source_segment["id"]]
         if not targets:
@@ -131,7 +150,8 @@ def predict_structure_relations(
         features = [_pair_features(source_segment, target, width=width, height=height) for target in targets]
         probabilities = estimator.predict_proba(features)
         scores = [float(row[1]) for row in probabilities]
-        best_index = max(range(len(scores)), key=scores.__getitem__)
+        ranked_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+        best_index = ranked_indices[0]
         confidence = scores[best_index]
         if confidence < threshold:
             continue
@@ -144,8 +164,34 @@ def predict_structure_relations(
                 "review_required": True,
                 "relation_policy": "review-only",
                 "provider": RELATION_PROVIDER_SOURCE,
+                "rank": 1,
             }
         )
+        if branch_estimator is None or len(ranked_indices) < 2:
+            continue
+        ranked = [(scores[index], targets[index], features[index]) for index in ranked_indices]
+        branch_confidence = float(
+            branch_estimator.predict_proba(
+                [_branch_features(payload, source_segment, ranked)]
+            )[0][1]
+        )
+        if branch_confidence < branch_threshold:
+            continue
+        second_index = ranked_indices[1]
+        successor_edges.append(
+            {
+                "source": source_segment["id"],
+                "target": targets[second_index]["id"],
+                "kind": "successor",
+                "confidence": round(scores[second_index], 8),
+                "branch_confidence": round(branch_confidence, 8),
+                "review_required": True,
+                "relation_policy": "review-only",
+                "provider": RELATION_PROVIDER_SOURCE,
+                "rank": 2,
+            }
+        )
+        branch_edge_count += 1
 
     normalized = dict(payload)
     normalized.pop("label_entities", None)
@@ -167,13 +213,20 @@ def predict_structure_relations(
             "relation_ranker": {
                 "feature_version": RELATION_FEATURE_VERSION,
                 "threshold": threshold,
+                "branch_threshold": branch_threshold,
                 "source_count": len(segments),
                 "predicted_edge_count": len(successor_edges),
+                "predicted_branch_edge_count": branch_edge_count,
                 "model_sha256": manifest.get("model_sha256"),
             },
         }
     )
-    return RelationRankerPredictionResult(normalized, len(successor_edges), len(segments))
+    return RelationRankerPredictionResult(
+        normalized,
+        len(successor_edges),
+        len(segments),
+        branch_edge_count,
+    )
 
 
 def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -275,6 +328,39 @@ def _fit_estimator(
     return estimator, sklearn.__version__
 
 
+def _fit_branch_estimator(
+    pair_estimator: Any,
+    documents: Sequence[dict[str, Any]],
+    *,
+    random_seed: int,
+) -> Any:
+    try:
+        from sklearn.ensemble import HistGradientBoostingClassifier
+    except ImportError as exc:
+        raise RuntimeError("Install requirements-relation-ranker.txt to train a relation ranker") from exc
+    features: list[list[float]] = []
+    labels: list[int] = []
+    for payload in documents:
+        outgoing: dict[Any, set[Any]] = defaultdict(set)
+        for source_ref, target_ref in payload["ro_linkings"]:
+            outgoing[source_ref].add(target_ref)
+        for source, ranked in _ranked_document_targets(pair_estimator, payload):
+            if len(ranked) < 2:
+                continue
+            features.append(_branch_features(payload, source, ranked))
+            labels.append(int(len(outgoing[source["id"]]) >= 2))
+    estimator = HistGradientBoostingClassifier(
+        max_iter=120,
+        max_leaf_nodes=15,
+        learning_rate=0.08,
+        l2_regularization=2.0,
+        class_weight="balanced",
+        random_state=random_seed,
+    )
+    estimator.fit(features, labels)
+    return estimator
+
+
 def _calibrate_top_successor_threshold(
     estimator: Any,
     documents: Sequence[dict[str, Any]],
@@ -325,6 +411,115 @@ def _calibrate_top_successor_threshold(
         "recall": round(recall, 8),
         "f1": round(f1, 8),
     }
+
+
+def _calibrate_branch_threshold(
+    pair_estimator: Any,
+    branch_estimator: Any,
+    documents: Sequence[dict[str, Any]],
+    *,
+    top_threshold: float,
+) -> tuple[float, dict[str, Any]]:
+    records: list[tuple[float, bool, bool]] = []
+    relation_count = 0
+    for payload in documents:
+        relations = {tuple(edge) for edge in payload["ro_linkings"]}
+        relation_count += len(relations)
+        for source, ranked in _ranked_document_targets(pair_estimator, payload):
+            if not ranked or ranked[0][0] < top_threshold:
+                continue
+            first_edge = (source["id"], ranked[0][1]["id"])
+            records.append((0.0, first_edge in relations, False))
+            if len(ranked) < 2:
+                continue
+            branch_probability = float(
+                branch_estimator.predict_proba([_branch_features(payload, source, ranked)])[0][1]
+            )
+            second_edge = (source["id"], ranked[1][1]["id"])
+            records.append((branch_probability, second_edge in relations, True))
+
+    best: tuple[float, float, float, float, int, int, int] | None = None
+    for step in range(5, 100):
+        threshold = step / 100
+        selected = [record for record in records if not record[2] or record[0] >= threshold]
+        predicted = len(selected)
+        correct = sum(int(record[1]) for record in selected)
+        branch_edges = sum(int(record[2]) for record in selected)
+        precision = correct / predicted if predicted else 0.0
+        recall = correct / relation_count if relation_count else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        candidate = (f1, precision, threshold, recall, predicted, correct, branch_edges)
+        if best is None or candidate > best:
+            best = candidate
+    assert best is not None
+    f1, precision, threshold, recall, predicted, correct, branch_edges = best
+    return threshold, {
+        "document_count": len(documents),
+        "relation_count": relation_count,
+        "predicted_edge_count": predicted,
+        "predicted_branch_edge_count": branch_edges,
+        "correct_edge_count": correct,
+        "precision": round(precision, 8),
+        "recall": round(recall, 8),
+        "f1": round(f1, 8),
+    }
+
+
+def _ranked_document_targets(
+    estimator: Any,
+    payload: Mapping[str, Any],
+) -> list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]]:
+    segments = [_validated_segment(segment) for segment in payload["document"]]
+    image = payload["img"]
+    width = _positive_float(image["width"], "img.width")
+    height = _positive_float(image["height"], "img.height")
+    ranked_sources: list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]] = []
+    for source in segments:
+        targets = [target for target in segments if target["id"] != source["id"]]
+        if not targets:
+            ranked_sources.append((source, []))
+            continue
+        features = [_pair_features(source, target, width=width, height=height) for target in targets]
+        probabilities = estimator.predict_proba(features)
+        ranked = sorted(
+            (
+                (float(probability[1]), target, pair_features)
+                for probability, target, pair_features in zip(probabilities, targets, features, strict=True)
+            ),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        ranked_sources.append((source, ranked))
+    return ranked_sources
+
+
+def _branch_features(
+    payload: Mapping[str, Any],
+    source: Mapping[str, Any],
+    ranked: Sequence[tuple[float, dict[str, Any], list[float]]],
+) -> list[float]:
+    width = _positive_float(payload["img"]["width"], "img.width")
+    height = _positive_float(payload["img"]["height"], "img.height")
+    x0, y0, x1, y1 = (float(value) for value in source["box"])
+    text = str(source.get("text") or "").strip()
+    first = ranked[0]
+    second = ranked[1]
+    return [
+        x0 / width,
+        y0 / height,
+        x1 / width,
+        y1 / height,
+        (x1 - x0) / width,
+        (y1 - y0) / height,
+        len(payload["document"]) / 256,
+        first[0],
+        second[0],
+        first[0] - second[0],
+        len(text) / 256,
+        float(text.endswith((".", ":", ";", "?", "!"))),
+        *first[2][8:20],
+        *second[2][8:20],
+    ]
 
 
 def _pair_features(
