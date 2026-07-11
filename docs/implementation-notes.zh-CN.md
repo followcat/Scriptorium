@@ -479,5 +479,15 @@ layout `block_id` 用于将 caption 多行分组：figure 指向首行，caption
 Floating oracle 只在隔离的 semantic sidecar 内按官方 relation id 分组。它不依赖
 caption 在图形 annotation 之前还是之后；官方 test 数据中两种顺序都存在。
 
+`fetch-comphrdoc-relations` 生成 annotation-only 的跨文档 floating prefix。typed layout
+anchor 与 semantic 答案分目录保存；manifest 明确记录 label 只用于选页，
+不会进入推理输入。它不下载或重新分发 source image。主 body successor 会跳过
+floating group，与官方 evaluator 分离 body/floating chain 的契约一致。
+`benchmark-comphrdoc-relations` 只加载一次模型，对同一批页面分别禁用和启用
+structure-role fusion。
+
+Sparse graph segmentation 将文本行与区域建模为双向几何关系，再做 cluster-and-sort；
+这是 train-only floating-pair gate 的候选架构：https://arxiv.org/abs/2305.02577
+
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。

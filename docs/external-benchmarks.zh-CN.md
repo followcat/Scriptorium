@@ -632,3 +632,20 @@ relation：15 条 figure-caption、3 条 table-caption。
 table。推理可使用 layout block id，但官方 reading-order id 仍只存在 sidecar。
 18 条 edge 仍不足以支持 runtime 提升；该结果支持当前架构，并说明下一步应扩大
 跨文档 floating split。
+
+### 250 页跨文档 Floating Corpus
+
+Annotation-only corpus 在推理前按发布 image-name 顺序选择前 250 个图形
+floating 页。共覆盖 53 个 test 文档、10,465 条官方 successor label 和 347 条
+floating 图形 label；不下载或重新分发页面图像。同一模型运行两次：
+
+| 模式 | Correct / predicted / labels | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|
+| Native ranker | 8895 / 10681 / 10465 | 0.83278719 | 0.84997611 | 0.84129386 |
+| Native + structure role | 9182 / 10959 / 10465 | 0.83785017 | 0.87740086 | 0.85716953 |
+
+F1 delta 为 `+0.01587567`。structure-role edge 单独对 347 条图形 label 得到
+295/342 correct：precision `0.86257310`、recall `0.85014409`、F1 `0.85631350`。
+这是比 18/18 更强的泛化证据，并取代对小样本的乐观外推。caption 文本启发式与
+固定几何门限仍不足以覆盖所有文档家族，因此 role fusion 保持 review-only。
+下一步应仅用 Comp-HRDoc train annotation 训练 float-pair gate，并保持该 test prefix 不变。

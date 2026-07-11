@@ -189,6 +189,16 @@ scriptorium fetch-comphrdoc --max-pages 5 \
   --out-dir data/external/comphrdoc-test
 ```
 
+For larger relation-only experiments, build a fixed cross-document floating
+prefix without downloading or redistributing page images, then run a reproducible A/B:
+
+```bash
+scriptorium fetch-comphrdoc-relations --sample-count 250 \
+  --out-dir data/external/comphrdoc-relations
+scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
+  --model outputs/models/relation-ranker.joblib
+```
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,

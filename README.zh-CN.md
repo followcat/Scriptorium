@@ -182,6 +182,16 @@ scriptorium fetch-comphrdoc --max-pages 5 \
   --out-dir data/external/comphrdoc-test
 ```
 
+大规模 relation-only 实验可生成固定跨文档 floating prefix，无需下载或重新分发
+页面图像，然后运行可复现的 A/B：
+
+```bash
+scriptorium fetch-comphrdoc-relations --sample-count 250 \
+  --out-dir data/external/comphrdoc-relations
+scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
+  --model outputs/models/relation-ranker.joblib
+```
+
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
 不会改变 runtime role、reading stream 或顺序：

@@ -877,6 +877,18 @@ inside the withheld semantic sidecar. It does not depend on whether a caption
 appears before or after its graphical annotation; this matters because both
 orders occur in the official test data.
 
+`fetch-comphrdoc-relations` creates an annotation-only, cross-document floating
+prefix. Typed layout anchors and semantic answers go to separate directories;
+the manifest records that labels select targeted pages but are absent from
+inference input. It neither fetches nor redistributes source images. Main body
+successors skip floating groups, matching the official evaluator's separate
+body and floating chains. `benchmark-comphrdoc-relations` loads one model and
+runs the same pages with structure-role fusion disabled and enabled.
+
+Sparse graph segmentation models bidimensional text-line and region relations,
+then applies cluster-and-sort post-processing. It is a candidate architecture
+for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577
+
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
 of aborting image-source benchmarks with `cannot write empty image`.
