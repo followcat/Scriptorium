@@ -613,3 +613,22 @@ figure、table、annual report 或 portal grid 已经解决。
 两条 structure-role edge 都正确。下游 external/relation-graph 仍为 207/207，
 visual similarity 仍为 `0.97221549`，runtime 和 stream diagnostic delta 全为 0。
 这个只含两条 floating edge 的 replay 验证了机制，不代表广泛的 floating layout 已解决。
+
+### 扩展 Floating Figure/Table Prefix
+
+更大的固定 replay 使用首个发布 test 文档 `1401.3699` 的全部 27 页，加上
+`1411.3334` 前 6 页，后者是按发布顺序首个覆盖 table floating group 的文档
+prefix。样本在推理前固定。33 页共有 1,225 条官方 relation 和 18 条图形
+relation：15 条 figure-caption、3 条 table-caption。
+
+| Relation source | Correct / predicted / labels | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|
+| 同一模型，禁用 role fusion | 1186 / 1277 / 1225 | 0.92873923 | 0.96816327 | 0.94804157 |
+| 启用 structure-role geometry | 1203 / 1293 / 1225 | 0.93039443 | 0.98204082 | 0.95552025 |
+| 仅 structure-role edge | 18 / 18 / 18 | 1.00000000 | 1.00000000 | 1.00000000 |
+
+该实验还暴露并修复了 adapter oracle 问题：官方 table group 中，caption annotation
+可以在 table annotation 之前或之后。现在两种表示都会将多行 caption 尾行连到
+table。推理可使用 layout block id，但官方 reading-order id 仍只存在 sidecar。
+18 条 edge 仍不足以支持 runtime 提升；该结果支持当前架构，并说明下一步应扩大
+跨文档 floating split。

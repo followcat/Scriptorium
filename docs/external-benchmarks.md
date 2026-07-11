@@ -636,3 +636,24 @@ structure-role edges are correct. Downstream external/relation-graph accuracy
 remains 207/207 and visual similarity remains `0.97221549`; all runtime and
 stream diagnostic deltas remain zero. This two-edge replay validates the
 mechanism, not broad floating-layout coverage.
+
+### Expanded Floating Figure/Table Prefix
+
+A broader fixed replay uses all 27 pages of the first published test document
+`1401.3699`, plus the first six pages of `1411.3334`, the first published
+document prefix that reaches a table floating group. Selection was fixed before
+inference. The 33 pages contain 1,225 official relations and 18 graphical
+relations: 15 figure-caption and three table-caption links.
+
+| Relation source | Correct / predicted / labels | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|
+| Same model, role fusion disabled | 1186 / 1277 / 1225 | 0.92873923 | 0.96816327 | 0.94804157 |
+| Structure-role geometry enabled | 1203 / 1293 / 1225 | 0.93039443 | 0.98204082 | 0.95552025 |
+| Structure-role edges only | 18 / 18 / 18 | 1.00000000 | 1.00000000 | 1.00000000 |
+
+The adapter also exposed and fixed an oracle bug: official table groups may put
+caption annotations before or after table annotations. Multi-line caption tails
+now link to tables in either representation. Layout block ids are available to
+inference, but official reading-order ids remain sidecar-only. Eighteen edges
+are still too few for runtime promotion; the result supports the architecture
+and motivates a larger document-diverse floating split.

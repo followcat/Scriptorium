@@ -867,7 +867,15 @@ counts. This is an oracle-layout order benchmark, not OCR detection scoring.
 During relation inference, explicit figure/table roles can contribute a local,
 geometry-gated caption edge. These edges remain review-only and carry
 `relation_origin = structure-role-geometry`; they replace a learned outgoing
-edge from the same source rather than creating an ambiguous branch.
+edge from the same source rather than creating an ambiguous branch. Stable
+layout `block_id` groups caption lines so figures target the first line while
+the last caption line precedes a table. The answer-free payload never exposes
+Comp-HRDoc's official `reading_order_id` or relation labels.
+
+Floating oracle construction groups annotations by official relation id only
+inside the withheld semantic sidecar. It does not depend on whether a caption
+appears before or after its graphical annotation; this matters because both
+orders occur in the official test data.
 
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
