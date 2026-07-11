@@ -796,3 +796,10 @@ disables provider streams, isolates the external candidate from successor
 consensus, and sets `runtime_reorder: false`. Existing accepted OCR evidence is
 preserved separately, and review-only identifiers cannot change the semantic
 label denominator. Use normalized `--output`, not `--raw-output`, in A/B runs.
+
+`candidate_consensus_policy: isolated` is a provider-neutral structure contract,
+not a Docling special case. Generic page/block/relation JSON propagates the
+isolation marker to every matched element and resolved relation endpoint. The
+external candidate remains sidecar-scored, while successor consensus and
+page/stream recommendations are computed from the same native candidates as
+the control branch.

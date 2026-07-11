@@ -528,3 +528,22 @@ and 32 worse than selected native order. Safety invariants stayed unchanged:
 and zero reordered pages. The run yielded 1,916 review regions and 1,522 review
 relations. This is negative generalization evidence: Docling remains an
 isolated review candidate and is not a runtime orderer.
+
+## Learned Successor Availability Audit
+
+The official Apache-2.0 ROOR repository now contains relation-prediction code,
+but its authors explicitly state that the fine-tuned ROP weights cannot be
+released under their organization policy. FocalOrder publishes results but no
+reproducible code or checkpoint. Neither can currently supply an executable
+provider benchmark.
+
+As an external research control, the OpenRAIL HURIDOCS LightGBM weights were run
+on held-out Transformer-XL page 2. Its two-stage predictor selects 18 candidate
+successors and then performs pairwise next-token ranking. After bbox/text
+matching, 107 elements and 86 relations resolved; its isolated external
+candidate scored `13/16` (`0.8125`) labelled successors. Selected native order
+remained `16/16`; box-flow and relation-graph were both `8/16`. The provider is
+not integrated because the required GitHub inference repository declares no
+code license. The run also exposed and verified the generic isolation-contract
+fix: native and structure successor consensus both remain `8/16`, and both page
+recommendations remain `needs-structure-evidence`.
