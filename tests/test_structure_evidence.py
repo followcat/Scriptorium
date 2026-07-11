@@ -672,6 +672,7 @@ def test_root_review_only_relation_policy_never_reorders_or_derives_streams() ->
         "source": "review-order-model",
         "relation_policy": "review-only",
         "semantic_policy": "review-only",
+        "candidate_consensus_policy": "isolated",
         "pages": [
             {
                 "page_index": 0,
@@ -701,7 +702,12 @@ def test_root_review_only_relation_policy_never_reorders_or_derives_streams() ->
     )
     by_id = {element.id: element for element in document.pages[0].elements}
     assert by_id["a"].metadata["external_structure_relation_edges"][0]["review_only"] is True
+    assert (
+        by_id["a"].metadata["external_structure_relation_edges"][0]["candidate_consensus_isolated"]
+        is True
+    )
     assert by_id["a"].metadata["external_structure_semantic_review_only"] is True
+    assert by_id["a"].metadata["external_structure_candidate_consensus_isolated"] is True
     assert by_id["a"].metadata.get("column_span") != "table-external"
     assert "external-structure-label" not in by_id["a"].metadata.get("reading_order_evidence", [])
     annotate_document(document)

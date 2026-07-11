@@ -367,6 +367,7 @@ def normalize_structure_evidence(
     payload = _normalize_provider_payload(payload, document)
     payload = normalize_paddleocr_vl_payload(payload)
     root_payload = payload if isinstance(payload, Mapping) else {}
+    consensus_isolated = _candidate_consensus_is_isolated(root_payload)
     regions: list[StructureRegion] = []
     regions.extend(_normalize_docling_evidence(payload, document, source=source))
     for fallback_page_index, page_payload in enumerate(_collect_page_payloads(payload)):
@@ -379,6 +380,8 @@ def normalize_structure_evidence(
             normalized_raw_block = dict(raw_block)
             if _structure_semantics_are_review_only(root_payload, page_payload, normalized_raw_block):
                 normalized_raw_block["_scriptorium_semantic_review_only"] = True
+            if consensus_isolated:
+                normalized_raw_block["_scriptorium_candidate_consensus_isolated"] = True
             block_order = _extract_order(raw_block)
             order_source = _extract_order_source(raw_block) if block_order is not None else None
             if block_order is None:
@@ -428,6 +431,7 @@ def normalize_structure_relations(
 
     payload = _normalize_provider_payload(payload, document)
     root_payload = payload if isinstance(payload, Mapping) else {}
+    consensus_isolated = _candidate_consensus_is_isolated(root_payload)
     edges: list[StructureRelationEdge] = []
     seen: set[tuple[int, str, str, str]] = set()
     def append(edge: StructureRelationEdge) -> None:
@@ -453,6 +457,8 @@ def normalize_structure_relations(
             raw_edge = dict(raw)
             if _relation_is_review_only(root_payload, page_payload, raw_edge):
                 raw_edge["_scriptorium_relation_review_only"] = True
+            if consensus_isolated:
+                raw_edge["_scriptorium_candidate_consensus_isolated"] = True
             source_alias = _endpoint_alias(source_ref, endpoint_aliases)
             target_alias = _endpoint_alias(target_ref, endpoint_aliases)
             if source_alias:
@@ -473,10 +479,7 @@ def normalize_structure_relations(
     for document_index, doc in enumerate(_collect_docling_documents(payload), start=1):
         source_name = source or str(root_payload.get("source") or "docling")
         docling_review_only = _relation_is_review_only(root_payload, root_payload, {})
-        docling_consensus_isolated = (
-            str(root_payload.get("candidate_consensus_policy") or "").strip().lower()
-            == "isolated"
-        )
+        docling_consensus_isolated = _candidate_consensus_is_isolated(root_payload)
         for run in _docling_body_tree_local_runs(doc, document):
             for source_ref, target_ref in zip(run.member_refs, run.member_refs[1:], strict=False):
                 raw_edge = {
@@ -606,10 +609,7 @@ def _normalize_docling_evidence(
         {},
     )
     root_order_policy = str(root_payload.get("order_policy") or "").strip()
-    consensus_isolated = (
-        str(root_payload.get("candidate_consensus_policy") or "").strip().lower()
-        == "isolated"
-    )
+    consensus_isolated = _candidate_consensus_is_isolated(root_payload)
     regions: list[StructureRegion] = []
     for doc in _collect_docling_documents(payload):
         doc_regions = _normalize_docling_document(
@@ -2913,6 +2913,11 @@ def _relation_is_review_only(
         or page_payload.get("relation_review_required") is True
         or root_payload.get("relation_review_required") is True
     )
+
+
+def _candidate_consensus_is_isolated(root_payload: Mapping[str, Any]) -> bool:
+    policy = str(root_payload.get("candidate_consensus_policy") or "")
+    return policy.strip().lower().replace("_", "-") == "isolated"
 
 
 def _extract_implicit_order_source(raw: dict[str, Any]) -> str:
