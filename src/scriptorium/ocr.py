@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
@@ -1144,13 +1145,30 @@ class PaddleOcrAdapter:
         *,
         page_indices: Sequence[int] | None = None,
     ) -> dict[str, Any]:
+        return self._analyze_pages(
+            image_paths,
+            page_indices=page_indices,
+            source="paddleocr-vl",
+            model="PaddleOCR-VL-1.6",
+            pipeline_version=str(self.options.get("pipeline_version") or "v1.6"),
+        )
+
+    def _analyze_pages(
+        self,
+        image_paths: Sequence[str | Path],
+        *,
+        page_indices: Sequence[int] | None,
+        source: str,
+        model: str,
+        pipeline_version: str,
+    ) -> dict[str, Any]:
         paths = [Path(image_path) for image_path in image_paths]
         if page_indices is None:
             source_page_indices = list(range(len(paths)))
         else:
             source_page_indices = [int(page_index) for page_index in page_indices]
             if len(source_page_indices) != len(paths):
-                raise ValueError("page_indices must have one entry for every PaddleOCR-VL input image")
+                raise ValueError("page_indices must have one entry for every Paddle input image")
 
         pipeline = self._create_pipeline()
         raw_results: list[Any] = []
@@ -1173,9 +1191,9 @@ class PaddleOcrAdapter:
                         )
 
         return {
-            "source": "paddleocr-vl",
-            "model": "PaddleOCR-VL-1.6",
-            "pipeline_version": str(self.options.get("pipeline_version") or "v1.6"),
+            "source": source,
+            "model": model,
+            "pipeline_version": pipeline_version,
             "raw_results": raw_results,
         }
 
@@ -1219,6 +1237,63 @@ class PaddleOcrAdapter:
             normalized = normalize_paddleocr_vl_payload(dict(serialized))
             return [normalized] if isinstance(normalized, dict) else []
         return []
+
+
+class PpStructureAdapter(PaddleOcrAdapter):
+    """Run PP-StructureV3 and persist its replayable layout/OCR JSON.
+
+    PP-StructureV3 is a useful lower-latency structure provider for ordinary
+    papers and reports. It shares Paddle's ``save_to_json`` output path with
+    PaddleOCR-VL, so the existing structure-evidence fusion code can consume
+    either provider without a second IR format.
+    """
+
+    def __init__(
+        self,
+        *,
+        cpu_compatibility_mode: bool = True,
+        predict_options: Mapping[str, Any] | None = None,
+        pipeline_factory: Callable[..., Any] | None = None,
+        **options: Any,
+    ) -> None:
+        super().__init__(
+            predict_options=predict_options,
+            pipeline_factory=pipeline_factory,
+            **options,
+        )
+        self.cpu_compatibility_mode = cpu_compatibility_mode
+
+    def analyze(
+        self,
+        image_paths: Sequence[str | Path],
+        *,
+        page_indices: Sequence[int] | None = None,
+    ) -> dict[str, Any]:
+        return self._analyze_pages(
+            image_paths,
+            page_indices=page_indices,
+            source="pp-structurev3",
+            model="PP-StructureV3",
+            pipeline_version="v3",
+        )
+
+    def _create_pipeline(self) -> Any:
+        options = dict(self.options)
+        if self.cpu_compatibility_mode:
+            # Paddle 3.3's PP-StructureV3 path can otherwise hit a PIR/oneDNN
+            # compatibility failure before the pipeline initializes.
+            os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
+            os.environ.setdefault("FLAGS_enable_pir_api", "0")
+            options.setdefault("enable_mkldnn", False)
+        if self.pipeline_factory is not None:
+            return self.pipeline_factory(**options)
+        try:
+            from paddleocr import PPStructureV3  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "PaddleOCR is not installed. Install requirements-ocr.txt or use --structure-json replay."
+            ) from exc
+        return PPStructureV3(**options)
 
 
 _PADDLE_PAGE_CONTEXT_WRAPPER_KEYS = frozenset(

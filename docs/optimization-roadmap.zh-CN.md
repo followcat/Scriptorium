@@ -37,6 +37,7 @@
 - `mixed-table-column-flow-v1` 支持混合表格/正文页面：表格岛保持 row-major，周围正文继续按多栏排序。
 - 页边 running header/footer、脚注、边栏/旁注会被标注为 secondary/page-artifact flow，保持可编辑但不污染主体列检测。
 - Paddle 文档中的 `aside_text` 布局标签现在和 `sidebar_text` 一样被当作 sidebar，因此边侧次要内容会保持独立的可编辑/翻译流，不再混进正文。
+- `run-pp-structure` 现在可以从 PDF 或图片 source 产出可重放的 PP-StructureV3 JSON。它默认只跑 layout，避免普通多栏证据运行时加载表格/公式/region 模块；需要完整 table-cell/formula 证据的 benchmark 可再显式开启对应 flag。CPU compatibility mode 仅属于这个可选 provider，不会影响核心转换依赖集。
 - Native PDF extraction 保留 image block、font profile、inline text run、SVG line/path、dense vector local raster fallback。
 - 图片 source 是一等输入：PNG/JPEG/TIFF/WebP/BMP 会以 `source_type = "image"` 进入 `DocumentIR.source`，保留整页源 visual layer，用 `--image-dpi` 做坐标映射，并由 OCR/结构 JSON 生成可编辑语义锚点，而不是先封装成伪 PDF。image-source IR 以 `source` / `source_path` 作为身份字段，不再自动填充 `source_pdf`。
 - `DocumentIR.metadata.semantic_layer` 会记录语义层来自 native PDF、结构 JSON、OCR JSON、OCR fallback 还是只有源 visual layer；benchmark 会把这些值输出为 `semantic_layer_driver`、`semantic_layer_payload_kind` 和 `semantic_layer_structure_role`。

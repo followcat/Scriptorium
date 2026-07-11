@@ -207,6 +207,8 @@ Real PP-StructureV3 `save_to_json` output is now exercised through `benchmark-st
 | PUMA p. 5 | 42 / 25 | `0.95767110` | No semantic sidecar | The implicit-image guard leaves selected order and review diagnostics at the native baseline. |
 | BYD financial report p. 136 | 66 / 34 | `0.96518593` | No semantic sidecar | PP table recognition maps 10 cells into one row-major `table-island`; page needs-structure-evidence decreases by 1. |
 
+The new `run-pp-structure` command was independently replayed on Attention p. 1 at 144 DPI in `outputs/research/attention-pp-structure-runner-ab-v1`. Its layout-only configuration produced 58 normalized regions and 55 matched native elements. Visual delta stayed `0.0`; labelled pair/successor accuracy stayed `1.0`; direct strict sidecar successor coverage rose from `3/9` to `5/9` (`0.33333333 -> 0.55555556`). The lower raw region count than the older control is expected because this command deliberately disables table, formula, and region modules unless explicitly requested.
+
 This is evidence that block order is useful but incomplete: model block order can refine candidate successors, while translation needs explicit local `successor_edges` and `reading_streams` to resolve portal cards, image captions, sidebars, and repeated text safely.
 
 ## PaddleOCR-VL 1.6 A/B
@@ -227,6 +229,8 @@ evidence, not an accuracy claim: PUMA still has no semantic order sidecar. The
 important result is DPI-invariant region alignment; without it, a 96-DPI model
 bbox replayed against a 144-DPI page can falsely attach a paragraph to another
 text region and manufacture an order regression.
+
+A separate real PaddleOCR-VL 1.6 replay on Attention p. 1 is stored under `outputs/research/attention-paddle-ab-v1`. It matched 56 native elements through 16 model regions. Visual delta and selected semantic metrics remained unchanged, while direct strict sidecar successor coverage increased from `3/9` to `6/9` (`0.33333333 -> 0.66666667`). This supports using the VLM's block order as reviewable local-stream evidence, not as a substitute for explicit relation prediction.
 
 ### Explicit model-block translation streams
 

@@ -37,7 +37,8 @@ scriptorium convert page.png \
 当前状态：
 
 - `--ocr-json` 是稳定测试入口，适合转换质量工作。
-- `PaddleOcrAdapter` 隔离在 `scriptorium.ocr`，并且延迟导入 `paddleocr`。
+- `PaddleOcrAdapter` 和 `PpStructureAdapter` 都隔离在 `scriptorium.ocr`，并且延迟导入 `paddleocr`。`scriptorium run-paddleocr-vl` 与 `scriptorium run-pp-structure` 都会先渲染 source 页、穿过 Paddle result wrapper 保留源页索引，再写出可重放 JSON。PP-Structure runner 默认只跑 layout；`--table-recognition`、`--formula-recognition`、`--region-detection` 可按需启用更重的证据模块。
+- `run-pp-structure` 默认启用 CPU compatibility mode：在导入 PP-StructureV3 前设置 Paddle 3.3 的 PIR/oneDNN 保护，并传入 `enable_mkldnn=False`。GPU 部署在验证本地 Paddle 栈后可显式使用 `--no-cpu-compatibility-mode`。
 - `--structure-json` 是真实模型输出的轻量桥接入口，支持 PaddleOCR-VL / PP-StructureV3 风格 JSON、DoclingDocument JSON，以及 `document` / `ro_linkings` 这类关系式结构 payload。
 - 对图片 source，如果没有单独提供 `--ocr-json`，`--structure-json` 也可以先生成初始文本锚点。常见 `parsing_res_list` / `block_bbox` / `block_content`、PP 的 `overall_ocr_res` 等 OCR 字典，以及 ROOR 风格 `document` segment 的 `box` / `text`，都会被归一成 `native-ocr` 文本节点，再由结构 evidence 反向融合标签、顺序和置信度。适配器会递归常见 `res`、`result`、`data`、`pages`、`page_results`、`raw_results`、`results` 包装，并保留 page index fallback。
 - `DocumentIR.metadata.semantic_layer` 会记录当前语义层驱动。图片 case 会报告 `structure-json`、`ocr-json`、`ocr-fallback` 或 `visual-only`；原生 PDF case 报告 `native-pdf`，结构 JSON 默认作为增强证据。

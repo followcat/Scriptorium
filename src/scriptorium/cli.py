@@ -20,7 +20,7 @@ from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
-from .ocr import PaddleOcrAdapter, load_ocr_json, normalize_ocr_to_ir, write_ocr_json
+from .ocr import PpStructureAdapter, PaddleOcrAdapter, load_ocr_json, normalize_ocr_to_ir, write_ocr_json
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -421,6 +421,96 @@ def run_paddleocr_vl_command(
     )
     output_path = write_ocr_json(payload, output)
     typer.echo(f"PaddleOCR-VL JSON: {output_path}")
+    typer.echo(f"Pages: {len(rendered.pages)}")
+    typer.echo(f"Source type: {rendered.source_type}")
+    typer.echo(f"Model: {payload.get('model')}")
+
+
+@app.command("run-pp-structure")
+def run_pp_structure_command(
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF or image source."),
+    output: Path = typer.Option(
+        Path("outputs/pp-structure.raw.json"),
+        "--output",
+        "-o",
+        help="Raw PP-StructureV3 JSON to persist for replay or A/B benchmarking.",
+    ),
+    dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for PDF source pages."),
+    input_kind: SourceKind = typer.Option(
+        "auto",
+        help="Source type: auto, pdf, or image.",
+    ),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image pixels into PDF points for image sources.",
+    ),
+    max_pages: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Limit model execution to the first N source pages.",
+    ),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Explicit 1-based source page ranges, for example 1-3,136. Cannot be combined with --max-pages.",
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        help="Optional Paddle device, for example gpu:0 or cpu.",
+    ),
+    table_recognition: bool = typer.Option(
+        False,
+        "--table-recognition/--no-table-recognition",
+        help="Enable PP-Structure table recognition and cell evidence; disabled for lightweight layout-only runs.",
+    ),
+    formula_recognition: bool = typer.Option(
+        False,
+        "--formula-recognition/--no-formula-recognition",
+        help="Enable PP-Structure formula recognition.",
+    ),
+    region_detection: bool = typer.Option(
+        False,
+        "--region-detection/--no-region-detection",
+        help="Enable PP-Structure document-region detection.",
+    ),
+    cpu_compatibility_mode: bool = typer.Option(
+        True,
+        "--cpu-compatibility-mode/--no-cpu-compatibility-mode",
+        help="Disable Paddle 3.3 PIR/oneDNN defaults before PP-StructureV3 imports on CPU.",
+    ),
+) -> None:
+    """Run PP-StructureV3 on rendered source pages and persist raw JSON."""
+
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    rendered = render_source(
+        source,
+        output.parent / f"{output.stem}.pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=page_indices,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
+    )
+    options: dict[str, object] = {
+        "use_table_recognition": table_recognition,
+        "use_formula_recognition": formula_recognition,
+        "use_region_detection": region_detection,
+    }
+    if device:
+        options["device"] = device
+    payload = PpStructureAdapter(
+        cpu_compatibility_mode=cpu_compatibility_mode,
+        **options,
+    ).analyze(
+        [page.background_image for page in rendered.pages],
+        page_indices=[page.page_index for page in rendered.pages],
+    )
+    output_path = write_ocr_json(payload, output)
+    typer.echo(f"PP-StructureV3 JSON: {output_path}")
     typer.echo(f"Pages: {len(rendered.pages)}")
     typer.echo(f"Source type: {rendered.source_type}")
     typer.echo(f"Model: {payload.get('model')}")

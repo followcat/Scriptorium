@@ -108,6 +108,26 @@ scriptorium export-html \
 `width`/`height` 映射像素 bbox，因此同一次模型运行可以安全地在不同转换或
 benchmark DPI 下重放。
 
+若需要可重放的 PP-StructureV3 版面证据，可先安装可选 OCR 运行时、保存模型
+JSON，再走普通的结构 A/B 路径：
+
+```bash
+pip install -r requirements-ocr.txt
+
+scriptorium run-pp-structure path/to/paper.pdf \
+  --max-pages 1 --dpi 144 --device cpu \
+  --output outputs/paper.pp-structure.json
+
+scriptorium benchmark-structure-ab path/to/paper.pdf \
+  --max-pages 1 --dpi 144 \
+  --structure-json outputs/paper.pp-structure.json \
+  --out-dir outputs/paper-structure-ab
+```
+
+默认运行只聚焦布局；需要表格单元格或公式时可加 `--table-recognition` 或
+`--formula-recognition`。保存的 JSON 是可审查证据，不会自动替换 native PDF
+文本，也不等于整页阅读顺序已经无歧义。
+
 当模型给出显式 `block_order` 的正文/段落 block，且匹配到的 native 行全部位于同一
 已选 flow segment 和列中时，Scriptorium 会把它们提升为 `external-block-body-*`
 本地翻译流。这个边界不会重排页面，也不会跨越 table、grid、caption、页眉页脚、

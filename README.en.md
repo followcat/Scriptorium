@@ -108,6 +108,28 @@ Saved PaddleOCR-VL JSON retains the model input canvas. Scriptorium maps its
 pixel boxes through that saved `width`/`height`, so one model run can be
 replayed safely at a different conversion or benchmark DPI.
 
+For reproducible PP-StructureV3 layout evidence, install the optional OCR
+runtime, persist a model run, then pass that JSON back through the ordinary
+structure A/B path:
+
+```bash
+pip install -r requirements-ocr.txt
+
+scriptorium run-pp-structure path/to/paper.pdf \
+  --max-pages 1 --dpi 144 --device cpu \
+  --output outputs/paper.pp-structure.json
+
+scriptorium benchmark-structure-ab path/to/paper.pdf \
+  --max-pages 1 --dpi 144 \
+  --structure-json outputs/paper.pp-structure.json \
+  --out-dir outputs/paper-structure-ab
+```
+
+The default runner is layout-focused. Add `--table-recognition` or
+`--formula-recognition` when the saved evidence needs table cells or formulas.
+The JSON is evidence, not an automatic replacement for native PDF text or a
+claim that a whole-page reading order is unambiguous.
+
 When a model supplies explicit `block_order` for a body/paragraph block and
 all matched native lines stay in one selected flow segment and column,
 Scriptorium promotes them to an `external-block-body-*` local translation

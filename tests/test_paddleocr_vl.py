@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from scriptorium import cli
 from scriptorium.models import DocumentIR
-from scriptorium.ocr import PaddleOcrAdapter
+from scriptorium.ocr import PpStructureAdapter, PaddleOcrAdapter
 from scriptorium.paddle_json import normalize_paddleocr_vl_payload
 from scriptorium.structure_evidence import load_structure_json
 
@@ -141,6 +141,61 @@ def test_paddle_adapter_prefers_save_to_json_for_mapping_like_result_objects(tmp
 
     result = payload["raw_results"][0]
     assert result["res"]["parsing_res_list"][0]["block_content"] == "Saved from mapping result"
+
+
+def test_pp_structure_adapter_preserves_source_page_index_and_cpu_compatibility(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResult:
+        def save_to_json(self, *, save_path: str) -> None:
+            Path(save_path, "result.json").write_text(
+                json.dumps(
+                    {
+                        "page_index": None,
+                        "input_path": "model-page.png",
+                        "parsing_res_list": [
+                            {
+                                "block_label": "paragraph_title",
+                                "block_content": "Model heading",
+                                "block_bbox": [8, 10, 132, 32],
+                                "block_order": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+    class FakePipeline:
+        def __init__(self, **options: object) -> None:
+            captured["options"] = options
+
+        def predict(self, image_path: str, **options: object) -> list[FakeResult]:
+            captured["image_path"] = image_path
+            captured["predict_options"] = options
+            return [FakeResult()]
+
+    page_image = tmp_path / "page_0136.png"
+    page_image.write_bytes(b"not-used-by-fake-pipeline")
+    payload = PpStructureAdapter(
+        pipeline_factory=FakePipeline,
+        device="cpu",
+        use_table_recognition=False,
+    ).analyze([page_image], page_indices=[135])
+
+    assert captured["options"] == {
+        "device": "cpu",
+        "use_table_recognition": False,
+        "enable_mkldnn": False,
+    }
+    assert captured["image_path"] == str(page_image)
+    assert captured["predict_options"] == {}
+    assert payload["source"] == "pp-structurev3"
+    assert payload["model"] == "PP-StructureV3"
+    result = payload["raw_results"][0]
+    assert result["page_index"] == 135
+    assert result["input_path"] == str(page_image)
+    assert result["parsing_res_list"][0]["block_order"] == 1
 
 
 def test_structure_loader_recovers_paddle_display_blocks(tmp_path: Path) -> None:
@@ -295,3 +350,66 @@ def test_paddleocr_vl_command_writes_replayable_structure_json_and_image_convert
     assert [element.source_text for element in text_elements] == ["Paddle semantic anchor"]
     assert document.metadata["semantic_layer"]["driver"] == "structure-json"
     assert document.metadata["semantic_layer"]["structure_json"]["role"] == "semantic-driver"
+
+
+def test_pp_structure_command_writes_replayable_structure_json(tmp_path: Path, monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeAdapter:
+        def __init__(self, **options: object) -> None:
+            calls["options"] = options
+
+        def analyze(self, image_paths, *, page_indices):
+            calls["image_paths"] = [str(path) for path in image_paths]
+            calls["page_indices"] = list(page_indices)
+            return {
+                "source": "pp-structurev3",
+                "model": "PP-StructureV3",
+                "pipeline_version": "v3",
+                "raw_results": [
+                    {
+                        "page_index": page_indices[0],
+                        "input_path": str(image_paths[0]),
+                        "parsing_res_list": [
+                            {
+                                "block_label": "text",
+                                "block_content": "PP-Structure anchor",
+                                "block_bbox": [8, 10, 132, 32],
+                                "block_order": 1,
+                            }
+                        ],
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(cli, "PpStructureAdapter", FakeAdapter)
+    source = tmp_path / "source.png"
+    Image.new("RGB", (180, 90), "white").save(source)
+    structure_json = tmp_path / "pp-structure.json"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "run-pp-structure",
+            str(source),
+            "--output",
+            str(structure_json),
+            "--device",
+            "cpu",
+            "--table-recognition",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["options"] == {
+        "cpu_compatibility_mode": True,
+        "use_table_recognition": True,
+        "use_formula_recognition": False,
+        "use_region_detection": False,
+        "device": "cpu",
+    }
+    assert calls["page_indices"] == [0]
+    payload = json.loads(structure_json.read_text(encoding="utf-8"))
+    assert payload["source"] == "pp-structurev3"
+    assert payload["raw_results"][0]["parsing_res_list"][0]["block_order"] == 1
