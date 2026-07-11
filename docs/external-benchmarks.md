@@ -624,3 +624,15 @@ confirms strong line/paragraph continuity, but visual-yx and relation graph also
 score 360/360 because these pages are dominated by local textline chains. It
 must not be presented as evidence that floating figures, tables, annual reports,
 or portal grids are solved.
+
+### Comp-HRDoc Floating-Role Replay
+
+The first five pages of `1401.3699` were replayed after preserving graphical
+nodes. The label set grows from 205 to 207 because page 2 contains two official
+`figure -> caption` edges. Raw predictions improve from 204/217 correct
+(precision `0.94009217`, recall `0.98550725`, F1 `0.96226415`) to 206/219
+(precision `0.94063927`, recall `0.99516908`, F1 `0.96713615`). Both new
+structure-role edges are correct. Downstream external/relation-graph accuracy
+remains 207/207 and visual similarity remains `0.97221549`; all runtime and
+stream diagnostic deltas remain zero. This two-edge replay validates the
+mechanism, not broad floating-layout coverage.

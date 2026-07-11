@@ -175,9 +175,12 @@ scriptorium run-relation-ranker page.structure.json \
 
 Only load locally generated joblib models. The adjacent manifest verifies its
 SHA-256 digest and records the training split and calibration metrics.
+Explicit figure/table roles are also retained: local caption geometry adds
+review-only `figure -> caption` or `caption -> table` evidence without changing
+runtime order. This evidence is labelled separately from learned text edges.
 
 An independent cross-domain relation benchmark can be generated from a fixed
-Comp-HRDoc test document. Official order labels and answer-free line anchors
+Comp-HRDoc test document. Official order labels and answer-free layout anchors
 are written separately:
 
 ```bash

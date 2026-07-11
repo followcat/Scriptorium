@@ -169,9 +169,12 @@ scriptorium run-relation-ranker page.structure.json \
 ```
 
 只加载本机生成的 joblib 模型；manifest 会校验 SHA-256 并记录训练拆分与校准指标。
+显式 figure/table role 也会保留：局部 caption 几何关系会产生 review-only
+`figure -> caption` 或 `caption -> table` 证据，但不会改变 runtime 顺序；
+这类证据与 learned text edge 分开标记。
 
 独立跨域关系基准可从 Comp-HRDoc 固定 test 文档生成；命令会把官方 order label 与
-answer-free line anchors 分开保存：
+answer-free layout anchors 分开保存：
 
 ```bash
 scriptorium fetch-comphrdoc --max-pages 5 \

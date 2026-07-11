@@ -852,14 +852,22 @@ test annotation member, downloads the selected arXiv source document, and
 renders each page directly to the official annotation dimensions. HRDoc image
 assets are not redistributed.
 
-Each annotated block is expanded into textline nodes. Consecutive textlines are
-linked locally; `reading_order_label = 1` links the current block tail to the
-next official reading-order block, while `0` ends that local chain. The
-answer-free structure file contains only text/bbox anchors. Stable ids and
+Each annotated text block is expanded into textline nodes. Graphical annotations
+are retained as typed figure/table nodes with stable pseudo text. Consecutive
+textlines are linked locally; `reading_order_label = 1` links the current block
+tail to the next official reading-order block, while `0` ends that local chain.
+Floating label `2` stays outside body flow: figures precede their captions and
+table captions precede tables, matching the official evaluator. The answer-free
+structure file contains only typed layout/bbox anchors. Stable ids and
 `ro_linkings` are written to the adjacent semantic sidecar, so model inference
 cannot read the answers. Selection is a fixed document/page prefix and the
 manifest records repository revision, archive/PDF hashes, URLs, and relation
 counts. This is an oracle-layout order benchmark, not OCR detection scoring.
+
+During relation inference, explicit figure/table roles can contribute a local,
+geometry-gated caption edge. These edges remain review-only and carry
+`relation_origin = structure-role-geometry`; they replace a learned outgoing
+edge from the same source rather than creating an ambiguous branch.
 
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead

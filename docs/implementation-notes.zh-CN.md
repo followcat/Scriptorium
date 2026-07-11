@@ -461,12 +461,18 @@ ratio。这些是域漂移诊断，不是正确率估计；模型在域外页面
 member，下载指定 arXiv source 文档，并把每页直接渲染到官方标注尺寸；不会重新分发
 HRDoc image asset。
 
-每个标注 block 会展开成 textline node。block 内连续 textline 局部连接；
-`reading_order_label = 1` 把当前 block tail 连接到下一个官方 reading-order block，
-`0` 结束该局部链。answer-free structure 只含 text/bbox anchor；稳定 id 与
+每个文本 block 会展开成 textline node；图形标注会保留为带稳定伪文本的
+figure/table node。block 内连续 textline 局部连接；`reading_order_label = 1`
+把当前 block tail 连接到下一个官方 reading-order block，`0` 结束该局部链。
+floating label `2` 不并入 body flow：figure 在 caption 前，table caption 在 table 前，
+与官方 evaluator 一致。answer-free structure 只含带类型的 layout/bbox anchor；稳定 id 与
 `ro_linkings` 写入相邻 semantic sidecar，因此模型推理看不到答案。样本按固定
 document/page prefix 选择，manifest 记录仓库 revision、archive/PDF hash、URL 和
 relation 数。这是 oracle-layout order benchmark，不是 OCR detection 评分。
+
+关系推理时，显式 figure/table role 可以产生经局部几何约束的 caption edge。
+这些 edge 仍为 review-only，并标记 `relation_origin = structure-role-geometry`；
+它会替换同一 source 的 learned outgoing edge，而不是制造歧义分支。
 
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。
