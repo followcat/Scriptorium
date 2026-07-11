@@ -131,6 +131,27 @@ The default runner is layout-focused. Add `--table-recognition` or
 The JSON is evidence, not an automatic replacement for native PDF text or a
 claim that a whole-page reading order is unambiguous.
 
+Install the optional Surya FastLayout provider in a dedicated environment. The
+command requires explicit acceptance of the model-weight license; learned order,
+labels, and successor relations remain review-only and cannot change runtime roles,
+reading streams, or order:
+
+```bash
+python3 -m venv .venv-surya
+. .venv-surya/bin/activate
+pip install -r requirements-surya.txt
+pip install -e .
+
+scriptorium run-surya-layout path/to/paper.pdf \
+  --page-ranges 1-3 --device cpu \
+  --accept-model-license \
+  --output outputs/paper.surya-layout.json
+```
+
+The command fails closed when the learned-order head, detector feature map, or a
+valid permutation is unavailable, or when a page exceeds the model's box capacity.
+It never records raster fallback order as learned evidence.
+
 When a model supplies explicit `block_order` for a body/paragraph block and
 all matched native lines stay in one selected flow segment and column,
 Scriptorium promotes them to an `external-block-body-*` local translation
@@ -268,6 +289,18 @@ scriptorium fetch-roor \
   --split val \
   --sample-count 49 \
   --out-dir data/external/roor-validation-full-v1
+```
+
+When two or more independent providers use the same stable element IDs, intersect
+their proposals to obtain a lower-noise review sidecar. The result remains a
+`sidecar_status: proposal` payload and cannot trigger runtime reorder:
+
+```bash
+scriptorium consensus-reading-sidecars \
+  outputs/native/reading-order.sidecar.proposal.json \
+  outputs/pp/reading-order.sidecar.proposal.json \
+  outputs/surya/reading-order.sidecar.proposal.json \
+  --output outputs/reading-order.consensus.proposal.json
 ```
 
 See [External benchmarks](docs/external-benchmarks.md#roor-relation-benchmark-v1) for the full command, relation metrics, and limits.

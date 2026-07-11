@@ -297,6 +297,37 @@ All ten labelled transitions are correct, which is encouraging, but coverage rem
 
 The fixed ROOR pages are `82251504`, `82837252`, `85201976`, `86263525`, and `93106788`; they were not selected by result. All four proposals come from `86263525`, score `4/24`, and reduce its stream `needs-structure-evidence` count from `4` to `2`; the other four pages do not satisfy the proposal guards. Strict transitions, order-driven reorders, selected-successor deltas, and visual deltas are zero across all five. Outputs are under `outputs/research/*-block-transitions-v3` and `outputs/research/roor-pp-structure-block-transitions-v4`.
 
+### Surya FastLayout learned-order review v1
+
+`scriptorium run-surya-layout` runs Surya 0.21.1 FastLayout with its learned order head and saves replayable structure JSON. It requires explicit model-license acceptance and fails instead of accepting raster fallback when the order head, detector features, advertised capacity, or a complete integer permutation is unavailable. The tested weights advertise a 128-box order capacity. All labels, orders, and successor edges carry review-only semantic/order/relation policies, so they cannot change roles, streams, semantic-layer ownership, or runtime order.
+
+The fixed five ROOR pages were evaluated first, then held-out Attention, Transformer-XL, JD, and PUMA cases were run without changing provider thresholds or fusion rules:
+
+| Sample | Review candidates | Labelled / correct | Precision | Correct label coverage | Full external candidate | Runtime / visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| Fixed five-page ROOR prefix | 42 | 41 / 30 | `0.73170732` | `30/205` (`0.14634146`) | relation successor `99/205` (`0.48292683`) | 0 / `0.0` |
+| Transformer-XL pp. 1-3 | 23 | 9 / 2 | `0.22222222` | `2/41` (`0.04878049`) | successor `21/41` (`0.51219512`) | 0 / `0.0` |
+| Attention p. 1 | 3 | 1 / 1 | `1.0` | `1/9` (`0.11111111`) | successor `9/9` (`1.0`) | 0 / `0.0` |
+| JD homepage | 5 | unlabelled | unavailable | unavailable | unlabelled | 0 / `0.0` |
+| PUMA p. 5 | 4 | unlabelled | unavailable | unavailable | unlabelled | 0 / `0.0` |
+
+The ROOR run reduces stream `needs-structure-evidence` by four, but the held-out Transformer precision collapse disproves any general runtime-promotion rule. Before semantic isolation, Surya labels and relations could indirectly change sidecar role/stream construction: Transformer strict anchor-path coverage regressed from native `32/41` to `20/41`, while Attention moved from `3/9` to `6/9`. After `semantic_policy: review-only` is enforced, both retain their native strict paths (`32/41` and `3/9`) while the model proposals remain separately scoreable. Strict block transitions, relation/order-driven reorders, and visual deltas stay zero.
+
+Artifacts are under `outputs/research/surya-fast-layout-roor-v1/fixed-five-semantic-isolated-ab` and `outputs/research/surya-fast-layout-heldout-v1/*-semantic-isolated-ab`. The result is a review provider, not a runtime reading-order driver.
+
+### Independent provider consensus v1
+
+`scriptorium consensus-reading-sidecars` intersects explicit block-order review transitions from at least two independent providers. It rejects mismatched page sets or stable document fingerprints (element id, text, and PDF bbox), preserves provider/confidence provenance, and always writes an unaccepted review-only proposal with `runtime_reorder: false`.
+
+| Sample | Providers | Provider candidate edges | Consensus edges | Labelled / correct | Correct label coverage |
+|---|---:|---:|---:|---:|---:|
+| Attention p. 1 | 3 | 4 | 2 | 1 / 1 | `1/9` (`0.11111111`) |
+| Transformer-XL pp. 1-3 | 2 | 33 | 2 | 1 / 1 | `1/41` (`0.02439024`) |
+| Fixed five-page ROOR prefix | 2 | 42 | 4 | 4 / 4 | `4/205` (`0.01951220`) |
+| PUMA p. 5 | 2 | 4 | 3 | unlabelled | unavailable |
+
+Across the labelled sets, consensus emits eight candidates, six of which are labelled and all six correct. Precision on labelled candidates is `6/6`, but correct coverage is only `6/255` (`0.02352941`). This is useful review-noise reduction, not enough evidence to accept edges or broaden runtime arbitration. Artifacts are under `outputs/research/provider-consensus-v1`.
+
 ### Secondary block subgroups v1
 
 An ordered model block is derived only when all members share one native flow segment and column. It is now stored in `external_structure_stream_*` with `primary = false` instead of replacing the primary `reading_order_stream_*`. HTML exposes the second layer through `data-scriptorium-structure-stream-*`, allowing a translator to batch paragraphs/blocks inside a stable primary stream. Review provenance for block transitions remains intact.

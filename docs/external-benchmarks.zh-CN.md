@@ -291,6 +291,37 @@ Image A/B 现在使用双输入边界：`--ocr-json` 在两侧创建完全相同
 
 固定 ROOR 五页是 `82251504`、`82837252`、`85201976`、`86263525`、`93106788`，不是按结果选择。4 条提案全部来自 `86263525`，该页为 `4/24` 正确，并把 stream `needs-structure-evidence` 从 `4` 降到 `2`；其余四页没有满足 guard 的提案。五页的 strict transition、order-driven reorder、selected successor delta 和 visual delta 全部为 0。产物位于 `outputs/research/*-block-transitions-v3` 与 `outputs/research/roor-pp-structure-block-transitions-v4`。
 
+### Surya FastLayout learned-order review v1
+
+`scriptorium run-surya-layout` 会运行 Surya 0.21.1 FastLayout 及其 learned order head，并保存可重放的 structure JSON。命令要求显式接受模型许可；若 order head、detector feature、模型容量或完整整数 permutation 缺失，会直接失败而不接受 raster fallback。本次权重声明的 order 容量为 128 个 box。所有 label/order/successor edge 都带 review-only 的 semantic/order/relation policy，因此不能改变 role、stream、semantic-layer ownership 或 runtime order。
+
+先评测固定 ROOR 五页，再在不修改 provider 阈值和融合规则的前提下运行 held-out Attention、Transformer-XL、JD 与 PUMA：
+
+| 样本 | Review candidates | 已标注 / 正确 | Precision | 正确标签覆盖 | 完整 external candidate | Runtime / visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| 固定 ROOR 前缀 5 页 | 42 | 41 / 30 | `0.73170732` | `30/205`（`0.14634146`） | relation successor `99/205`（`0.48292683`） | 0 / `0.0` |
+| Transformer-XL pp. 1-3 | 23 | 9 / 2 | `0.22222222` | `2/41`（`0.04878049`） | successor `21/41`（`0.51219512`） | 0 / `0.0` |
+| Attention p. 1 | 3 | 1 / 1 | `1.0` | `1/9`（`0.11111111`） | successor `9/9`（`1.0`） | 0 / `0.0` |
+| JD 首页 | 5 | 无标签 | 不可用 | 不可用 | 无标签 | 0 / `0.0` |
+| PUMA p. 5 | 4 | 无标签 | 不可用 | 不可用 | 无标签 | 0 / `0.0` |
+
+ROOR 运行让 stream `needs-structure-evidence` 减少 4，但 held-out Transformer 的 precision 明显下降，直接否定了通用 runtime promotion。语义隔离前，Surya label/relation 会间接改变 sidecar role/stream 构造：Transformer strict anchor-path coverage 从 native `32/41` 回退到 `20/41`，Attention 则从 `3/9` 变成 `6/9`。落实 `semantic_policy: review-only` 后，两者都保留 native strict path（`32/41` 与 `3/9`），模型提案仍可独立计分。Strict block transition、relation/order-driven reorder 与 visual delta 始终为 0。
+
+产物位于 `outputs/research/surya-fast-layout-roor-v1/fixed-five-semantic-isolated-ab` 和 `outputs/research/surya-fast-layout-heldout-v1/*-semantic-isolated-ab`。结论是保留为 review provider，不作为 runtime reading-order driver。
+
+### 独立 provider consensus v1
+
+`scriptorium consensus-reading-sidecars` 会对至少两个独立 provider 的显式 block-order review transition 求交。它会拒绝 page 集合不一致或 stable document fingerprint（element id、text、PDF bbox）不一致的输入，保留 provider/confidence provenance，并始终输出尚未 accepted 的 review-only proposal，且 `runtime_reorder: false`。
+
+| 样本 | Providers | Provider candidate edges | Consensus edges | 已标注 / 正确 | 正确标签覆盖 |
+|---|---:|---:|---:|---:|---:|
+| Attention p. 1 | 3 | 4 | 2 | 1 / 1 | `1/9`（`0.11111111`） |
+| Transformer-XL pp. 1-3 | 2 | 33 | 2 | 1 / 1 | `1/41`（`0.02439024`） |
+| 固定 ROOR 前缀 5 页 | 2 | 42 | 4 | 4 / 4 | `4/205`（`0.01951220`） |
+| PUMA p. 5 | 2 | 4 | 3 | 无标签 | 不可用 |
+
+在有标签集合上，consensus 产出 8 条候选，其中 6 条有标签且全部正确。已标注候选 precision 为 `6/6`，但正确覆盖只有 `6/255`（`0.02352941`）。它适合降低 review 噪声，还不足以接受边或扩大 runtime arbitration。产物位于 `outputs/research/provider-consensus-v1`。
+
 ### Secondary block subgroup v1
 
 Ordered model block 只有在所有成员共享同一个 native flow segment 和 column 时才会派生。它现在写入 `external_structure_stream_*` 且标记 `primary = false`，不再覆盖主 `reading_order_stream_*`；HTML 同时输出独立的 `data-scriptorium-structure-stream-*`，供翻译器在稳定主流内按 paragraph/block 分组。Block transition 的 review provenance 仍保留。

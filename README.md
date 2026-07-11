@@ -129,6 +129,25 @@ scriptorium benchmark-structure-ab path/to/paper.pdf \
 `--formula-recognition`。保存的 JSON 是可审查证据，不会自动替换 native PDF
 文本，也不等于整页阅读顺序已经无歧义。
 
+可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
+许可；输出的 learned order、label 和 successor relation 全部是 review-only，
+不会改变 runtime role、reading stream 或顺序：
+
+```bash
+python3 -m venv .venv-surya
+. .venv-surya/bin/activate
+pip install -r requirements-surya.txt
+pip install -e .
+
+scriptorium run-surya-layout path/to/paper.pdf \
+  --page-ranges 1-3 --device cpu \
+  --accept-model-license \
+  --output outputs/paper.surya-layout.json
+```
+
+若 learned-order head、detector feature map 或有效 permutation 缺失，或页面超过模型
+支持的 box 容量，命令会直接失败，不会把 raster fallback 误记为 learned evidence。
+
 当模型给出显式 `block_order` 的正文/段落 block，且匹配到的 native 行全部位于同一
 已选 flow segment 和列中时，Scriptorium 会把它们提升为 `external-block-body-*`
 本地翻译流。这个边界不会重排页面，也不会跨越 table、grid、caption、页眉页脚、
@@ -264,6 +283,17 @@ scriptorium fetch-roor \
   --split val \
   --sample-count 49 \
   --out-dir data/external/roor-validation-full-v1
+```
+
+两个以上独立 provider 使用同一组稳定 element ID 时，可以求交得到更低噪声的
+review proposal。结果仍保持 `sidecar_status: proposal`，不能触发 runtime reorder：
+
+```bash
+scriptorium consensus-reading-sidecars \
+  outputs/native/reading-order.sidecar.proposal.json \
+  outputs/pp/reading-order.sidecar.proposal.json \
+  outputs/surya/reading-order.sidecar.proposal.json \
+  --output outputs/reading-order.consensus.proposal.json
 ```
 
 完整运行命令、关系指标和边界见 [外部基准](docs/external-benchmarks.zh-CN.md#roor-关系基准-v1)。
