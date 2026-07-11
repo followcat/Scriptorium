@@ -145,6 +145,18 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert all("reading_order_proposal_stream_count" in case for case in report["cases"])
     assert all("reading_order_proposal_successor_edge_count" in case for case in report["cases"])
     assert all("reading_order_proposal_semantic_successor_precision" in case for case in report["cases"])
+    assert all(
+        "reading_order_proposal_semantic_local_structure_successor_precision" in case
+        for case in report["cases"]
+    )
+    assert all(
+        "reading_order_proposal_semantic_local_table_successor_precision" in case
+        for case in report["cases"]
+    )
+    assert all(
+        "reading_order_proposal_semantic_local_grid_successor_precision" in case
+        for case in report["cases"]
+    )
     assert all("reading_order_proposal_semantic_strict_anchor_path_coverage" in case for case in report["cases"])
     assert all("reading_order_proposal_semantic_reviewable_anchor_path_coverage" in case for case in report["cases"])
     assert all("reading_order_caption_element_count" in case for case in report["cases"])
@@ -1001,6 +1013,9 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_proposal_successor_edge_count" in csv_text
     assert "reading_order_proposal_review_transition_count" in csv_text
     assert "reading_order_proposal_semantic_successor_precision" in csv_text
+    assert "reading_order_proposal_semantic_local_structure_successor_precision" in csv_text
+    assert "reading_order_proposal_semantic_local_table_successor_precision" in csv_text
+    assert "reading_order_proposal_semantic_local_grid_successor_precision" in csv_text
     assert "reading_order_proposal_semantic_review_successor_coverage" in csv_text
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage" in csv_text
     assert "reading_order_proposal_semantic_reviewable_anchor_path_coverage" in csv_text

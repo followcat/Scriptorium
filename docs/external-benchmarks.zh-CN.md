@@ -326,6 +326,46 @@ Relation graph 现在报告选择时的替代边，而不是只给出序列化 c
 
 合并后，103 条严格局部边全部作为约束被接受；通用 consensus 原本会打断的 80 条局部边都被约束候选保留；没有出现 unknown endpoint、degree 或 cycle 拒绝。视觉相似度仍为 `0.92760169`，与 browser-fit 基线相同，因为 selected IR order 和视觉渲染都没有变化。这证明的是局部约束链路，不是 semantic accuracy：PUMA 和 JD 仍没有已跟踪的 relation-style ground truth，而有标注的 Hacker News 没有适用的原生 table/grid constraint。因此 protected candidate 的聚合 semantic 指标为不可用（`null`），它仍被排除在 runtime 和自动 candidate 建议之外。
 
+## ROOR 关系基准 v1
+
+[ROOR](https://github.com/chongzhangFDU/ROOR-Datasets) 将版面阅读顺序标注为 document segment 之间有向的即时 successor 关系（`ro_linkings`）。`scriptorium fetch-roor` 下载官方发布 split 的固定前缀，不会按运行结果筛选样本；它固定在 upstream revision `6b5ca2b2cc6ad02ab1dd8ec1c17551ab614f0aa0`，并把 revision 写入 manifest。每页会保存 source image、原始 annotation、仅用于评测的相邻 `.semantic-order.json`，以及派生的 `layout-anchor-only` structure JSON。后者只保留 image metadata 和 `document` text/bbox anchor，并删除 `ro_linkings`、`label_entities` 及全部 task label，因此答案关系不会通过 `--structure-json` 进入融合。
+
+```bash
+scriptorium fetch-roor \
+  --out-dir data/external/roor-validation-full-v1 \
+  --split val \
+  --sample-count 49
+
+structure_args=()
+for path in data/external/roor-validation-full-v1/structure/*.structure.json; do
+  structure_args+=(--structure-json "$path")
+done
+
+scriptorium benchmark \
+  data/external/roor-validation-full-v1/images/*.png \
+  --input-kind image \
+  "${structure_args[@]}" \
+  --out-dir outputs/external/roor-validation-full-v1-native-layout \
+  --dpi 96 \
+  --image-dpi 96 \
+  --ocr-fallback off \
+  --html-mode fidelity \
+  --fidelity-background raster
+```
+
+完整官方 `val` split 有 49 页。提供的 2,602 个 layout anchor 全部匹配生成的 IR；转换器没有得到任何官方 relation。49 页全部通过稳定 element ID 解析 relation endpoint，未解析 identifier 为 0。标注的即时 successor relation 共 2,612 条。这里必须使用 ID：34 页存在重复 segment text，text-only normalization 会压缩不同的 relation。此设置的 source-image fidelity 分数会机械地得到 `1.0`，因为 raster fidelity 保留输入图片；它不是阅读顺序质量证据。
+
+| 证据 / 候选 | 正确 / 已标注 relation | Relation successor accuracy | 范围 |
+|---|---:|---:|---|
+| Selected native order | 1,274 / 2,612 | `0.48774885` | 全部已标注 relation |
+| Generic `successor_consensus` | 1,043 / 2,612 | `0.39931087` | 全部已标注 relation |
+| 诊断用 `protected_successor_consensus` | 778 / 1,856 | `0.41918103` | 只包含该 candidate 存在的页面 |
+| Strict native local table/grid proposal edge | 316 / 617 | `0.51215559` | endpoint 都有直接标注的 proposal edge |
+| Strict native table-island proposal edge | 227 / 406 | `0.55911330` | endpoint 都有直接标注的 table edge |
+| Strict native grid-island proposal edge | 89 / 211 | `0.42180095` | endpoint 都有直接标注的 grid edge |
+
+这是 oracle-layout/order 评测，不是端到端 OCR 分数：ROOR 提供 text 和 bbox，因此它隔离评估 reading-order 问题。它也推翻了“native geometry table/grid chain 可以自动成为 runtime hard constraint”的早期直觉。约束序列化能够保留这些 chain，但在独立 relation 集上 chain 本身只有约 51% precision，protected candidate 也没有超过 selected native order。因此 native local edge 继续只作为 review 和 translation-stream evidence。runtime hard constraint 必须来自显式 external successor/stream relation、经过验证的 relation predictor，或已接受的人工复核。
+
 ## 翻译压力测试结果
 
 `outputs/external/translation-stress-padding-v1` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。该运行使用 `fidelity-replacement-fit-v2`：不改变文本坐标或 fitting 策略，只让局部 mask padding 在相邻可见元素处停止。

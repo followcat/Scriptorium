@@ -131,6 +131,86 @@ def test_successor_accuracy_catches_adjacent_order_regression(tmp_path: Path) ->
     assert report["semantic_successor_accuracy"] == 0
 
 
+def test_identifier_relations_preserve_duplicate_text_segments_and_candidate_scoring(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "duplicate-segments.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    source_pdf.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "document": [
+                            {"id": 100, "text": "Repeated"},
+                            {"id": 101, "text": "Repeated"},
+                            {"id": 102, "text": "Tail"},
+                        ],
+                        "ro_linkings": [[100, 101], [101, 102]],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["Repeated", "Repeated", "Tail"])
+    for element, source_id in zip(document.pages[0].elements, (100, 101, 102), strict=True):
+        element.metadata["id"] = source_id
+
+    report = compare_semantic_reading_order(
+        document,
+        source_pdf,
+        tmp_path / "semantic",
+        candidate_orders={"reverse_duplicates": {0: ["e1", "e0", "e2"]}},
+    )
+    page = report["pages"][0]
+    candidate = page["candidate_orders"]["reverse_duplicates"]
+
+    assert page["relation_successor_endpoint_mode"] == "element-id"
+    assert page["relation_successor_total_count"] == 2
+    assert page["relation_successor_correct_count"] == 2
+    assert page["relation_successor_accuracy"] == 1.0
+    assert candidate["relation_successor_endpoint_mode"] == "element-id"
+    assert candidate["relation_successor_total_count"] == 2
+    assert candidate["relation_successor_correct_count"] == 0
+    assert candidate["relation_successor_accuracy"] == 0.0
+    assert report["semantic_relation_successor_total_count"] == 2
+
+
+def test_identifier_only_relation_keeps_ordered_subsequence_mode_when_texts_match(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "same-text-relation.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+    source_pdf.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "document": [
+                            {"id": 10, "text": "Repeated"},
+                            {"id": 11, "text": "Repeated"},
+                        ],
+                        "ro_linkings": [[10, 11]],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document_with_texts(["Repeated", "Repeated"])
+    for element, source_id in zip(document.pages[0].elements, (10, 11), strict=True):
+        element.metadata["id"] = source_id
+
+    report = compare_semantic_reading_order(document, source_pdf, tmp_path / "semantic")
+    page = report["pages"][0]
+
+    assert page["match_mode"] == "ordered-subsequence"
+    assert page["relation_successor_endpoint_mode"] == "element-id"
+    assert page["relation_successor_total_count"] == 1
+    assert page["relation_successor_correct_count"] == 1
+
+
 def test_successor_accuracy_counts_missing_adjacent_text(tmp_path: Path) -> None:
     source_pdf = tmp_path / "paper.pdf"
     source_pdf.write_bytes(b"%PDF-1.4\n")

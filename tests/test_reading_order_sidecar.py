@@ -145,6 +145,179 @@ def test_local_structure_evidence_exposes_only_native_grid_edges() -> None:
     }
 
 
+def test_proposal_semantic_quality_scores_native_local_structure_edges_separately(tmp_path) -> None:
+    source_path = tmp_path / "grid.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "successor_edges": [
+                            ["Grid one", "Grid two"],
+                            ["Grid two", "Grid three"],
+                            ["Body one", "Body two"],
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("grid-one", "Grid one", 1, 10, 20, stream_id="grid-island-001", stream_type="grid-island"),
+            _element("grid-two", "Grid two", 2, 100, 20, stream_id="grid-island-001", stream_type="grid-island"),
+            _element("grid-three", "Grid three", 3, 10, 40, stream_id="grid-island-001", stream_type="grid-island"),
+            _element("body-one", "Body one", 4, 10, 80),
+            _element("body-two", "Body two", 5, 10, 100),
+        ]
+    )
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+
+    assert report["local_structure_successor_candidate_edge_count"] == 2
+    assert report["local_structure_successor_labelled_edge_count"] == 2
+    assert report["local_structure_successor_correct_count"] == 2
+    assert report["local_structure_successor_precision"] == 1.0
+    assert report["local_structure_successor_coverage"] == 0.66666667
+    assert report["local_table_successor_candidate_edge_count"] == 0
+    assert report["local_table_successor_precision"] is None
+    assert report["local_grid_successor_candidate_edge_count"] == 2
+    assert report["local_grid_successor_correct_count"] == 2
+    assert report["local_grid_successor_precision"] == 1.0
+
+
+def test_proposal_semantic_quality_excludes_non_native_grid_stream_edges(tmp_path) -> None:
+    source_path = tmp_path / "native-grid-only.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "successor_edges": [
+                            ["Native one", "Native two"],
+                            ["External one", "External two"],
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("native-one", "Native one", 1, 10, 20),
+            _element("native-two", "Native two", 2, 100, 20),
+            _element("external-one", "External one", 3, 10, 60),
+            _element("external-two", "External two", 4, 100, 60),
+        ]
+    )
+    proposal = {
+        "sidecar_status": "proposal",
+        "pages": [
+            {
+                "page_index": 0,
+                "document": [
+                    {"id": element.id, "text": element.source_text}
+                    for element in document.pages[0].elements
+                ],
+                "reading_streams": [
+                    {
+                        "id": "native-grid",
+                        "type": "grid-island",
+                        "successor_edges": [
+                            {
+                                "source": "native-one",
+                                "target": "native-two",
+                                "review_required": False,
+                                "evidence": ["grid-local-order"],
+                            }
+                        ],
+                    },
+                    {
+                        "id": "external-grid",
+                        "type": "grid-island",
+                        "successor_edges": [
+                            {
+                                "source": "external-one",
+                                "target": "external-two",
+                                "review_required": False,
+                                "evidence": ["external-stream-membership"],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    report = compare_reading_order_sidecar_proposal(document, source_path, tmp_path / "semantic", proposal)
+
+    assert report["successor_candidate_edge_count"] == 2
+    assert report["successor_correct_count"] == 2
+    assert report["local_grid_successor_candidate_edge_count"] == 1
+    assert report["local_grid_successor_labelled_edge_count"] == 1
+    assert report["local_grid_successor_correct_count"] == 1
+    assert report["local_grid_successor_precision"] == 1.0
+
+
+def test_proposal_semantic_quality_uses_source_identifiers_for_duplicate_text(tmp_path) -> None:
+    source_path = tmp_path / "duplicate-segments.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "document": [
+                            {"id": 100, "text": "Repeated"},
+                            {"id": 101, "text": "Repeated"},
+                            {"id": 102, "text": "Tail"},
+                        ],
+                        "ro_linkings": [[100, 101], [101, 102]],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = _document(
+        [
+            _element("first", "Repeated", 1, 10, 20),
+            _element("second", "Repeated", 2, 10, 40),
+            _element("third", "Tail", 3, 10, 60),
+        ]
+    )
+    for element, source_id in zip(document.pages[0].elements, (100, 101, 102), strict=True):
+        element.metadata["id"] = source_id
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+    page = report["pages"][0]
+
+    assert page["successor_endpoint_mode"] == "element-id"
+    assert report["expected_successor_edge_count"] == 2
+    assert report["successor_candidate_edge_count"] == 2
+    assert report["successor_labelled_edge_count"] == 2
+    assert report["successor_correct_count"] == 2
+    assert report["successor_precision"] == 1.0
+    assert report["successor_coverage"] == 1.0
+
+
 def test_accepted_proposal_reapplies_local_stream_relations() -> None:
     document = _document(
         [

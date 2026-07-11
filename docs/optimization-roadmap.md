@@ -216,7 +216,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
    A reviewable `ScriptoriumReadingOrderSidecar` proposal layer is now implemented around that graph model. It keeps executable local edges, lower-confidence review edges, and cross-stream transitions separate, and refuses to alter the IR until a proposal is explicitly accepted. Labelled benchmarks now report strict-edge precision/coverage and strict-plus-review coverage. The next improvement is to raise coverage through independent model or human relation evidence while keeping precision high; raw edge counts or one unlabelled portal page are not enough to justify automatic promotion.
 
-   The next constrained-consensus experiment should preserve strict `table-local-order` / `grid-local-order` edges as hard page-local constraints, not treat them as an additional selected-order vote. It must report protected and unresolved successor edges separately, preserve island boundaries, and stay diagnostic-only until held-out relation-style sidecars show a semantic gain.
+   The constrained-consensus experiment is implemented and does preserve strict `table-local-order` / `grid-local-order` edges as page-local constraints without turning them into extra votes. PUMA/JD show that serializer plumbing can retain 103/103 such edges, but the full ROOR validation set provides the required counter-evidence: stable element-ID scoring retains all 2,612 official relations despite duplicate segment text, directly labelled native local edges score only `316/617` (`0.51215559`), and `protected_successor_consensus` (`0.41918103` on its eligible scope) does not beat selected native order (`0.48774885`). Native geometry edges therefore remain review/translation-stream evidence, not runtime hard constraints. A runtime constraint now requires explicit external successor/stream relations, a separately validated relation predictor, or accepted human review.
 
 7. Real model evidence A/B
 
@@ -230,7 +230,7 @@ The extra repeated-anchor/table-like/sidebar/caption/footnote/spatial-graph/box-
 
 9. Semantic-order benchmark expansion
 
-   The first sidecar-based benchmark is implemented, including relation-style labels for complex pages. Expand it with real/hand-labeled documents and report:
+   The first sidecar-based benchmark is implemented, including relation-style labels for complex pages. The ROOR importer now evaluates the complete published 49-page validation split without feeding `ro_linkings` into the converter: its layout-anchor-only structure JSON retains text/bbox anchors while the official relations remain evaluation-only. This isolates relation prediction from OCR quality and prevents the 1.0 raster-fidelity result from being misread as semantic success. It should remain a regression gate for candidate and local-edge precision, not a source for sample-specific rule tuning. Expand it with real/hand-labeled documents and report:
 
    - normalized edit distance between expected and exported source text
    - column order accuracy

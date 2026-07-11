@@ -332,6 +332,46 @@ Two current PP-StructureV3 A/B controls show why those dimensions must be read t
 
 Across the set, all 103 strict local edges are accepted as constraints; all 80 local edges that generic consensus would break are retained by the constrained candidate; no unknown endpoint, degree, or cycle rejection occurs. Visual similarity remains `0.92760169`, identical to the browser-fit baseline, because selected IR order and visual rendering are unchanged. This verifies local constraint plumbing, not semantic accuracy: PUMA and JD still have no tracked relation-style ground truth, while labelled Hacker News has no applicable native table/grid constraint. Accordingly, the protected candidate's semantic aggregate is unavailable (`null`), and it remains excluded from runtime and automatic candidate recommendations.
 
+## ROOR Relation Benchmark v1
+
+[ROOR](https://github.com/chongzhangFDU/ROOR-Datasets) labels layout reading order as directed immediate-successor relations (`ro_linkings`) between document segments. `scriptorium fetch-roor` downloads a fixed published split prefix rather than selecting examples by outcome, pinned to upstream revision `6b5ca2b2cc6ad02ab1dd8ec1c17551ab614f0aa0` and recorded in its manifest. For each page it writes the source image, the original annotation, an adjacent `.semantic-order.json` used only for evaluation, and a derived `layout-anchor-only` structure JSON. The latter contains the image metadata and `document` text/bbox anchors but removes `ro_linkings`, `label_entities`, and all task labels, so the answer relations cannot enter `--structure-json` fusion.
+
+```bash
+scriptorium fetch-roor \
+  --out-dir data/external/roor-validation-full-v1 \
+  --split val \
+  --sample-count 49
+
+structure_args=()
+for path in data/external/roor-validation-full-v1/structure/*.structure.json; do
+  structure_args+=(--structure-json "$path")
+done
+
+scriptorium benchmark \
+  data/external/roor-validation-full-v1/images/*.png \
+  --input-kind image \
+  "${structure_args[@]}" \
+  --out-dir outputs/external/roor-validation-full-v1-native-layout \
+  --dpi 96 \
+  --image-dpi 96 \
+  --ocr-fallback off \
+  --html-mode fidelity \
+  --fidelity-background raster
+```
+
+The complete published `val` split has 49 pages. Its 2,602 supplied layout anchors all match the generated IR; no official relation is supplied to the converter. All 49 reports resolve relation endpoints through stable element IDs with zero unresolved identifiers. There are 2,612 labelled immediate-successor relations. This matters because 34 pages contain duplicate segment text: text-only normalization would collapse distinct relations. The source-image fidelity score is mechanically `1.0` in this setup because raster fidelity preserves the input image, so it is not evidence of reading-order quality.
+
+| Evidence / candidate | Correct / labelled relations | Relation successor accuracy | Scope |
+|---|---:|---:|---|
+| Selected native order | 1,274 / 2,612 | `0.48774885` | all labelled relations |
+| Generic `successor_consensus` | 1,043 / 2,612 | `0.39931087` | all labelled relations |
+| Diagnostic `protected_successor_consensus` | 778 / 1,856 | `0.41918103` | only pages where that candidate exists |
+| Strict native local table/grid proposal edges | 316 / 617 | `0.51215559` | directly labelled proposal endpoints |
+| Strict native table-island proposal edges | 227 / 406 | `0.55911330` | directly labelled table endpoints |
+| Strict native grid-island proposal edges | 89 / 211 | `0.42180095` | directly labelled grid endpoints |
+
+This is an oracle-layout/order evaluation, not an end-to-end OCR score: ROOR provides the text and boxes so it isolates the reading-order problem. It also invalidates the earlier intuition that native geometric table/grid chains can automatically become hard runtime constraints. Constraint serialization can preserve those chains, but the chains themselves are only about 51% precise on this independent relation set, and the protected candidate does not beat the selected native order. Native local edges therefore remain review and translation-stream evidence. A hard runtime constraint must come from explicit external successor/stream relations, a validated relation predictor, or an accepted human review.
+
 ## Translation Stress Results
 
 `outputs/external/translation-stress-padding-v1` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`. The run uses `fidelity-replacement-fit-v2`, which constrains local mask padding against adjacent visible boxes without changing text coordinates or fitting policy.

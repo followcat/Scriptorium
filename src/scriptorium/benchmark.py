@@ -3876,6 +3876,102 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
                 for case in proposal_semantic_cases
             ),
         ),
+        "total_reading_order_proposal_semantic_local_structure_successor_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_local_structure_successor_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_structure_successor_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_local_structure_successor_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_structure_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_local_structure_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_structure_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_local_structure_successor_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_structure_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_local_table_successor_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_local_table_successor_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_table_successor_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_local_table_successor_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_table_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_local_table_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_local_table_successor_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_table_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_local_table_successor_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_local_table_successor_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_table_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_local_grid_successor_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_local_grid_successor_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_grid_successor_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_local_grid_successor_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_local_grid_successor_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_local_grid_successor_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_grid_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_local_grid_successor_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_local_grid_successor_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
         "total_reading_order_proposal_semantic_anchor_transitions": sum(
             int(case["reading_order_proposal_semantic_anchor_transition_count"])
             for case in proposal_semantic_cases
@@ -4408,6 +4504,24 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_proposal_semantic_review_successor_coverage",
         "reading_order_proposal_semantic_reviewable_successor_correct_count",
         "reading_order_proposal_semantic_reviewable_successor_coverage",
+        "reading_order_proposal_semantic_local_structure_successor_candidate_edge_count",
+        "reading_order_proposal_semantic_local_structure_successor_labelled_edge_count",
+        "reading_order_proposal_semantic_local_structure_successor_unlabelled_edge_count",
+        "reading_order_proposal_semantic_local_structure_successor_correct_count",
+        "reading_order_proposal_semantic_local_structure_successor_precision",
+        "reading_order_proposal_semantic_local_structure_successor_coverage",
+        "reading_order_proposal_semantic_local_table_successor_candidate_edge_count",
+        "reading_order_proposal_semantic_local_table_successor_labelled_edge_count",
+        "reading_order_proposal_semantic_local_table_successor_unlabelled_edge_count",
+        "reading_order_proposal_semantic_local_table_successor_correct_count",
+        "reading_order_proposal_semantic_local_table_successor_precision",
+        "reading_order_proposal_semantic_local_table_successor_coverage",
+        "reading_order_proposal_semantic_local_grid_successor_candidate_edge_count",
+        "reading_order_proposal_semantic_local_grid_successor_labelled_edge_count",
+        "reading_order_proposal_semantic_local_grid_successor_unlabelled_edge_count",
+        "reading_order_proposal_semantic_local_grid_successor_correct_count",
+        "reading_order_proposal_semantic_local_grid_successor_precision",
+        "reading_order_proposal_semantic_local_grid_successor_coverage",
         "reading_order_proposal_semantic_anchor_transition_count",
         "reading_order_proposal_semantic_anchor_transition_missing_text_count",
         "reading_order_proposal_semantic_strict_anchor_path_correct_count",
@@ -5232,6 +5346,60 @@ def _reading_order_proposal_semantic_case_metrics(report: dict[str, Any]) -> dic
             "reviewable_successor_correct_count"
         ),
         "reading_order_proposal_semantic_reviewable_successor_coverage": ratio("reviewable_successor_coverage"),
+        "reading_order_proposal_semantic_local_structure_successor_candidate_edge_count": count(
+            "local_structure_successor_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_labelled_edge_count": count(
+            "local_structure_successor_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_unlabelled_edge_count": count(
+            "local_structure_successor_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_correct_count": count(
+            "local_structure_successor_correct_count"
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_precision": ratio(
+            "local_structure_successor_precision"
+        ),
+        "reading_order_proposal_semantic_local_structure_successor_coverage": ratio(
+            "local_structure_successor_coverage"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_candidate_edge_count": count(
+            "local_table_successor_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_labelled_edge_count": count(
+            "local_table_successor_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_unlabelled_edge_count": count(
+            "local_table_successor_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_correct_count": count(
+            "local_table_successor_correct_count"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_precision": ratio(
+            "local_table_successor_precision"
+        ),
+        "reading_order_proposal_semantic_local_table_successor_coverage": ratio(
+            "local_table_successor_coverage"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_candidate_edge_count": count(
+            "local_grid_successor_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_labelled_edge_count": count(
+            "local_grid_successor_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_unlabelled_edge_count": count(
+            "local_grid_successor_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_correct_count": count(
+            "local_grid_successor_correct_count"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_precision": ratio(
+            "local_grid_successor_precision"
+        ),
+        "reading_order_proposal_semantic_local_grid_successor_coverage": ratio(
+            "local_grid_successor_coverage"
+        ),
         "reading_order_proposal_semantic_anchor_transition_count": count("anchor_transition_count"),
         "reading_order_proposal_semantic_anchor_transition_missing_text_count": count(
             "anchor_transition_missing_text_count"

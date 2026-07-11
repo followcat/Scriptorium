@@ -26,6 +26,7 @@ from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render
 from .playwright_capture import CaptureMode, capture_pdf
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import reading_order_sidecar_summary, write_reading_order_sidecar
+from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
@@ -44,6 +45,33 @@ def make_fixture(out_dir: Path = typer.Option(Path("data/fixture"), help="Direct
 def make_web_fixture(out_dir: Path = typer.Option(Path("data/web-fixture"), help="Directory for structured HTML fixture.")) -> None:
     html_path = create_web_fixture(out_dir)
     typer.echo(f"HTML: {html_path}")
+
+
+@app.command("fetch-roor")
+def fetch_roor_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/roor-validation"),
+        help="Directory for the official ROOR image, layout-anchor, and relation-label files.",
+    ),
+    split: RoorSplit = typer.Option("val", help="Official ROOR split to fetch."),
+    sample_count: int = typer.Option(
+        5,
+        min=1,
+        help="Use the published split's first N samples; this is independent of benchmark outcomes.",
+    ),
+    refresh: bool = typer.Option(False, help="Download images and rewrite derived files even when they exist."),
+) -> None:
+    result = fetch_roor_benchmark_samples(
+        out_dir,
+        split=split,
+        sample_count=sample_count,
+        refresh=refresh,
+    )
+    typer.echo(f"ROOR split: {result.split}")
+    typer.echo(f"Samples: {len(result.samples)}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Images: {result.out_dir / 'images'}")
+    typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
 
 
 @app.command("benchmark")

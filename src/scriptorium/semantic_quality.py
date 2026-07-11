@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict, deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .models import DocumentIR
+from .reading_order_sidecar import LOCAL_STRUCTURE_STREAM_EVIDENCE
 
 
 STRUCTURE_REF_KEYS = (
@@ -35,6 +37,22 @@ INDEX_ALIAS_LABEL_KEYS = (
     "blocks",
     "parsing_res_list",
 )
+
+
+@dataclass(frozen=True)
+class _IdentifierRelations:
+    successor_edges: tuple[tuple[str, str], ...]
+    precedence_edges: tuple[tuple[str, str], ...]
+    successor_unresolved_count: int
+    precedence_unresolved_count: int
+
+    @property
+    def has_complete_successor_edges(self) -> bool:
+        return bool(self.successor_edges) and self.successor_unresolved_count == 0
+
+    @property
+    def has_complete_precedence_edges(self) -> bool:
+        return bool(self.precedence_edges) and self.precedence_unresolved_count == 0
 
 
 def semantic_ground_truth_path(source_path: str | Path) -> Path:
@@ -147,6 +165,11 @@ def compare_reading_order_sidecar_proposal(
         _compare_reading_order_sidecar_proposal_page(
             page_truth,
             proposal_pages.get(_payload_page_index(page_truth, 0)),
+            [
+                element
+                for element in (_document_page_by_index(document, _payload_page_index(page_truth, 0)).elements)
+                if element.source_text.strip()
+            ],
         )
         for page_truth in _semantic_page_truths(ground_truth)
         if _page_truth_in_document(document, page_truth)
@@ -182,6 +205,7 @@ def _reading_order_sidecar_pages_by_index(proposal: dict[str, Any]) -> dict[int,
 def _compare_reading_order_sidecar_proposal_page(
     page_truth: dict[str, Any],
     proposal_page: dict[str, Any] | None,
+    page_elements: list[Any],
 ) -> dict[str, Any]:
     truth_page_index = _payload_page_index(page_truth, 0)
     page_payloads = _page_truth_payloads(page_truth, truth_page_index)
@@ -189,28 +213,77 @@ def _compare_reading_order_sidecar_proposal_page(
     expected_sequence = _page_expected_texts(page_payloads, label_map)
     relation_edges = _page_relation_edges(page_payloads, label_map)
     reading_streams = _page_reading_streams(page_payloads, label_map)
-    has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
+    identifier_relations = _page_identifier_relations(page_payloads, page_elements)
+    has_relation_edges = bool(
+        relation_edges["successor_edges"]
+        or relation_edges["precedence_edges"]
+        or identifier_relations.successor_edges
+        or identifier_relations.precedence_edges
+    )
     match_mode = str(
         page_truth.get(
             "match_mode",
             "ordered-subsequence" if (has_relation_edges or reading_streams) and not expected_sequence else "full-sequence",
         )
     ).strip().lower()
-    expected_edges = _dedupe_edges(
+    text_expected_edges = _dedupe_edges(
         [
             *_adjacent_edges(expected_sequence),
             *relation_edges["successor_edges"],
             *(edge for stream in reading_streams for edge in stream["successor_edges"]),
         ]
     )
-    proposal_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=False)
-    review_edges = _reading_order_sidecar_page_edges(proposal_page or {}, review_only=True)
+    use_identifier_successor_edges = (
+        identifier_relations.has_complete_successor_edges
+        and not expected_sequence
+        and not reading_streams
+    )
+    expected_edges = (
+        list(identifier_relations.successor_edges)
+        if use_identifier_successor_edges
+        else text_expected_edges
+    )
+    proposal_edges = _reading_order_sidecar_page_edges(
+        proposal_page or {},
+        review_only=False,
+        identifier_only=use_identifier_successor_edges,
+    )
+    review_edges = _reading_order_sidecar_page_edges(
+        proposal_page or {},
+        review_only=True,
+        identifier_only=use_identifier_successor_edges,
+    )
+    local_structure_edges = _reading_order_sidecar_page_edges(
+        proposal_page or {},
+        review_only=False,
+        local_structure_only=True,
+        identifier_only=use_identifier_successor_edges,
+    )
+    local_table_edges = _reading_order_sidecar_page_edges(
+        proposal_page or {},
+        review_only=False,
+        local_structure_stream_type="table-island",
+        identifier_only=use_identifier_successor_edges,
+    )
+    local_grid_edges = _reading_order_sidecar_page_edges(
+        proposal_page or {},
+        review_only=False,
+        local_structure_stream_type="grid-island",
+        identifier_only=use_identifier_successor_edges,
+    )
     report = {
         "page_index": truth_page_index,
         "match_mode": match_mode,
         "expected_successor_edge_count": len(expected_edges),
+        "successor_endpoint_mode": "element-id" if use_identifier_successor_edges else "text",
         "successor_edges": _proposal_successor_edge_quality(proposal_edges, expected_edges),
         "review_successor_edges": _proposal_successor_edge_quality(review_edges, expected_edges),
+        "local_structure_successor_edges": _proposal_successor_edge_quality(
+            local_structure_edges,
+            expected_edges,
+        ),
+        "local_table_successor_edges": _proposal_successor_edge_quality(local_table_edges, expected_edges),
+        "local_grid_successor_edges": _proposal_successor_edge_quality(local_grid_edges, expected_edges),
     }
     report.update(
         _reading_order_sidecar_anchor_path_quality(
@@ -225,8 +298,12 @@ def _reading_order_sidecar_page_edges(
     page_payload: dict[str, Any],
     *,
     review_only: bool,
+    local_structure_only: bool = False,
+    local_structure_stream_type: str | None = None,
+    identifier_only: bool = False,
 ) -> list[tuple[str, str]]:
     text_by_id: dict[str, str] = {}
+    node_ids: set[str] = set()
     raw_document = page_payload.get("document")
     if isinstance(raw_document, list):
         for raw_element in raw_document:
@@ -234,8 +311,10 @@ def _reading_order_sidecar_page_edges(
                 continue
             element_id = str(raw_element.get("id") or "").strip()
             text = str(raw_element.get("text") or "").strip()
-            if element_id and text:
-                text_by_id[element_id] = text
+            if element_id:
+                node_ids.add(element_id)
+                if text:
+                    text_by_id[element_id] = text
 
     edge_key = "review_successor_edges" if review_only else "successor_edges"
     edges: list[tuple[str, str]] = []
@@ -245,14 +324,34 @@ def _reading_order_sidecar_page_edges(
     for raw_stream in raw_streams:
         if not isinstance(raw_stream, dict):
             continue
+        stream_type = str(raw_stream.get("type") or "").strip()
+        if local_structure_stream_type is not None and stream_type != local_structure_stream_type:
+            continue
+        local_marker = LOCAL_STRUCTURE_STREAM_EVIDENCE.get(stream_type)
+        if (local_structure_only or local_structure_stream_type is not None) and local_marker is None:
+            continue
         raw_edges = raw_stream.get(edge_key)
         if not isinstance(raw_edges, list):
             continue
         for raw_edge in raw_edges:
             if not isinstance(raw_edge, dict):
                 continue
-            source = text_by_id.get(str(raw_edge.get("source") or "").strip())
-            target = text_by_id.get(str(raw_edge.get("target") or "").strip())
+            if local_structure_only or local_structure_stream_type is not None:
+                evidence = raw_edge.get("evidence")
+                if (
+                    bool(raw_edge.get("review_required"))
+                    or not isinstance(evidence, list)
+                    or local_marker not in {str(item).strip() for item in evidence}
+                ):
+                    continue
+            source_id = str(raw_edge.get("source") or "").strip()
+            target_id = str(raw_edge.get("target") or "").strip()
+            if identifier_only:
+                source = source_id if source_id in node_ids else ""
+                target = target_id if target_id in node_ids else ""
+            else:
+                source = text_by_id.get(source_id)
+                target = text_by_id.get(target_id)
             if source and target and source != target:
                 edges.append((source, target))
     return _dedupe_edges(edges)
@@ -480,6 +579,9 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
 
     successor = totals("successor_edges")
     review = totals("review_successor_edges")
+    local_structure = totals("local_structure_successor_edges")
+    local_table = totals("local_table_successor_edges")
+    local_grid = totals("local_grid_successor_edges")
     reviewable_correct_count = successor["correct_count"] + review["correct_count"]
     anchor_transition_count = sum(int(page["anchor_transition_count"]) for page in page_reports)
     strict_anchor_path_correct_count = sum(int(page["strict_anchor_path_correct_count"]) for page in page_reports)
@@ -509,6 +611,9 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
         "review_successor_coverage": _optional_ratio(review["correct_count"], expected_edge_count),
         "reviewable_successor_correct_count": reviewable_correct_count,
         "reviewable_successor_coverage": _optional_ratio(reviewable_correct_count, expected_edge_count),
+        **_proposal_edge_quality_summary("local_structure_successor", local_structure, expected_edge_count),
+        **_proposal_edge_quality_summary("local_table_successor", local_table, expected_edge_count),
+        **_proposal_edge_quality_summary("local_grid_successor", local_grid, expected_edge_count),
         "anchor_transition_count": anchor_transition_count,
         "anchor_transition_missing_text_count": sum(
             int(page["anchor_transition_missing_text_count"]) for page in page_reports
@@ -531,6 +636,21 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
             anchor_transition_count,
         ),
         "unresolved_anchor_transition_count": anchor_transition_count - reviewable_anchor_path_correct_count,
+    }
+
+
+def _proposal_edge_quality_summary(
+    prefix: str,
+    quality: dict[str, int],
+    expected_edge_count: int,
+) -> dict[str, int | float | None]:
+    return {
+        f"{prefix}_candidate_edge_count": quality["candidate_edge_count"],
+        f"{prefix}_labelled_edge_count": quality["labelled_edge_count"],
+        f"{prefix}_unlabelled_edge_count": quality["unlabelled_edge_count"],
+        f"{prefix}_correct_count": quality["correct_count"],
+        f"{prefix}_precision": _optional_ratio(quality["correct_count"], quality["labelled_edge_count"]),
+        f"{prefix}_coverage": _optional_ratio(quality["correct_count"], expected_edge_count),
     }
 
 
@@ -621,14 +741,6 @@ def _compare_page(
     expected = _page_expected_texts(page_payloads, label_map)
     relation_edges = _page_relation_edges(page_payloads, label_map)
     reading_streams = _page_reading_streams(page_payloads, label_map)
-    has_relation_edges = bool(relation_edges["successor_edges"] or relation_edges["precedence_edges"])
-    has_stream_labels = bool(reading_streams)
-    match_mode = str(
-        page_truth.get(
-            "match_mode",
-            "ordered-subsequence" if (has_relation_edges or has_stream_labels) and not expected else "full-sequence",
-        )
-    )
     page = _document_page_by_index(document, truth_page_index)
     if page is None:
         raise ValueError(f"Page {truth_page_index} is not present in document")
@@ -637,6 +749,20 @@ def _compare_page(
         for element in sorted(page.elements, key=lambda item: (item.reading_order, item.bbox_pdf.y0, item.bbox_pdf.x0))
         if element.source_text.strip()
     ]
+    identifier_relations = _page_identifier_relations(page_payloads, actual_elements)
+    has_relation_edges = bool(
+        relation_edges["successor_edges"]
+        or relation_edges["precedence_edges"]
+        or identifier_relations.successor_edges
+        or identifier_relations.precedence_edges
+    )
+    has_stream_labels = bool(reading_streams)
+    match_mode = str(
+        page_truth.get(
+            "match_mode",
+            "ordered-subsequence" if (has_relation_edges or has_stream_labels) and not expected else "full-sequence",
+        )
+    )
 
     page_report = {
         "page_index": page.page_index,
@@ -654,7 +780,7 @@ def _compare_page(
             ignored_label_texts=_merged_label_texts(expected, relation_edges, reading_streams),
         )
     )
-    page_report.update(_relation_quality(actual_elements, relation_edges))
+    page_report.update(_relation_quality(actual_elements, relation_edges, identifier_relations))
     page_report.update(_stream_quality(actual_elements, reading_streams, include_assignments=True))
 
     candidate_reports: dict[str, Any] = {}
@@ -671,7 +797,9 @@ def _compare_page(
             include_sequences=False,
             include_ignored_texts=False,
         )
-        candidate_reports[candidate_name].update(_relation_quality(candidate_elements, relation_edges))
+        candidate_reports[candidate_name].update(
+            _relation_quality(candidate_elements, relation_edges, identifier_relations)
+        )
         candidate_reports[candidate_name].update(_stream_quality(candidate_elements, reading_streams))
     if candidate_reports:
         page_report["candidate_orders"] = candidate_reports
@@ -771,6 +899,54 @@ def _page_relation_edges(page_payloads: list[dict[str, Any]], label_map: dict[st
         "successor_edges": _dedupe_edges(successor_edges),
         "precedence_edges": _dedupe_edges(precedence_edges),
     }
+
+
+def _page_identifier_relations(
+    page_payloads: list[dict[str, Any]],
+    elements: list[Any],
+) -> _IdentifierRelations:
+    """Resolve explicit truth relation endpoints to stable current element IDs.
+
+    Text remains the portable fallback for ordinary hand-authored sidecars. For
+    structure-backed annotations such as ROOR, however, distinct segments can
+    have identical text. Keeping the source segment identifier avoids dropping
+    valid edges or attributing one duplicate's position to another.
+    """
+
+    identifier_index = _element_identifier_index(elements)
+    successor_edges: list[tuple[str, str]] = []
+    precedence_edges: list[tuple[str, str]] = []
+    successor_unresolved = 0
+    precedence_unresolved = 0
+    for payload in page_payloads:
+        typed_edges = _typed_identifier_relation_edges_from_any(payload.get("relations"), identifier_index)
+        resolved_successor, unresolved_successor = _identifier_relation_edges_from_any(
+            _combined_relation_values(
+                payload.get("successor_edges"),
+                payload.get("successor_relations"),
+                payload.get("ro_linkings"),
+                payload.get("reading_order_edges"),
+                payload.get("reading_order_relations"),
+                payload.get("reading_order_linkings"),
+            ),
+            identifier_index,
+        )
+        resolved_precedence, unresolved_precedence = _identifier_relation_edges_from_any(
+            _combined_relation_values(payload.get("precedence_edges"), payload.get("order_edges")),
+            identifier_index,
+        )
+        successor_edges.extend(resolved_successor)
+        successor_edges.extend(typed_edges["successor_edges"])
+        precedence_edges.extend(resolved_precedence)
+        precedence_edges.extend(typed_edges["precedence_edges"])
+        successor_unresolved += unresolved_successor + typed_edges["successor_unresolved_count"]
+        precedence_unresolved += unresolved_precedence + typed_edges["precedence_unresolved_count"]
+    return _IdentifierRelations(
+        successor_edges=tuple(_dedupe_edges(successor_edges)),
+        precedence_edges=tuple(_dedupe_edges(precedence_edges)),
+        successor_unresolved_count=successor_unresolved,
+        precedence_unresolved_count=precedence_unresolved,
+    )
 
 
 def _page_reading_streams(page_payloads: list[dict[str, Any]], label_map: dict[str, str]) -> list[dict[str, Any]]:
@@ -889,21 +1065,10 @@ def _relation_edges_from_any(value: Any, label_map: dict[str, str] | None = None
     edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for item in value:
-        if isinstance(item, dict):
-            source = _first_present(
-                item,
-                ("source", "from", "src", "before", "head", "source_id", "from_id"),
-            )
-            target = _first_present(
-                item,
-                ("target", "to", "dst", "after", "tail", "target_id", "to_id"),
-            )
-        elif isinstance(item, (list, tuple)) and len(item) >= 2:
-            source = item[0]
-            target = item[1]
-        else:
-            source = None
-            target = None
+        endpoints = _raw_relation_endpoints(item)
+        if endpoints is None:
+            continue
+        source, target = endpoints
         source_text = _relation_endpoint(source, labels)
         target_text = _relation_endpoint(target, labels)
         edge = (source_text, target_text)
@@ -912,6 +1077,29 @@ def _relation_edges_from_any(value: Any, label_map: dict[str, str] | None = None
         edges.append(edge)
         seen.add(edge)
     return edges
+
+
+def _identifier_relation_edges_from_any(
+    value: Any,
+    identifier_index: dict[str, str],
+) -> tuple[list[tuple[str, str]], int]:
+    if not isinstance(value, list):
+        return [], 0
+    edges: list[tuple[str, str]] = []
+    unresolved_count = 0
+    for item in value:
+        endpoints = _raw_relation_endpoints(item)
+        if endpoints is None:
+            continue
+        source_ref = _relation_identifier_reference(endpoints[0])
+        target_ref = _relation_identifier_reference(endpoints[1])
+        source = identifier_index.get(source_ref)
+        target = identifier_index.get(target_ref)
+        if not source or not target or source == target:
+            unresolved_count += 1
+            continue
+        edges.append((source, target))
+    return _dedupe_edges(edges), unresolved_count
 
 
 def _typed_relation_edges_from_any(value: Any, label_map: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
@@ -942,6 +1130,67 @@ def _typed_relation_edges_from_any(value: Any, label_map: dict[str, str]) -> dic
         "successor_edges": _dedupe_edges(edges["successor_edges"]),
         "precedence_edges": _dedupe_edges(edges["precedence_edges"]),
     }
+
+
+def _typed_identifier_relation_edges_from_any(
+    value: Any,
+    identifier_index: dict[str, str],
+) -> dict[str, Any]:
+    edges: dict[str, list[tuple[str, str]]] = {"successor_edges": [], "precedence_edges": []}
+    unresolved_counts = {"successor": 0, "precedence": 0}
+    if not isinstance(value, list):
+        return {
+            "successor_edges": [],
+            "precedence_edges": [],
+            "successor_unresolved_count": 0,
+            "precedence_unresolved_count": 0,
+        }
+    for raw in value:
+        if not isinstance(raw, (dict, list, tuple)):
+            continue
+        relation_type = _typed_relation_type(raw)
+        resolved_edges, unresolved_count = _identifier_relation_edges_from_any([raw], identifier_index)
+        if relation_type in {"successor", "successor_edge", "next", "adjacent", "follows"}:
+            edges["successor_edges"].extend(resolved_edges)
+            unresolved_counts["successor"] += unresolved_count
+        elif relation_type in {"precedence", "precedence_edge", "before", "order", "ordering", "precedes"}:
+            edges["precedence_edges"].extend(resolved_edges)
+            unresolved_counts["precedence"] += unresolved_count
+    return {
+        "successor_edges": _dedupe_edges(edges["successor_edges"]),
+        "precedence_edges": _dedupe_edges(edges["precedence_edges"]),
+        "successor_unresolved_count": unresolved_counts["successor"],
+        "precedence_unresolved_count": unresolved_counts["precedence"],
+    }
+
+
+def _raw_relation_endpoints(value: Any) -> tuple[Any, Any] | None:
+    if isinstance(value, dict):
+        source = _first_present(
+            value,
+            ("source", "from", "src", "before", "head", "source_id", "from_id"),
+        )
+        target = _first_present(
+            value,
+            ("target", "to", "dst", "after", "tail", "target_id", "to_id"),
+        )
+        return (source, target) if source is not None and target is not None else None
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        return value[0], value[1]
+    return None
+
+
+def _typed_relation_type(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    return str(
+        value.get("relation")
+        or value.get("type")
+        or value.get("kind")
+        or value.get("edge_type")
+        or value.get("label")
+        or ""
+    ).strip().lower()
 
 
 def _first_present(value: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -1054,6 +1303,64 @@ def _relation_endpoint(value: Any, label_map: dict[str, str]) -> str:
     return label_map.get(raw, raw)
 
 
+def _element_identifier_index(elements: list[Any]) -> dict[str, str]:
+    candidates: dict[str, set[str]] = defaultdict(set)
+    for element in elements:
+        element_id = str(element.id).strip()
+        if not element_id:
+            continue
+        candidates[element_id].add(element_id)
+        metadata = element.metadata if isinstance(getattr(element, "metadata", None), dict) else {}
+        for key in STRUCTURE_REF_KEYS:
+            _add_identifier_candidate(candidates, metadata.get(key), element_id)
+        structure_evidence = metadata.get("structure_evidence")
+        if isinstance(structure_evidence, dict):
+            for key in STRUCTURE_REF_KEYS:
+                _add_identifier_candidate(candidates, structure_evidence.get(key), element_id)
+        source_text = str(getattr(element, "source_text", "") or "").strip()
+        raw_node_keys = metadata.get("external_structure_node_keys")
+        if isinstance(raw_node_keys, list):
+            for raw_key in raw_node_keys:
+                normalized = _identifier_token(raw_key)
+                if normalized and normalized != source_text:
+                    candidates[normalized].add(element_id)
+    return {
+        reference: next(iter(element_ids))
+        for reference, element_ids in candidates.items()
+        if len(element_ids) == 1
+    }
+
+
+def _add_identifier_candidate(candidates: dict[str, set[str]], value: Any, element_id: str) -> None:
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _add_identifier_candidate(candidates, item, element_id)
+        return
+    reference = _identifier_token(value)
+    if reference:
+        candidates[reference].add(element_id)
+
+
+def _relation_identifier_reference(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in STRUCTURE_REF_KEYS:
+            reference = _identifier_token(value.get(key))
+            if reference:
+                return reference
+        return ""
+    return _identifier_token(value)
+
+
+def _identifier_token(value: Any) -> str:
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, (str, int, float)):
+        return str(value).strip()
+    return ""
+
+
 def _dedupe_edges(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
     unique_edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -1113,21 +1420,43 @@ def _merged_label_texts(
 def _relation_quality(
     actual_elements: list[Any],
     relation_edges: dict[str, list[tuple[str, str]]],
+    identifier_relations: _IdentifierRelations,
 ) -> dict[str, Any]:
-    successor_edges = relation_edges["successor_edges"]
-    precedence_edges = relation_edges["precedence_edges"]
-    positions = _first_text_positions([element.source_text.strip() for element in actual_elements])
+    use_identifier_successor = identifier_relations.has_complete_successor_edges
+    use_identifier_precedence = identifier_relations.has_complete_precedence_edges
+    successor_edges = (
+        list(identifier_relations.successor_edges)
+        if use_identifier_successor
+        else relation_edges["successor_edges"]
+    )
+    precedence_edges = (
+        list(identifier_relations.precedence_edges)
+        if use_identifier_precedence
+        else relation_edges["precedence_edges"]
+    )
+    text_positions = _first_text_positions([element.source_text.strip() for element in actual_elements])
+    identifier_positions = {str(element.id): index for index, element in enumerate(actual_elements)}
 
-    successor_correct, successor_missing = _relation_successor_counts(successor_edges, positions)
-    precedence_correct, precedence_missing = _relation_precedence_counts(precedence_edges, positions)
+    successor_correct, successor_missing = _relation_successor_counts(
+        successor_edges,
+        identifier_positions if use_identifier_successor else text_positions,
+    )
+    precedence_correct, precedence_missing = _relation_precedence_counts(
+        precedence_edges,
+        identifier_positions if use_identifier_precedence else text_positions,
+    )
     missing_labels = successor_missing | precedence_missing
     return {
         "relation_successor_correct_count": successor_correct,
         "relation_successor_total_count": len(successor_edges),
         "relation_successor_accuracy": _optional_ratio(successor_correct, len(successor_edges)),
+        "relation_successor_endpoint_mode": "element-id" if use_identifier_successor else "text",
+        "relation_successor_identifier_unresolved_count": identifier_relations.successor_unresolved_count,
         "relation_precedence_correct_count": precedence_correct,
         "relation_precedence_total_count": len(precedence_edges),
         "relation_precedence_accuracy": _optional_ratio(precedence_correct, len(precedence_edges)),
+        "relation_precedence_endpoint_mode": "element-id" if use_identifier_precedence else "text",
+        "relation_precedence_identifier_unresolved_count": identifier_relations.precedence_unresolved_count,
         "relation_missing_text_count": len(missing_labels),
         "relation_missing_texts": sorted(missing_labels),
     }

@@ -235,6 +235,20 @@ scriptorium benchmark path/to/page.png \
   --out-dir outputs/image-benchmark
 ```
 
+For relation-style reading-order validation, fetch a fixed prefix of the
+official ROOR validation split. Generated `structure/*.structure.json` files
+retain only image, text, and bbox anchors; official `ro_linkings` remain in an
+adjacent evaluation sidecar and are never fused through `--structure-json`:
+
+```bash
+scriptorium fetch-roor \
+  --split val \
+  --sample-count 49 \
+  --out-dir data/external/roor-validation-full-v1
+```
+
+See [External benchmarks](docs/external-benchmarks.md#roor-relation-benchmark-v1) for the full command, relation metrics, and limits.
+
 Representative current scores are shown below. Exact commands, sources, checksums, and full metrics are in [External benchmarks](docs/external-benchmarks.md).
 
 | Sample | Pages | Main stress | Visual similarity | Notes |

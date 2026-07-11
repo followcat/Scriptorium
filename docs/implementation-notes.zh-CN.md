@@ -206,6 +206,8 @@ scriptorium propose-reading-sidecar \
 
 对于带有 `match_mode: "ordered-subsequence"` 的页面，报告还会区分 direct edge 和相邻标注锚点之间的 graph path。`strict_anchor_path_coverage` 只沿可执行局部边；`local_reviewable_anchor_path_coverage` 额外允许 review-only 局部边；`reviewable_anchor_path_coverage` 还允许 review-only 的跨 stream transition。若路径穿过另一个已标注锚点就会被拒绝，因此不会把乱序锚点误判为正确。这只是评测视图：review transition 在单独 accepted 前仍不可执行。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
 
+`local_structure_successor_*`、`local_table_successor_*` 和 `local_grid_successor_*` 只统计带原生 `table-local-order` 或 `grid-local-order` 标记、且不是 review 的 strict proposal edge。仅有 table/grid stream type 并不足够：没有该原生标记的 external model membership 会被排除。这样原生几何诊断和外部结构证据保持分离，provider 新建的 table/grid stream 也不会虚增 local-edge precision。
+
 低 `reading_order_confidence` 不再把整个局部流的边一律降级。`reading_order_sidecar.py` 只有在 review edge 位于同一个 provisional stream 且同时通过三项独立检查时才提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score `>= 0.86`、visual-YX、box-flow、relation-graph 三个局部 candidate 的直接 successor 一致。边会记录全部三项 evidence。Relation graph API 会单独暴露实际选中的 path-cover edge，而不是把序列化 candidate order 的 handoff 误当作几何关系；现在还会保留每条已选边在选择时的 source/target 替代边、margin 和 max-regret。出现 score tie 的边绝不会自动提升，review edge 会带上 `relation_graph` payload，交给结构模型或人工复核。跨 stream transition 被有意排除在提升路径之外。
 
 图片 source 使用同一个 benchmark 命令：
@@ -332,6 +334,8 @@ Stream sidecar 现在还会单独评估 IR 的流归属质量。`semantic_stream
 同一份 A/B 现在还包含 `reading_order_local_structure_stream_delta`、`reading_order_local_structure_successor_edge_delta`、`reading_order_local_structure_consensus_disagreement_edge_delta` 和 `stream_keep_selected_local_structure_delta`。它们只衡量原生几何已确认 table/grid 岛内的严格边，不能替代有人类标注的 semantic successor accuracy。
 
 Semantic sidecar 现在也会给诊断专用的 `protected_successor_consensus` 候选打分，并与 visual-yx、box-flow、relation-graph、structure-relation、successor-consensus、external-structure 一起输出候选指标。这样可以观察关系保护候选是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
+
+完整 ROOR validation 说明它必须继续只是诊断项。使用官方 text/layout anchor、并隔离 `ro_linkings` 后，49 页全部使用稳定 element ID 解析 endpoint，未解析 identifier 为 0，因此即使 segment text 重复也保留 2,612 条官方 relation。strict native local edge 在直接可标注 endpoint 上得到 `316/617`（`0.51215559`）；protected candidate 在其适用 relation 范围内为 `0.41918103`，没有超过 selected native order（`0.48774885`）。因此 constraint preservation 只证明 serializer 行为，不证明 relation correctness。runtime hard constraint 必须来自显式 external successor/stream evidence、独立验证过的 relation predictor，或 accepted review。泄漏边界和完整结果见[外部基准](external-benchmarks.zh-CN.md#roor-关系基准-v1)。
 
 ## 研究参考
 

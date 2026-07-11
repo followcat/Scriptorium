@@ -234,6 +234,19 @@ scriptorium benchmark path/to/page.png \
   --out-dir outputs/image-benchmark
 ```
 
+需要验证关系式阅读顺序时，可以下载官方 ROOR 验证集的固定前缀。生成的
+`structure/*.structure.json` 只保留图片、文本和 bbox anchor；官方 `ro_linkings`
+只写入相邻的评测 sidecar，绝不会作为 `--structure-json` 输入融合：
+
+```bash
+scriptorium fetch-roor \
+  --split val \
+  --sample-count 49 \
+  --out-dir data/external/roor-validation-full-v1
+```
+
+完整运行命令、关系指标和边界见 [外部基准](docs/external-benchmarks.zh-CN.md#roor-关系基准-v1)。
+
 代表性样本的当前结果如下。详细命令、样本来源、checksum 和完整指标见 [外部基准](docs/external-benchmarks.zh-CN.md)。
 
 | 样本 | 页数 | 主要压力 | Visual similarity | 备注 |
