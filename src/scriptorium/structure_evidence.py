@@ -11,6 +11,7 @@ from typing import Any
 
 from .geometry import clamp_bbox, pdf_to_px_bbox, px_to_pdf_bbox
 from .models import BBox, DocumentIR, ElementIR, PageIR, RevisionIR
+from .opendataloader_provider import is_opendataloader_payload, normalize_opendataloader_payload
 from .paddle_json import normalize_paddleocr_vl_payload
 from .reading_order_sidecar import is_unaccepted_reading_order_sidecar
 from .relation_order import relation_edge_candidate_path_cover
@@ -339,6 +340,16 @@ def load_structure_json(path: str | Path) -> dict[str, Any]:
     return normalized if isinstance(normalized, dict) else payload
 
 
+def _normalize_provider_payload(payload: Any, document: DocumentIR) -> Any:
+    if not is_opendataloader_payload(payload):
+        return payload
+    page_sizes = {
+        page.page_index: (float(page.width_pt), float(page.height_pt))
+        for page in document.pages
+    }
+    return normalize_opendataloader_payload(payload, page_sizes)
+
+
 def normalize_structure_evidence(
     payload: Any,
     document: DocumentIR,
@@ -353,6 +364,7 @@ def normalize_structure_evidence(
     derives region order from the `body.children` tree.
     """
 
+    payload = _normalize_provider_payload(payload, document)
     payload = normalize_paddleocr_vl_payload(payload)
     root_payload = payload if isinstance(payload, Mapping) else {}
     regions: list[StructureRegion] = []
@@ -414,6 +426,7 @@ def normalize_structure_relations(
     order for the page.
     """
 
+    payload = _normalize_provider_payload(payload, document)
     root_payload = payload if isinstance(payload, Mapping) else {}
     edges: list[StructureRelationEdge] = []
     seen: set[tuple[int, str, str, str]] = set()

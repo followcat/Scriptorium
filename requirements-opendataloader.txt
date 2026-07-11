@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Optional deterministic PDF layout/reading-order provider. The Python wheel
+# bundles the Apache-2.0 Java CLI and requires a Java 11+ runtime.
+opendataloader-pdf==2.4.7

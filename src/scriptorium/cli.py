@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal, Optional
 
 import typer
@@ -29,6 +30,7 @@ from .ocr import (
     normalize_ocr_to_ir,
     write_ocr_json,
 )
+from .opendataloader_provider import OpenDataLoaderAdapter
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -601,6 +603,74 @@ def run_pp_structure_command(
     typer.echo(f"Pages: {len(rendered.pages)}")
     typer.echo(f"Source type: {rendered.source_type}")
     typer.echo(f"Model: {payload.get('model')}")
+
+
+@app.command("run-opendataloader")
+def run_opendataloader_command(
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF source."),
+    output: Path = typer.Option(
+        Path("outputs/opendataloader.structure.json"),
+        "--output",
+        "-o",
+        help="Normalized review-only XY-Cut structure JSON for replay or A/B benchmarking.",
+    ),
+    raw_output: Optional[Path] = typer.Option(
+        None,
+        "--raw-output",
+        help="Optional path for the original provider JSON; defaults beside --output.",
+    ),
+    max_pages: Optional[int] = typer.Option(None, min=1, help="Limit extraction to the first N pages."),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Explicit 1-based source page ranges, for example 1-3,136. Cannot be combined with --max-pages.",
+    ),
+    table_method: Literal["default", "cluster"] = typer.Option(
+        "default",
+        help="OpenDataLoader table method: default border-based or border-plus-cluster.",
+    ),
+    include_header_footer: bool = typer.Option(
+        False,
+        "--include-header-footer/--exclude-header-footer",
+        help="Retain provider-classified page headers and footers in the review proposal.",
+    ),
+    threads: int = typer.Option(
+        1,
+        min=1,
+        help="Provider page threads; one is the deterministic default.",
+    ),
+) -> None:
+    """Run deterministic OpenDataLoader XY-Cut and emit review-only evidence."""
+
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_output or output.with_name(f"{output.stem}.raw.json")
+    if raw_path.resolve() == output.resolve():
+        raise typer.BadParameter("--raw-output must differ from --output", param_hint="--raw-output")
+    try:
+        with TemporaryDirectory(prefix="scriptorium-opendataloader-", dir=output.parent) as temp_dir:
+            result = OpenDataLoaderAdapter().analyze(
+                source,
+                temp_dir,
+                page_indices=page_indices,
+                max_pages=max_pages,
+                table_method=table_method,
+                include_header_footer=include_header_footer,
+                threads=threads,
+            )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="source") from exc
+    normalized_path = write_ocr_json(result.structure_payload, output)
+    provider_raw_path = write_ocr_json(result.raw_payload, raw_path)
+    normalization = result.structure_payload["normalization"]
+    typer.echo(f"OpenDataLoader structure JSON: {normalized_path}")
+    typer.echo(f"OpenDataLoader raw JSON: {provider_raw_path}")
+    typer.echo(f"Pages: {len(result.structure_payload['pages'])}")
+    typer.echo(f"Review blocks: {normalization['normalized_block_count']}")
+    typer.echo(f"Review relations: {normalization['review_relation_edge_count']}")
+    typer.echo("Runtime reorder: disabled")
 
 
 @app.command("run-surya-layout")
