@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -18,9 +19,10 @@ from .reading_order import (
 
 
 SIDECAR_SCHEMA_NAME = "ScriptoriumReadingOrderSidecar"
-SIDECAR_SCHEMA_VERSION = "1.0"
+SIDECAR_SCHEMA_VERSION = "1.1"
 SIDECAR_PROPOSAL_STATUS = "proposal"
-SIDECAR_SOURCE = "scriptorium-local-stream-proposal-v1"
+SIDECAR_SOURCE = "scriptorium-local-stream-proposal-v2"
+EXPLICIT_BLOCK_ORDER_TRANSITION_KIND = "external-structure-explicit-block-order-v1"
 REVIEW_EDGE_PROMOTION_CONFIDENCE = 0.82
 REVIEW_EDGE_RELATION_GRAPH_SCORE = 0.86
 REVIEW_EDGE_GEOMETRY_SCORE = 0.82
@@ -92,6 +94,31 @@ GENERIC_EXTERNAL_TEXT_BLOCK_LABELS = frozenset(
 )
 
 
+# Model block order is useful as a relation proposal only for primary textual
+# regions. Non-linear islands and secondary page furniture are intentional
+# boundaries: their local semantics need explicit stream or successor evidence.
+PRIMARY_BLOCK_TRANSITION_LABELS = frozenset(
+    {
+        "abstract",
+        "body",
+        "body_text",
+        "doc_title",
+        "list",
+        "list_item",
+        "paragraph",
+        "paragraph_text",
+        "paragraph_title",
+        "reference",
+        "references",
+        "section_header",
+        "section_title",
+        "text",
+        "text_block",
+        "title",
+    }
+)
+
+
 def propose_reading_order_sidecar(document: DocumentIR) -> dict[str, Any]:
     """Build a reviewable local reading-stream sidecar from an annotated IR.
 
@@ -118,6 +145,8 @@ def propose_reading_order_sidecar(document: DocumentIR) -> dict[str, Any]:
                     "successor_edge_count",
                     "review_successor_edge_count",
                     "review_transition_count",
+                    "strict_block_transition_count",
+                    "review_block_transition_count",
                 )
             }
         )
@@ -139,9 +168,12 @@ def propose_reading_order_sidecar(document: DocumentIR) -> dict[str, Any]:
             "acceptance_required": True,
             "accepted_status": "accepted",
             "cross_stream_relations": "review_only",
+            "structure_block_order_relations": "review_only",
             "description": (
                 "Local successor edges are inferred from existing selected order and structural metadata. "
-                "Review edge confidence and cross-stream transitions before changing sidecar_status to accepted."
+                "Explicit consecutive primary block orders may add provenance-rich review transitions, but never "
+                "runtime order constraints. Review edge confidence and transitions before changing sidecar_status "
+                "to accepted."
             ),
         },
         "summary": {
@@ -151,6 +183,8 @@ def propose_reading_order_sidecar(document: DocumentIR) -> dict[str, Any]:
             "successor_edge_count": int(summary["successor_edge_count"]),
             "review_successor_edge_count": int(summary["review_successor_edge_count"]),
             "review_transition_count": int(summary["review_transition_count"]),
+            "strict_block_transition_count": int(summary["strict_block_transition_count"]),
+            "review_block_transition_count": int(summary["review_block_transition_count"]),
             "stream_type_counts": dict(sorted(stream_type_counts.items())),
             "stream_origin_counts": dict(sorted(stream_origin_counts.items())),
         },
@@ -180,6 +214,8 @@ def reading_order_sidecar_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
         "successor_edge_count": _int(summary.get("successor_edge_count")),
         "review_successor_edge_count": _int(summary.get("review_successor_edge_count")),
         "review_transition_count": _int(summary.get("review_transition_count")),
+        "strict_block_transition_count": _int(summary.get("strict_block_transition_count")),
+        "review_block_transition_count": _int(summary.get("review_block_transition_count")),
         "stream_type_counts": _count_mapping(summary.get("stream_type_counts")),
         "stream_origin_counts": _count_mapping(summary.get("stream_origin_counts")),
     }
@@ -346,8 +382,17 @@ def _propose_page(page: PageIR) -> tuple[dict[str, Any], dict[str, Any]]:
         stream_type_counts[details.stream_type] += 1
         stream_origin_counts[details.origin] += 1
 
-    transitions = _review_transitions(elements, member_by_element_id)
+    block_transitions = _explicit_block_order_review_transitions(elements, member_by_element_id)
+    transitions = _merge_review_transitions(
+        _review_transitions(elements, member_by_element_id),
+        block_transitions,
+    )
     summary["review_transition_count"] = len(transitions)
+    # Explicit model block order remains proposal evidence until a relation
+    # provider or human review accepts it. Keep the strict count visible so a
+    # benchmark can detect an accidental promotion in a later change.
+    summary["strict_block_transition_count"] = 0
+    summary["review_block_transition_count"] = len(block_transitions)
     page_summary: dict[str, Any] = dict(summary)
     page_summary["stream_type_counts"] = dict(stream_type_counts)
     page_summary["stream_origin_counts"] = dict(stream_origin_counts)
@@ -1000,6 +1045,195 @@ def _review_transitions(
     return transitions
 
 
+def _explicit_block_order_review_transitions(
+    elements: list[ElementIR],
+    member_by_element_id: Mapping[str, "_ProposalMember"],
+) -> list[dict[str, Any]]:
+    """Propose review-only relations between unambiguous consecutive blocks.
+
+    The numeric adjacency guard is deliberate. If order 2 is unmatched or is a
+    table/sidebar boundary, order 1 must not jump directly to order 3. Tied
+    block orders are also ambiguous and therefore produce no relation.
+    """
+
+    grouped: dict[_ExplicitStructureBlockKey, list[ElementIR]] = defaultdict(list)
+    for element in elements:
+        key = _explicit_structure_block_key(element)
+        if key is not None:
+            grouped[key].append(element)
+
+    by_source_and_order: dict[str, dict[int, list[_ExplicitStructureBlock]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for key, members in grouped.items():
+        ordered_members = tuple(sorted(members, key=_element_order_key))
+        by_source_and_order[key.source][key.order].append(
+            _ExplicitStructureBlock(key=key, members=ordered_members)
+        )
+
+    element_rank = {element.id: index for index, element in enumerate(elements)}
+    transitions: list[dict[str, Any]] = []
+    seen_edges: set[tuple[str, str]] = set()
+    for structure_source, blocks_by_order in sorted(by_source_and_order.items()):
+        for order in sorted(blocks_by_order):
+            next_order = order + 1
+            source_blocks = blocks_by_order[order]
+            target_blocks = blocks_by_order.get(next_order, [])
+            if len(source_blocks) != 1 or len(target_blocks) != 1:
+                continue
+            source_block = source_blocks[0]
+            target_block = target_blocks[0]
+            if not _block_is_primary_transition_candidate(source_block):
+                continue
+            if not _block_is_primary_transition_candidate(target_block):
+                continue
+
+            source = source_block.members[-1]
+            target = target_block.members[0]
+            edge = (source.id, target.id)
+            if source.id == target.id or edge in seen_edges:
+                continue
+            source_member = member_by_element_id[source.id]
+            target_member = member_by_element_id[target.id]
+            source_rank = element_rank[source.id]
+            target_rank = element_rank[target.id]
+            confidence = min(
+                _confidence(source),
+                _confidence(target),
+                _structure_block_confidence(source_block),
+                _structure_block_confidence(target_block),
+                0.74,
+            )
+            transitions.append(
+                {
+                    "source": source.id,
+                    "target": target.id,
+                    "source_stream_id": source_member.stream_id,
+                    "target_stream_id": target_member.stream_id,
+                    "reason": "explicit-structure-block-order",
+                    "confidence": round(confidence, 8),
+                    "review_required": True,
+                    "evidence": [
+                        "external-structure-block-order",
+                        "explicit-block-order",
+                        "consecutive-block-order",
+                        "primary-text-blocks",
+                    ],
+                    "provenance": {
+                        "kind": EXPLICIT_BLOCK_ORDER_TRANSITION_KIND,
+                        "structure_source": structure_source,
+                        "order_source": "explicit",
+                        "order_delta": 1,
+                        "selected_order_direction": "forward" if source_rank < target_rank else "reverse",
+                        "source_block": source_block.as_payload(),
+                        "target_block": target_block.as_payload(),
+                    },
+                }
+            )
+            seen_edges.add(edge)
+    return transitions
+
+
+def _explicit_structure_block_key(element: ElementIR) -> "_ExplicitStructureBlockKey | None":
+    metadata = element.metadata
+    structure = metadata.get("structure_evidence")
+    if not isinstance(structure, Mapping):
+        return None
+    order = _optional_int(structure.get("order"))
+    if order is None or _text(structure.get("order_source")).lower() != "explicit":
+        return None
+    if _text(metadata.get("external_structure_order_source")).lower() not in {"", "explicit"}:
+        return None
+    source = _text(structure.get("source"))
+    label = _normalize_external_label(structure.get("label") or metadata.get("external_structure_label"))
+    bbox = structure.get("bbox_pdf")
+    if not source or not label or not isinstance(bbox, list) or len(bbox) != 4:
+        return None
+    try:
+        normalized_bbox = tuple(round(float(value), 6) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+    return _ExplicitStructureBlockKey(
+        source=source,
+        order=order,
+        label=label,
+        bbox_pdf=normalized_bbox,
+    )
+
+
+def _block_is_primary_transition_candidate(block: "_ExplicitStructureBlock") -> bool:
+    if block.key.label not in PRIMARY_BLOCK_TRANSITION_LABELS:
+        return False
+    for element in block.members:
+        metadata = element.metadata
+        if metadata.get("external_structure_order_diagnostic_only") is True:
+            return False
+        if _text(metadata.get("reading_order_scope") or "body") != "body":
+            return False
+        if _text(metadata.get("reading_order_stream_type") or "body") != "body":
+            return False
+        if _has_secondary_structure_stream(metadata):
+            return False
+        if metadata.get("reading_order_caption_type"):
+            return False
+        column_span = _text(metadata.get("column_span"))
+        if column_span.startswith(("grid", "table", "caption", "artifact", "footnote", "sidebar")):
+            return False
+        structure = metadata.get("structure_evidence")
+        if not isinstance(structure, Mapping):
+            return False
+        coverage = _safe_float(structure.get("coverage"))
+        if coverage is None or coverage < 0.5:
+            return False
+    return True
+
+
+def _structure_block_confidence(block: "_ExplicitStructureBlock") -> float:
+    values: list[float] = []
+    for element in block.members:
+        structure = element.metadata.get("structure_evidence")
+        if not isinstance(structure, Mapping):
+            continue
+        confidence = _safe_float(structure.get("confidence"))
+        if confidence is not None:
+            values.append(confidence)
+    return min(values) if values else 1.0
+
+
+def _merge_review_transitions(
+    selected_order_transitions: list[dict[str, Any]],
+    block_order_transitions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge duplicate endpoints while retaining independent provenance."""
+
+    merged = [dict(transition) for transition in selected_order_transitions]
+    by_edge = {
+        (_text(transition.get("source")), _text(transition.get("target"))): transition
+        for transition in merged
+    }
+    for transition in block_order_transitions:
+        edge = (_text(transition.get("source")), _text(transition.get("target")))
+        existing = by_edge.get(edge)
+        if existing is None:
+            item = dict(transition)
+            merged.append(item)
+            by_edge[edge] = item
+            continue
+        existing["confidence"] = max(
+            _safe_float(existing.get("confidence")) or 0.0,
+            _safe_float(transition.get("confidence")) or 0.0,
+        )
+        existing["evidence"] = _dedupe_texts(
+            [
+                *(_text(item) for item in existing.get("evidence", []) if _text(item)),
+                *(_text(item) for item in transition.get("evidence", []) if _text(item)),
+            ]
+        )
+        existing["selected_order_transition"] = True
+        existing["provenance"] = transition["provenance"]
+    return merged
+
+
 def _transition_reason(source: "_ProposalMember", target: "_ProposalMember") -> str:
     if source.details.origin == target.details.origin == "column-partition":
         if source.details.flow_segment == target.details.flow_segment:
@@ -1028,6 +1262,13 @@ def _confidence(element: ElementIR) -> float:
         return max(0.0, min(float(value), 1.0))
     except (TypeError, ValueError):
         return 0.5
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _count_mapping(value: Any) -> dict[str, int]:
@@ -1125,4 +1366,26 @@ class _ReviewEdgePromotion:
             ),
             "relation_graph_has_tied_alternative": self.relation_graph_diagnostic.has_tied_alternative,
             "candidate_consensus": "3-of-3",
+        }
+
+
+@dataclass(frozen=True)
+class _ExplicitStructureBlockKey:
+    source: str
+    order: int
+    label: str
+    bbox_pdf: tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class _ExplicitStructureBlock:
+    key: _ExplicitStructureBlockKey
+    members: tuple[ElementIR, ...]
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "order": self.key.order,
+            "label": self.key.label,
+            "bbox_pdf": list(self.key.bbox_pdf),
+            "member_ids": [element.id for element in self.members],
         }

@@ -293,11 +293,16 @@ def test_benchmark_outputs_similarity_metrics(tmp_path: Path) -> None:
     assert "total_reading_order_proposal_streams" in report["summary"]
     assert "total_reading_order_proposal_successor_edges" in report["summary"]
     assert "total_reading_order_proposal_review_transitions" in report["summary"]
+    assert "total_reading_order_proposal_strict_block_transitions" in report["summary"]
+    assert "total_reading_order_proposal_review_block_transitions" in report["summary"]
     assert "reading_order_proposal_stream_type_counts" in report["summary"]
     assert "total_reading_order_proposal_semantic_successor_correct_edges" in report["summary"]
     assert "reading_order_proposal_semantic_successor_coverage" in report["summary"]
     assert "total_reading_order_proposal_semantic_anchor_transitions" in report["summary"]
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage" in report["summary"]
+    assert "reading_order_proposal_semantic_strict_block_transition_precision" in report["summary"]
+    assert "reading_order_proposal_semantic_review_block_transition_precision" in report["summary"]
+    assert "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage" in report["summary"]
     assert "reading_order_proposal_semantic_reviewable_anchor_path_coverage" in report["summary"]
     assert "total_reading_order_caption_elements" in report["summary"]
     assert "reading_order_caption_counts" in report["summary"]
@@ -1012,12 +1017,17 @@ def test_benchmark_can_score_fidelity_overlay_mode(tmp_path: Path) -> None:
     assert "reading_order_proposal_stream_count" in csv_text
     assert "reading_order_proposal_successor_edge_count" in csv_text
     assert "reading_order_proposal_review_transition_count" in csv_text
+    assert "reading_order_proposal_strict_block_transition_count" in csv_text
+    assert "reading_order_proposal_review_block_transition_count" in csv_text
     assert "reading_order_proposal_semantic_successor_precision" in csv_text
     assert "reading_order_proposal_semantic_local_structure_successor_precision" in csv_text
     assert "reading_order_proposal_semantic_local_table_successor_precision" in csv_text
     assert "reading_order_proposal_semantic_local_grid_successor_precision" in csv_text
     assert "reading_order_proposal_semantic_review_successor_coverage" in csv_text
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage" in csv_text
+    assert "reading_order_proposal_semantic_strict_block_transition_precision" in csv_text
+    assert "reading_order_proposal_semantic_review_block_transition_precision" in csv_text
+    assert "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage" in csv_text
     assert "reading_order_proposal_semantic_reviewable_anchor_path_coverage" in csv_text
     assert "reading_order_caption_element_count" in csv_text
     assert "reading_order_caption_counts" in csv_text
@@ -1498,8 +1508,13 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "semantic_stream_missing_text_delta" in comparison
     assert "reading_order_proposal_semantic_successor_coverage_delta" in comparison
     assert "reading_order_proposal_semantic_reviewable_successor_coverage_delta" in comparison
+    assert "reading_order_proposal_strict_block_transition_delta" in comparison
+    assert "reading_order_proposal_review_block_transition_delta" in comparison
+    assert "reading_order_proposal_semantic_review_block_transition_precision_delta" in comparison
+    assert "reading_order_proposal_semantic_review_block_transition_coverage_delta" in comparison
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage_delta" in comparison
     assert "reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta" in comparison
+    assert "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta" in comparison
     assert "semantic_stream_assignment_missing_delta" in comparison
     assert comparison["semantic_stream_assignment_id_accuracy_delta"] > 0
     assert comparison["semantic_stream_assignment_type_accuracy_delta"] > 0
@@ -1529,6 +1544,10 @@ def test_structure_ab_benchmark_compares_native_and_structure_runs(tmp_path: Pat
     assert "semantic_relation_missing_text_delta" in csv_text
     assert "reading_order_proposal_semantic_successor_coverage_delta" in csv_text
     assert "reading_order_proposal_semantic_strict_anchor_path_coverage_delta" in csv_text
+    assert "reading_order_proposal_review_block_transition_delta" in csv_text
+    assert "reading_order_proposal_semantic_review_block_transition_precision_delta" in csv_text
+    assert "reading_order_proposal_semantic_review_block_transition_coverage_delta" in csv_text
+    assert "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta" in csv_text
     assert "reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta" in csv_text
     assert "semantic_stream_missing_text_delta" in csv_text
     assert "semantic_stream_assignment_missing_delta" in csv_text

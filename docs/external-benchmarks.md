@@ -280,6 +280,19 @@ Transformer-XL is the labelled check for this proposal layer. In `outputs/extern
 
 Those direct counts are intentionally retained, but they are not sufficient for an `ordered-subsequence` semantic sidecar: labels can skip unlabelled IR nodes. The path-aware scorer now checks whether consecutive labelled anchors are connected without crossing another labelled anchor. Native-only has strict local path coverage `32/41` (`0.78048780`) and reviewable graph path coverage `41/41` (`1.0`); native-plus-structure has strict local `30/41`, strict-plus-local-review `32/41`, and reviewable graph `41/41`. The final nine native anchor transitions are supported only through review-only cross-stream handoffs, so they remain non-executable. This corrects the partial-label measurement gap without claiming that review transitions are safe automatic layout constraints.
 
+### Explicit block-order review transitions v1
+
+Paddle layout outputs commonly expose ordered blocks without successor relations. Sidecar schema `1.1` converts only unique, explicitly numbered, consecutive primary text blocks into provenance-rich review transitions. Secondary content and nonlinear islands are boundaries, missing numeric orders cannot be skipped, and the strict transition count is fixed at zero. The new benchmark fields score these model proposals independently from native local edges and generic selected-order handoffs.
+
+| Provider / sample | Review candidates | Labelled / correct | Precision | Label coverage | Strict | Visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| PaddleOCR-VL 1.6, Attention p. 1 | 2 | 1 / 1 | `1.0` | `1/9` (`0.11111111`) | 0 | `0.0` |
+| PP-StructureV3 runner, Attention p. 1 | 1 | 0 / 0 | unavailable | `0/9` | 0 | `0.0` |
+| PP-StructureV3, Transformer-XL pp. 1-3 | 12 | 3 / 3 | `1.0` | `3/41` (`0.07317073`) | 0 | `0.0` |
+| PP-StructureV3, two fixed ROOR form pages | 0 | 0 / 0 | unavailable | 0 | 0 | `0.0` |
+
+The labelled precision is encouraging but still covers only four labelled edges, so it is not enough to promote block order into runtime constraints. The Transformer structure branch also regresses strict anchor-path coverage (`0.78048780 -> 0.24390244`) and adds three stream-level `needs-structure-evidence` recommendations because the existing model-block stream partition is too fragmented on this sample. Review transitions preserve total reviewable path coverage at `1.0`, but they do not repair that strict/local regression. The two ROOR forms produce no proposal because matched explicit tiers are non-consecutive or interrupted by table/secondary regions; this confirms the guard, not model accuracy. Outputs are under `outputs/research/*-block-transitions-v1`.
+
 ### Evidence-gated local promotion v1
 
 `reading_order_confidence` describes a page strategy, not a particular edge. The sidecar now promotes a review-only edge only when it remains inside one provisional stream and all three independent signals agree: mutual forward geometry, a selected full-page relation-graph edge with score at least `0.86`, and direct successor agreement from visual-YX, box-flow, and relation-graph stream candidates. An exactly tied feasible relation-graph alternative blocks promotion even when those three checks agree. The proposal records `geometry-mutual-neighbor`, `relation-graph-selected`, and `stream-consensus-3-of-3`; tied review edges also carry selection-time `relation_graph` margin diagnostics. Cross-stream transitions remain review-only.

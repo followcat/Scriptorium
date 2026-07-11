@@ -274,6 +274,19 @@ Transformer-XL 是本 proposal layer 的有标注检查。在 `outputs/external/
 
 但这个 direct 指标不足以评估 `ordered-subsequence` 语义 sidecar：标签可以跳过未标注的 IR 节点。新的路径指标会检查相邻标注锚点之间是否存在路径，同时不允许路径穿过另一个已标注锚点。native-only 的 strict 局部路径 coverage 为 `32/41`（`0.78048780`），包含 review graph path 后为 `41/41`（`1.0`）；native-plus-structure 分别为 strict local `30/41`、strict 加 local review `32/41`、reviewable graph `41/41`。native 中最后的 9 条 anchor transition 只依赖跨 stream 的 review handoff，因此仍不可自动执行。这修正了部分标签的计分缺口，但不把 review transition 宣称为安全的自动版面约束。
 
+### 显式 block-order review transition v1
+
+Paddle layout 输出经常只有有序 block，没有 successor relation。Sidecar schema `1.1` 只把唯一、显式编号、数值连续的 primary text block 转成带完整 provenance 的 review transition。Secondary 内容和非线性 island 都是断点，缺失数值 order 时不能跨越，strict transition 数固定为 0。新的 benchmark 字段把这些模型提案与 native 局部边、通用 selected-order handoff 分开计分。
+
+| Provider / 样本 | Review candidates | 已标注 / 正确 | Precision | 标签覆盖 | Strict | Visual delta |
+|---|---:|---:|---:|---:|---:|---:|
+| PaddleOCR-VL 1.6，Attention p. 1 | 2 | 1 / 1 | `1.0` | `1/9`（`0.11111111`） | 0 | `0.0` |
+| PP-StructureV3 runner，Attention p. 1 | 1 | 0 / 0 | 不可用 | `0/9` | 0 | `0.0` |
+| PP-StructureV3，Transformer-XL pp. 1-3 | 12 | 3 / 3 | `1.0` | `3/41`（`0.07317073`） | 0 | `0.0` |
+| PP-StructureV3，两个固定 ROOR 表单页 | 0 | 0 / 0 | 不可用 | 0 | 0 | `0.0` |
+
+有标注 precision 是正向信号，但目前只覆盖 4 条人工标注边，不足以把 block order 提升为 runtime constraint。Transformer 的 structure 分支还出现 strict anchor-path coverage 回退（`0.78048780 -> 0.24390244`），并新增 3 个 stream 级 `needs-structure-evidence`，原因是现有模型 block stream partition 在该样本上切得过碎。Review transition 让总 reviewable path coverage 保持 `1.0`，但没有修复 strict/local 回退。两个 ROOR 表单没有生成提案，因为匹配到的 explicit tier 不连续，或被 table/secondary region 打断；这只能证明 guard 生效，不能证明模型准确。产物位于 `outputs/research/*-block-transitions-v1`。
+
 ### Evidence-gated local promotion v1
 
 `reading_order_confidence` 描述的是页面策略，而不是单条边的可信度。Sidecar 现在只有在边位于同一个 provisional stream 且三类独立证据同时成立时，才把 review-only edge 提升为 strict：互为最近的前向几何邻居、全页 relation graph 实际选中且 score 至少为 `0.86`、visual-YX、box-flow、relation-graph 三个 stream candidate 都给出直接 successor。即使三项都通过，只要 relation graph 存在完全同分的可行替代边，也会阻止提升。Proposal 会写入 `geometry-mutual-neighbor`、`relation-graph-selected`、`stream-consensus-3-of-3`；同分 review edge 还会带上选择时的 `relation_graph` margin 诊断。跨 stream transition 始终保持 review-only。

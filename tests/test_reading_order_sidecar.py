@@ -65,6 +65,8 @@ def test_proposal_splits_multicolumn_body_into_local_successor_streams() -> None
         "successor_edge_count": 2,
         "review_successor_edge_count": 0,
         "review_transition_count": 2,
+        "strict_block_transition_count": 0,
+        "review_block_transition_count": 0,
         "stream_type_counts": {"body": 2, "sidebar-right": 1},
         "stream_origin_counts": {"column-partition": 2, "existing-local": 1},
     }
@@ -456,6 +458,133 @@ def test_low_confidence_cross_stream_handoff_stays_review_only() -> None:
             "confidence": 0.5,
             "review_required": True,
         }
+    ]
+
+
+def test_explicit_consecutive_primary_blocks_add_provenance_rich_review_transition() -> None:
+    first = _element("first", "First line", 1, 10, 20, confidence=0.9)
+    source_boundary = _element("source-boundary", "Source boundary", 2, 10, 40, confidence=0.9)
+    target_boundary = _element("target-boundary", "Target boundary", 3, 120, 20, confidence=0.9)
+    last = _element("last", "Last line", 4, 120, 40, confidence=0.9)
+    _attach_structure_block(
+        (first, source_boundary),
+        order=8,
+        label="paragraph",
+        bbox=[10, 18, 90, 54],
+    )
+    _attach_structure_block(
+        (target_boundary, last),
+        order=9,
+        label="paragraph",
+        bbox=[120, 18, 200, 54],
+    )
+    original_order = [element.id for element in sorted((first, source_boundary, target_boundary, last), key=lambda item: item.reading_order)]
+
+    proposal = propose_reading_order_sidecar(_document([first, source_boundary, target_boundary, last]))
+    page = proposal["pages"][0]
+    transition = next(
+        item
+        for item in page["review_transitions"]
+        if item.get("provenance", {}).get("kind") == "external-structure-explicit-block-order-v1"
+    )
+
+    assert proposal["schema_version"] == "1.1"
+    assert proposal["review_policy"]["structure_block_order_relations"] == "review_only"
+    assert proposal["summary"]["strict_block_transition_count"] == 0
+    assert proposal["summary"]["review_block_transition_count"] == 1
+    assert transition["source"] == "source-boundary"
+    assert transition["target"] == "target-boundary"
+    assert transition["review_required"] is True
+    assert transition["provenance"] == {
+        "kind": "external-structure-explicit-block-order-v1",
+        "structure_source": "layout-model",
+        "order_source": "explicit",
+        "order_delta": 1,
+        "selected_order_direction": "forward",
+        "source_block": {
+            "order": 8,
+            "label": "paragraph",
+            "bbox_pdf": [10.0, 18.0, 90.0, 54.0],
+            "member_ids": ["first", "source-boundary"],
+        },
+        "target_block": {
+            "order": 9,
+            "label": "paragraph",
+            "bbox_pdf": [120.0, 18.0, 200.0, 54.0],
+            "member_ids": ["target-boundary", "last"],
+        },
+    }
+    assert [element.id for element in sorted((first, source_boundary, target_boundary, last), key=lambda item: item.reading_order)] == original_order
+
+
+def test_secondary_or_missing_block_order_is_a_transition_boundary() -> None:
+    body_before = _element("body-before", "Body before", 1, 10, 20)
+    sidebar = _element(
+        "sidebar",
+        "Sidebar",
+        2,
+        120,
+        20,
+        stream_id="sidebar-right",
+        stream_type="sidebar-right",
+    )
+    body_after = _element("body-after", "Body after", 3, 10, 50)
+    _attach_structure_block((body_before,), order=1, label="paragraph", bbox=[10, 18, 90, 34])
+    _attach_structure_block((sidebar,), order=2, label="sidebar_text", bbox=[120, 18, 200, 34])
+    _attach_structure_block((body_after,), order=3, label="paragraph", bbox=[10, 48, 90, 64])
+
+    proposal = propose_reading_order_sidecar(_document([body_before, sidebar, body_after]))
+
+    assert proposal["summary"]["strict_block_transition_count"] == 0
+    assert proposal["summary"]["review_block_transition_count"] == 0
+    assert all(
+        item.get("provenance", {}).get("kind") != "external-structure-explicit-block-order-v1"
+        for item in proposal["pages"][0]["review_transitions"]
+    )
+
+
+def test_block_transition_quality_is_scored_separately_from_strict_edges(tmp_path) -> None:
+    target = _element("target", "Target block", 1, 120, 20)
+    source = _element("source", "Source block", 2, 10, 20)
+    _attach_structure_block((source,), order=1, label="paragraph", bbox=[10, 18, 90, 34])
+    _attach_structure_block((target,), order=2, label="paragraph", bbox=[120, 18, 200, 34])
+    document = _document([target, source])
+    source_path = tmp_path / "block-transition.pdf"
+    source_path.with_suffix(".semantic-order.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pages": [
+                    {
+                        "page_index": 0,
+                        "match_mode": "ordered-subsequence",
+                        "text_sequence": ["Source block", "Target block"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = compare_reading_order_sidecar_proposal(
+        document,
+        source_path,
+        tmp_path / "semantic",
+        propose_reading_order_sidecar(document),
+    )
+
+    assert report["strict_block_transition_candidate_edge_count"] == 0
+    assert report["strict_block_transition_precision"] is None
+    assert report["review_block_transition_candidate_edge_count"] == 1
+    assert report["review_block_transition_labelled_edge_count"] == 1
+    assert report["review_block_transition_correct_count"] == 1
+    assert report["review_block_transition_precision"] == 1.0
+    assert report["review_block_transition_coverage"] == 1.0
+    assert report["review_block_transition_anchor_path_correct_count"] == 1
+    assert report["review_block_transition_anchor_path_coverage"] == 1.0
+    assert [element.id for element in sorted(document.pages[0].elements, key=lambda item: item.reading_order)] == [
+        "target",
+        "source",
     ]
 
 
@@ -906,3 +1035,26 @@ def _element(
             "reading_order_stream_type": stream_type,
         },
     )
+
+
+def _attach_structure_block(
+    elements: tuple[ElementIR, ...],
+    *,
+    order: int,
+    label: str,
+    bbox: list[float],
+    order_source: str = "explicit",
+) -> None:
+    for element in elements:
+        element.metadata["external_structure_order"] = order
+        element.metadata["external_structure_order_source"] = order_source
+        element.metadata["external_structure_label"] = label
+        element.metadata["structure_evidence"] = {
+            "source": "layout-model",
+            "label": label,
+            "order": order,
+            "order_source": order_source,
+            "bbox_pdf": bbox,
+            "coverage": 1.0,
+            "confidence": 0.95,
+        }

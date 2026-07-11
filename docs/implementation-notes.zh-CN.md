@@ -197,6 +197,8 @@ scriptorium benchmark page.png --input-kind image --structure-json page.structur
 
 每个 benchmark case 现在都会写入 `reading-order.sidecar.proposal.json`。它是 `ScriptoriumReadingOrderSidecar` 提案，不是自动接受的顺序修复：`reading_streams` 保留正文、表格、网格、边栏、caption 和 artifact 的局部 membership；只有高置信局部关系进入 `successor_edges`；较弱的局部关系保留在 `review_successor_edges`；所有跨 stream handoff 都作为不可执行的 `review_transitions` 记录。
 
+Sidecar schema `1.1` 在不改变上述契约的前提下增加显式模型 block transition 提案。只有两个 structure region 的数值 `block_order` 唯一且刚好相差 1、order 明确来自 explicit 字段、所有匹配成员的 region coverage 至少为 `0.5`、并且两端都是 primary text block 时才会生成关系。页眉页脚 artifact、边栏、脚注、caption、table/grid island、同 order 歧义、implicit list order 和缺失的数值 tier 都是硬断点。关系连接前一 block 的最后一个 selected native member 与后一 block 的第一个 member，保留 provider/order/label/bbox/member provenance，并始终标记 `review_required`。因此在独立 relation source 被接受前，`strict_block_transition_count` 应持续为 0。
+
 ```bash
 scriptorium propose-reading-sidecar \
   outputs/sample/document.ir.json \
@@ -207,7 +209,9 @@ scriptorium propose-reading-sidecar \
 
 若存在 semantic ground-truth sidecar，benchmark 会写入 `semantic/reading_order_sidecar_proposal_quality_report.json`，并分别报告 strict edge 与 review edge 的 precision/coverage。`reading_order_proposal_semantic_reviewable_successor_coverage` 表示 strict 加 review 边的合并覆盖，因此证据阈值把正确边移入 review 时，不会被误判为语义回退。
 
-对于带有 `match_mode: "ordered-subsequence"` 的页面，报告还会区分 direct edge 和相邻标注锚点之间的 graph path。`strict_anchor_path_coverage` 只沿可执行局部边；`local_reviewable_anchor_path_coverage` 额外允许 review-only 局部边；`reviewable_anchor_path_coverage` 还允许 review-only 的跨 stream transition。若路径穿过另一个已标注锚点就会被拒绝，因此不会把乱序锚点误判为正确。这只是评测视图：review transition 在单独 accepted 前仍不可执行。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
+显式 block transition 另外报告 strict/review 的 candidate、labelled、correct、precision 和 coverage 字段。这样模型 block-order 边不会被混进通用跨 stream transition，同时普通 benchmark 和 native-only / native-plus-structure A/B 都能持续检查 `strict = 0` 的安全约束。
+
+对于带有 `match_mode: "ordered-subsequence"` 的页面，报告还会区分 direct edge 和相邻标注锚点之间的 graph path。`strict_anchor_path_coverage` 只沿可执行局部边；`local_reviewable_anchor_path_coverage` 额外允许 review-only 局部边；`reviewable_anchor_path_coverage` 还允许 review-only 的跨 stream transition；`review_block_transition_anchor_path_coverage` 单独表示显式 block-order 提案新增的 anchor path。若路径穿过另一个已标注锚点就会被拒绝，因此不会把乱序锚点误判为正确。这只是评测视图：review transition 在单独 accepted 前仍不可执行。没有标注的页面只保留原始 stream/edge/transition 计数；这些是 triage 信号，不是正确率声明。
 
 `local_structure_successor_*`、`local_table_successor_*` 和 `local_grid_successor_*` 只统计带原生 `table-local-order` 或 `grid-local-order` 标记、且不是 review 的 strict proposal edge。仅有 table/grid stream type 并不足够：没有该原生标记的 external model membership 会被排除。这样原生几何诊断和外部结构证据保持分离，provider 新建的 table/grid stream 也不会虚增 local-edge precision。
 

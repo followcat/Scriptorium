@@ -561,6 +561,28 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
         "native_stream_review_count": native_stream_review,
         "structure_stream_review_count": structure_stream_review,
         "stream_review_delta": structure_stream_review - native_stream_review,
+        "native_reading_order_proposal_strict_block_transition_count": native_case[
+            "reading_order_proposal_strict_block_transition_count"
+        ],
+        "structure_reading_order_proposal_strict_block_transition_count": structure_case[
+            "reading_order_proposal_strict_block_transition_count"
+        ],
+        "reading_order_proposal_strict_block_transition_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_strict_block_transition_count",
+        ),
+        "native_reading_order_proposal_review_block_transition_count": native_case[
+            "reading_order_proposal_review_block_transition_count"
+        ],
+        "structure_reading_order_proposal_review_block_transition_count": structure_case[
+            "reading_order_proposal_review_block_transition_count"
+        ],
+        "reading_order_proposal_review_block_transition_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_review_block_transition_count",
+        ),
         "box_flow_successor_disagreement_delta": _numeric_delta(
             structure_case,
             native_case,
@@ -608,6 +630,28 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             native_case,
             "reading_order_proposal_semantic_reviewable_successor_coverage",
         ),
+        "native_reading_order_proposal_semantic_review_block_transition_precision": native_case[
+            "reading_order_proposal_semantic_review_block_transition_precision"
+        ],
+        "structure_reading_order_proposal_semantic_review_block_transition_precision": structure_case[
+            "reading_order_proposal_semantic_review_block_transition_precision"
+        ],
+        "reading_order_proposal_semantic_review_block_transition_precision_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_review_block_transition_precision",
+        ),
+        "native_reading_order_proposal_semantic_review_block_transition_coverage": native_case[
+            "reading_order_proposal_semantic_review_block_transition_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_review_block_transition_coverage": structure_case[
+            "reading_order_proposal_semantic_review_block_transition_coverage"
+        ],
+        "reading_order_proposal_semantic_review_block_transition_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_review_block_transition_coverage",
+        ),
         "native_reading_order_proposal_semantic_strict_anchor_path_coverage": native_case[
             "reading_order_proposal_semantic_strict_anchor_path_coverage"
         ],
@@ -640,6 +684,17 @@ def _structure_ab_case_comparison(native_case: dict[str, Any], structure_case: d
             structure_case,
             native_case,
             "reading_order_proposal_semantic_reviewable_anchor_path_coverage",
+        ),
+        "native_reading_order_proposal_semantic_review_block_transition_anchor_path_coverage": native_case[
+            "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage"
+        ],
+        "structure_reading_order_proposal_semantic_review_block_transition_anchor_path_coverage": structure_case[
+            "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage"
+        ],
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta": _numeric_delta(
+            structure_case,
+            native_case,
+            "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage",
         ),
         "native_semantic_relation_missing_text_count": native_case["semantic_relation_missing_text_count"],
         "structure_semantic_relation_missing_text_count": structure_case["semantic_relation_missing_text_count"],
@@ -834,6 +889,14 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         ),
         "total_page_review_delta": sum(int(values["page_review_delta"]) for values in comparisons),
         "total_stream_review_delta": sum(int(values["stream_review_delta"]) for values in comparisons),
+        "total_reading_order_proposal_strict_block_transition_delta": sum(
+            int(values["reading_order_proposal_strict_block_transition_delta"] or 0)
+            for values in comparisons
+        ),
+        "total_reading_order_proposal_review_block_transition_delta": sum(
+            int(values["reading_order_proposal_review_block_transition_delta"] or 0)
+            for values in comparisons
+        ),
         "total_semantic_relation_missing_text_delta": sum(
             int(values["semantic_relation_missing_text_delta"] or 0) for values in comparisons
         ),
@@ -855,6 +918,14 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "mean_reading_order_proposal_semantic_reviewable_successor_coverage_delta": _mean_optional(
             values["reading_order_proposal_semantic_reviewable_successor_coverage_delta"] for values in comparisons
         ),
+        "mean_reading_order_proposal_semantic_review_block_transition_precision_delta": _mean_optional(
+            values["reading_order_proposal_semantic_review_block_transition_precision_delta"]
+            for values in comparisons
+        ),
+        "mean_reading_order_proposal_semantic_review_block_transition_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_review_block_transition_coverage_delta"]
+            for values in comparisons
+        ),
         "mean_reading_order_proposal_semantic_strict_anchor_path_coverage_delta": _mean_optional(
             values["reading_order_proposal_semantic_strict_anchor_path_coverage_delta"] for values in comparisons
         ),
@@ -865,6 +936,15 @@ def _summarize_structure_ab_comparisons(comparisons: list[dict[str, Any]]) -> di
         "mean_reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta": _mean_optional(
             values["reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta"]
             for values in comparisons
+        ),
+        "mean_reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta": _mean_optional(
+            values["reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta"]
+            for values in comparisons
+        ),
+        "cases_with_review_block_transition_proposals": sum(
+            1
+            for values in comparisons
+            if int(values["structure_reading_order_proposal_review_block_transition_count"] or 0) > 0
         ),
         "cases_with_stream_assignment_id_improvement": sum(
             1 for values in comparisons if float(values["semantic_stream_assignment_id_accuracy_delta"] or 0.0) > 0
@@ -1011,6 +1091,12 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_stream_review_count",
         "structure_stream_review_count",
         "stream_review_delta",
+        "native_reading_order_proposal_strict_block_transition_count",
+        "structure_reading_order_proposal_strict_block_transition_count",
+        "reading_order_proposal_strict_block_transition_delta",
+        "native_reading_order_proposal_review_block_transition_count",
+        "structure_reading_order_proposal_review_block_transition_count",
+        "reading_order_proposal_review_block_transition_delta",
         "box_flow_successor_disagreement_delta",
         "relation_graph_successor_disagreement_delta",
         "successor_consensus_successor_disagreement_delta",
@@ -1022,6 +1108,12 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_reading_order_proposal_semantic_reviewable_successor_coverage",
         "structure_reading_order_proposal_semantic_reviewable_successor_coverage",
         "reading_order_proposal_semantic_reviewable_successor_coverage_delta",
+        "native_reading_order_proposal_semantic_review_block_transition_precision",
+        "structure_reading_order_proposal_semantic_review_block_transition_precision",
+        "reading_order_proposal_semantic_review_block_transition_precision_delta",
+        "native_reading_order_proposal_semantic_review_block_transition_coverage",
+        "structure_reading_order_proposal_semantic_review_block_transition_coverage",
+        "reading_order_proposal_semantic_review_block_transition_coverage_delta",
         "native_reading_order_proposal_semantic_strict_anchor_path_coverage",
         "structure_reading_order_proposal_semantic_strict_anchor_path_coverage",
         "reading_order_proposal_semantic_strict_anchor_path_coverage_delta",
@@ -1031,6 +1123,9 @@ def _write_structure_ab_csv(path: Path, comparisons: list[dict[str, Any]]) -> No
         "native_reading_order_proposal_semantic_reviewable_anchor_path_coverage",
         "structure_reading_order_proposal_semantic_reviewable_anchor_path_coverage",
         "reading_order_proposal_semantic_reviewable_anchor_path_coverage_delta",
+        "native_reading_order_proposal_semantic_review_block_transition_anchor_path_coverage",
+        "structure_reading_order_proposal_semantic_review_block_transition_anchor_path_coverage",
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage_delta",
         "native_semantic_relation_missing_text_count",
         "structure_semantic_relation_missing_text_count",
         "semantic_relation_missing_text_delta",
@@ -1256,6 +1351,12 @@ def _run_case(
             "review_successor_edge_count"
         ],
         "reading_order_proposal_review_transition_count": reading_order_sidecar_stats["review_transition_count"],
+        "reading_order_proposal_strict_block_transition_count": reading_order_sidecar_stats[
+            "strict_block_transition_count"
+        ],
+        "reading_order_proposal_review_block_transition_count": reading_order_sidecar_stats[
+            "review_block_transition_count"
+        ],
         "reading_order_proposal_stream_type_counts": reading_order_sidecar_stats["stream_type_counts"],
         "reading_order_proposal_stream_origin_counts": reading_order_sidecar_stats["stream_origin_counts"],
         "reading_order_caption_element_count": stats["reading_order_caption_element_count"],
@@ -3797,6 +3898,12 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_proposal_review_transitions": sum(
             int(case["reading_order_proposal_review_transition_count"]) for case in cases
         ),
+        "total_reading_order_proposal_strict_block_transitions": sum(
+            int(case["reading_order_proposal_strict_block_transition_count"]) for case in cases
+        ),
+        "total_reading_order_proposal_review_block_transitions": sum(
+            int(case["reading_order_proposal_review_block_transition_count"]) for case in cases
+        ),
         "reading_order_proposal_stream_type_counts": _sum_case_count_dicts(
             cases,
             "reading_order_proposal_stream_type_counts",
@@ -3972,6 +4079,70 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
                 for case in proposal_semantic_cases
             ),
         ),
+        "total_reading_order_proposal_semantic_strict_block_transition_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_strict_block_transition_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_strict_block_transition_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_strict_block_transition_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_strict_block_transition_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_strict_block_transition_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_strict_block_transition_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_strict_block_transition_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_strict_block_transition_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "total_reading_order_proposal_semantic_review_block_transition_candidate_edges": sum(
+            int(case["reading_order_proposal_semantic_review_block_transition_candidate_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_review_block_transition_labelled_edges": sum(
+            int(case["reading_order_proposal_semantic_review_block_transition_labelled_edge_count"])
+            for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_review_block_transition_correct_edges": sum(
+            int(case["reading_order_proposal_semantic_review_block_transition_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_review_block_transition_precision": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_review_block_transition_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_review_block_transition_labelled_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
+        "reading_order_proposal_semantic_review_block_transition_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_review_block_transition_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_expected_successor_edge_count"])
+                for case in proposal_semantic_cases
+            ),
+        ),
         "total_reading_order_proposal_semantic_anchor_transitions": sum(
             int(case["reading_order_proposal_semantic_anchor_transition_count"])
             for case in proposal_semantic_cases
@@ -4011,6 +4182,20 @@ def _summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reading_order_proposal_semantic_review_transition_anchor_path_correct": sum(
             int(case["reading_order_proposal_semantic_review_transition_anchor_path_correct_count"])
             for case in proposal_semantic_cases
+        ),
+        "total_reading_order_proposal_semantic_review_block_transition_anchor_path_correct": sum(
+            int(case["reading_order_proposal_semantic_review_block_transition_anchor_path_correct_count"])
+            for case in proposal_semantic_cases
+        ),
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage": _optional_case_ratio(
+            sum(
+                int(case["reading_order_proposal_semantic_review_block_transition_anchor_path_correct_count"])
+                for case in proposal_semantic_cases
+            ),
+            sum(
+                int(case["reading_order_proposal_semantic_anchor_transition_count"])
+                for case in proposal_semantic_cases
+            ),
         ),
         "total_reading_order_proposal_semantic_reviewable_anchor_path_correct": sum(
             int(case["reading_order_proposal_semantic_reviewable_anchor_path_correct_count"])
@@ -4486,6 +4671,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_proposal_successor_edge_count",
         "reading_order_proposal_review_successor_edge_count",
         "reading_order_proposal_review_transition_count",
+        "reading_order_proposal_strict_block_transition_count",
+        "reading_order_proposal_review_block_transition_count",
         "reading_order_proposal_stream_type_counts",
         "reading_order_proposal_stream_origin_counts",
         "reading_order_proposal_semantic_ground_truth_available",
@@ -4522,6 +4709,18 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_proposal_semantic_local_grid_successor_correct_count",
         "reading_order_proposal_semantic_local_grid_successor_precision",
         "reading_order_proposal_semantic_local_grid_successor_coverage",
+        "reading_order_proposal_semantic_strict_block_transition_candidate_edge_count",
+        "reading_order_proposal_semantic_strict_block_transition_labelled_edge_count",
+        "reading_order_proposal_semantic_strict_block_transition_unlabelled_edge_count",
+        "reading_order_proposal_semantic_strict_block_transition_correct_count",
+        "reading_order_proposal_semantic_strict_block_transition_precision",
+        "reading_order_proposal_semantic_strict_block_transition_coverage",
+        "reading_order_proposal_semantic_review_block_transition_candidate_edge_count",
+        "reading_order_proposal_semantic_review_block_transition_labelled_edge_count",
+        "reading_order_proposal_semantic_review_block_transition_unlabelled_edge_count",
+        "reading_order_proposal_semantic_review_block_transition_correct_count",
+        "reading_order_proposal_semantic_review_block_transition_precision",
+        "reading_order_proposal_semantic_review_block_transition_coverage",
         "reading_order_proposal_semantic_anchor_transition_count",
         "reading_order_proposal_semantic_anchor_transition_missing_text_count",
         "reading_order_proposal_semantic_strict_anchor_path_correct_count",
@@ -4529,6 +4728,8 @@ def _write_csv(path: Path, cases: list[dict[str, Any]]) -> None:
         "reading_order_proposal_semantic_local_reviewable_anchor_path_correct_count",
         "reading_order_proposal_semantic_local_reviewable_anchor_path_coverage",
         "reading_order_proposal_semantic_review_transition_anchor_path_correct_count",
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_correct_count",
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage",
         "reading_order_proposal_semantic_reviewable_anchor_path_correct_count",
         "reading_order_proposal_semantic_reviewable_anchor_path_coverage",
         "reading_order_proposal_semantic_unresolved_anchor_transition_count",
@@ -5400,6 +5601,42 @@ def _reading_order_proposal_semantic_case_metrics(report: dict[str, Any]) -> dic
         "reading_order_proposal_semantic_local_grid_successor_coverage": ratio(
             "local_grid_successor_coverage"
         ),
+        "reading_order_proposal_semantic_strict_block_transition_candidate_edge_count": count(
+            "strict_block_transition_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_labelled_edge_count": count(
+            "strict_block_transition_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_unlabelled_edge_count": count(
+            "strict_block_transition_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_correct_count": count(
+            "strict_block_transition_correct_count"
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_precision": ratio(
+            "strict_block_transition_precision"
+        ),
+        "reading_order_proposal_semantic_strict_block_transition_coverage": ratio(
+            "strict_block_transition_coverage"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_candidate_edge_count": count(
+            "review_block_transition_candidate_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_labelled_edge_count": count(
+            "review_block_transition_labelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_unlabelled_edge_count": count(
+            "review_block_transition_unlabelled_edge_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_correct_count": count(
+            "review_block_transition_correct_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_precision": ratio(
+            "review_block_transition_precision"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_coverage": ratio(
+            "review_block_transition_coverage"
+        ),
         "reading_order_proposal_semantic_anchor_transition_count": count("anchor_transition_count"),
         "reading_order_proposal_semantic_anchor_transition_missing_text_count": count(
             "anchor_transition_missing_text_count"
@@ -5416,6 +5653,12 @@ def _reading_order_proposal_semantic_case_metrics(report: dict[str, Any]) -> dic
         ),
         "reading_order_proposal_semantic_review_transition_anchor_path_correct_count": count(
             "review_transition_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_correct_count": count(
+            "review_block_transition_anchor_path_correct_count"
+        ),
+        "reading_order_proposal_semantic_review_block_transition_anchor_path_coverage": ratio(
+            "review_block_transition_anchor_path_coverage"
         ),
         "reading_order_proposal_semantic_reviewable_anchor_path_correct_count": count(
             "reviewable_anchor_path_correct_count"

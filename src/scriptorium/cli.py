@@ -636,6 +636,8 @@ def propose_reading_sidecar(
     typer.echo(f"Successor edges: {summary['successor_edge_count']}")
     typer.echo(f"Review successor edges: {summary['review_successor_edge_count']}")
     typer.echo(f"Review transitions: {summary['review_transition_count']}")
+    typer.echo(f"Strict explicit block transitions: {summary['strict_block_transition_count']}")
+    typer.echo(f"Review explicit block transitions: {summary['review_block_transition_count']}")
 
 
 @app.command("export-html")

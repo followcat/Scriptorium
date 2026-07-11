@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from .models import DocumentIR
-from .reading_order_sidecar import LOCAL_STRUCTURE_STREAM_EVIDENCE
+from .reading_order_sidecar import (
+    EXPLICIT_BLOCK_ORDER_TRANSITION_KIND,
+    LOCAL_STRUCTURE_STREAM_EVIDENCE,
+)
 
 
 STRUCTURE_REF_KEYS = (
@@ -271,6 +274,16 @@ def _compare_reading_order_sidecar_proposal_page(
         local_structure_stream_type="grid-island",
         identifier_only=use_identifier_successor_edges,
     )
+    strict_block_transition_edges = _reading_order_sidecar_block_transition_edges(
+        proposal_page or {},
+        review_only=False,
+        identifier_only=use_identifier_successor_edges,
+    )
+    review_block_transition_edges = _reading_order_sidecar_block_transition_edges(
+        proposal_page or {},
+        review_only=True,
+        identifier_only=use_identifier_successor_edges,
+    )
     report = {
         "page_index": truth_page_index,
         "match_mode": match_mode,
@@ -284,6 +297,14 @@ def _compare_reading_order_sidecar_proposal_page(
         ),
         "local_table_successor_edges": _proposal_successor_edge_quality(local_table_edges, expected_edges),
         "local_grid_successor_edges": _proposal_successor_edge_quality(local_grid_edges, expected_edges),
+        "strict_block_transition_edges": _proposal_successor_edge_quality(
+            strict_block_transition_edges,
+            expected_edges,
+        ),
+        "review_block_transition_edges": _proposal_successor_edge_quality(
+            review_block_transition_edges,
+            expected_edges,
+        ),
     }
     report.update(
         _reading_order_sidecar_anchor_path_quality(
@@ -357,6 +378,48 @@ def _reading_order_sidecar_page_edges(
     return _dedupe_edges(edges)
 
 
+def _reading_order_sidecar_block_transition_edges(
+    page_payload: dict[str, Any],
+    *,
+    review_only: bool,
+    identifier_only: bool,
+) -> list[tuple[str, str]]:
+    text_by_id: dict[str, str] = {}
+    node_ids: set[str] = set()
+    raw_document = page_payload.get("document")
+    if isinstance(raw_document, list):
+        for raw_element in raw_document:
+            if not isinstance(raw_element, dict):
+                continue
+            element_id = str(raw_element.get("id") or "").strip()
+            text = str(raw_element.get("text") or "").strip()
+            if element_id:
+                node_ids.add(element_id)
+                if text:
+                    text_by_id[element_id] = text
+
+    edges: list[tuple[str, str]] = []
+    raw_transitions = page_payload.get("review_transitions")
+    if not isinstance(raw_transitions, list):
+        return edges
+    for raw_transition in raw_transitions:
+        if not isinstance(raw_transition, dict) or not _is_explicit_block_order_transition(raw_transition):
+            continue
+        if bool(raw_transition.get("review_required")) != review_only:
+            continue
+        source_id = str(raw_transition.get("source") or "").strip()
+        target_id = str(raw_transition.get("target") or "").strip()
+        if identifier_only:
+            source = source_id if source_id in node_ids else ""
+            target = target_id if target_id in node_ids else ""
+        else:
+            source = text_by_id.get(source_id, "")
+            target = text_by_id.get(target_id, "")
+        if source and target and source != target:
+            edges.append((source, target))
+    return _dedupe_edges(edges)
+
+
 def _reading_order_sidecar_anchor_path_quality(
     page_payload: dict[str, Any],
     expected_sequence: list[str],
@@ -382,6 +445,8 @@ def _reading_order_sidecar_anchor_path_quality(
         "local_reviewable_anchor_path_coverage": _optional_ratio(0, transition_count),
         "review_transition_anchor_path_correct_count": 0,
         "review_transition_anchor_path_coverage": _optional_ratio(0, transition_count),
+        "review_block_transition_anchor_path_correct_count": 0,
+        "review_block_transition_anchor_path_coverage": _optional_ratio(0, transition_count),
         "reviewable_anchor_path_correct_count": 0,
         "reviewable_anchor_path_coverage": _optional_ratio(0, transition_count),
         "unresolved_anchor_transition_count": transition_count,
@@ -389,11 +454,18 @@ def _reading_order_sidecar_anchor_path_quality(
     if not expected_sequence:
         return empty
 
-    nodes_by_text, strict_edges, review_edges, transition_edges = _reading_order_sidecar_graph(page_payload)
+    (
+        nodes_by_text,
+        strict_edges,
+        review_edges,
+        transition_edges,
+        block_transition_edges,
+    ) = _reading_order_sidecar_graph(page_payload)
     anchor_ids, missing_texts = _sidecar_anchor_node_ids(expected_sequence, nodes_by_text)
     anchor_node_ids = {node_id for node_id in anchor_ids if node_id}
     strict_count = 0
     local_reviewable_count = 0
+    selected_transition_reviewable_count = 0
     reviewable_count = 0
     for source_id, target_id in zip(anchor_ids, anchor_ids[1:], strict=False):
         if not source_id or not target_id:
@@ -406,17 +478,25 @@ def _reading_order_sidecar_anchor_path_quality(
             target_id,
             forbidden_ids,
         )
-        reviewable_path = local_reviewable_path or _sidecar_path_exists(
+        selected_transition_reviewable_path = local_reviewable_path or _sidecar_path_exists(
             [*strict_edges, *review_edges, *transition_edges],
+            source_id,
+            target_id,
+            forbidden_ids,
+        )
+        reviewable_path = selected_transition_reviewable_path or _sidecar_path_exists(
+            [*strict_edges, *review_edges, *transition_edges, *block_transition_edges],
             source_id,
             target_id,
             forbidden_ids,
         )
         strict_count += int(strict_path)
         local_reviewable_count += int(local_reviewable_path)
+        selected_transition_reviewable_count += int(selected_transition_reviewable_path)
         reviewable_count += int(reviewable_path)
 
     review_transition_count = reviewable_count - local_reviewable_count
+    review_block_transition_count = reviewable_count - selected_transition_reviewable_count
     return {
         "anchor_transition_count": transition_count,
         "anchor_transition_missing_text_count": len(missing_texts),
@@ -427,6 +507,11 @@ def _reading_order_sidecar_anchor_path_quality(
         "local_reviewable_anchor_path_coverage": _optional_ratio(local_reviewable_count, transition_count),
         "review_transition_anchor_path_correct_count": review_transition_count,
         "review_transition_anchor_path_coverage": _optional_ratio(review_transition_count, transition_count),
+        "review_block_transition_anchor_path_correct_count": review_block_transition_count,
+        "review_block_transition_anchor_path_coverage": _optional_ratio(
+            review_block_transition_count,
+            transition_count,
+        ),
         "reviewable_anchor_path_correct_count": reviewable_count,
         "reviewable_anchor_path_coverage": _optional_ratio(reviewable_count, transition_count),
         "unresolved_anchor_transition_count": transition_count - reviewable_count,
@@ -435,7 +520,13 @@ def _reading_order_sidecar_anchor_path_quality(
 
 def _reading_order_sidecar_graph(
     page_payload: dict[str, Any],
-) -> tuple[dict[str, deque[str]], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
+) -> tuple[
+    dict[str, deque[str]],
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+]:
     nodes_by_text: dict[str, deque[str]] = defaultdict(deque)
     known_ids: set[str] = set()
     raw_document = page_payload.get("document")
@@ -459,12 +550,34 @@ def _reading_order_sidecar_graph(
                 continue
             strict_edges.extend(_sidecar_id_edges(raw_stream.get("successor_edges"), known_ids))
             review_edges.extend(_sidecar_id_edges(raw_stream.get("review_successor_edges"), known_ids))
-    transition_edges = _sidecar_id_edges(page_payload.get("review_transitions"), known_ids)
+    transition_edges: list[tuple[str, str]] = []
+    block_transition_edges: list[tuple[str, str]] = []
+    raw_transitions = page_payload.get("review_transitions")
+    if isinstance(raw_transitions, list):
+        for raw_transition in raw_transitions:
+            if not isinstance(raw_transition, dict):
+                continue
+            edges = _sidecar_id_edges([raw_transition], known_ids)
+            if _is_explicit_block_order_transition(raw_transition):
+                block_transition_edges.extend(edges)
+                if raw_transition.get("selected_order_transition") is True:
+                    transition_edges.extend(edges)
+            else:
+                transition_edges.extend(edges)
     return (
         nodes_by_text,
         _dedupe_id_edges(strict_edges),
         _dedupe_id_edges(review_edges),
         _dedupe_id_edges(transition_edges),
+        _dedupe_id_edges(block_transition_edges),
+    )
+
+
+def _is_explicit_block_order_transition(raw_transition: dict[str, Any]) -> bool:
+    provenance = raw_transition.get("provenance")
+    return (
+        isinstance(provenance, dict)
+        and str(provenance.get("kind") or "").strip() == EXPLICIT_BLOCK_ORDER_TRANSITION_KIND
     )
 
 
@@ -582,6 +695,8 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
     local_structure = totals("local_structure_successor_edges")
     local_table = totals("local_table_successor_edges")
     local_grid = totals("local_grid_successor_edges")
+    strict_block_transition = totals("strict_block_transition_edges")
+    review_block_transition = totals("review_block_transition_edges")
     reviewable_correct_count = successor["correct_count"] + review["correct_count"]
     anchor_transition_count = sum(int(page["anchor_transition_count"]) for page in page_reports)
     strict_anchor_path_correct_count = sum(int(page["strict_anchor_path_correct_count"]) for page in page_reports)
@@ -590,6 +705,9 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
     )
     review_transition_anchor_path_correct_count = sum(
         int(page["review_transition_anchor_path_correct_count"]) for page in page_reports
+    )
+    review_block_transition_anchor_path_correct_count = sum(
+        int(page["review_block_transition_anchor_path_correct_count"]) for page in page_reports
     )
     reviewable_anchor_path_correct_count = sum(
         int(page["reviewable_anchor_path_correct_count"]) for page in page_reports
@@ -614,6 +732,8 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
         **_proposal_edge_quality_summary("local_structure_successor", local_structure, expected_edge_count),
         **_proposal_edge_quality_summary("local_table_successor", local_table, expected_edge_count),
         **_proposal_edge_quality_summary("local_grid_successor", local_grid, expected_edge_count),
+        **_proposal_edge_quality_summary("strict_block_transition", strict_block_transition, expected_edge_count),
+        **_proposal_edge_quality_summary("review_block_transition", review_block_transition, expected_edge_count),
         "anchor_transition_count": anchor_transition_count,
         "anchor_transition_missing_text_count": sum(
             int(page["anchor_transition_missing_text_count"]) for page in page_reports
@@ -628,6 +748,11 @@ def _summarize_reading_order_sidecar_proposal_pages(page_reports: list[dict[str,
         "review_transition_anchor_path_correct_count": review_transition_anchor_path_correct_count,
         "review_transition_anchor_path_coverage": _optional_ratio(
             review_transition_anchor_path_correct_count,
+            anchor_transition_count,
+        ),
+        "review_block_transition_anchor_path_correct_count": review_block_transition_anchor_path_correct_count,
+        "review_block_transition_anchor_path_coverage": _optional_ratio(
+            review_block_transition_anchor_path_correct_count,
             anchor_transition_count,
         ),
         "reviewable_anchor_path_correct_count": reviewable_anchor_path_correct_count,
