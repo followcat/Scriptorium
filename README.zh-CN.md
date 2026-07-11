@@ -57,6 +57,8 @@ Scriptorium 支持两条路径：
 
 输出 HTML 中的节点会带上 `data-scriptorium-*` 元数据，例如 role、source、bbox、style id、reading order、reading stream、translation target 和 replacement risk。完整字段说明见 [实现说明](docs/implementation-notes.zh-CN.md)。
 
+检测到的表格岛和卡片网格岛会把严格的原生局部 successor 证据与全页 candidate consensus 分开报告。这样能稳定翻译流，同时不会假装正文或跨区域 handoff 已经解决。
+
 独立 HTML 内置 `window.ScriptoriumEdits`：浏览器内的局部修改会生成可校验的 `scriptorium-html-edits/v1` 补丁，可通过 `scriptorium apply-html-edits` 写回同一份 `DocumentIR` 后再导出或打印。
 
 <table>

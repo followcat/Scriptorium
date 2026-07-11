@@ -300,6 +300,20 @@ Relation graph 现在报告选择时的替代边，而不是只给出序列化 c
 
 这验证了 margin gate 不是 semantic structure 的替代品：它只阻止任意提升，真正解决剩余低证据局部流仍需要 PaddleOCR-VL/PP-Structure/Docling 的 relation 或 stream 输出。
 
+## 原生局部结构证据 v1
+
+`outputs/external/local-structure-evidence-v2` 用同一组 PUMA、JD、Hacker News 的 15 页翻译压力样本在 144 DPI、raster fidelity 下重跑。它不改变 selected page order 或视觉渲染，而是把原生 table/grid island 的 successor 与通用 page-level candidate vote 分开。`local_structure_successor_coverage` 表示 island 潜在边中的严格边覆盖率；consensus-conflict 列则表示通用 successor-consensus 没有保留的严格局部边。
+
+| 样本 | 原生局部 stream | 严格局部边 | 严格覆盖率 | 与通用 consensus 冲突的局部边 | 局部边在全页 reference 的覆盖率 | 流级建议 |
+|---|---:|---:|---:|---:|---:|---|
+| PUMA 年报 pp. 1-12 | 6 | 71 | 1.0 | 50 / 71 | 0.13948919 | 6 个 `keep-selected-local-structure` |
+| JD 首页截图 PDF | 3 | 32 | 1.0 | 30 / 32 | 0.24060150 | 3 个 `keep-selected-local-structure` |
+| Hacker News 打印 PDF | 0 | 0 | 0.0 | 0 / 0 | 0.0 | 无 |
+
+合并后得到 9 条原生局部 stream、103 条严格边、完整严格覆盖率，以及 80 / 103（`0.77669903`）条会被通用 consensus 打断的严格边。这不是语义正确率提升：这些受保护边本来就由原生 table/grid detector 选中。它的作用是把分歧如实暴露出来，避免通用 page candidate 把已有完整证据的 island 误报成 `needs-structure-evidence`。
+
+两个当前 PP-StructureV3 A/B control 说明这些维度必须一起看。JD 的 `outputs/external/jd-local-structure-ppstructure-ab-v1` 匹配 128 个结构元素后，三条原生局部 stream 和 32 条严格边保持不变，局部边与 consensus 的冲突从 30 降到 13，但 stream `needs-structure-evidence` 从 1 增至 2；视觉和 reading-risk delta 都是 0。PUMA p. 5 的 `outputs/external/puma-local-structure-ppstructure-ab-v1` 匹配 24 个元素并派生 4 条受限 body stream，但该页没有原生 local table/grid island，所以所有 local-structure delta 均为 0。两次运行都没有提供显式 relation 或 stream edge，因此都不能推动 runtime order 切换。
+
 ## 翻译压力测试结果
 
 `outputs/external/translation-stress-padding-v1` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。该运行使用 `fidelity-replacement-fit-v2`：不改变文本坐标或 fitting 策略，只让局部 mask padding 在相邻可见元素处停止。

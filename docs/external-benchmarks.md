@@ -306,6 +306,20 @@ The relation graph now reports selection-time alternatives rather than only a se
 
 This confirms that a margin gate is not a substitute for semantic structure: it prevents arbitrary promotion, while PaddleOCR-VL/PP-Structure/Docling relation or stream output must resolve the remaining low-evidence local flows.
 
+## Native Local Structure Evidence v1
+
+`outputs/external/local-structure-evidence-v2` reruns the same 15-page PUMA, JD, and Hacker News translation-stress set at 144 DPI with raster fidelity. It does not change selected page order or visual rendering; it separates native table/grid island successors from the generic page-level candidate vote. `local_structure_successor_coverage` is strict over potential island edges, while the consensus-conflict column counts strict local edges that the generic successor-consensus candidate does not preserve.
+
+| Sample | Native local streams | Strict local edges | Strict coverage | Local edges conflicting with generic consensus | Local reference-page coverage | Stream recommendation |
+|---|---:|---:|---:|---:|---:|---|
+| PUMA annual report, pp. 1-12 | 6 | 71 | 1.0 | 50 / 71 | 0.13948919 | 6 `keep-selected-local-structure` |
+| JD homepage screenshot PDF | 3 | 32 | 1.0 | 30 / 32 | 0.24060150 | 3 `keep-selected-local-structure` |
+| Hacker News print PDF | 0 | 0 | 0.0 | 0 / 0 | 0.0 | none |
+
+The aggregate is 9 native local streams, 103 strict edges, full strict coverage, and 80 / 103 (`0.77669903`) strict edges that generic consensus would otherwise break. This is not a semantic accuracy gain: the protected local edges were already selected by the native table/grid detector. It makes the disagreement honest and prevents a generic page candidate from falsely classifying a fully evidenced island as `needs-structure-evidence`.
+
+Two current PP-StructureV3 A/B controls show why those dimensions must be read together. For JD (`outputs/external/jd-local-structure-ppstructure-ab-v1`), 128 matched structure elements leave the three native local streams and 32 strict edges unchanged, reduce local-vs-consensus conflicts from 30 to 13, but increase stream `needs-structure-evidence` from 1 to 2; visual and reading-risk deltas are both zero. For PUMA p. 5 (`outputs/external/puma-local-structure-ppstructure-ab-v1`), 24 matched elements derive four bounded body streams but the page has no native local table/grid island, so all local-structure deltas remain zero. Neither provider emits explicit relation or stream edges in these runs, so neither result promotes a runtime order change.
+
 ## Translation Stress Results
 
 `outputs/external/translation-stress-padding-v1` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`. The run uses `fidelity-replacement-fit-v2`, which constrains local mask padding against adjacent visible boxes without changing text coordinates or fitting policy.
