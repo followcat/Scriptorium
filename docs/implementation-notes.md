@@ -844,6 +844,23 @@ diagnostics, not correctness estimates: a model can remain highly confident on
 out-of-domain pages. They are intended as a future runtime rejection signal and
 as a way to prioritize independent labels.
 
+## Comp-HRDoc Relation Benchmark
+
+`fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the
+129,857,097-byte Git LFS annotation object by SHA-256. It reads only the unified
+test annotation member, downloads the selected arXiv source document, and
+renders each page directly to the official annotation dimensions. HRDoc image
+assets are not redistributed.
+
+Each annotated block is expanded into textline nodes. Consecutive textlines are
+linked locally; `reading_order_label = 1` links the current block tail to the
+next official reading-order block, while `0` ends that local chain. The
+answer-free structure file contains only text/bbox anchors. Stable ids and
+`ro_linkings` are written to the adjacent semantic sidecar, so model inference
+cannot read the answers. Selection is a fixed document/page prefix and the
+manifest records repository revision, archive/PDF hashes, URLs, and relation
+counts. This is an oracle-layout order benchmark, not OCR detection scoring.
+
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
 of aborting image-source benchmarks with `cannot write empty image`.

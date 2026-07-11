@@ -584,3 +584,22 @@ PUMA p. 5 为 `0.07304`，JD 首页为 `0.08274`，但二者 mean pair confidenc
 `0.86286` 和 `0.90136`。因此 OOD 是 rejection/triage 诊断，不是分数修正或正确率
 声明。PUMA 23/23、JD 146/146 review edge 均解析成功，重排、视觉和 stream
 diagnostic delta 都为 0。
+
+### Comp-HRDoc 固定 Test Prefix
+
+两个官方 test 文档按发布文件名顺序选择，而不是按 benchmark 结果选择：
+`1401.3699` 和 `1402.2741`，各取前 5 页。arXiv PDF 渲染到官方 Comp-HRDoc
+尺寸，line anchor 和 relation-only sidecar 来自固定版本的 unified test annotation。
+
+| 范围 | Native selected | External decoded | Relation graph | Visual-YX | Box flow |
+|---|---:|---:|---:|---:|---:|
+| `1401.3699`, pp. 1-5 | 191/205 | 205/205 | 205/205 | 205/205 | 100/205 |
+| `1402.2741`, pp. 1-5 | 155/155 | 155/155 | 155/155 | 155/155 | 122/155 |
+| 合计 | 346/360 | 360/360 | 360/360 | 360/360 | 222/360 |
+
+10 页上，原始 learned edge precision 为 `0.93472585`、recall 为 `0.99444444`、
+F1 为 `0.96366083`（358 correct / 383 predicted / 360 labels），383 条预测 relation
+全部解析。视觉、selected order、consensus、stream diagnostics 和 reorder delta 都为
+0。该结果独立确认了较强的 line/paragraph continuity，但 visual-yx 和 relation graph
+也得到 360/360，因为这些页面主要是局部 textline chain。不能据此声称 floating
+figure、table、annual report 或 portal grid 已经解决。

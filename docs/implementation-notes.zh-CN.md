@@ -454,5 +454,19 @@ anchor、年报和门户截图共享一条推理路径，而不是只支持 ROOR
 ratio。这些是域漂移诊断，不是正确率估计；模型在域外页面也可能保持很高 confidence。
 它们用于未来 runtime rejection，并帮助优先补独立标注。
 
+## Comp-HRDoc Relation Benchmark
+
+`fetch-comphrdoc` 固定 MIT Comp-HRDoc 仓库 revision，并通过 SHA-256 校验
+129,857,097-byte Git LFS annotation object。它只读取 unified test annotation
+member，下载指定 arXiv source 文档，并把每页直接渲染到官方标注尺寸；不会重新分发
+HRDoc image asset。
+
+每个标注 block 会展开成 textline node。block 内连续 textline 局部连接；
+`reading_order_label = 1` 把当前 block tail 连接到下一个官方 reading-order block，
+`0` 结束该局部链。answer-free structure 只含 text/bbox anchor；稳定 id 与
+`ro_linkings` 写入相邻 semantic sidecar，因此模型推理看不到答案。样本按固定
+document/page prefix 选择，manifest 记录仓库 revision、archive/PDF hash、URL 和
+relation 数。这是 oracle-layout order benchmark，不是 OCR detection 评分。
+
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。

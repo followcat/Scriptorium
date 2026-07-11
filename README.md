@@ -170,6 +170,14 @@ scriptorium run-relation-ranker page.structure.json \
 
 只加载本机生成的 joblib 模型；manifest 会校验 SHA-256 并记录训练拆分与校准指标。
 
+独立跨域关系基准可从 Comp-HRDoc 固定 test 文档生成；命令会把官方 order label 与
+answer-free line anchors 分开保存：
+
+```bash
+scriptorium fetch-comphrdoc --max-pages 5 \
+  --out-dir data/external/comphrdoc-test
+```
+
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
 不会改变 runtime role、reading stream 或顺序：

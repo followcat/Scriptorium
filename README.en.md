@@ -176,6 +176,15 @@ scriptorium run-relation-ranker page.structure.json \
 Only load locally generated joblib models. The adjacent manifest verifies its
 SHA-256 digest and records the training split and calibration metrics.
 
+An independent cross-domain relation benchmark can be generated from a fixed
+Comp-HRDoc test document. Official order labels and answer-free line anchors
+are written separately:
+
+```bash
+scriptorium fetch-comphrdoc --max-pages 5 \
+  --out-dir data/external/comphrdoc-test
+```
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,

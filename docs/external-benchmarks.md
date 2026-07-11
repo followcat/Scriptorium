@@ -602,3 +602,25 @@ though their mean pair confidences remain `0.86286` and `0.90136`. OOD is
 therefore a rejection/triage diagnostic, not a score correction or correctness
 claim. PUMA resolves 23/23 and JD 146/146 review edges with zero reorder and
 zero visual/stream-diagnostic delta.
+
+### Comp-HRDoc Fixed Test Prefix
+
+Two official test documents were selected by published filename order, not by
+benchmark outcome: `1401.3699` and `1402.2741`, first five pages each. Their
+arXiv PDFs are rendered to official Comp-HRDoc dimensions, while line anchors
+and relation-only sidecars come from the pinned unified test annotation.
+
+| Scope | Native selected | External decoded | Relation graph | Visual-YX | Box flow |
+|---|---:|---:|---:|---:|---:|
+| `1401.3699`, pp. 1-5 | 191/205 | 205/205 | 205/205 | 205/205 | 100/205 |
+| `1402.2741`, pp. 1-5 | 155/155 | 155/155 | 155/155 | 155/155 | 122/155 |
+| Combined | 346/360 | 360/360 | 360/360 | 360/360 | 222/360 |
+
+Across the 10 pages, raw learned edges score precision `0.93472585`, recall
+`0.99444444`, and F1 `0.96366083` (358 correct / 383 predicted / 360 labels).
+All 383 predicted relations resolve. Visual, selected-order, consensus,
+stream-diagnostic, and reorder deltas remain zero. The result independently
+confirms strong line/paragraph continuity, but visual-yx and relation graph also
+score 360/360 because these pages are dominated by local textline chains. It
+must not be presented as evidence that floating figures, tables, annual reports,
+or portal grids are solved.
