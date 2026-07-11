@@ -17,6 +17,7 @@ from .benchmark import (
     run_benchmark,
     run_structure_ab_benchmark,
 )
+from .docling_provider import DoclingAdapter
 from .fixture import create_fixture
 from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
@@ -670,6 +671,85 @@ def run_opendataloader_command(
     typer.echo(f"Pages: {len(result.structure_payload['pages'])}")
     typer.echo(f"Review blocks: {normalization['normalized_block_count']}")
     typer.echo(f"Review relations: {normalization['review_relation_edge_count']}")
+    typer.echo("Runtime reorder: disabled")
+
+
+@app.command("run-docling")
+def run_docling_command(
+    source: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Input PDF or image source.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/docling.structure.json"),
+        "--output",
+        "-o",
+        help="Review-only Docling structure JSON for replay or A/B benchmarking.",
+    ),
+    raw_output: Optional[Path] = typer.Option(
+        None,
+        "--raw-output",
+        help="Optional original Docling JSON path; defaults beside --output.",
+    ),
+    max_pages: Optional[int] = typer.Option(None, min=1, help="Limit extraction to the first N pages."),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="One contiguous 1-based source page range, for example 1-3. Cannot combine with --max-pages.",
+    ),
+    ocr_languages: str = typer.Option(
+        "eng",
+        help="Comma-separated Tesseract language codes.",
+    ),
+    tables: bool = typer.Option(
+        False,
+        "--tables/--no-tables",
+        help="Run Docling table structure recognition; disabled for layout/order benchmarks.",
+    ),
+    force_ocr: bool = typer.Option(
+        False,
+        "--force-ocr/--no-force-ocr",
+        help="Force full-page OCR even when native PDF text is available.",
+    ),
+    device: Literal["auto", "cpu", "cuda", "mps", "xpu"] = typer.Option(
+        "cpu",
+        help="Docling accelerator device.",
+    ),
+    threads: int = typer.Option(2, min=1, help="Docling CPU worker threads."),
+) -> None:
+    """Run Docling Heron layout with isolated review-only reading order."""
+
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    languages = tuple(language.strip() for language in ocr_languages.split(",") if language.strip())
+    if not languages:
+        raise typer.BadParameter("at least one OCR language is required", param_hint="--ocr-languages")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_output or output.with_name(f"{output.stem}.raw.json")
+    if raw_path.resolve() == output.resolve():
+        raise typer.BadParameter("--raw-output must differ from --output", param_hint="--raw-output")
+    try:
+        result = DoclingAdapter().analyze(
+            source,
+            page_indices=page_indices,
+            max_pages=max_pages,
+            languages=languages,
+            tables=tables,
+            force_ocr=force_ocr,
+            device=device,
+            threads=threads,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="source") from exc
+    normalized_path = write_ocr_json(result.structure_payload, output)
+    provider_raw_path = write_ocr_json(result.raw_payload, raw_path)
+    typer.echo(f"Docling structure JSON: {normalized_path}")
+    typer.echo(f"Docling raw JSON: {provider_raw_path}")
+    typer.echo(f"Text items: {len(result.raw_payload.get('texts', []))}")
+    typer.echo(f"Table items: {len(result.raw_payload.get('tables', []))}")
     typer.echo("Runtime reorder: disabled")
 
 

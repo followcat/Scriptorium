@@ -727,6 +727,34 @@ def test_semantic_candidate_orders_include_external_structure_order() -> None:
     assert candidates["successor_consensus"][0] == ["left-one", "left-two", "right-one", "right-two"]
 
 
+def test_isolated_external_structure_is_scored_but_excluded_from_consensus() -> None:
+    document = _document_with_candidate_text_boxes(
+        [
+            ("left-one", "Left column one.", BBox(x0=10, y0=10, x1=70, y1=20), 1, 1),
+            ("right-one", "Right column one.", BBox(x0=110, y0=10, x1=170, y1=20), 2, 2),
+            ("left-two", "Left column two.", BBox(x0=10, y0=30, x1=70, y1=40), 3, 1),
+            ("right-two", "Right column two.", BBox(x0=110, y0=30, x1=170, y1=40), 4, 2),
+        ]
+    )
+    baseline = document.model_copy(deep=True)
+    for element in baseline.pages[0].elements:
+        element.metadata.pop("external_structure_order", None)
+        element.metadata.pop("external_structure_order_source", None)
+    for element in document.pages[0].elements:
+        element.metadata["external_structure_candidate_consensus_isolated"] = True
+
+    candidates = _semantic_candidate_orders(document)
+    baseline_candidates = _semantic_candidate_orders(baseline)
+
+    assert candidates["external_structure"][0] == [
+        "left-one",
+        "left-two",
+        "right-one",
+        "right-two",
+    ]
+    assert candidates["successor_consensus"][0] == baseline_candidates["successor_consensus"][0]
+
+
 def test_external_structure_candidate_order_fuses_partial_orders_stably() -> None:
     document = _document_with_candidate_text_boxes(
         [

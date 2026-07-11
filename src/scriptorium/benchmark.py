@@ -2730,6 +2730,7 @@ def _successor_consensus_support_diagnostics(document: DocumentIR) -> dict[str, 
         if len(text_elements) < 2:
             continue
         source_candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=False)
+        source_candidates = _successor_consensus_source_candidates(source_candidates, text_elements)
         page_diagnostics = successor_consensus_diagnostics(
             source_candidates,
             item_count=len(text_elements),
@@ -2802,6 +2803,7 @@ def _reading_order_candidate_page_diagnostics(
             continue
         reference_order = _selected_candidate_order(text_elements)
         source_candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=False)
+        source_candidates = _successor_consensus_source_candidates(source_candidates, text_elements)
         consensus = successor_consensus_diagnostics(
             source_candidates,
             item_count=len(text_elements),
@@ -2887,6 +2889,7 @@ def _reading_order_candidate_stream_diagnostics(
                 continue
             reference_order = _selected_candidate_order(stream_elements)
             source_candidates = _candidate_index_orders(stream_elements, page, include_successor_consensus=False)
+            source_candidates = _successor_consensus_source_candidates(source_candidates, stream_elements)
             consensus = successor_consensus_diagnostics(
                 source_candidates,
                 item_count=len(stream_elements),
@@ -3322,7 +3325,7 @@ def _candidate_index_orders(
     if structure_relation_order:
         candidates["structure_relation"] = structure_relation_order
     if include_successor_consensus:
-        source_candidates = dict(candidates)
+        source_candidates = _successor_consensus_source_candidates(candidates, text_elements)
         candidates["successor_consensus"] = infer_successor_consensus_order(
             source_candidates,
             item_count=len(text_elements),
@@ -3341,6 +3344,7 @@ def _candidate_index_orders(
 
 def _successor_consensus_candidate_order(text_elements: list[Any], page: Any) -> list[int]:
     source_candidates = _candidate_index_orders(text_elements, page, include_successor_consensus=False)
+    source_candidates = _successor_consensus_source_candidates(source_candidates, text_elements)
     return infer_successor_consensus_order(
         source_candidates,
         item_count=len(text_elements),
@@ -3361,6 +3365,22 @@ def _selected_candidate_order(text_elements: list[Any]) -> list[int]:
             ),
         )
     ]
+
+
+def _successor_consensus_source_candidates(
+    candidates: dict[str, list[int]],
+    elements: list[Any],
+) -> dict[str, list[int]]:
+    if not any(
+        element.metadata.get("external_structure_candidate_consensus_isolated") is True
+        for element in elements
+    ):
+        return dict(candidates)
+    return {
+        name: order
+        for name, order in candidates.items()
+        if name != "external_structure"
+    }
 
 
 def _structure_relation_candidate_order(text_elements: list[Any], page: Any) -> list[int]:

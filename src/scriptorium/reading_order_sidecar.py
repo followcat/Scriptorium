@@ -1370,7 +1370,9 @@ def _explicit_block_order_review_transitions(
 
 def _explicit_structure_block_key(element: ElementIR) -> "_ExplicitStructureBlockKey | None":
     metadata = element.metadata
-    structure = metadata.get("structure_evidence")
+    structure = metadata.get("external_structure_review_evidence")
+    if not isinstance(structure, Mapping):
+        structure = metadata.get("structure_evidence")
     if not isinstance(structure, Mapping):
         return None
     block_structure = _explicit_structure_block_evidence(structure)

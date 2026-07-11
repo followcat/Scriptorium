@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Optional MIT document parser with an Apache-2.0 Heron layout checkpoint.
+# Tesseract OCR requires the system tesseract binary and requested language data.
+docling==2.111.0
+docling-core==2.86.0
+docling-ibm-models==3.13.3

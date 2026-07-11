@@ -1438,13 +1438,17 @@ def _element_identifier_index(elements: list[Any]) -> dict[str, str]:
         metadata = element.metadata if isinstance(getattr(element, "metadata", None), dict) else {}
         for key in STRUCTURE_REF_KEYS:
             _add_identifier_candidate(candidates, metadata.get(key), element_id)
+        review_only_structure = metadata.get("external_structure_semantic_review_only") is True
         structure_evidence = metadata.get("structure_evidence")
-        if isinstance(structure_evidence, dict):
+        if (
+            isinstance(structure_evidence, dict)
+            and structure_evidence.get("semantic_review_only") is not True
+        ):
             for key in STRUCTURE_REF_KEYS:
                 _add_identifier_candidate(candidates, structure_evidence.get(key), element_id)
         source_text = str(getattr(element, "source_text", "") or "").strip()
         raw_node_keys = metadata.get("external_structure_node_keys")
-        if isinstance(raw_node_keys, list):
+        if not review_only_structure and isinstance(raw_node_keys, list):
             for raw_key in raw_node_keys:
                 normalized = _identifier_token(raw_key)
                 if normalized and normalized != source_text:

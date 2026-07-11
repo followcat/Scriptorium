@@ -471,9 +471,30 @@ def normalize_structure_relations(
             )
 
     for document_index, doc in enumerate(_collect_docling_documents(payload), start=1):
-        source_name = source or "docling"
+        source_name = source or str(root_payload.get("source") or "docling")
+        docling_review_only = _relation_is_review_only(root_payload, root_payload, {})
+        docling_consensus_isolated = (
+            str(root_payload.get("candidate_consensus_policy") or "").strip().lower()
+            == "isolated"
+        )
         for run in _docling_body_tree_local_runs(doc, document):
             for source_ref, target_ref in zip(run.member_refs, run.member_refs[1:], strict=False):
+                raw_edge = {
+                    "source": source_ref,
+                    "target": target_ref,
+                    "source_kind": "docling-body-tree",
+                    "docling_document_index": document_index,
+                    "docling_parent_ref": run.parent_ref,
+                    "docling_parent_scope": run.parent_scope,
+                    "docling_run_index": run.run_index,
+                    "docling_same_page": True,
+                    "docling_locality": run.locality,
+                    "docling_boundary_policy": "no-cross-container-successor",
+                }
+                if docling_review_only:
+                    raw_edge["_scriptorium_relation_review_only"] = True
+                if docling_consensus_isolated:
+                    raw_edge["_scriptorium_candidate_consensus_isolated"] = True
                 append(
                     StructureRelationEdge(
                         page_index=run.page_index,
@@ -481,18 +502,7 @@ def normalize_structure_relations(
                         source_ref=source_ref,
                         target_ref=target_ref,
                         source=source_name,
-                        raw={
-                            "source": source_ref,
-                            "target": target_ref,
-                            "source_kind": "docling-body-tree",
-                            "docling_document_index": document_index,
-                            "docling_parent_ref": run.parent_ref,
-                            "docling_parent_scope": run.parent_scope,
-                            "docling_run_index": run.run_index,
-                            "docling_same_page": True,
-                            "docling_locality": run.locality,
-                            "docling_boundary_policy": "no-cross-container-successor",
-                        },
+                        raw=raw_edge,
                     )
                 )
     return edges
@@ -503,6 +513,7 @@ def normalize_structure_streams(
     document: DocumentIR,
     source: str | None = None,
 ) -> list[StructureReadingStream]:
+    root_payload = payload if isinstance(payload, Mapping) else {}
     streams: list[StructureReadingStream] = []
     seen: set[tuple[int, str, tuple[str, ...]]] = set()
     def append(stream: StructureReadingStream) -> None:
@@ -547,8 +558,14 @@ def normalize_structure_streams(
                 )
             )
 
+    docling_stream_policy = str(
+        root_payload.get("docling_stream_policy") or ""
+    ).strip().lower().replace("_", "-")
+    if docling_stream_policy == "disabled":
+        return streams
+
     for document_index, doc in enumerate(_collect_docling_documents(payload), start=1):
-        source_name = source or "docling"
+        source_name = source or str(root_payload.get("source") or "docling")
         for run in _docling_body_tree_local_runs(doc, document):
             stream_id = _docling_local_run_stream_id(run, document_index=document_index)
             append(
@@ -582,9 +599,32 @@ def _normalize_docling_evidence(
     *,
     source: str | None,
 ) -> list[StructureRegion]:
+    root_payload = payload if isinstance(payload, Mapping) else {}
+    semantic_review_only = _structure_semantics_are_review_only(
+        root_payload,
+        root_payload,
+        {},
+    )
+    root_order_policy = str(root_payload.get("order_policy") or "").strip()
+    consensus_isolated = (
+        str(root_payload.get("candidate_consensus_policy") or "").strip().lower()
+        == "isolated"
+    )
     regions: list[StructureRegion] = []
     for doc in _collect_docling_documents(payload):
-        regions.extend(_normalize_docling_document(doc, document, source=source))
+        doc_regions = _normalize_docling_document(
+            doc,
+            document,
+            source=source or str(root_payload.get("source") or "docling"),
+        )
+        for region in doc_regions:
+            if semantic_review_only:
+                region.raw["_scriptorium_semantic_review_only"] = True
+            if root_order_policy:
+                region.raw.setdefault("order_policy", root_order_policy)
+            if consensus_isolated:
+                region.raw["_scriptorium_candidate_consensus_isolated"] = True
+        regions.extend(doc_regions)
     return regions
 
 
@@ -2957,10 +2997,20 @@ def _apply_page_regions(
                 "coverage": round(companion_coverage, 6),
                 "text_similarity": round(companion_text_similarity, 6),
             }
-        element.metadata["structure_evidence"] = structure_evidence
+        existing_structure_evidence = element.metadata.get("structure_evidence")
+        if (
+            semantic_review_only
+            and isinstance(existing_structure_evidence, dict)
+            and existing_structure_evidence.get("semantic_review_only") is not True
+        ):
+            element.metadata["external_structure_review_evidence"] = structure_evidence
+        else:
+            element.metadata["structure_evidence"] = structure_evidence
         element.metadata["external_structure_label"] = region.label
         if semantic_review_only:
             element.metadata["external_structure_semantic_review_only"] = True
+        if region.raw.get("_scriptorium_candidate_consensus_isolated") is True:
+            element.metadata["external_structure_candidate_consensus_isolated"] = True
         node_keys = _region_node_keys(region)
         if ordered_companion is not None:
             node_keys = _dedupe_texts([*node_keys, *_region_node_keys(ordered_companion[0])])
@@ -3107,6 +3157,10 @@ def _apply_page_relation_edges(page: PageIR, relations: list[StructureRelationEd
             record["secondary_native_column_flow"] = True
         if review_only:
             record["review_only"] = True
+        if relation.raw.get("_scriptorium_candidate_consensus_isolated") is True:
+            record["candidate_consensus_isolated"] = True
+            source_element.metadata["external_structure_candidate_consensus_isolated"] = True
+            target_element.metadata["external_structure_candidate_consensus_isolated"] = True
         if record not in relation_records:
             relation_records.append(record)
         source_element.metadata["external_structure_relation_edges"] = relation_records
