@@ -268,6 +268,8 @@ Benchmark 会输出 pairwise order accuracy、successor-edge accuracy、sequence
 
 原生 `table-island` / `grid-island` 的严格边不会被伪装成另一张全页候选票。sidecar 只有在边带有 `table-local-order` 或 `grid-local-order` 时，才把它写入 `local_structure_*` 诊断：局部 stream 数、潜在/严格 successor edge 数、严格覆盖率、selected/reference 覆盖率，以及没有被通用 consensus 保留的严格边。它既不制造跨 stream handoff，也不改变 page-level consensus；只有一个局部岛完整被严格边覆盖时，流级建议才会变成 `keep-selected-local-structure`。正文或区域交接仍不确定的页面会继续保持 `needs-structure-evidence`。`benchmark-structure-ab` 也会输出相同计数及 delta，因此“通用分歧变少、但 stream triage 变差”的结构模型结果不会被误认为无条件语义提升。
 
+`protected_successor_consensus` 是下一层、但仍只用于诊断的 relation candidate。它会在通用加权 path cover 之前安装有效的原生 table/grid strict edge，而不是给它们伪造 vote。字段会把 protected edge 和 unresolved constraint 分开，并分别记录 unknown endpoint、self-loop、入/出度冲突和 cycle。`local_structure_constrained_consensus_disagreement_*` 只计算约束序列化后仍缺失的严格 island edge。该候选不会改变 `infer_semantic_reading_order()` 或 runtime arbitration，并且被排除在自动 semantic-candidate 建议之外。没有适用 strict native edge 的有标注 case，其聚合 semantic 分数会是 `null`，而不是误导性的满分。
+
 翻译回渲染路径还会输出 fidelity replacement 风险指标：`fidelity_replacement_element_count`、`fidelity_replacement_estimated_overflow_count`、`fidelity_replacement_overflow_count`、`fidelity_replacement_layout_measurement_available`、`fidelity_replacement_layout_measured_count`、`fidelity_replacement_browser_fit_count`、`fidelity_replacement_line_height_compacted_count`、`fidelity_replacement_sampled_background_mask_count`、`fidelity_replacement_conflict_count`、`fidelity_replacement_conflict_target_count`、`fidelity_replacement_same_stream_conflict_target_count`、`fidelity_replacement_cross_stream_conflict_target_count`、`fidelity_replacement_padding_constrained_count`、`fidelity_replacement_padding_constraint_side_count`、实际/静态的 `fidelity_replacement_min_fit_scale` / `fidelity_replacement_mean_fit_scale`，以及 `fidelity_replacement_policy_counts`。其中 `estimated_overflow` 是保留的静态 predictor，而 `overflow` 在布局 measurement 可用时是 Chromium 实测 clipping，二者不能混用。每个 fidelity case 会写出 `quality/fidelity_replacement_layout_report.json`，保留 DOM 尺寸和裁切证据；stream diagnostic 也会记录 estimate、测量、browser fitting 和行高压缩。
 
 冲突目标还会按流属性归因：`fidelity_replacement_conflict_target_stream_type_counts`、`fidelity_replacement_conflict_target_stream_id_counts`、`fidelity_replacement_conflict_stream_type_pair_counts` 和 `fidelity_replacement_conflict_stream_id_pair_counts`。同流 target 冲突通常说明局部文本 fitting 空间不足；跨流 target 冲突通常指向语义流边界错误或 mask 扩张过大。
@@ -329,7 +331,7 @@ Stream sidecar 现在还会单独评估 IR 的流归属质量。`semantic_stream
 
 同一份 A/B 现在还包含 `reading_order_local_structure_stream_delta`、`reading_order_local_structure_successor_edge_delta`、`reading_order_local_structure_consensus_disagreement_edge_delta` 和 `stream_keep_selected_local_structure_delta`。它们只衡量原生几何已确认 table/grid 岛内的严格边，不能替代有人类标注的 semantic successor accuracy。
 
-Semantic sidecar 现在也会给 `structure_relation` 候选打分，并与 visual-yx、box-flow、relation-graph、successor-consensus、external-structure 一起输出候选指标。这样可以观察 page-scope 和 caption-target 结构是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
+Semantic sidecar 现在也会给诊断专用的 `protected_successor_consensus` 候选打分，并与 visual-yx、box-flow、relation-graph、structure-relation、successor-consensus、external-structure 一起输出候选指标。这样可以观察关系保护候选是否改善 local successor edge，而不把单个无标签样本直接升级成 runtime 规则。
 
 ## 研究参考
 

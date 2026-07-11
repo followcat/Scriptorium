@@ -57,7 +57,7 @@ Scriptorium supports two output paths:
 
 HTML nodes carry `data-scriptorium-*` metadata such as role, source, bbox, style id, reading order, reading stream, translation target, and replacement risk. See [Implementation notes](docs/implementation-notes.md) for the full model.
 
-For detected table and card-grid islands, strict native local successor evidence is reported separately from page-wide candidate consensus. This keeps translation streams stable without pretending that unresolved body or cross-region handoffs are solved.
+For detected table and card-grid islands, strict native local successor evidence is reported separately from page-wide candidate consensus. A diagnostic-only protected path-cover candidate preserves valid strict island edges as constraints and reports rejected or unresolved edges separately. This keeps translation streams stable without pretending that unresolved body or cross-region handoffs are solved.
 
 Standalone HTML also exposes `window.ScriptoriumEdits`: browser changes become validated `scriptorium-html-edits/v1` patches that `scriptorium apply-html-edits` can write back to the same `DocumentIR` before another export or print.
 

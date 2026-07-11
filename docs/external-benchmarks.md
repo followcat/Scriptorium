@@ -320,6 +320,18 @@ The aggregate is 9 native local streams, 103 strict edges, full strict coverage,
 
 Two current PP-StructureV3 A/B controls show why those dimensions must be read together. For JD (`outputs/external/jd-local-structure-ppstructure-ab-v1`), 128 matched structure elements leave the three native local streams and 32 strict edges unchanged, reduce local-vs-consensus conflicts from 30 to 13, but increase stream `needs-structure-evidence` from 1 to 2; visual and reading-risk deltas are both zero. For PUMA p. 5 (`outputs/external/puma-local-structure-ppstructure-ab-v1`), 24 matched elements derive four bounded body streams but the page has no native local table/grid island, so all local-structure deltas remain zero. Neither provider emits explicit relation or stream edges in these runs, so neither result promotes a runtime order change.
 
+## Protected Local Constraints v1
+
+`outputs/external/protected-local-structure-v1` reruns the same 15 pages with `protected_successor_consensus`. This is a diagnostic candidate only: valid strict native table/grid edges enter the degree-constrained DAG before generic candidate edges, so they do not count as synthetic votes and cannot create a cross-stream relation. It records protected edges, unresolved constraints, individual rejection reasons, and strict edges still absent after constrained serialization.
+
+| Sample | Strict local edges | Broken by generic consensus | Protected | Unresolved | Missing after constrained consensus |
+|---|---:|---:|---:|---:|---:|
+| PUMA annual report, pp. 1-12 | 71 | 50 | 71 | 0 | 0 |
+| JD homepage screenshot PDF | 32 | 30 | 32 | 0 | 0 |
+| Hacker News print PDF | 0 | 0 | 0 | 0 | 0 |
+
+Across the set, all 103 strict local edges are accepted as constraints; all 80 local edges that generic consensus would break are retained by the constrained candidate; no unknown endpoint, degree, or cycle rejection occurs. Visual similarity remains `0.92760169`, identical to the browser-fit baseline, because selected IR order and visual rendering are unchanged. This verifies local constraint plumbing, not semantic accuracy: PUMA and JD still have no tracked relation-style ground truth, while labelled Hacker News has no applicable native table/grid constraint. Accordingly, the protected candidate's semantic aggregate is unavailable (`null`), and it remains excluded from runtime and automatic candidate recommendations.
+
 ## Translation Stress Results
 
 `outputs/external/translation-stress-padding-v1` writes deterministic pseudo-expanded replacements to `translated_text`, prints fidelity HTML back to PDF, and measures both visual similarity and replacement risk. It covers 15 pages across PUMA, JD, and web-HN with `mismatched_case_count = 0`, `dimension_match_rate = 1.0`, and `page_count_match_rate = 1.0`. The run uses `fidelity-replacement-fit-v2`, which constrains local mask padding against adjacent visible boxes without changing text coordinates or fitting policy.

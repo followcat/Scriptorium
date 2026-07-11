@@ -314,6 +314,18 @@ Relation graph 现在报告选择时的替代边，而不是只给出序列化 c
 
 两个当前 PP-StructureV3 A/B control 说明这些维度必须一起看。JD 的 `outputs/external/jd-local-structure-ppstructure-ab-v1` 匹配 128 个结构元素后，三条原生局部 stream 和 32 条严格边保持不变，局部边与 consensus 的冲突从 30 降到 13，但 stream `needs-structure-evidence` 从 1 增至 2；视觉和 reading-risk delta 都是 0。PUMA p. 5 的 `outputs/external/puma-local-structure-ppstructure-ab-v1` 匹配 24 个元素并派生 4 条受限 body stream，但该页没有原生 local table/grid island，所以所有 local-structure delta 均为 0。两次运行都没有提供显式 relation 或 stream edge，因此都不能推动 runtime order 切换。
 
+## 受保护局部约束 v1
+
+`outputs/external/protected-local-structure-v1` 用同一组 15 页重跑 `protected_successor_consensus`。它只是一条诊断候选：有效的原生 table/grid strict edge 会先进入 degree-constrained DAG，之后才考虑通用 candidate edge，因此不会被当作伪造 vote，也不会制造跨 stream relation。报告会区分 protected edge、unresolved constraint、各类拒绝原因，以及约束序列化后仍未保留的 strict edge。
+
+| 样本 | 严格局部边 | 被通用 consensus 打断 | 已保护 | 未解决 | 约束 consensus 后仍缺失 |
+|---|---:|---:|---:|---:|---:|
+| PUMA 年报 pp. 1-12 | 71 | 50 | 71 | 0 | 0 |
+| JD 首页截图 PDF | 32 | 30 | 32 | 0 | 0 |
+| Hacker News 打印 PDF | 0 | 0 | 0 | 0 | 0 |
+
+合并后，103 条严格局部边全部作为约束被接受；通用 consensus 原本会打断的 80 条局部边都被约束候选保留；没有出现 unknown endpoint、degree 或 cycle 拒绝。视觉相似度仍为 `0.92760169`，与 browser-fit 基线相同，因为 selected IR order 和视觉渲染都没有变化。这证明的是局部约束链路，不是 semantic accuracy：PUMA 和 JD 仍没有已跟踪的 relation-style ground truth，而有标注的 Hacker News 没有适用的原生 table/grid constraint。因此 protected candidate 的聚合 semantic 指标为不可用（`null`），它仍被排除在 runtime 和自动 candidate 建议之外。
+
 ## 翻译压力测试结果
 
 `outputs/external/translation-stress-padding-v1` 会把确定性伪扩展译文写入 `translated_text`，再把 fidelity HTML 打印回 PDF，同时测量视觉相似度和 replacement 风险。该运行覆盖 PUMA、JD、web-HN 共 15 页，`mismatched_case_count = 0`，`dimension_match_rate = 1.0`，`page_count_match_rate = 1.0`。该运行使用 `fidelity-replacement-fit-v2`：不改变文本坐标或 fitting 策略，只让局部 mask padding 在相邻可见元素处停止。
