@@ -120,8 +120,9 @@ scriptorium run-paddle-layout path/to/paper.pdf \
   --output outputs/paper.pp-doclayoutv3.json
 ```
 
-固定 8 页 train-only 多栏语料上，PP-DocLayoutV3 relation F1 为 `0.89198606`，
-Docling 为 `0.87148936`；样本仍小，因此两者都保持 review-only。完整方法和分区结果见
+扩大到 32 页 train-only 语料后，PP-DocLayoutV3 relation F1 为 `0.88870500`，但 raw
+direct transition precision 只有 `0.70343137`；按 partial-label endpoint 评分为
+`287/362 = 0.79281768`，另有 46 条 unscored。Provider 因此保持 review-only。完整方法见
 [外部基准](docs/external-benchmarks.zh-CN.md#train-only-多栏-provider-校准)。
 
 若需要可重放的 PP-StructureV3 版面证据，可先安装可选 OCR 运行时、保存模型
@@ -227,6 +228,16 @@ profile 不能取代真实 OCR provider benchmark。
 scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
   outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
 ```
+
+Suite report 会分开 block 内 line edge 与真正的 block transition。Comp-HRDoc relation 是
+partial label，因此当前报告将候选分为 `eligible`、`scorable` 与 `unscored`；旧
+`209/219` 是 partial-label-unaware 历史值。同一已打开 test window 的当前结果为
+`256/268 = 0.95522388`，另有 16 条未评分边，但页首与页末 Wilson 下界仍未过线。
+
+64 页 train-only suite 的 gate v3 要求至少两个 answer-free candidate 同意，并按 document
+执行 5-fold out-of-fold 选择。Aggregate OOF 为 `192/195 = 0.98461538`，但两个 fold 与
+两个 layout×position bucket 未通过；calibration 只有 `21/21`，Wilson `0.84536098` 且
+不足 30 条。因此 runtime promotion 继续关闭，也没有打开新的 test window。
 
 Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/table 则使用
 全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出

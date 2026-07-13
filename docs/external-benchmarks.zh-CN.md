@@ -896,27 +896,31 @@ scriptorium benchmark-provider-anchor-suite \
   --output outputs/pp-doclayoutv3-calibration-32/suite.json
 ```
 
-Suite schema v5 将 Provider 顺序拆为三种粒度。`within-anchor` 是同一模型 block 内按
+Suite schema v7 将 Provider 顺序拆为三种粒度。`within-anchor` 是同一模型 block 内按
 oracle 几何排列的 line edge；`direct inter-anchor` 才是两个相邻模型 block 的直接
-transition。结果证明 aggregate F1 被前者显著抬高：
+transition。旧 relation summary 把所有预测都当作可评分，因此只能作为 raw exact-match：
 
 | 指标 | Fit 24 页 | Calibration 8 页 | Overall 32 页 |
 |---|---:|---:|---:|
 | Serialized aggregate F1 | 0.90329611 | 0.84264832 | 0.88870500 |
 | Within-anchor precision | 1389/1396 = 0.99498567 | 440/443 = 0.99322799 | 1829/1839 = 0.99456226 |
-| Direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+| Raw direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+| Partial-label-aware direct precision | 237/278 = 0.85251799 | 50/84 = 0.59523810 | 287/362 = 0.79281768 |
+| Unscored direct transitions | 28 | 18 | 46 |
 
 每条 direct transition 现在记录两个端点的最小 detection confidence，以及
 `visual-yx`、`box-flow`、`relation-graph` 三个 answer-free native candidate 中有多少个
 给出同一直接 successor。Eligibility 先根据这些字段确定，之后评分器才读取 semantic
-sidecar；改变 relation label 不会改变 eligible edge。曲线还报告 precision 的 95%
-Wilson 下界，避免选择只有少数 edge 的“满分”点。
+sidecar；改变 relation label 不会改变 eligible edge。Comp-HRDoc `ro_linkings` 是 partial
+label，所以 v2 review 只有在 source/target 都属于 relation endpoint universe 时才计入
+precision，其他候选单列为 `unscored`。Gate 还要求最小 `scorable_fraction`，曲线同时报告
+95% Wilson 下界。
 
-Gate 只从 fit partition 冻结。预先声明 precision 至少 `0.95`、Wilson 下界至少 `0.90`、
-eligible transition 至少 50 条，再最大化覆盖量，得到
-`native support >= 1 && confidence >= 0.85`：fit 为 `161/168 = 0.95833333`，Wilson
-下界 `0.91650244`；calibration 为 `43/44 = 0.97727273`。Artifact 保留 source report 和
-corpus SHA-256，且始终声明 `runtime_reorder: false`：
+同一 32 页 fit/calibration 上，legacy v1 gate 的 endpoint-aware 冻结点为
+`native support >= 1 && confidence >= 0.5`：fit `230/237 = 0.97046414`，Wilson
+`0.94029969`，另有 26 条 unscored；calibration `46/48 = 0.95833333`，Wilson
+`0.86024344`，但 scorable fraction 只有 `0.76190476`。它只用于重算已经打开的历史 test
+window，不能授权 runtime：
 
 ```bash
 scriptorium freeze-provider-transition-gate \
@@ -944,18 +948,33 @@ scriptorium benchmark-provider-anchor-suite \
   --transition-gate outputs/pp-doclayoutv3-transition-gate.json
 ```
 
-未筛选 test direct transition 为 `269/384 = 0.70052083`；冻结 gate 保留 219 条并达到
-`209/219 = 0.95433790`，Wilson 下界 `0.91800058`。这说明 native support 与 detector
-confidence 确实能过滤大量错误 block transition，但仍不能晋升 runtime：
+未筛选 test raw direct transition 为 `269/384 = 0.70052083`。旧报告的
+`209/219 = 0.95433790` 把未标注边当作错误，已撤回为当前指标。相同候选与相同已打开
+test window 的 endpoint-aware 结果如下：
 
-| 独立 test 分层 | Correct / predicted | Precision | Wilson lower 95% | 冻结标准 |
-|---|---:|---:|---:|---|
-| Aggregate | 209/219 | 0.95433790 | 0.91800058 | 通过 |
-| Graphical-multicolumn | 60/62 | 0.96774194 | 0.88979530 | Wilson 未通过 |
-| Multicolumn | 149/157 | 0.94904459 | 0.90268273 | Precision 未通过 |
+| 独立 test 分层 | Eligible | Scorable / unscored | Correct / scorable | Precision | Wilson lower 95% |
+|---|---:|---:|---:|---:|---:|
+| Aggregate | 284 | 268 / 16 | 256/268 | 0.95522388 | 0.92337855 |
+| Graphical-multicolumn | 91 | 84 / 7 | 81/84 | 0.96428571 | 0.90018306 |
+| Multicolumn | 193 | 184 / 9 | 175/184 | 0.95108696 | 0.90966772 |
 
 FocalOrder 指出的 positional disparity 也纳入 veto-only 事后审计。test 中页首、页中、页末
-分别为 `58/63`、`80/81`、`71/75`；只有中段同时达到较高 point precision 与 Wilson
-下界。该分层是在 test 后观察到的，因此只能否决 promotion，不能反过来调 threshold 或
-授权 runtime。下一轮必须先在 train/fit 冻结 position/layout-aware rejection，再使用未看过的
-官方 test 文档或其他复杂语料验证。
+分别为 `72/78`、`91/92`、`93/98`；Wilson 下界为 `0.84216770`、`0.94097214`、
+`0.88607548`。页首与页末仍失败，因此该 window 继续只能否决 promotion。
+
+随后扩大到 64 个 train-only 页面、32 篇文档（25 fit / 7 calibration document），并冻结
+gate v3：所有 rule 至少要求两个 native candidate 同意，再按 document 做 5-fold OOF。
+
+```bash
+scriptorium freeze-stratified-provider-transition-gate \
+  outputs/pp-doclayoutv3-calibration-64/suite-v7.json \
+  --minimum-native-support 2 --cross-validation-folds 5 \
+  --output outputs/pp-doclayoutv3-transition-gate-v3.json
+```
+
+Fit rule 为 `234/237 = 0.98734177`。OOF aggregate 为 `192/195 = 0.98461538`，Wilson
+`0.95575171`，但 fold 2/3 各为 `30/31`、Wilson `0.83805895`；
+`graphical-multicolumn/middle` 只有 18 条，`multicolumn/start` 只有 `8/9`，Wilson
+`0.56500029`、scorable fraction `0.75`。Calibration 为 `21/21`，但 Wilson
+`0.84536098 < 0.85` 且 `21 < 30`。`support = 3` 又没有 fit bucket 达到 20 条。
+因此 v3 状态是 `document-cross-validation-rejected-review-only`，第四个 test window 未打开。

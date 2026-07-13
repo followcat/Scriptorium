@@ -122,7 +122,8 @@ scriptorium run-paddle-layout path/to/paper.pdf \
 
 扩大到 32 页 train-only 语料后，PP-DocLayoutV3 的序列化 relation F1 为
 `0.88870500`，但其中同一 block 内的 line precision 为 `0.99456226`，真正跨 block 的
-direct transition precision 只有 `0.70343137`。因此总 F1 不再作为模型顺序能力的代表，
+raw direct transition precision 只有 `0.70343137`；按 partial-label endpoint 评分为
+`287/362 = 0.79281768`，另有 46 条 unscored。因此总 F1 不再作为模型顺序能力的代表，
 Provider 仍保持 review-only。完整方法和独立 test 结果见
 [外部基准](docs/external-benchmarks.zh-CN.md#train-only-多栏-provider-校准)。
 
@@ -235,9 +236,15 @@ scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
 
 Suite report 会分开 `serialized_within_anchor`、`serialized_direct_between_anchors`，并输出
 native candidate support / provider confidence 曲线。冻结 gate 必须只读取 `fit` partition；
-独立 test 只加载 gate 文件评分。当前冻结点在 test aggregate 为 `209/219 = 0.95433790`，
-但 graphical-multicolumn 的 Wilson 下界和 multicolumn 的 point precision 未同时过线，
-所以分层审计明确拒绝 runtime promotion。
+独立 test 只加载 gate 文件评分。Comp-HRDoc relation 是 partial label：当前报告将候选分为
+`eligible`、`scorable` 与 `unscored`，precision 只对 label endpoint universe 内的边计分。
+旧 `209/219` 是 partial-label-unaware 历史值；同一已打开 test window 的当前结果为
+`256/268 = 0.95522388`，另有 16 条未评分边。页首与页末 Wilson 下界仍未过线。
+
+64 页 train-only suite 的 gate v3 预先要求至少两个 answer-free candidate 同意，并按 document
+做 5-fold out-of-fold 选择。Aggregate OOF 为 `192/195 = 0.98461538`，但两个 fold 与两个
+layout×position bucket 未通过；独立 calibration 也只有 `21/21`，Wilson `0.84536098` 且
+低于 30 条下限。因此继续 `reject-runtime-promotion`，没有打开新的 test window。
 
 Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/table 则使用
 全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出

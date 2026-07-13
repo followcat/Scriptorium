@@ -1163,7 +1163,7 @@ the corpus/sample/input SHA-256 provenance. Existing outputs are skipped only
 when their corpus manifest hash matches; `--refresh` is explicit, and a stale
 output from another corpus fails instead of being silently reused.
 
-Provider benchmark schema v4 separates serialized edges into
+Provider benchmark schema v5 separates serialized edges into
 `within_anchor`, `between_anchors`, and `direct_between_anchors`. A Provider
 paragraph may own many oracle lines, so within-anchor edges are geometry-local
 segmentation evidence, not evidence that the model ordered two blocks. Provider
@@ -1175,14 +1175,29 @@ box-flow, and relation-graph. It emits the full support/confidence curve with a
 point only; a label-invariance test verifies that changing `ro_linkings` cannot
 change eligible edges.
 
-`freeze_provider_transition_gate()` reads one named fit partition and writes a
-content-addressed review-only artifact. The default policy requires at least 50
-eligible edges, precision `>= 0.95`, and Wilson lower bound `>= 0.90`, then
-maximizes retained transitions. `benchmark_provider_anchor_suite()` can load
-that artifact on another corpus with `--transition-gate`; it validates the gate
-schema, native candidate set, source/evaluation corpus hashes, and exact frozen
-curve point. No test-time threshold search occurs and the artifact cannot set
-`runtime_reorder` true.
+Comp-HRDoc `ro_linkings` are partial labels. Transition review v2 therefore
+separates threshold-selected edges into `eligible`, `scorable`, and `unscored`.
+Precision includes an edge only when both endpoints occur in the relation
+endpoint universe; an unlabelled edge is no longer assumed false. Gates also
+require a minimum `scorable_fraction`, preventing apparently high precision from
+hiding mostly unscored output. Suite v7 aggregates the same counters by case,
+partition, layout, and position.
+
+`freeze_stratified_provider_transition_gate()` now writes gate v3. Its default
+predeclares `minimum_native_support = 2`, so single-candidate edges abstain.
+Layout-by-position-by-confidence rules are selected on fit labels only. A
+SHA-256 document ordering then creates five out-of-fold splits: each validation
+fold is scored only with rules selected from the other documents. Aggregate,
+every fold, and every active bucket must separately satisfy precision, Wilson,
+minimum scorable count, and `scorable_fraction`. Calibration cannot modify any
+rule; it can only accept or reject. `cross_validation_folds = 0` exists only for
+legacy diagnostics.
+
+The artifact pins the source report and corpus SHA-256 values, candidate set,
+document folds, criteria, and criterion results, and always keeps
+`runtime_reorder: false`. `benchmark_provider_anchor_suite()` can load the gate
+on another corpus only after both document CV and calibration pass; no test-time
+threshold search occurs.
 
 `fetch_comphrdoc_provider_test_corpus()` applies a separate deterministic
 document/page hash namespace to official test annotations. Calibration and test
@@ -1191,12 +1206,17 @@ split, selection fields, source revision, and answer boundary explicit. Both
 fetchers accept `--annotation-archive`; the local 130 MB archive still has to
 match `530f482b75523a80fe1b0a7480fd8273c44f9239e0189650a4841c0aae61d03d`.
 
-Suite schema v5 adds partition and layout-stratum summaries plus a veto-only
-position audit. The latter divides direct transitions into start/middle/end
-bands before reporting precision and Wilson bounds, following FocalOrder's
-observation that transition difficulty is position-dependent
-(https://aclanthology.org/2026.acl-long.868.pdf). This post-hoc audit can reject
-promotion but cannot authorize it. On the independent 32-page test, aggregate
-gate precision passes, while both layout strata fail one frozen criterion;
-runtime promotion is explicitly rejected. A future bucketed policy must be
-frozen on train/fit and evaluated on previously unopened documents.
+On the same already opened 32-page test window, the partial-label-aware v1 audit
+is `256/268`, with 16 `unscored` transitions. The old `209/219` value was
+partial-label-unaware and is withdrawn as a current metric. Start is `72/78`
+with Wilson `0.84216770`, middle is `91/92` with Wilson `0.94097214`, and end is
+`93/98` with Wilson `0.88607548`, so the audit can only reject promotion.
+
+On the enlarged 64-page train-only suite, gate v3 reaches `192/195` across 25
+fit-document OOF predictions, but folds 2 and 3 each have Wilson `0.83805895`.
+The `graphical-multicolumn/middle` bucket has only 18 scorable predictions;
+`multicolumn/start` is only `8/9` with `0.75` scorable fraction. Seven
+calibration documents retain only `21/21`, with Wilson `0.84536098` and fewer
+than 30 predictions. Unanimous support 3 leaves no fit bucket with 20 examples.
+The gate is therefore `document-cross-validation-rejected-review-only`, and no
+new test window was opened.

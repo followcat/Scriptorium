@@ -968,32 +968,35 @@ scriptorium benchmark-provider-anchor-suite \
   --output outputs/pp-doclayoutv3-calibration-32/suite.json
 ```
 
-Suite schema v5 separates three granularities. `within-anchor` is an oracle-line
+Suite schema v7 separates three granularities. `within-anchor` is an oracle-line
 edge ordered geometrically inside one model block; `direct inter-anchor` is the
-actual transition between adjacent model blocks. The aggregate F1 is dominated
-by the former:
+actual transition between adjacent model blocks. The old relation summary treats
+every prediction as scorable and is therefore only a raw exact-match view:
 
 | Metric | 24 fit pages | 8 calibration pages | 32 overall pages |
 |---|---:|---:|---:|
 | Serialized aggregate F1 | 0.90329611 | 0.84264832 | 0.88870500 |
 | Within-anchor precision | 1389/1396 = 0.99498567 | 440/443 = 0.99322799 | 1829/1839 = 0.99456226 |
-| Direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+| Raw direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+| Partial-label-aware direct precision | 237/278 = 0.85251799 | 50/84 = 0.59523810 | 287/362 = 0.79281768 |
+| Unscored direct transitions | 28 | 18 | 46 |
 
 Each direct transition now records the minimum detection confidence of its two
 Provider endpoints and how many answer-free native candidates (`visual-yx`,
 `box-flow`, and `relation-graph`) emit the same direct successor. Eligibility is
 computed from those fields before the scorer opens the semantic sidecar;
 changing relation labels cannot change eligible edges. The curve also reports a
-95% Wilson precision lower bound, preventing sparse perfect-score points from
-winning threshold selection.
+95% Wilson precision lower bound. Comp-HRDoc `ro_linkings` are partial labels,
+so review v2 scores an edge only when both endpoints occur in the relation
+endpoint universe; other selected edges are `unscored`. Gates also require a
+minimum `scorable_fraction`.
 
-The gate is frozen only from the fit partition. Predeclared constraints require
-precision at least `0.95`, Wilson lower bound at least `0.90`, and at least 50
-eligible transitions, then maximize coverage. This selects
-`native support >= 1 && confidence >= 0.85`: fit is
-`161/168 = 0.95833333` with Wilson lower bound `0.91650244`; calibration is
-`43/44 = 0.97727273`. The artifact pins source report and corpus SHA-256 values
-and always declares `runtime_reorder: false`:
+On the same 32-page fit/calibration suite, the endpoint-aware legacy v1 gate is
+`native support >= 1 && confidence >= 0.5`: fit is
+`230/237 = 0.97046414`, Wilson `0.94029969`, with 26 unscored transitions;
+calibration is `46/48 = 0.95833333`, Wilson `0.86024344`, but scorable fraction
+is only `0.76190476`. This gate is retained only to rescore the already opened
+historical test window and cannot authorize runtime behavior:
 
 ```bash
 scriptorium freeze-provider-transition-gate \
@@ -1023,21 +1026,38 @@ scriptorium benchmark-provider-anchor-suite \
   --transition-gate outputs/pp-doclayoutv3-transition-gate.json
 ```
 
-Unfiltered direct test transitions are `269/384 = 0.70052083`. The frozen gate
-keeps 219 and reaches `209/219 = 0.95433790`, with Wilson lower bound
-`0.91800058`. Native support plus detector confidence removes many bad block
-transitions, but the evidence still cannot promote runtime ordering:
+Unfiltered raw direct test transitions are `269/384 = 0.70052083`. The old
+`209/219 = 0.95433790` report treated unlabelled edges as errors and is withdrawn
+as a current metric. With identical candidates on the same already opened test
+window, endpoint-aware results are:
 
-| Independent test stratum | Correct / predicted | Precision | Wilson lower 95% | Frozen criterion |
-|---|---:|---:|---:|---|
-| Aggregate | 209/219 | 0.95433790 | 0.91800058 | pass |
-| Graphical multi-column | 60/62 | 0.96774194 | 0.88979530 | Wilson fails |
-| Multi-column | 149/157 | 0.94904459 | 0.90268273 | precision fails |
+| Independent test stratum | Eligible | Scorable / unscored | Correct / scorable | Precision | Wilson lower 95% |
+|---|---:|---:|---:|---:|---:|
+| Aggregate | 284 | 268 / 16 | 256/268 | 0.95522388 | 0.92337855 |
+| Graphical multi-column | 91 | 84 / 7 | 81/84 | 0.96428571 | 0.90018306 |
+| Multi-column | 193 | 184 / 9 | 175/184 | 0.95108696 | 0.90966772 |
 
 FocalOrder's positional-disparity result also motivates a veto-only post-hoc
-audit. Test start, middle, and end bands reach `58/63`, `80/81`, and `71/75`;
-only the middle band has both strong point precision and a strong Wilson bound.
-Because these strata were inspected after test evaluation, they may veto
-promotion but cannot tune a threshold or authorize runtime behavior. The next
-round must freeze a position/layout-aware rejection policy on train/fit before
-opening new official test documents or another complex corpus.
+audit. Test start, middle, and end bands reach `72/78`, `91/92`, and `93/98`,
+with Wilson bounds `0.84216770`, `0.94097214`, and `0.88607548`. Start and end
+still fail, so this window remains veto-only.
+
+The next train-only suite expands to 64 pages and 32 documents: 25 fit documents
+and 7 calibration documents. Gate v3 predeclares at least two native candidate
+votes for every rule and performs five-fold document-grouped OOF selection:
+
+```bash
+scriptorium freeze-stratified-provider-transition-gate \
+  outputs/pp-doclayoutv3-calibration-64/suite-v7.json \
+  --minimum-native-support 2 --cross-validation-folds 5 \
+  --output outputs/pp-doclayoutv3-transition-gate-v3.json
+```
+
+Full-fit rules reach `234/237 = 0.98734177`. Aggregate OOF is
+`192/195 = 0.98461538`, Wilson `0.95575171`, but folds 2 and 3 are each `30/31`
+with Wilson `0.83805895`. `graphical-multicolumn/middle` has only 18 scorable
+predictions; `multicolumn/start` is only `8/9`, Wilson `0.56500029`, with `0.75`
+scorable fraction. Calibration is `21/21`, but Wilson `0.84536098 < 0.85` and
+`21 < 30`. Requiring unanimous support 3 leaves no fit bucket with 20 examples.
+Gate v3 is therefore `document-cross-validation-rejected-review-only`; the
+fourth test window was not opened.

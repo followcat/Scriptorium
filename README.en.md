@@ -123,9 +123,10 @@ scriptorium run-paddle-layout path/to/paper.pdf \
 
 On the expanded 32-page train-only corpus, PP-DocLayoutV3 reaches `0.88870500`
 serialized relation F1. That aggregate hides `0.99456226` within-block line
-precision and only `0.70343137` direct inter-block transition precision, so
-aggregate F1 is no longer treated as evidence of model ordering quality. The
-provider remains review-only. See the
+precision and only `0.70343137` raw direct inter-block precision. Endpoint-aware
+partial-label scoring is `287/362 = 0.79281768`, with 46 unscored transitions.
+Aggregate F1 is therefore not treated as model-ordering evidence. The provider
+remains review-only. See the
 [external benchmark](docs/external-benchmarks.md#train-only-multi-column-provider-calibration)
 for the method and independent test results.
 
@@ -251,10 +252,19 @@ scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
 The suite separates `serialized_within_anchor` from
 `serialized_direct_between_anchors` and reports native-candidate-support versus
 provider-confidence curves. A gate may be frozen only from the `fit` partition;
-an independent test run only evaluates the saved gate. The current frozen point
-reaches `209/219 = 0.95433790` aggregate test precision, but its graphical
-multi-column Wilson bound and ordinary multi-column point precision do not both
-pass. Stratified validation therefore rejects runtime promotion.
+an independent test run only evaluates the saved gate. Comp-HRDoc relations are
+partial labels, so current reports separate `eligible`, `scorable`, and
+`unscored` transitions and score precision only inside the labelled endpoint
+universe. The old `209/219` result was partial-label-unaware. On the same already
+opened test window, the corrected result is `256/268 = 0.95522388`, with 16
+unscored transitions; start and end Wilson bounds still fail.
+
+Gate v3 requires at least two answer-free candidate votes and performs
+document-grouped five-fold rule selection on the 64-page train-only suite.
+Aggregate OOF precision is `192/195 = 0.98461538`, but two folds and two
+layout-by-position buckets fail. Calibration retains only `21/21`, with Wilson
+`0.84536098` and fewer than the required 30 scorable transitions. Runtime
+promotion remains rejected and no new test window was opened.
 
 Provider paragraphs still accept many oracle lines per block; figure/table
 anchors use global one-to-one assignment. Reports preserve raw official-relation
