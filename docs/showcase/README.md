@@ -5,9 +5,10 @@
   <img alt="English" src="https://img.shields.io/badge/English-Current-2f855a">
 </p>
 
-This gallery renders directly on GitHub, including for a private repository where
-GitHub Pages is unavailable. The left side is a tracked source page; the right
-side is a fresh Chromium screenshot of the generated HTML in this repository.
+Open the [interactive gallery](https://followcat.github.io/Scriptorium/) to
+inspect the generated HTML as a live DOM. This page is the GitHub-native
+fallback: the left side is a tracked source page, and the right side is a fresh
+Chromium screenshot of the generated HTML in this repository.
 
 The standalone interactive bundle remains at [`index.html`](index.html). A
 workflow run also publishes the complete `scriptorium-showcase` artifact and
@@ -63,6 +64,7 @@ four local reading streams for editing and translation experiments.
   </tr>
 </table>
 
-The HTML links above point to the versioned generated files. GitHub displays
-their source; download the workflow artifact or open `docs/showcase/index.html`
-from a checkout to use the live editable DOM without Pages.
+The HTML links above point to the versioned generated files, so GitHub displays
+their source. Use the [interactive gallery](https://followcat.github.io/Scriptorium/),
+download the workflow artifact, or open `docs/showcase/index.html` from a
+checkout to work with the live editable DOM.
