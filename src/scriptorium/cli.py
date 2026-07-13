@@ -17,6 +17,10 @@ from .benchmark import (
     run_benchmark,
     run_structure_ab_benchmark,
 )
+from .chunkr_benchmark import (
+    benchmark_chunkr_reading_order,
+    fetch_chunkr_reading_order_annotations,
+)
 from .comphrdoc_benchmark import (
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
@@ -117,6 +121,76 @@ def fetch_roor_command(
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("fetch-chunkr-reading-order")
+def fetch_chunkr_reading_order_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/chunkr-reading-order"),
+        help="Directory for the pinned Chunkr COCO reading-order annotations.",
+    ),
+    annotation_file: Optional[Path] = typer.Option(
+        None,
+        "--annotation-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional local annotation file; the pinned SHA-256 is still verified.",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        help="Redownload and rewrite the pinned annotation file.",
+    ),
+) -> None:
+    """Fetch the development-only Chunkr reading-order annotation corpus."""
+
+    try:
+        result = fetch_chunkr_reading_order_annotations(
+            out_dir,
+            annotation_file=annotation_file,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--annotation-file") from exc
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    typer.echo(f"Chunkr pages: {manifest['image_count']}")
+    typer.echo(f"Chunkr elements: {manifest['annotation_count']}")
+    typer.echo(f"Annotations: {result.annotations_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
+@app.command("benchmark-chunkr-reading-order")
+def benchmark_chunkr_reading_order_command(
+    annotations: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Score answer-free geometry candidates on Chunkr reading-order labels."""
+
+    try:
+        result = benchmark_chunkr_reading_order(annotations, output=output)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="annotations") from exc
+    report = result.report
+    for candidate in report["order_candidates"]:
+        metrics = report["order_candidates"][candidate]["all"]
+        typer.echo(
+            f"{candidate}: exact {metrics['exact_match_count']}/"
+            f"{metrics['page_count']} = {metrics['exact_match']}; "
+            f"pairwise {metrics['pairwise_accuracy']}"
+        )
+    stable = report["support_curves"]["stable"]["thresholds"]["2"]["all"]
+    all_channels = report["support_curves"]["all"]["thresholds"]["2"]["all"]
+    typer.echo(
+        "Support >= 2 precision/recall (stable/all): "
+        f"{stable['precision']}/{stable['recall']} vs "
+        f"{all_channels['precision']}/{all_channels['recall']}"
+    )
+    typer.echo(f"Report: {result.report_path}")
 
 
 @app.command("fetch-comphrdoc")
