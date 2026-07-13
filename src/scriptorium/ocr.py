@@ -1211,6 +1211,9 @@ class PaddleOcrAdapter:
                     "custom" if self.pipeline_factory is not None else "installed-package"
                 ),
                 "pipeline_options": _provenance_options(self.options),
+                "adapter_options": _provenance_options(
+                    self._adapter_provenance_options()
+                ),
                 "predict_options": _provenance_options(self.predict_options),
                 "package_versions": _provider_package_versions(),
                 "inputs": [
@@ -1225,6 +1228,9 @@ class PaddleOcrAdapter:
             },
             "raw_results": raw_results,
         }
+
+    def _adapter_provenance_options(self) -> Mapping[str, Any]:
+        return {}
 
     def _create_pipeline(self) -> Any:
         options = {"pipeline_version": "v1.6", **self.options}
@@ -1379,6 +1385,20 @@ class PpStructureAdapter(PaddleOcrAdapter):
                 "PaddleOCR is not installed. Install requirements-ocr.txt or use --structure-json replay."
             ) from exc
         return PPStructureV3(**options)
+
+    def _adapter_provenance_options(self) -> Mapping[str, Any]:
+        environment = {}
+        if self.cpu_compatibility_mode:
+            environment = {
+                "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT": os.environ.get(
+                    "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"
+                ),
+                "FLAGS_enable_pir_api": os.environ.get("FLAGS_enable_pir_api"),
+            }
+        return {
+            "cpu_compatibility_mode": self.cpu_compatibility_mode,
+            "cpu_compatibility_environment": environment,
+        }
 
 
 class SuryaLayoutAdapter:

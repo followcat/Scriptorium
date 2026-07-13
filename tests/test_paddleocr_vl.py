@@ -205,6 +205,13 @@ def test_pp_structure_adapter_preserves_source_page_index_and_cpu_compatibility(
     assert captured["predict_options"] == {}
     assert payload["source"] == "pp-structurev3"
     assert payload["model"] == "PP-StructureV3"
+    assert payload["provenance"]["adapter_options"] == {
+        "cpu_compatibility_mode": True,
+        "cpu_compatibility_environment": {
+            "FLAGS_enable_pir_api": "0",
+            "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT": "0",
+        },
+    }
     result = payload["raw_results"][0]
     assert result["page_index"] == 135
     assert result["input_path"] == str(page_image)
@@ -426,6 +433,9 @@ def test_pp_structure_command_writes_replayable_structure_json(tmp_path: Path, m
         "use_table_recognition": True,
         "use_formula_recognition": False,
         "use_region_detection": False,
+        "use_doc_orientation_classify": False,
+        "use_doc_unwarping": False,
+        "use_textline_orientation": False,
         "device": "cpu",
     }
     assert calls["page_indices"] == [0]

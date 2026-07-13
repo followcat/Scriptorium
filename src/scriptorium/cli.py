@@ -847,6 +847,21 @@ def run_pp_structure_command(
         "--region-detection/--no-region-detection",
         help="Enable PP-Structure document-region detection.",
     ),
+    document_orientation: bool = typer.Option(
+        False,
+        "--document-orientation/--no-document-orientation",
+        help="Classify and correct whole-page rotation before PP-Structure inference.",
+    ),
+    document_unwarping: bool = typer.Option(
+        False,
+        "--document-unwarping/--no-document-unwarping",
+        help="Rectify photographed or curved pages before PP-Structure inference.",
+    ),
+    textline_orientation: bool = typer.Option(
+        False,
+        "--textline-orientation/--no-textline-orientation",
+        help="Classify text-line direction; unnecessary for upright rendered PDF pages.",
+    ),
     cpu_compatibility_mode: bool = typer.Option(
         True,
         "--cpu-compatibility-mode/--no-cpu-compatibility-mode",
@@ -872,6 +887,9 @@ def run_pp_structure_command(
         "use_table_recognition": table_recognition,
         "use_formula_recognition": formula_recognition,
         "use_region_detection": region_detection,
+        "use_doc_orientation_classify": document_orientation,
+        "use_doc_unwarping": document_unwarping,
+        "use_textline_orientation": textline_orientation,
     }
     if device:
         options["device"] = device
