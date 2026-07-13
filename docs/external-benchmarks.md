@@ -713,3 +713,24 @@ corpus. The constrained F1 gain is real diagnostic evidence that body and float
 relations can share one graph, but it is not a runtime promotion: official
 calibration still lacks a valid strict gate, and the corpus has oracle layout
 anchors rather than OCR detection errors.
+
+### Deterministic Layout/OCR Noise Sensitivity
+
+The fixed 250 pages were replayed under the predefined synthetic profiles. Mild
+retains 11,267/11,369 elements and 10,276/10,465 resolvable labels; stress
+retains 11,028/11,369 elements and 9,829/10,465 labels.
+
+| Profile and mode | Raw F1 | Joint path-cover F1 | Joint precision | Joint recall | Protected float |
+|---|---:|---:|---:|---:|---:|
+| Mild native | 0.81361888 | 0.84100588 | 0.89577708 | 0.79254658 | 0 |
+| Mild trained floating | 0.82951773 | 0.85760048 | 0.90046248 | 0.81863354 | 65 |
+| Stress native | 0.59203145 | 0.59914677 | 0.71294831 | 0.51667463 | 0 |
+| Stress trained floating | 0.60318967 | 0.61358904 | 0.71920360 | 0.53502150 | 39 |
+
+The zero-OOD protected subsets remain 65/65 under mild noise and 39/39 under
+stress. Trained floating evidence therefore retains a positive joint-order
+delta under both controlled profiles. Absolute stress performance collapses,
+with 2,698 fragmented elements and 341 dropped elements, showing that layout
+detection quality remains a first-order dependency. These synthetic results do
+not establish real OCR robustness; provider output must be matched to the
+oracle anchors next.

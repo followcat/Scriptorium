@@ -682,3 +682,22 @@ Trained 模式会优先保护并保留全部 72 条 high-precision zero-OOD floa
 body 与 float relation 可以共享一张图的真实诊断证据，但不是 runtime promotion：
 官方 calibration 仍没有有效 strict gate，且 corpus 使用 oracle layout anchor，未包含 OCR
 detection error。
+
+### 确定性 Layout/OCR Noise Sensitivity
+
+固定 250 页在预定义合成 profile 下重放。Mild 保留 11,267/11,369 个元素和
+10,276/10,465 条可解析 label；stress 保留 11,028/11,369 个元素和
+9,829/10,465 条 label。
+
+| Profile 与模式 | Raw F1 | Joint path-cover F1 | Joint precision | Joint recall | Protected float |
+|---|---:|---:|---:|---:|---:|
+| Mild native | 0.81361888 | 0.84100588 | 0.89577708 | 0.79254658 | 0 |
+| Mild trained floating | 0.82951773 | 0.85760048 | 0.90046248 | 0.81863354 | 65 |
+| Stress native | 0.59203145 | 0.59914677 | 0.71294831 | 0.51667463 | 0 |
+| Stress trained floating | 0.60318967 | 0.61358904 | 0.71920360 | 0.53502150 | 39 |
+
+Zero-OOD protected 子集在 mild 下仍为 65/65，在 stress 下为 39/39。因此 trained
+floating evidence 在两个受控 profile 下都保持正向联合顺序 delta。Stress 绝对表现
+明显下降，包含 2,698 个 fragmented element 和 341 个 dropped element，说明 layout
+detection 质量仍是一阶依赖。这些合成结果不能证明真实 OCR 鲁棒性；下一步需将
+provider 输出与 oracle anchor 匹配。

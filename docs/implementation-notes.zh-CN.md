@@ -511,6 +511,13 @@ zero-OOD floating 子集会作为 protected 诊断证据先插入。Selector 会
 selected/protected edge、outgoing/incoming conflict、self-loop 和 cycle rejection。
 它是基于稳定 hashable id 的通用 path-cover primitive，但 corpus 中仍只用于 benchmark。
 
+Corpus scorer 支持确定性 `clean`、`mild` 和 `stress` source perturbation。Mild 使用
+0.5% 页面相对 bbox jitter、10% 文本 block fragmentation、3% 图形类型 dropout、1% 元素
+dropout 和 5% caption prefix corruption；Stress 分别使用 1.5%、25%、10%、3% 和 15%。
+选择由 profile、page uid、element/block id 和 action 的 SHA-256 决定，同一 corpus 每次
+获得相同噪声。报告会把保留元素、可解析 label 与 relation accuracy 分开。
+这些是受控 sensitivity test，不是真实 OCR error distribution。
+
 Sparse graph segmentation 将文本行与区域建模为双向几何关系，再做 cluster-and-sort；
 这是 train-only floating-pair gate 的候选架构：https://arxiv.org/abs/2305.02577
 

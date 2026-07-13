@@ -207,6 +207,8 @@ fit-only feature-envelope diagnostics. These remain evidence, not automatic
 runtime constraints.
 The corpus report also scores a diagnostic joint path cover over body and
 floating edges, including degree conflicts and cycle rejections.
+Use `--noise-profile mild` or `stress` for deterministic synthetic robustness
+checks; these profiles do not replace benchmarks from real OCR providers.
 
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,

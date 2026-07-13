@@ -918,6 +918,15 @@ outgoing and incoming conflicts, self-loops, and cycle rejections. This is a
 generic path-cover primitive over stable hashable ids, but corpus use remains
 benchmark-only.
 
+The corpus scorer supports deterministic `clean`, `mild`, and `stress` source
+perturbations. Mild uses 0.5% page-relative bbox jitter, 10% text-block
+fragmentation, 3% graphical-type dropout, 1% element dropout, and 5% caption
+prefix corruption. Stress uses 1.5%, 25%, 10%, 3%, and 15%, respectively.
+Selection is SHA-256 keyed by profile, page uid, element/block id, and action;
+the same corpus always receives identical noise. Reports separate retained
+elements and resolvable labels from relation accuracy. These are controlled
+sensitivity tests, not measured OCR error distributions.
+
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture
 for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577

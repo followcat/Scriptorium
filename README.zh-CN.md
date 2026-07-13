@@ -199,6 +199,8 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
 feature-envelope 诊断。它们仍是证据，不是自动 runtime constraint。
 Corpus report 还会评分 body/floating edge 联合的诊断 path cover，包含 degree conflict
 和 cycle rejection。
+可使用 `--noise-profile mild` 或 `stress` 运行确定性合成鲁棒性检查；这些
+profile 不能取代真实 OCR provider benchmark。
 
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
