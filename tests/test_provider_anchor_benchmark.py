@@ -6,6 +6,7 @@ import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
     ProviderAnchor,
     _evaluate_provider_transition_gate,
+    _provider_transition_position_audit,
     _serialized_provider_edge_groups,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
@@ -277,6 +278,43 @@ def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
     assert evaluation["meets_frozen_acceptance_criteria"] is True
     assert evaluation["metrics"]["predicted"] == 75
 
+    position_audit = _provider_transition_position_audit(
+        [
+            {
+                "provider_transition_review": {
+                    "transitions": [
+                        {
+                            "transition_index": 0,
+                            "page_transition_count": 3,
+                            "native_support_count": 1,
+                            "minimum_provider_confidence": 0.85,
+                            "correct": False,
+                        },
+                        {
+                            "transition_index": 1,
+                            "page_transition_count": 3,
+                            "native_support_count": 2,
+                            "minimum_provider_confidence": 0.9,
+                            "correct": True,
+                        },
+                        {
+                            "transition_index": 2,
+                            "page_transition_count": 3,
+                            "native_support_count": 0,
+                            "minimum_provider_confidence": 0.99,
+                            "correct": True,
+                        },
+                    ]
+                }
+            }
+        ],
+        frozen.gate,
+    )
+    assert position_audit["start"]["predicted"] == 1
+    assert position_audit["start"]["correct"] == 0
+    assert position_audit["middle"]["precision"] == 1.0
+    assert position_audit["end"]["predicted"] == 0
+
 
 def test_paddle_vl_raw_results_are_supported() -> None:
     payload = {
@@ -355,6 +393,9 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     assert result.report["partitions"]["calibration"]["layout_strata"] == {
         "multicolumn": 1
     }
+    assert result.report["layout_strata"]["multicolumn"]["sample_ids"] == [
+        "sample_0"
+    ]
     assert result.report["partitions"]["calibration"]["relations"]["combined"] == (
         result.report["relations"]["combined"]
     )

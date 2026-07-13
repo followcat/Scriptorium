@@ -436,7 +436,17 @@ def benchmark_provider_anchor_suite(
         )
         for partition in sorted({str(case["partition"]) for case in cases})
     }
+    layout_strata = {
+        layout_stratum: _provider_case_subset_summary(
+            [case for case in cases if case["layout_stratum"] == layout_stratum],
+            relation_keys=relation_keys,
+        )
+        for layout_stratum in sorted(
+            {str(case["layout_stratum"]) for case in cases}
+        )
+    }
     transition_gate_evaluation = None
+    gate: Mapping[str, Any] | None = None
     if transition_gate_path is not None:
         gate_path = Path(transition_gate_path)
         gate_bytes = gate_path.read_bytes()
@@ -459,8 +469,34 @@ def benchmark_provider_anchor_suite(
             gate.get("source_corpus_manifest_sha256")
             != hashlib.sha256(manifest_bytes).hexdigest()
         )
+        for subset in (*partitions.values(), *layout_strata.values()):
+            subset["provider_transition_gate_evaluation"] = (
+                _evaluate_provider_transition_gate(
+                    subset["provider_transition_review"],
+                    gate,
+                )
+            )
+        layout_stratum_evaluations = {
+            name: subset["provider_transition_gate_evaluation"]
+            for name, subset in layout_strata.items()
+        }
+        failed_layout_strata = [
+            name
+            for name, evaluation in layout_stratum_evaluations.items()
+            if not evaluation["meets_frozen_acceptance_criteria"]
+        ]
+        transition_gate_evaluation["post_hoc_safety_audit"] = {
+            "policy": "veto-only-post-hoc-stratification-cannot-authorize-runtime-promotion",
+            "layout_strata": layout_stratum_evaluations,
+            "failed_layout_strata": failed_layout_strata,
+            "all_layout_strata_meet_frozen_aggregate_criteria": (
+                not failed_layout_strata
+            ),
+            "position_bands": _provider_transition_position_audit(cases, gate),
+            "runtime_promotion_decision": "reject-runtime-promotion",
+        }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v4",
+        "schema": "scriptorium-provider-anchor-suite/v5",
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "corpus": {
@@ -502,6 +538,7 @@ def benchmark_provider_anchor_suite(
         "relations": relation_summary,
         "graphical_relation_audit": graphical_audit_summary,
         "partitions": partitions,
+        "layout_strata": layout_strata,
         "cases": cases,
     }
     report_path = Path(output) if output is not None else providers / "provider_anchor_suite_report.json"
@@ -656,6 +693,61 @@ def _evaluate_provider_transition_gate(
         "criterion_results": checks,
         "meets_frozen_acceptance_criteria": all(checks.values()),
         "metrics": dict(point),
+    }
+
+
+def _provider_transition_position_audit(
+    cases: Sequence[Mapping[str, Any]],
+    gate: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    minimum_support = int(gate["minimum_native_support"])
+    minimum_confidence = float(gate["minimum_provider_confidence"])
+    counts: dict[str, list[int]] = {
+        "start": [0, 0],
+        "middle": [0, 0],
+        "end": [0, 0],
+        "single": [0, 0],
+    }
+    for case in cases:
+        review = case.get("provider_transition_review")
+        if not isinstance(review, Mapping):
+            continue
+        for transition in review.get("transitions", []):
+            if not isinstance(transition, Mapping):
+                continue
+            confidence = transition.get("minimum_provider_confidence")
+            if (
+                int(transition.get("native_support_count", 0)) < minimum_support
+                or confidence is None
+                or float(confidence) < minimum_confidence
+            ):
+                continue
+            transition_count = int(transition.get("page_transition_count", 0))
+            transition_index = int(transition.get("transition_index", 0))
+            if transition_count <= 1:
+                band = "single"
+            else:
+                relative_position = transition_index / (transition_count - 1)
+                band = (
+                    "start"
+                    if relative_position < 1 / 3
+                    else "middle"
+                    if relative_position < 2 / 3
+                    else "end"
+                )
+            counts[band][0] += int(bool(transition.get("correct")))
+            counts[band][1] += 1
+    return {
+        band: {
+            "correct": correct,
+            "predicted": predicted,
+            "precision": _ratio(correct, predicted),
+            "precision_wilson_lower_95": _wilson_lower_bound(
+                correct,
+                predicted,
+            ),
+        }
+        for band, (correct, predicted) in counts.items()
     }
 
 
