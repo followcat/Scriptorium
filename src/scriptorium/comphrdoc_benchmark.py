@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -27,7 +29,13 @@ COMPHRDOC_ARCHIVE_URL = (
 COMPHRDOC_ANNOTATION_MEMBER = (
     "datasets/Comp-HRDoc/HRDH_MSRA_POD_TEST/unified_layout_analysis_test.json"
 )
+COMPHRDOC_TRAIN_ANNOTATION_MEMBER = (
+    "datasets/Comp-HRDoc/HRDH_MSRA_POD_TRAIN/unified_layout_analysis_train.json"
+)
 COMPHRDOC_FETCH_SCHEMA = "scriptorium-comphrdoc-benchmark/v1"
+COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA = (
+    "scriptorium-comphrdoc-provider-calibration/v1"
+)
 DEFAULT_COMPHRDOC_DOCUMENT_ID = "1401.3699"
 
 
@@ -45,6 +53,14 @@ class CompHrDocBenchmarkFetchResult:
     out_dir: Path
     manifest_path: Path
     source_pdf_path: Path
+    samples: tuple[CompHrDocBenchmarkSample, ...]
+
+
+@dataclass(frozen=True)
+class CompHrDocProviderCalibrationFetchResult:
+    out_dir: Path
+    manifest_path: Path
+    source_pdf_paths: tuple[Path, ...]
     samples: tuple[CompHrDocBenchmarkSample, ...]
 
 
@@ -176,6 +192,459 @@ def fetch_comphrdoc_benchmark_samples(
         encoding="utf-8",
     )
     return CompHrDocBenchmarkFetchResult(target, manifest_path, source_pdf_path, tuple(samples))
+
+
+def fetch_comphrdoc_provider_calibration_corpus(
+    out_dir: str | Path,
+    *,
+    sample_count: int = 8,
+    document_count: int = 4,
+    calibration_fraction: float = 0.2,
+    refresh: bool = False,
+    downloader: CompHrDocDownloader | None = None,
+) -> CompHrDocProviderCalibrationFetchResult:
+    """Rebuild a deterministic real-provider corpus from official train annotations."""
+
+    if sample_count < 2:
+        raise ValueError("Comp-HRDoc provider calibration sample_count must be at least 2")
+    if document_count < 2 or document_count > sample_count:
+        raise ValueError("document_count must be between 2 and sample_count")
+    if not 0.05 <= calibration_fraction <= 0.5:
+        raise ValueError("calibration_fraction must be between 0.05 and 0.5")
+    download = downloader or _download_bytes
+    archive_bytes = download(COMPHRDOC_ARCHIVE_URL)
+    archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
+    if archive_sha256 != COMPHRDOC_ARCHIVE_SHA256:
+        raise ValueError("Comp-HRDoc annotation archive SHA-256 mismatch")
+    annotations = _load_annotation_archive(
+        archive_bytes,
+        member=COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
+    )
+    document_pages = _provider_calibration_document_pages(annotations)
+    selected_documents = _select_provider_calibration_documents(
+        document_pages,
+        document_count=document_count,
+        calibration_fraction=calibration_fraction,
+    )
+    page_quotas = _balanced_quotas(sample_count, len(selected_documents))
+
+    target = Path(out_dir)
+    images_dir = target / "images"
+    structure_dir = target / "structure"
+    semantic_dir = target / "semantic"
+    sources_dir = target / "sources"
+    for directory in (images_dir, structure_dir, semantic_dir, sources_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    samples: list[CompHrDocBenchmarkSample] = []
+    manifest_samples: list[dict[str, Any]] = []
+    manifest_documents: list[dict[str, Any]] = []
+    source_pdf_paths: list[Path] = []
+    for document_position, document in enumerate(selected_documents):
+        document_id = document["document_id"]
+        partition = document["partition"]
+        selected_pages = _select_provider_calibration_pages(
+            document["pages"],
+            quota=page_quotas[document_position],
+        )
+        pdf_url = f"https://arxiv.org/pdf/{document_id}"
+        source_pdf_path = sources_dir / f"{document_id}.pdf"
+        if source_pdf_path.exists() and not refresh:
+            pdf_bytes = source_pdf_path.read_bytes()
+        else:
+            pdf_bytes = download(pdf_url)
+            source_pdf_path.write_bytes(pdf_bytes)
+        source_pdf_paths.append(source_pdf_path)
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            if not selected_pages or max(page["page_index"] for page in selected_pages) >= len(pdf):
+                raise ValueError(
+                    f"arXiv PDF {document_id} does not contain all selected annotation pages"
+                )
+            for page_record in selected_pages:
+                image_record = page_record["image"]
+                page_annotations = page_record["annotations"]
+                page_index = page_record["page_index"]
+                sample_id = f"{document_id}_{page_index}"
+                image_path = images_dir / f"{sample_id}.png"
+                structure_path = structure_dir / f"{sample_id}.structure.json"
+                semantic_path = semantic_dir / f"{sample_id}.semantic-order.json"
+                width = int(image_record["width"])
+                height = int(image_record["height"])
+                if refresh or not image_path.exists():
+                    _render_annotated_page(
+                        pdf[page_index],
+                        image_path,
+                        width=width,
+                        height=height,
+                    )
+                structure_payload, semantic_payload = _page_payloads(
+                    document_id,
+                    page_index,
+                    width,
+                    height,
+                    page_annotations,
+                )
+                if refresh or not structure_path.exists():
+                    structure_path.write_text(
+                        json.dumps(structure_payload, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                if refresh or not semantic_path.exists():
+                    semantic_path.write_text(
+                        json.dumps(semantic_payload, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                alignment = _source_text_alignment(pdf[page_index], page_annotations)
+                samples.append(
+                    CompHrDocBenchmarkSample(
+                        sample_id,
+                        page_index,
+                        image_path,
+                        structure_path,
+                        semantic_path,
+                    )
+                )
+                manifest_samples.append(
+                    {
+                        "id": sample_id,
+                        "document_id": document_id,
+                        "page_index": page_index,
+                        "partition": partition,
+                        "layout_stratum": page_record["layout_stratum"],
+                        "layout_features": page_record["layout_features"],
+                        "source_text_alignment": alignment,
+                        "image": str(image_path.relative_to(target)),
+                        "structure": str(structure_path.relative_to(target)),
+                        "semantic_sidecar": str(semantic_path.relative_to(target)),
+                        "relation_count": len(semantic_payload["ro_linkings"]),
+                        "graphical_relation_count": _graphical_relation_count(
+                            semantic_payload
+                        ),
+                    }
+                )
+            manifest_documents.append(
+                {
+                    "id": document_id,
+                    "partition": partition,
+                    "source_pdf": str(source_pdf_path.relative_to(target)),
+                    "source_pdf_url": pdf_url,
+                    "source_pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                    "source_pdf_page_count": len(pdf),
+                    "selected_page_count": len(selected_pages),
+                }
+            )
+
+    manifest_path = target / "comphrdoc_benchmark_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema": COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA,
+                "dataset": "Comp-HRDoc train",
+                "repository": COMPHRDOC_REPOSITORY,
+                "revision": COMPHRDOC_REVISION,
+                "annotation_license": COMPHRDOC_LICENSE,
+                "annotation_archive_sha256": archive_sha256,
+                "annotation_member": COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
+                "annotation_images_present_in_archive": False,
+                "source_pdf_policy": (
+                    "download original arXiv submissions for local reconstruction; "
+                    "paper licenses remain those of their arXiv records"
+                ),
+                "source_pdfs_redistributed_by_project": False,
+                "selection": (
+                    "document-hash-partition-layout-stratified-documents-and-pages-v1"
+                ),
+                "selection_uses_relation_labels": False,
+                "selection_uses_oracle_layout": True,
+                "selection_allowed_annotation_fields": [
+                    "bbox",
+                    "category_id",
+                    "textline_polys",
+                ],
+                "selection_excluded_annotation_fields": [
+                    "reading_order_id",
+                    "reading_order_label",
+                    "ro_linkings",
+                ],
+                "split_policy": "document-id-sha256-fit-calibration-v1",
+                "split_unit": "document",
+                "calibration_fraction": calibration_fraction,
+                "sample_count": len(samples),
+                "requested_sample_count": sample_count,
+                "document_count": len(selected_documents),
+                "inference_inputs_are_answer_free": True,
+                "answer_separation": {
+                    "provider_input": "rendered-image-only",
+                    "oracle_structure_role": "evaluation-anchor-matching-only",
+                    "semantic_sidecar_role": "evaluation-labels-only",
+                    "provider_reads_oracle_structure": False,
+                    "provider_reads_semantic_sidecar": False,
+                },
+                "structure_input": {
+                    "kind": "line-layout-anchor-only",
+                    "relations_removed": True,
+                },
+                "documents": manifest_documents,
+                "samples": manifest_samples,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return CompHrDocProviderCalibrationFetchResult(
+        target,
+        manifest_path,
+        tuple(source_pdf_paths),
+        tuple(samples),
+    )
+
+
+def _provider_calibration_document_pages(
+    payload: Mapping[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    annotations_by_image: dict[int, list[dict[str, Any]]] = {}
+    for annotation in payload.get("annotations", []):
+        if isinstance(annotation, dict):
+            annotations_by_image.setdefault(
+                int(annotation.get("image_id", -1)),
+                [],
+            ).append(annotation)
+    documents: dict[str, list[dict[str, Any]]] = {}
+    for image in payload.get("images", []):
+        if not isinstance(image, dict):
+            continue
+        stem = Path(str(image.get("file_name") or "")).stem
+        try:
+            document_id, raw_page_index = stem.rsplit("_", 1)
+            page_index = int(raw_page_index)
+        except (ValueError, TypeError):
+            continue
+        if re.fullmatch(r"\d{4}\.\d{4,5}", document_id) is None:
+            continue
+        annotations = annotations_by_image.get(int(image.get("id", -1)), [])
+        layout_stratum, layout_features = _provider_page_layout_features(
+            image,
+            annotations,
+        )
+        documents.setdefault(document_id, []).append(
+            {
+                "image": image,
+                "annotations": sorted(
+                    annotations,
+                    key=lambda annotation: (
+                        int(annotation.get("reading_order_id", 0)),
+                        int(annotation.get("in_page_id", 0)),
+                    ),
+                ),
+                "page_index": page_index,
+                "layout_stratum": layout_stratum,
+                "layout_features": layout_features,
+            }
+        )
+    for pages in documents.values():
+        pages.sort(key=lambda page: int(page["page_index"]))
+    return documents
+
+
+def _select_provider_calibration_documents(
+    document_pages: Mapping[str, list[dict[str, Any]]],
+    *,
+    document_count: int,
+    calibration_fraction: float,
+) -> list[dict[str, Any]]:
+    calibration_count = min(
+        document_count - 1,
+        max(1, math.ceil(document_count * calibration_fraction)),
+    )
+    fit_count = document_count - calibration_count
+    by_partition: dict[
+        str,
+        list[tuple[tuple[int, int, int], str, str, list[dict[str, Any]]]],
+    ] = {
+        "fit": [],
+        "calibration": [],
+    }
+    for document_id, pages in document_pages.items():
+        if not pages:
+            continue
+        partition = _provider_calibration_partition(
+            document_id,
+            calibration_fraction=calibration_fraction,
+        )
+        rank = hashlib.sha256(
+            f"scriptorium-provider-calibration-document-v1:{document_id}".encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        strata = {str(page["layout_stratum"]) for page in pages}
+        layout_rank = (
+            int(not any("multicolumn" in stratum for stratum in strata)),
+            int(not any("graphical" in stratum for stratum in strata)),
+            int("graphical-multicolumn" not in strata),
+        )
+        by_partition[partition].append(
+            (layout_rank, rank, document_id, pages)
+        )
+    for candidates in by_partition.values():
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    if len(by_partition["fit"]) < fit_count or len(by_partition["calibration"]) < calibration_count:
+        raise ValueError("Comp-HRDoc train split lacks enough documents for requested partitions")
+    selected: list[dict[str, Any]] = []
+    for partition, count in (("fit", fit_count), ("calibration", calibration_count)):
+        selected.extend(
+            {
+                "document_id": document_id,
+                "partition": partition,
+                "pages": pages,
+            }
+            for _, _, document_id, pages in by_partition[partition][:count]
+        )
+    return selected
+
+
+def _provider_calibration_partition(
+    document_id: str,
+    *,
+    calibration_fraction: float,
+) -> str:
+    boundary = int(calibration_fraction * 10_000)
+    bucket = int.from_bytes(
+        hashlib.sha256(document_id.encode("utf-8")).digest()[:4],
+        "big",
+    ) % 10_000
+    return "calibration" if bucket < boundary else "fit"
+
+
+def _balanced_quotas(total: int, groups: int) -> list[int]:
+    base, remainder = divmod(total, groups)
+    return [base + int(index < remainder) for index in range(groups)]
+
+
+def _select_provider_calibration_pages(
+    pages: list[dict[str, Any]],
+    *,
+    quota: int,
+) -> list[dict[str, Any]]:
+    if len(pages) < quota:
+        raise ValueError("selected Comp-HRDoc document has fewer pages than its quota")
+    stratum_order = (
+        "graphical-multicolumn",
+        "multicolumn",
+        "graphical",
+        "plain",
+    )
+    queues: dict[str, list[dict[str, Any]]] = {name: [] for name in stratum_order}
+    for page in pages:
+        queues[str(page["layout_stratum"])].append(page)
+    for stratum, candidates in queues.items():
+        candidates.sort(
+            key=lambda page: (
+                hashlib.sha256(
+                    (
+                        "scriptorium-provider-calibration-page-v1:"
+                        f"{stratum}:{page['image']['file_name']}"
+                    ).encode("utf-8")
+                ).hexdigest(),
+                int(page["page_index"]),
+            )
+        )
+    selected: list[dict[str, Any]] = []
+    while len(selected) < quota:
+        progress = False
+        for stratum in stratum_order:
+            if queues[stratum] and len(selected) < quota:
+                selected.append(queues[stratum].pop(0))
+                progress = True
+        if not progress:
+            break
+    return selected
+
+
+def _provider_page_layout_features(
+    image: Mapping[str, Any],
+    annotations: list[dict[str, Any]],
+) -> tuple[str, dict[str, int | float | bool]]:
+    width = float(image.get("width") or 0)
+    height = float(image.get("height") or 0)
+    text_boxes: list[list[float]] = []
+    figure_count = 0
+    table_count = 0
+    text_line_count = 0
+    for annotation in annotations:
+        kind = _graphical_kind(annotation)
+        figure_count += int(kind == "figure")
+        table_count += int(kind == "table")
+        polygons = annotation.get("textline_polys")
+        if isinstance(polygons, list):
+            for polygon in polygons:
+                box = _polygon_bbox(polygon)
+                if box is not None:
+                    text_boxes.append(box)
+                    text_line_count += 1
+    narrow = [box for box in text_boxes if width > 0 and box[2] - box[0] <= width * 0.62]
+    left = [box for box in narrow if box[2] <= width * 0.52]
+    right = [box for box in narrow if box[0] >= width * 0.48]
+    vertical_overlap = 0.0
+    if left and right and height > 0:
+        vertical_overlap = max(
+            0.0,
+            min(max(box[3] for box in left), max(box[3] for box in right))
+            - max(min(box[1] for box in left), min(box[1] for box in right)),
+        ) / height
+    multicolumn = len(left) >= 3 and len(right) >= 3 and vertical_overlap >= 0.18
+    graphical_count = figure_count + table_count
+    if graphical_count and multicolumn:
+        stratum = "graphical-multicolumn"
+    elif multicolumn:
+        stratum = "multicolumn"
+    elif graphical_count:
+        stratum = "graphical"
+    else:
+        stratum = "plain"
+    return stratum, {
+        "annotation_count": len(annotations),
+        "text_line_count": text_line_count,
+        "narrow_text_line_count": len(narrow),
+        "left_column_line_count": len(left),
+        "right_column_line_count": len(right),
+        "column_vertical_overlap_ratio": round(vertical_overlap, 8),
+        "multicolumn": multicolumn,
+        "figure_count": figure_count,
+        "table_count": table_count,
+        "graphical_count": graphical_count,
+    }
+
+
+def _source_text_alignment(
+    page: fitz.Page,
+    annotations: list[dict[str, Any]],
+) -> dict[str, int | float]:
+    reference = " ".join(
+        str(content or "")
+        for annotation in annotations
+        for content in (
+            annotation.get("textline_contents")
+            if isinstance(annotation.get("textline_contents"), list)
+            else []
+        )
+    )
+    candidate = page.get_text("text")
+    reference_tokens = Counter(re.findall(r"\w+", reference.casefold()))
+    candidate_tokens = Counter(re.findall(r"\w+", candidate.casefold()))
+    overlap = sum((reference_tokens & candidate_tokens).values())
+    precision = overlap / sum(candidate_tokens.values()) if candidate_tokens else 0.0
+    recall = overlap / sum(reference_tokens.values()) if reference_tokens else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "annotation_token_count": sum(reference_tokens.values()),
+        "source_pdf_token_count": sum(candidate_tokens.values()),
+        "overlap_token_count": overlap,
+        "precision": round(precision, 8),
+        "recall": round(recall, 8),
+        "f1": round(f1, 8),
+    }
 
 
 def fetch_comphrdoc_relation_corpus(
@@ -997,10 +1466,14 @@ def _download_bytes(url: str) -> bytes:
         return response.read()
 
 
-def _load_annotation_archive(payload: bytes) -> dict[str, Any]:
+def _load_annotation_archive(
+    payload: bytes,
+    *,
+    member: str = COMPHRDOC_ANNOTATION_MEMBER,
+) -> dict[str, Any]:
     try:
         with ZipFile(BytesIO(payload)) as archive:
-            raw = json.loads(archive.read(COMPHRDOC_ANNOTATION_MEMBER))
+            raw = json.loads(archive.read(member))
     except (KeyError, OSError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("invalid Comp-HRDoc annotation archive") from exc
     if not isinstance(raw, dict) or not isinstance(raw.get("images"), list) or not isinstance(raw.get("annotations"), list):

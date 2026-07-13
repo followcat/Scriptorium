@@ -13,8 +13,10 @@ import scriptorium.relation_ranker as relation_ranker
 from scriptorium.comphrdoc_benchmark import (
     COMPHRDOC_ANNOTATION_MEMBER,
     COMPHRDOC_ARCHIVE_URL,
+    COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
+    fetch_comphrdoc_provider_calibration_corpus,
     fetch_comphrdoc_relation_corpus,
 )
 
@@ -72,6 +74,114 @@ def test_fetch_comphrdoc_separates_layout_anchors_from_order_labels(
     ]
     with fitz.open(result.source_pdf_path) as pdf:
         assert len(pdf) == 2
+
+
+def test_fetch_provider_calibration_reconstructs_train_without_selection_labels(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    annotation_archive = _provider_calibration_archive()
+    pdf_bytes = _pdf_bytes()
+    monkeypatch.setattr(
+        comphrdoc,
+        "COMPHRDOC_ARCHIVE_SHA256",
+        hashlib.sha256(annotation_archive).hexdigest(),
+    )
+    downloads = {
+        COMPHRDOC_ARCHIVE_URL: annotation_archive,
+        "https://arxiv.org/pdf/2401.01000": pdf_bytes,
+        "https://arxiv.org/pdf/2401.01007": pdf_bytes,
+    }
+
+    first = fetch_comphrdoc_provider_calibration_corpus(
+        tmp_path / "first",
+        sample_count=4,
+        document_count=2,
+        downloader=downloads.__getitem__,
+    )
+    second = fetch_comphrdoc_provider_calibration_corpus(
+        tmp_path / "second",
+        sample_count=4,
+        document_count=2,
+        downloader=downloads.__getitem__,
+    )
+
+    manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+    repeated_manifest = json.loads(second.manifest_path.read_text(encoding="utf-8"))
+    assert manifest == repeated_manifest
+    assert manifest["dataset"] == "Comp-HRDoc train"
+    assert manifest["selection_uses_relation_labels"] is False
+    assert manifest["selection_uses_oracle_layout"] is True
+    assert manifest["selection_excluded_annotation_fields"] == [
+        "reading_order_id",
+        "reading_order_label",
+        "ro_linkings",
+    ]
+    assert manifest["split_unit"] == "document"
+    assert manifest["inference_inputs_are_answer_free"] is True
+    assert manifest["answer_separation"] == {
+        "provider_input": "rendered-image-only",
+        "oracle_structure_role": "evaluation-anchor-matching-only",
+        "semantic_sidecar_role": "evaluation-labels-only",
+        "provider_reads_oracle_structure": False,
+        "provider_reads_semantic_sidecar": False,
+    }
+    assert manifest["annotation_images_present_in_archive"] is False
+    assert {document["partition"] for document in manifest["documents"]} == {
+        "fit",
+        "calibration",
+    }
+    assert {sample["partition"] for sample in manifest["samples"]} == {
+        "fit",
+        "calibration",
+    }
+    assert len(first.samples) == 4
+    assert len(first.source_pdf_paths) == 2
+    assert all(path.is_file() for path in first.source_pdf_paths)
+    assert any(
+        sample["layout_stratum"] == "graphical-multicolumn"
+        for sample in manifest["samples"]
+    )
+    assert all("f1" in sample["source_text_alignment"] for sample in manifest["samples"])
+    structure = json.loads(first.samples[0].structure_path.read_text(encoding="utf-8"))
+    semantic = json.loads(first.samples[0].semantic_sidecar_path.read_text(encoding="utf-8"))
+    assert structure["relations_removed"] is True
+    assert "ro_linkings" not in structure
+    assert "reading_order_id" not in first.samples[0].structure_path.read_text(encoding="utf-8")
+    assert "ro_linkings" in semantic
+
+
+def test_provider_calibration_selection_is_relation_label_invariant() -> None:
+    with ZipFile(BytesIO(_provider_calibration_archive())) as archive:
+        payload = json.loads(archive.read(COMPHRDOC_TRAIN_ANNOTATION_MEMBER))
+    relabeled = json.loads(json.dumps(payload))
+    for index, annotation in enumerate(relabeled["annotations"]):
+        annotation["reading_order_id"] = 10_000 - index
+        annotation["reading_order_label"] = index % 3
+
+    def selection_signature(annotation_payload):
+        documents = comphrdoc._provider_calibration_document_pages(annotation_payload)
+        selected = comphrdoc._select_provider_calibration_documents(
+            documents,
+            document_count=2,
+            calibration_fraction=0.2,
+        )
+        return [
+            (
+                document["document_id"],
+                document["partition"],
+                [
+                    (page["page_index"], page["layout_stratum"], page["layout_features"])
+                    for page in comphrdoc._select_provider_calibration_pages(
+                        document["pages"],
+                        quota=2,
+                    )
+                ],
+            )
+            for document in selected
+        ]
+
+    assert selection_signature(payload) == selection_signature(relabeled)
 
 
 def test_table_floating_order_is_independent_of_annotation_sequence() -> None:
@@ -403,6 +513,79 @@ def _annotation_archive() -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr(COMPHRDOC_ANNOTATION_MEMBER, json.dumps(payload))
+    return buffer.getvalue()
+
+
+def _provider_calibration_archive() -> bytes:
+    images = []
+    annotations = []
+    image_id = 1
+    for document_id in ("2401.01000", "2401.01007"):
+        for page_index in range(2):
+            images.append(
+                {
+                    "id": image_id,
+                    "file_name": f"{document_id}_{page_index}.png",
+                    "width": 100,
+                    "height": 100,
+                }
+            )
+            if page_index == 0:
+                annotations.extend(
+                    [
+                        {
+                            "image_id": image_id,
+                            "reading_order_id": 1,
+                            "reading_order_label": 2,
+                            "in_page_id": 0,
+                            "category_id": 1,
+                            "bbox": [10, 35, 80, 25, 0],
+                            "textline_contents": [],
+                            "textline_polys": [],
+                        },
+                        {
+                            "image_id": image_id,
+                            "reading_order_id": 2,
+                            "reading_order_label": 1,
+                            "in_page_id": 1,
+                            "category_id": 3,
+                            "textline_contents": [f"Line {index}" for index in range(6)],
+                            "textline_polys": [
+                                [
+                                    5 if index < 3 else 55,
+                                    5 + (index % 3) * 10,
+                                    45 if index < 3 else 95,
+                                    5 + (index % 3) * 10,
+                                    45 if index < 3 else 95,
+                                    12 + (index % 3) * 10,
+                                    5 if index < 3 else 55,
+                                    12 + (index % 3) * 10,
+                                ]
+                                for index in range(6)
+                            ],
+                        },
+                    ]
+                )
+            else:
+                annotations.append(
+                    {
+                        "image_id": image_id,
+                        "reading_order_id": 1,
+                        "reading_order_label": 1,
+                        "in_page_id": 0,
+                        "category_id": 3,
+                        "textline_contents": ["Plain first", "Plain second"],
+                        "textline_polys": [
+                            [10, 10, 90, 10, 90, 20, 10, 20],
+                            [10, 25, 90, 25, 90, 35, 10, 35],
+                        ],
+                    }
+                )
+            image_id += 1
+    payload = {"images": images, "annotations": annotations}
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr(COMPHRDOC_TRAIN_ANNOTATION_MEMBER, json.dumps(payload))
     return buffer.getvalue()
 
 

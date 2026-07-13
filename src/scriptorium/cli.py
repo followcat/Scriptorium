@@ -20,6 +20,7 @@ from .benchmark import (
 from .comphrdoc_benchmark import (
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
+    fetch_comphrdoc_provider_calibration_corpus,
     fetch_comphrdoc_relation_corpus,
 )
 from .docling_provider import DoclingAdapter
@@ -140,6 +141,52 @@ def fetch_comphrdoc_command(
     typer.echo(f"Source PDF: {result.source_pdf_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("fetch-comphrdoc-provider-calibration")
+def fetch_comphrdoc_provider_calibration_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/comphrdoc-provider-calibration"),
+        help="Directory for locally reconstructed Comp-HRDoc train pages.",
+    ),
+    sample_count: int = typer.Option(8, min=2, help="Total train pages to reconstruct."),
+    document_count: int = typer.Option(
+        4,
+        min=2,
+        help="Train documents to sample; pages are balanced across documents.",
+    ),
+    calibration_fraction: float = typer.Option(
+        0.2,
+        min=0.05,
+        max=0.5,
+        help="Document-hash partition reserved for provider calibration.",
+    ),
+    refresh: bool = typer.Option(False, help="Redownload PDFs and rewrite derived files."),
+) -> None:
+    """Rebuild a train-only real-provider calibration corpus from arXiv PDFs."""
+
+    try:
+        result = fetch_comphrdoc_provider_calibration_corpus(
+            out_dir,
+            sample_count=sample_count,
+            document_count=document_count,
+            calibration_fraction=calibration_fraction,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--sample-count") from exc
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    partitions: dict[str, int] = {}
+    for sample in manifest["samples"]:
+        partition = str(sample["partition"])
+        partitions[partition] = partitions.get(partition, 0) + 1
+    typer.echo(f"Comp-HRDoc train samples: {len(result.samples)}")
+    typer.echo(f"Documents: {len(result.source_pdf_paths)}")
+    typer.echo(f"Partitions: {json.dumps(partitions, sort_keys=True)}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Images: {result.out_dir / 'images'}")
+    typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+    typer.echo(f"Semantic sidecars: {result.out_dir / 'semantic'}")
 
 
 @app.command("fetch-comphrdoc-relations")
