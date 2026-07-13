@@ -199,12 +199,12 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
 ```
 
 训练 provider 会在每个候选阈值上执行全局一对一 assignment，并用 source/target 两侧
-竞争候选的最小 score gap 校准 margin。它会输出 review/strict tier 与仅由 fit 数据生成的
-feature-envelope 诊断。固定 250 页 test 上，strict graphical subset 为 `196/201`，再要求
-zero-OOD 后为 `169/173`；mild/stress 噪声下 precision 仍低于 `0.97`，因此这些结果仍是
-review 证据，不是自动 runtime constraint。Corpus report 同时评分 body/floating edge
-联合 path cover、degree/cycle conflict，以及 strict 错误是否落在 answer-free label audit
-指出的 graphical 冲突对象上。
+竞争候选的最小 score gap 校准 margin。它还会从官方 train 文档的四折 cross-fit
+clean/mild/stress 视图训练 12 维线性 correctness forecaster；noise-aware gate 必须与原
+confidence/margin gate 同时通过。固定 250 页 test 的 strict precision 为 clean
+`0.98461538`、mild `0.97604790`、stress `0.93965517`。Stress 仍低于 `0.97`，因此输出继续
+只是 review 证据，不是自动 runtime constraint。Corpus report 同时评分 noise-aware
+graphical subset、body/floating 联合 path cover、degree/cycle conflict 和 label-audit conflict。
 可使用 `--noise-profile mild` 或 `stress` 运行确定性合成鲁棒性检查；这些
 profile 不能取代真实 OCR provider benchmark。
 

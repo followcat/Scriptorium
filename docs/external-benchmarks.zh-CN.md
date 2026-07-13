@@ -712,8 +712,36 @@ Trained floating evidence 在两个受控 profile 下都保持正向 joint-order
 stress 的 strict precision 都没有达到 `0.97` promotion target。Mild 的 6 条 strict 错误
 全部触及 audit-conflict graphical；stress 的 8 条中只有 2 条，因此高噪声错误不能由
 label 歧义解释。Stress 还包含 2,698 个 fragmented element 和 341 个 dropped element。
-下一轮 reliability 实验必须只使用 train-derived perturbation 拟合 noise-aware rejection；
-这些合成结果不能证明真实 OCR 鲁棒性。
+因此下一层 reliability 只使用 train-derived perturbation 拟合。
+
+#### Noise-Aware Abstention A/B
+
+官方 train text block 从精确 line polygon 重建。四个 document-hash cross-fit pair model
+在 clean/mild/stress view 上生成 15,413 条 held-out correctness record。标准化 L2 logistic
+forecaster 只使用 12 个 domain-general 的 score、assignment stability、OOD 与页面规模特征；
+不使用 raw coordinate、caption text、profile identity 或 label。Noise-aware gate 是合取式：
+forecaster 可以拒绝旧 gate edge，但不能绕过旧 gate 接纳 edge。最终模型字节确定，SHA-256
+为 `8fbd68a177b978f23759290a4cc6eaa24586c7a2e3316407377a3135f3f719b1`。
+
+| Train calibration profile | Review correct/predicted | Review P/R | Strict correct/predicted | Strict P/R |
+|---|---:|---:|---:|---:|
+| Clean | 996 / 1048 | 0.95038168 / 0.68879668 | 856 / 880 | 0.97272727 / 0.59197787 |
+| Mild | 879 / 925 | 0.95027027 / 0.60788382 | 748 / 767 | 0.97522816 / 0.51728907 |
+| Stress | 621 / 653 | 0.95099541 / 0.42946058 | 514 / 529 | 0.97164461 / 0.35546335 |
+
+Correctness threshold 在 review 为 `0.29`、strict 为 `0.44`，并且必须先通过原
+confidence/margin gate。参数冻结后才运行以下 test replay：
+
+| Test profile | 旧 strict | Noise-aware strict | Precision delta | Strict error 位于 audit conflict | Noise-aware joint F1 |
+|---|---:|---:|---:|---:|---:|
+| Clean | 196 / 201 | 192 / 195 | 0.97512438 -> 0.98461538 | 3 / 3 | 0.88839440 |
+| Mild | 169 / 175 | 163 / 167 | 0.96571429 -> 0.97604790 | 4 / 4 | 0.85784363 |
+| Stress | 115 / 123 | 109 / 116 | 0.93495935 -> 0.93965517 | 1 / 7 | 0.61366500 |
+
+Review filtering 分别保留 clean/mild/stress 的全部 235/198/133 条正确边，并去掉 1/1/2
+条错误。Noise-aware protected path cover 在 clean/stress 不变，在 mild 恢复 2 条 relation。
+Stress 仍远低于 promotion target，并有 6 条 strict 错误不在 audit-conflict set。这些合成
+结果不能证明真实 OCR 鲁棒性，`runtime_reorder` 继续为 false。
 
 ### 真实 PaddleOCR-VL 与 Docling Anchor
 
@@ -726,9 +754,9 @@ PaddleOCR-VL 1.6 和 Docling 2.111.0 + Tesseract 4.1.1 在 `1401.3699` 固定前
 | PaddleOCR-VL 1.6 | 224/224 | 63/66 | 207 / 219 / 207 | 0.94520548 | 1.00000000 | 0.97183099 |
 
 两者都找到 2/2 个 oracle figure。Docling 输出两条正确显式 float edge；Paddle 没有输出
-显式 relation。全局 trained review edge 保持正确，但该 prefix 没有 edge 通过 strict gate，
-combined F1 不变。Graphical-label audit 得到 2/2 exact geometry agreement，官方 label
-conflict 为 0。
+显式 relation。Noise-aware 层保留 Paddle 的 2 条正确 trained review edge；Docling 在该
+tier 为 0，两者都没有 strict edge。Combined F1 不变。Graphical-label audit 得到 2/2
+exact geometry agreement，官方 label conflict 为 0。
 
 固定复杂页 `1412.1395` p. 4 包含两栏、两组交错 figure/caption、code、顶部全宽图和正文：
 
@@ -746,7 +774,7 @@ caption。Answer-free 局部几何审计因此将 2/2 条官方 graphical label 
 
 Docling explicit edge 与两个 provider 的 trained edge 都在预测的 1 条 edge 上与局部几何
 建议一致（precision `1.0`，对两条几何建议的 recall 为 `0.5`）。Docling trained edge
-没有通过新 strict gate；Paddle edge 通过 strict + zero-OOD，但在交叉绑定的官方 raw label
-下仍判错。这修正了先前“provider 错配”的判断：该页 provider recognition 与文本顺序仍弱，
+没有通过新 strict gate；Paddle edge 同时通过旧 strict 与 noise-aware strict，但在交叉绑定的
+官方 raw label 下仍判错。这修正了先前“provider 错配”的判断：该页 provider recognition 与文本顺序仍弱，
 但观测到的 float 扣分来自已审计的 oracle conflict，而不是 graphical anchor 重复
 assignment。该 edge 仍为 review-only，不会重排 runtime 输出。

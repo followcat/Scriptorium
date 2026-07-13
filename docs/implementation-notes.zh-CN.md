@@ -562,13 +562,32 @@ raw 页是 `1507.01067_7`，从 `2/3` 提高到 `4/4`。Clean strict subset 为 
 `0.97687861`）。五条 strict raw 错误全部触及独立局部几何审计与官方 label 冲突的
 graphical 对象；报告只记录这一事实，不改写 corpus label。
 
-噪声仍是 promotion 的限制条件。Mild strict precision 为 `0.96571429`，zero-OOD 后为
-`0.96551724`；stress 为 `0.93495935`，zero-OOD 后为 `0.96551724`。Stress 的八条
-strict raw 错误中只有两条触及 audit-conflict graphical，其余错误不能由 label 歧义解释。
-Provider floating prediction 会暴露相同的 review、strict 与 feature-envelope 子集，但绝不会
-把 match 或 order 写回 `DocumentIR`；`runtime_reorder` 保持 false。下一轮校准必须只在
-train-derived perturbation 上拟合 robustness/rejection，并联合评估 clean/noise risk-coverage，
-不能放宽 test gate。
+Noise-aware selective calibration 现作为第二层、合取式 abstention。官方 train text block
+保留精确 text-line polygon，再复用 corpus benchmark 的确定性 clean/mild/stress 扰动。
+四个 document-hash fold 分别训练临时 pair estimator，并且只评分 held-out fit 文档，共生成
+15,413 条 correctness record，不使用 pair estimator 的 in-sample prediction。最终 forecaster
+是标准化 L2 logistic regression，只使用 12 个 domain-general 特征：pair score、source/target
+竞争 score 与 margin、排除当前 edge 后的全局 assignment cardinality/score gap、feature OOD
+ratio，以及页面/assignment 规模。它明确排除 raw coordinate、caption text feature、profile
+identity 和答案 relation。早期 selector-only 非线性原型在噪声下泛化较差，因此没有保留。
+
+Forecaster 不能绕过原 gate。Noise-aware review 要同时通过 base `confidence >= 0.85`、
+`margin >= 0.72` 和 correctness score `>= 0.29`；noise-aware strict 要同时通过 base
+`confidence >= 0.05`、`margin >= 0.84` 和 score `>= 0.44`。阈值在 train-derived
+calibration view 上最大化 minimum-profile risk coverage，并要求每个 profile 达到 precision
+下限。Strict calibration precision/recall 在 clean 为 `0.97272727/0.59197787`、mild 为
+`0.97522816/0.51728907`、stress 为 `0.97164461/0.35546335`。四折计数、feature name、
+全部 profile 指标与 gate provenance 都写入 manifest。
+
+固定且未改动的 250 页 test 上，noise-aware strict 将 clean 从 `196/201` 收紧到
+`192/195`（precision `0.98461538`），mild 从 `169/175` 收紧到 `163/167`
+（`0.97604790`），stress 从 `115/123` 收紧到 `109/116`（`0.93965517`）。Clean/mild
+错误全部触及已审计 conflict graphical；stress 仍有 6 条错误不在 conflict set。Noise-aware
+review 在 clean/mild 保留 235/198 条正确边并各去掉 1 条错误，在 stress 保留全部 133 条
+正确边并去掉 2 条错误。其 protected path cover 保持 clean/stress F1，并将 mild F1 从
+`0.85764341` 提高到 `0.85784363`。Stress precision 缺口仍然真实，因此 provider 输出仍为
+review-only，绝不把 order 写回 `DocumentIR`，`runtime_reorder` 保持 false。下一步需要
+真实 provider-noise label 或更强的 domain-shift 模型，而不是继续调整 synthetic/test threshold。
 
 Assignment-confidence 研究支持继续加入 score-gap 与 assignment-stability 特征：
 https://doi.org/10.1016/j.patrec.2015.07.010
@@ -576,7 +595,7 @@ https://doi.org/10.1016/j.patrec.2015.07.010
 Calibrated structured prediction 支持用 margin/pseudo-margin 训练独立 correctness forecaster：
 https://proceedings.neurips.cc/paper/2015/file/52d2752b150f9c35ccb6869cbf074e48-Paper.pdf
 
-Noise-aware selective calibration 可用于 train-only rejection 拟合，但不能据此声称 test
+Noise-aware selective calibration 支持这层 train-only rejection，但不能据此声称 test
 具有 distribution-free 鲁棒性：https://arxiv.org/abs/2208.12084
 
 Sparse graph segmentation 将文本行与区域建模为双向几何关系，再做 cluster-and-sort；

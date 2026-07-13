@@ -750,8 +750,41 @@ controlled profiles, but neither mild nor stress strict precision reaches the
 graphicals; only two of eight stress errors do, so high-noise failures cannot be
 explained away as label ambiguity. Absolute stress performance also collapses,
 with 2,698 fragmented elements and 341 dropped elements. The next reliability
-experiment must fit noise-aware rejection only on train-derived perturbations;
-these synthetic results do not establish real OCR robustness.
+layer was therefore fitted only on train-derived perturbations.
+
+#### Noise-Aware Abstention A/B
+
+Official train text blocks are reconstructed from their exact line polygons.
+Four document-hash cross-fit pair models produce 15,413 held-out correctness
+records across clean/mild/stress views. A standardized L2 logistic forecaster
+uses 12 domain-general score, assignment-stability, OOD, and page-size features;
+it excludes raw coordinates, caption text, profile identity, and labels. The
+noise-aware gates are conjunctive, so the forecaster can reject an old-gate edge
+but cannot admit one. The final model is byte-deterministic with SHA-256
+`8fbd68a177b978f23759290a4cc6eaa24586c7a2e3316407377a3135f3f719b1`.
+
+| Train calibration profile | Review correct/predicted | Review P/R | Strict correct/predicted | Strict P/R |
+|---|---:|---:|---:|---:|
+| Clean | 996 / 1048 | 0.95038168 / 0.68879668 | 856 / 880 | 0.97272727 / 0.59197787 |
+| Mild | 879 / 925 | 0.95027027 / 0.60788382 | 748 / 767 | 0.97522816 / 0.51728907 |
+| Stress | 621 / 653 | 0.95099541 / 0.42946058 | 514 / 529 | 0.97164461 / 0.35546335 |
+
+The correctness thresholds are `0.29` for review and `0.44` for strict, after
+the original confidence/margin gates. They were frozen before the following
+test replay:
+
+| Test profile | Old strict | Noise-aware strict | Precision delta | Strict errors on audit conflicts | Noise-aware joint F1 |
+|---|---:|---:|---:|---:|---:|
+| Clean | 196 / 201 | 192 / 195 | 0.97512438 -> 0.98461538 | 3 / 3 | 0.88839440 |
+| Mild | 169 / 175 | 163 / 167 | 0.96571429 -> 0.97604790 | 4 / 4 | 0.85784363 |
+| Stress | 115 / 123 | 109 / 116 | 0.93495935 -> 0.93965517 | 1 / 7 | 0.61366500 |
+
+Review filtering keeps the same 235 clean, 198 mild, and 133 stress correct
+edges while removing one, one, and two errors respectively. The noise-aware
+protected path cover is unchanged on clean/stress and recovers two mild
+relations. Stress remains far below the promotion target, with six strict
+errors outside the audit-conflict set. These synthetic results do not establish
+real OCR robustness and `runtime_reorder` remains false.
 
 ### Real PaddleOCR-VL and Docling Anchors
 
@@ -764,10 +797,11 @@ first five rendered pages of `1401.3699`. This prefix is mostly single-column:
 | PaddleOCR-VL 1.6 | 224/224 | 63/66 | 207 / 219 / 207 | 0.94520548 | 1.00000000 | 0.97183099 |
 
 Both find 2/2 oracle figures. Docling emits two correct explicit float edges;
-Paddle emits no explicit relations. Global trained review edges remain correct,
-but none passes the strict gate on this prefix, and combined F1 does not change.
-The graphical-label audit finds 2/2 exact geometry agreements and no
-official-label conflict.
+Paddle emits no explicit relations. The noise-aware layer keeps both correct
+Paddle trained review edges, while Docling has no edge in that tier; neither
+provider has a strict edge on this prefix. Combined F1 does not change. The
+graphical-label audit finds 2/2 exact geometry agreements and no official-label
+conflict.
 
 A fixed complex page, `1412.1395` p. 4, contains two columns, two interleaved
 figures/captions, code, a full-width top diagram, and body text:
@@ -788,8 +822,9 @@ the upper “Fig. 1” caption. The answer-free local-geometry audit therefore m
 Docling's explicit edge and both trained-provider edges agree with the local
 geometry proposal on 1/1 predicted edge (precision `1.0`, recall `0.5` over two
 geometry proposals). Docling's trained edge does not pass the new strict gate;
-Paddle's does pass strict plus zero-OOD, but remains wrong under the crossed
-official raw label. This corrects the earlier “provider mispair” diagnosis:
+Paddle's does pass both the old and noise-aware strict gates, but remains wrong
+under the crossed official raw label. This corrects the earlier “provider
+mispair” diagnosis:
 provider recognition and text ordering remain weak on the page, but the observed
 float penalty comes from an audited oracle conflict rather than duplicate
 graphical-anchor assignment. The edge remains review-only and does not reorder

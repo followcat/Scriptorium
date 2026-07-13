@@ -209,14 +209,14 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
 ```
 
 The trained provider runs global one-to-one assignment at every candidate
-threshold and calibrates margin from the smaller source- and target-competitor
-score gap. It emits review/strict tiers plus fit-only feature-envelope
-diagnostics. On the fixed 250-page test, the strict graphical subset is
-`196/201`, or `169/173` with zero OOD features; precision remains below `0.97`
-under mild/stress noise, so these are review evidence rather than automatic
-runtime constraints. The corpus report also scores a joint body/floating path
-cover, degree/cycle conflicts, and whether strict errors touch graphical
-objects flagged by the answer-free label audit.
+threshold and calibrates margin from source- and target-side competitors. It
+also trains a 12-feature linear correctness forecaster from four-fold cross-fit
+clean/mild/stress views of official train documents; a noise-aware gate must
+also pass the original confidence/margin gate. Fixed 250-page strict precision
+is `0.98461538` clean, `0.97604790` mild, and `0.93965517` stress. Stress remains
+below `0.97`, so output stays review evidence rather than an automatic runtime
+constraint. Reports score noise-aware graphical subsets, joint body/floating
+path cover, degree/cycle conflicts, and answer-free label-audit conflicts.
 Use `--noise-profile mild` or `stress` for deterministic synthetic robustness
 checks; these profiles do not replace benchmarks from real OCR providers.
 

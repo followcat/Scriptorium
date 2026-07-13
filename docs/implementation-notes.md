@@ -986,15 +986,40 @@ frozen, raw graphical test F1 improves from `0.91322902` to `0.91761364`
 where the independent local-geometry audit conflicts with the official label;
 the report records this fact without relabeling the corpus.
 
-Noise remains the limiting promotion gate. Mild strict precision is
-`0.96571429`, or `0.96551724` with zero OOD features; stress is `0.93495935`,
-or `0.96551724` with zero OOD features. Under stress, only two of eight strict
-raw errors touch audit-conflict graphicals, so the remaining errors cannot be
-explained by label ambiguity. Provider floating predictions expose the same
-review, strict, and feature-envelope subsets, but never write matches or order
-back into `DocumentIR`; `runtime_reorder` remains false. The next calibration
-experiment must fit robustness/rejection on train-derived perturbations and
-evaluate clean/noise risk-coverage jointly, rather than relaxing a test gate.
+Noise-aware selective calibration is now a second, conjunctive abstention layer.
+Official train text blocks retain their exact text-line polygons, then reuse the
+same deterministic clean/mild/stress perturbation code as the corpus benchmark.
+Four document-hash folds train temporary pair estimators and score only held-out
+fit documents, producing 15,413 correctness records without in-sample pair
+predictions. The final forecaster is a standardized L2 logistic regression over
+12 domain-general features: pair score, source/target competitor scores and
+margins, exclusion-based global assignment cardinality/score gap, feature OOD
+ratio, and page/assignment size. It deliberately excludes raw coordinates,
+caption text features, profile identity, and answer relations. An earlier
+selector-only nonlinear prototype generalized poorly under noise and was not
+retained.
+
+The forecaster cannot bypass the original gates. Noise-aware review requires the
+base `confidence >= 0.85` and `margin >= 0.72` gate plus correctness score
+`>= 0.29`; noise-aware strict requires the base `confidence >= 0.05` and
+`margin >= 0.84` gate plus score `>= 0.44`. Thresholds maximize minimum-profile
+risk coverage on the train-derived calibration views while requiring every
+profile to meet its precision floor. Strict calibration precision/recall is
+`0.97272727/0.59197787` clean, `0.97522816/0.51728907` mild, and
+`0.97164461/0.35546335` stress. Four-fold split counts, feature names, all
+per-profile metrics, and gate provenance are serialized in the manifest.
+
+On the untouched 250-page test, noise-aware strict changes clean from `196/201`
+to `192/195` (precision `0.98461538`), mild from `169/175` to `163/167`
+(`0.97604790`), and stress from `115/123` to `109/116` (`0.93965517`). Clean
+and mild errors all touch audited conflict graphicals; stress still has six
+errors outside that set. Noise-aware review keeps 235 clean and 198 mild correct
+edges while removing one error from each, and keeps all 133 stress correct edges
+while removing two errors. Its protected path cover preserves clean/stress F1
+and raises mild F1 `0.85764341 -> 0.85784363`. The stress precision gap remains
+real, so provider outputs stay review-only, never write order into `DocumentIR`,
+and `runtime_reorder` remains false. The next step needs real provider-noise
+labels or a stronger domain-shift model, not another synthetic/test threshold.
 
 Assignment-confidence analysis motivates score-gap and assignment-stability
 features beyond pair probability: https://doi.org/10.1016/j.patrec.2015.07.010
@@ -1002,8 +1027,8 @@ features beyond pair probability: https://doi.org/10.1016/j.patrec.2015.07.010
 Calibrated structured prediction motivates a separate correctness forecaster
 using margin and pseudo-margin features: https://proceedings.neurips.cc/paper/2015/file/52d2752b150f9c35ccb6869cbf074e48-Paper.pdf
 
-Noise-aware selective calibration is a candidate for train-only rejection
-fitting, not a claim of distribution-free test robustness:
+Noise-aware selective calibration motivates this train-only rejection layer but
+does not provide distribution-free test robustness:
 https://arxiv.org/abs/2208.12084
 
 Sparse graph segmentation models bidimensional text-line and region relations,
