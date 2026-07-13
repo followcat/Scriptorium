@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -16,6 +17,25 @@ from .provider_degradation import (
 from .relation_noise import perturb_relation_structure
 
 
+PROVIDER_TRANSITION_CANDIDATES = (
+    "visual-yx",
+    "box-flow",
+    "relation-graph",
+)
+PROVIDER_TRANSITION_SUPPORT_THRESHOLDS = (0, 1, 2, 3)
+PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS: tuple[float | None, ...] = (
+    None,
+    0.5,
+    0.6,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+)
+
+
 @dataclass(frozen=True)
 class ProviderAnchor:
     id: str
@@ -25,6 +45,7 @@ class ProviderAnchor:
     text: str
     order: int | None
     group_id: str | None = None
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +119,14 @@ def benchmark_provider_anchors(
     truth = {tuple(map(str, edge)) for edge in semantic.get("ro_linkings", [])}
     serialized_edge_groups = _serialized_provider_edge_groups(anchors, assignments)
     serialized_edges = serialized_edge_groups["all"]
+    provider_transition_review = _provider_transition_review(
+        anchors,
+        assignments,
+        oracle_nodes,
+        width=width,
+        height=height,
+        truth=truth,
+    )
     explicit_edges = _mapped_explicit_relations(explicit_relations, assignments)
     trained_floating_edges: set[tuple[str, str]] = set()
     reliable_trained_floating_edges: set[tuple[str, str]] = set()
@@ -226,7 +255,7 @@ def benchmark_provider_anchors(
         ),
     }
     report = {
-        "schema": "scriptorium-provider-anchor-benchmark/v3",
+        "schema": "scriptorium-provider-anchor-benchmark/v4",
         "provider": provider_name,
         "provider_capabilities": provider_capabilities,
         "floating_model_sha256": floating_model_sha256,
@@ -248,6 +277,7 @@ def benchmark_provider_anchors(
                 for name, predicted in relation_predictions.items()
             },
         },
+        "provider_transition_review": provider_transition_review,
         "graphical_relation_audit": _graphical_relation_audit(
             oracle,
             oracle_nodes,
@@ -387,6 +417,9 @@ def benchmark_provider_anchor_suite(
     provider_degradation = aggregate_provider_degradation(
         [case["provider_degradation"] for case in cases]
     )
+    provider_transition_review = _sum_provider_transition_reviews(
+        [case["provider_transition_review"] for case in cases]
+    )
     partitions = {
         partition: _provider_case_subset_summary(
             [case for case in cases if case["partition"] == partition],
@@ -395,7 +428,7 @@ def benchmark_provider_anchor_suite(
         for partition in sorted({str(case["partition"]) for case in cases})
     }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v3",
+        "schema": "scriptorium-provider-anchor-suite/v4",
         "corpus_manifest": str(manifest_path),
         "selection": manifest.get("selection"),
         "provider": cases[0]["provider"],
@@ -415,6 +448,7 @@ def benchmark_provider_anchor_suite(
         "provider_anchor_match_rate": _ratio(provider_matched, provider_total),
         "anchor_kinds": anchor_kind_summary,
         "provider_degradation": provider_degradation,
+        "provider_transition_review": provider_transition_review,
         "relations": relation_summary,
         "graphical_relation_audit": graphical_audit_summary,
         "partitions": partitions,
@@ -451,6 +485,21 @@ def _provider_capabilities(payload: Mapping[str, Any]) -> dict[str, bool]:
     }
 
 
+def _provider_confidence(item: Mapping[str, Any]) -> float | None:
+    candidates = [item.get("confidence"), item.get("score")]
+    provider_box = item.get("provider_box")
+    if isinstance(provider_box, Mapping):
+        candidates.extend((provider_box.get("confidence"), provider_box.get("score")))
+    for candidate in candidates:
+        try:
+            confidence = float(candidate)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(confidence) and 0.0 <= confidence <= 1.0:
+            return round(confidence, 8)
+    return None
+
+
 def _normalize_paddle_vl(
     payload: Mapping[str, Any],
 ) -> tuple[str, list[ProviderAnchor], list[tuple[str, str]]]:
@@ -478,6 +527,7 @@ def _normalize_paddle_vl(
                     str(item.get("block_content") or ""),
                     order,
                     anchor_id,
+                    _provider_confidence(item),
                 )
             )
             order += 1
@@ -594,6 +644,7 @@ def _anchor_assignment(
         "score": round(score, 8),
         "oracle_coverage": round(oracle_coverage, 8),
         "provider_coverage": round(provider_coverage, 8),
+        "provider_confidence": provider.confidence,
         "oracle_box": [round(value, 8) for value in oracle_box],
     }
 
@@ -678,6 +729,7 @@ def _docling_anchor(
         str(item.get("text") or item.get("orig") or ""),
         order,
         ref,
+        _provider_confidence(item),
     )
 
 
@@ -697,6 +749,7 @@ def _normalize_roor_style(
                 str(item.get("text") or ""),
                 order,
                 str(item.get("block_id", item.get("id", order))),
+                _provider_confidence(item),
             )
         )
     return str(payload.get("source") or "roor-style"), anchors, _edge_pairs(payload.get("successor_edges"))
@@ -736,6 +789,7 @@ def _normalize_page_elements(
                     str(item.get("block_content") or item.get("text") or ""),
                     provider_order,
                     str(item.get("block_id", item.get("group_id", anchor_id))),
+                    _provider_confidence(item),
                 )
             )
             order += 1
@@ -811,6 +865,296 @@ def _serialized_provider_edge_groups(
         "within_anchor": within_anchor,
         "between_anchors": between_anchors,
         "direct_between_anchors": direct_between_anchors,
+    }
+
+
+def _provider_transition_review(
+    anchors: Sequence[ProviderAnchor],
+    assignments: Mapping[str, Mapping[str, Any]],
+    oracle_nodes: Sequence[Mapping[str, Any]],
+    *,
+    width: float,
+    height: float,
+    truth: set[tuple[str, str]],
+) -> dict[str, Any]:
+    """Score answer-free support gates without promoting them to runtime order."""
+
+    candidate_edges = _native_candidate_direct_edges(
+        oracle_nodes,
+        width=width,
+        height=height,
+    )
+    transitions = _mapped_direct_provider_transitions(anchors, assignments)
+    transition_records: list[dict[str, Any]] = []
+    for transition in transitions:
+        edge = (transition["source"], transition["target"])
+        supporting_candidates = [
+            name
+            for name in PROVIDER_TRANSITION_CANDIDATES
+            if edge in candidate_edges[name]
+        ]
+        endpoint_confidences = [
+            confidence
+            for confidence in (
+                transition["source_provider_confidence"],
+                transition["target_provider_confidence"],
+            )
+            if confidence is not None
+        ]
+        minimum_confidence = (
+            round(min(endpoint_confidences), 8)
+            if len(endpoint_confidences) == 2
+            else None
+        )
+        transition_records.append(
+            {
+                **transition,
+                "minimum_provider_confidence": minimum_confidence,
+                "native_support_count": len(supporting_candidates),
+                "native_supporting_candidates": supporting_candidates,
+                "correct": edge in truth,
+            }
+        )
+
+    direct_edges = {
+        (record["source"], record["target"])
+        for record in transition_records
+    }
+    curve: list[dict[str, Any]] = []
+    for minimum_support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS:
+        for minimum_confidence in PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS:
+            eligible = {
+                (record["source"], record["target"])
+                for record in transition_records
+                if int(record["native_support_count"]) >= minimum_support
+                and (
+                    minimum_confidence is None
+                    or (
+                        record["minimum_provider_confidence"] is not None
+                        and float(record["minimum_provider_confidence"])
+                        >= minimum_confidence
+                    )
+                )
+            }
+            curve.append(
+                {
+                    "minimum_native_support": minimum_support,
+                    "minimum_provider_confidence": minimum_confidence,
+                    "eligible_fraction": _ratio(len(eligible), len(direct_edges)),
+                    "precision_wilson_lower_95": _wilson_lower_bound(
+                        len(eligible & truth),
+                        len(eligible),
+                    ),
+                    **_relation_metrics(eligible, truth),
+                }
+            )
+
+    support_histogram = Counter(
+        int(record["native_support_count"])
+        for record in transition_records
+    )
+    return {
+        "schema": "scriptorium-provider-transition-review/v1",
+        "policy": {
+            "status": "review-only",
+            "runtime_reorder": False,
+            "selection_uses_semantic_labels": False,
+            "evaluation_uses_semantic_labels": True,
+            "confidence": "minimum-detection-confidence-of-provider-transition-endpoints",
+            "support": "exact-direct-successor-votes-from-answer-free-native-candidates",
+            "unknown_confidence_policy": "eligible-only-when-minimum-provider-confidence-is-null",
+        },
+        "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
+        "candidate_direct_edge_counts": {
+            name: len(candidate_edges[name])
+            for name in PROVIDER_TRANSITION_CANDIDATES
+        },
+        "direct_transition_count": len(direct_edges),
+        "confidence_available_transition_count": sum(
+            record["minimum_provider_confidence"] is not None
+            for record in transition_records
+        ),
+        "support_histogram": {
+            str(support): support_histogram.get(support, 0)
+            for support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS
+        },
+        "curve": curve,
+        "transitions": transition_records,
+    }
+
+
+def _native_candidate_direct_edges(
+    oracle_nodes: Sequence[Mapping[str, Any]],
+    *,
+    width: float,
+    height: float,
+) -> dict[str, set[tuple[str, str]]]:
+    from .geometry import reading_order_key
+    from .models import BBox
+    from .reading_order import infer_box_flow_order, infer_relation_graph_order
+
+    node_ids: list[str] = []
+    bboxes: list[BBox] = []
+    for node in oracle_nodes:
+        node_id = str(node.get("id") or "")
+        box = node.get("box")
+        if not node_id or not isinstance(box, (list, tuple)) or len(box) != 4:
+            continue
+        try:
+            bbox = BBox.from_any(box)
+        except (TypeError, ValueError):
+            continue
+        node_ids.append(node_id)
+        bboxes.append(bbox)
+    if not bboxes or width <= 0 or height <= 0:
+        return {name: set() for name in PROVIDER_TRANSITION_CANDIDATES}
+
+    visual_order = sorted(
+        range(len(bboxes)),
+        key=lambda index: reading_order_key(bboxes[index]),
+    )
+    candidate_orders = {
+        "visual-yx": visual_order,
+        "box-flow": infer_box_flow_order(bboxes, width, height),
+        "relation-graph": infer_relation_graph_order(bboxes, width, height),
+    }
+    return {
+        name: {
+            (node_ids[source], node_ids[target])
+            for source, target in zip(order, order[1:], strict=False)
+            if source != target
+        }
+        for name, order in candidate_orders.items()
+    }
+
+
+def _mapped_direct_provider_transitions(
+    anchors: Sequence[ProviderAnchor],
+    assignments: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    oracle_by_provider: dict[str, list[str]] = defaultdict(list)
+    for oracle_id, match in assignments.items():
+        oracle_by_provider[str(match["provider_id"])].append(oracle_id)
+    anchors_by_page: dict[int, list[tuple[ProviderAnchor, list[str]]]] = defaultdict(list)
+    for anchor in sorted(
+        (item for item in anchors if item.order is not None),
+        key=lambda item: (item.page_index, item.order, item.id),
+    ):
+        oracle_ids = sorted(
+            oracle_by_provider.get(anchor.id, []),
+            key=lambda oracle_id: _assignment_geometry_key(assignments[oracle_id]),
+        )
+        anchors_by_page[anchor.page_index].append((anchor, oracle_ids))
+
+    transitions: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for page_index, page_anchors in sorted(anchors_by_page.items()):
+        transition_count = max(0, len(page_anchors) - 1)
+        for transition_index, ((source_anchor, source_ids), (target_anchor, target_ids)) in enumerate(
+            zip(page_anchors, page_anchors[1:], strict=False)
+        ):
+            if not source_ids or not target_ids:
+                continue
+            edge = (source_ids[-1], target_ids[0])
+            if edge[0] == edge[1] or edge in seen:
+                continue
+            seen.add(edge)
+            transitions.append(
+                {
+                    "page_index": page_index,
+                    "transition_index": transition_index,
+                    "page_transition_count": transition_count,
+                    "source": edge[0],
+                    "target": edge[1],
+                    "source_provider_id": source_anchor.id,
+                    "target_provider_id": target_anchor.id,
+                    "source_provider_order": source_anchor.order,
+                    "target_provider_order": target_anchor.order,
+                    "source_provider_confidence": source_anchor.confidence,
+                    "target_provider_confidence": target_anchor.confidence,
+                }
+            )
+    return transitions
+
+
+def _sum_provider_transition_reviews(
+    reviews: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not reviews:
+        raise ValueError("provider transition review aggregation requires at least one case")
+    first = reviews[0]
+    direct_transition_count = sum(
+        int(review.get("direct_transition_count", 0))
+        for review in reviews
+    )
+    curve_by_key = {
+        (
+            int(point["minimum_native_support"]),
+            point.get("minimum_provider_confidence"),
+        ): []
+        for point in first.get("curve", [])
+        if isinstance(point, Mapping)
+    }
+    for review in reviews:
+        for point in review.get("curve", []):
+            if not isinstance(point, Mapping):
+                continue
+            key = (
+                int(point["minimum_native_support"]),
+                point.get("minimum_provider_confidence"),
+            )
+            if key not in curve_by_key:
+                raise ValueError("provider transition review curves use different grids")
+            curve_by_key[key].append(point)
+    curve = []
+    for point in first.get("curve", []):
+        if not isinstance(point, Mapping):
+            continue
+        key = (
+            int(point["minimum_native_support"]),
+            point.get("minimum_provider_confidence"),
+        )
+        metrics = _sum_relation_metrics(curve_by_key[key])
+        curve.append(
+            {
+                "minimum_native_support": key[0],
+                "minimum_provider_confidence": key[1],
+                "eligible_fraction": _ratio(
+                    int(metrics["predicted"]),
+                    direct_transition_count,
+                ),
+                "precision_wilson_lower_95": _wilson_lower_bound(
+                    int(metrics["correct"]),
+                    int(metrics["predicted"]),
+                ),
+                **metrics,
+            }
+        )
+    return {
+        "schema": "scriptorium-provider-transition-review-suite/v1",
+        "policy": first.get("policy"),
+        "candidate_orders": first.get("candidate_orders"),
+        "case_count": len(reviews),
+        "candidate_direct_edge_counts": {
+            name: sum(
+                int(review.get("candidate_direct_edge_counts", {}).get(name, 0))
+                for review in reviews
+            )
+            for name in PROVIDER_TRANSITION_CANDIDATES
+        },
+        "direct_transition_count": direct_transition_count,
+        "confidence_available_transition_count": sum(
+            int(review.get("confidence_available_transition_count", 0))
+            for review in reviews
+        ),
+        "support_histogram": {
+            str(support): sum(
+                int(review.get("support_histogram", {}).get(str(support), 0))
+                for review in reviews
+            )
+            for support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS
+        },
+        "curve": curve,
     }
 
 
@@ -1120,6 +1464,9 @@ def _provider_case_subset_summary(
         "provider_degradation": aggregate_provider_degradation(
             [case["provider_degradation"] for case in cases]
         ),
+        "provider_transition_review": _sum_provider_transition_reviews(
+            [case["provider_transition_review"] for case in cases]
+        ),
     }
 
 
@@ -1142,3 +1489,21 @@ def _sum_relation_metrics(metrics: Sequence[Mapping[str, Any]]) -> dict[str, Any
 
 def _ratio(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 8) if denominator else 0.0
+
+
+def _wilson_lower_bound(
+    successes: int,
+    trials: int,
+    *,
+    z: float = 1.959963984540054,
+) -> float:
+    if trials <= 0:
+        return 0.0
+    proportion = successes / trials
+    z_squared = z * z
+    denominator = 1 + z_squared / trials
+    center = proportion + z_squared / (2 * trials)
+    adjustment = z * math.sqrt(
+        (proportion * (1 - proportion) + z_squared / (4 * trials)) / trials
+    )
+    return round((center - adjustment) / denominator, 8)

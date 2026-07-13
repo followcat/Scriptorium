@@ -77,7 +77,13 @@ def test_page_element_provider_schema_is_supported() -> None:
             {
                 "page_index": 0,
                 "elements": [
-                    {"id": "a", "block_label": "text", "bbox_pdf": [0, 0, 10, 10], "block_content": "A"}
+                    {
+                        "id": "a",
+                        "block_label": "text",
+                        "bbox_pdf": [0, 0, 10, 10],
+                        "block_content": "A",
+                        "confidence": 0.91,
+                    }
                 ],
                 "successor_edges": [],
             }
@@ -88,7 +94,115 @@ def test_page_element_provider_schema_is_supported() -> None:
 
     assert source == "provider"
     assert anchors[0].id == "a"
+    assert anchors[0].confidence == 0.91
     assert relations == []
+
+
+def test_provider_transition_review_combines_native_support_and_endpoint_confidence(
+    tmp_path,
+) -> None:
+    oracle = {
+        "uid": "supported-transition",
+        "img": {"width": 100, "height": 100},
+        "document": [
+            {"id": "line-1", "box": [10, 10, 90, 18], "type": "text"},
+            {"id": "line-2", "box": [10, 22, 90, 30], "type": "text"},
+        ],
+    }
+    provider = {
+        "source": "provider",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {
+                        "id": "block-1",
+                        "type": "text",
+                        "box": [10, 10, 90, 18],
+                        "provider_order": 0,
+                        "confidence": 0.95,
+                    },
+                    {
+                        "id": "block-2",
+                        "type": "text",
+                        "box": [10, 22, 90, 30],
+                        "provider_order": 1,
+                        "confidence": 0.88,
+                    },
+                ],
+            }
+        ],
+    }
+    paths = [tmp_path / name for name in ("oracle.json", "semantic.json", "provider.json")]
+    for path, payload in zip(
+        paths,
+        (oracle, {**oracle, "ro_linkings": [["line-1", "line-2"]]}, provider),
+        strict=True,
+    ):
+        path.write_text(json.dumps(payload))
+
+    review = benchmark_provider_anchors(*paths).report["provider_transition_review"]
+
+    assert review["policy"]["runtime_reorder"] is False
+    assert review["policy"]["selection_uses_semantic_labels"] is False
+    assert review["direct_transition_count"] == 1
+    assert review["confidence_available_transition_count"] == 1
+    assert review["support_histogram"] == {"0": 0, "1": 0, "2": 0, "3": 1}
+    transition = review["transitions"][0]
+    assert transition["minimum_provider_confidence"] == 0.88
+    assert transition["native_support_count"] == 3
+    assert transition["native_supporting_candidates"] == [
+        "visual-yx",
+        "box-flow",
+        "relation-graph",
+    ]
+    assert _curve_point(review, support=3, confidence=0.85)["precision"] == 1.0
+    assert _curve_point(review, support=3, confidence=0.85)["predicted"] == 1
+    assert _curve_point(review, support=3, confidence=0.9)["predicted"] == 0
+
+
+def test_provider_transition_gate_eligibility_is_relation_label_invariant(tmp_path) -> None:
+    oracle = {
+        "uid": "label-invariant",
+        "img": {"width": 100, "height": 100},
+        "document": [
+            {"id": "a", "box": [10, 10, 90, 18], "type": "text"},
+            {"id": "b", "box": [10, 22, 90, 30], "type": "text"},
+        ],
+    }
+    provider = {
+        "source": "provider",
+        "pages": [
+            {
+                "elements": [
+                    {"id": "pa", "box": [10, 10, 90, 18], "confidence": 0.9},
+                    {"id": "pb", "box": [10, 22, 90, 30], "confidence": 0.9},
+                ]
+            }
+        ],
+    }
+    oracle_path = tmp_path / "oracle.json"
+    provider_path = tmp_path / "provider.json"
+    oracle_path.write_text(json.dumps(oracle))
+    provider_path.write_text(json.dumps(provider))
+    reviews = []
+    for index, labels in enumerate(([['a', 'b']], [['b', 'a']])):
+        semantic_path = tmp_path / f"semantic-{index}.json"
+        semantic_path.write_text(json.dumps({**oracle, "ro_linkings": labels}))
+        reviews.append(
+            benchmark_provider_anchors(
+                oracle_path,
+                semantic_path,
+                provider_path,
+            ).report["provider_transition_review"]
+        )
+
+    first = _curve_point(reviews[0], support=1, confidence=0.85)
+    second = _curve_point(reviews[1], support=1, confidence=0.85)
+    assert first["predicted"] == second["predicted"] == 1
+    assert first["eligible_fraction"] == second["eligible_fraction"] == 1.0
+    assert first["correct"] == 1
+    assert second["correct"] == 0
 
 
 def test_paddle_vl_raw_results_are_supported() -> None:
@@ -170,6 +284,13 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     }
     assert result.report["partitions"]["calibration"]["relations"]["combined"] == (
         result.report["relations"]["combined"]
+    )
+    transition_review = result.report["provider_transition_review"]
+    assert transition_review["case_count"] == 1
+    assert transition_review["direct_transition_count"] == 0
+    assert (
+        result.report["partitions"]["calibration"]["provider_transition_review"]
+        == transition_review
     )
 
 
@@ -338,6 +459,20 @@ def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeyp
         == 1
     )
     assert result.report["floating_model_sha256"] == "floating"
+
+
+def _curve_point(
+    review: dict,
+    *,
+    support: int,
+    confidence: float | None,
+) -> dict:
+    return next(
+        point
+        for point in review["curve"]
+        if point["minimum_native_support"] == support
+        and point["minimum_provider_confidence"] == confidence
+    )
 
 
 def _docling_payload() -> dict:
