@@ -454,6 +454,7 @@ def benchmark_provider_anchor_suite(
         transition_gate_evaluation = _evaluate_provider_transition_gate(
             provider_transition_review,
             gate,
+            cases=cases,
         )
         transition_gate_evaluation["gate_path"] = str(gate_path)
         transition_gate_evaluation["gate_sha256"] = hashlib.sha256(
@@ -469,34 +470,35 @@ def benchmark_provider_anchor_suite(
             gate.get("source_corpus_manifest_sha256")
             != hashlib.sha256(manifest_bytes).hexdigest()
         )
-        for subset in (*partitions.values(), *layout_strata.values()):
-            subset["provider_transition_gate_evaluation"] = (
-                _evaluate_provider_transition_gate(
-                    subset["provider_transition_review"],
-                    gate,
+        if gate.get("schema") == "scriptorium-provider-transition-gate/v1":
+            for subset in (*partitions.values(), *layout_strata.values()):
+                subset["provider_transition_gate_evaluation"] = (
+                    _evaluate_provider_transition_gate(
+                        subset["provider_transition_review"],
+                        gate,
+                    )
                 )
-            )
-        layout_stratum_evaluations = {
-            name: subset["provider_transition_gate_evaluation"]
-            for name, subset in layout_strata.items()
-        }
-        failed_layout_strata = [
-            name
-            for name, evaluation in layout_stratum_evaluations.items()
-            if not evaluation["meets_frozen_acceptance_criteria"]
-        ]
-        transition_gate_evaluation["post_hoc_safety_audit"] = {
-            "policy": "veto-only-post-hoc-stratification-cannot-authorize-runtime-promotion",
-            "layout_strata": layout_stratum_evaluations,
-            "failed_layout_strata": failed_layout_strata,
-            "all_layout_strata_meet_frozen_aggregate_criteria": (
-                not failed_layout_strata
-            ),
-            "position_bands": _provider_transition_position_audit(cases, gate),
-            "runtime_promotion_decision": "reject-runtime-promotion",
-        }
+            layout_stratum_evaluations = {
+                name: subset["provider_transition_gate_evaluation"]
+                for name, subset in layout_strata.items()
+            }
+            failed_layout_strata = [
+                name
+                for name, evaluation in layout_stratum_evaluations.items()
+                if not evaluation["meets_frozen_acceptance_criteria"]
+            ]
+            transition_gate_evaluation["post_hoc_safety_audit"] = {
+                "policy": "veto-only-post-hoc-stratification-cannot-authorize-runtime-promotion",
+                "layout_strata": layout_stratum_evaluations,
+                "failed_layout_strata": failed_layout_strata,
+                "all_layout_strata_meet_frozen_aggregate_criteria": (
+                    not failed_layout_strata
+                ),
+                "position_bands": _provider_transition_position_audit(cases, gate),
+                "runtime_promotion_decision": "reject-runtime-promotion",
+            }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v5",
+        "schema": "scriptorium-provider-anchor-suite/v6",
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "corpus": {
@@ -639,18 +641,261 @@ def freeze_provider_transition_gate(
     return ProviderTransitionGateResult(gate_path, gate)
 
 
+def freeze_stratified_provider_transition_gate(
+    suite_report_path: str | Path,
+    *,
+    fit_partition: str = "fit",
+    calibration_partition: str = "calibration",
+    fit_minimum_precision: float = 0.95,
+    fit_minimum_wilson_lower_95: float = 0.8,
+    fit_minimum_predicted: int = 20,
+    calibration_minimum_precision: float = 0.95,
+    calibration_minimum_wilson_lower_95: float = 0.85,
+    calibration_minimum_predicted: int = 30,
+    test_minimum_precision: float = 0.95,
+    test_minimum_wilson_lower_95: float = 0.9,
+    test_minimum_predicted: int = 50,
+    test_bucket_minimum_precision: float = 0.95,
+    test_bucket_minimum_wilson_lower_95: float = 0.8,
+    test_bucket_minimum_predicted: int = 20,
+    output: str | Path | None = None,
+) -> ProviderTransitionGateResult:
+    """Freeze layout/position bucket rules, then accept or reject on calibration."""
+
+    _validate_transition_quality_criteria(
+        precision=fit_minimum_precision,
+        wilson=fit_minimum_wilson_lower_95,
+        predicted=fit_minimum_predicted,
+        prefix="fit",
+    )
+    _validate_transition_quality_criteria(
+        precision=calibration_minimum_precision,
+        wilson=calibration_minimum_wilson_lower_95,
+        predicted=calibration_minimum_predicted,
+        prefix="calibration",
+    )
+    _validate_transition_quality_criteria(
+        precision=test_minimum_precision,
+        wilson=test_minimum_wilson_lower_95,
+        predicted=test_minimum_predicted,
+        prefix="test",
+    )
+    _validate_transition_quality_criteria(
+        precision=test_bucket_minimum_precision,
+        wilson=test_bucket_minimum_wilson_lower_95,
+        predicted=test_bucket_minimum_predicted,
+        prefix="test_bucket",
+    )
+    source_path = Path(suite_report_path)
+    source_bytes = source_path.read_bytes()
+    suite = json.loads(source_bytes)
+    fit_records = _suite_transition_records(suite, partition=fit_partition)
+    calibration_records = _suite_transition_records(
+        suite,
+        partition=calibration_partition,
+    )
+    if not fit_records:
+        raise ValueError(f"provider suite contains no {fit_partition!r} transitions")
+    if not calibration_records:
+        raise ValueError(
+            f"provider suite contains no {calibration_partition!r} transitions"
+        )
+
+    fit_buckets: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    calibration_buckets: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    for record in fit_records:
+        fit_buckets[(record["layout_stratum"], record["position_band"])].append(
+            record
+        )
+    for record in calibration_records:
+        calibration_buckets[
+            (record["layout_stratum"], record["position_band"])
+        ].append(record)
+
+    rules: list[dict[str, Any]] = []
+    inactive_buckets: list[dict[str, Any]] = []
+    for layout_stratum, position_band in sorted(fit_buckets):
+        bucket_records = fit_buckets[(layout_stratum, position_band)]
+        qualified: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+        for minimum_support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS[1:]:
+            for minimum_confidence in (
+                value
+                for value in PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS
+                if value is not None
+            ):
+                selected = _select_transition_records(
+                    bucket_records,
+                    minimum_support=minimum_support,
+                    minimum_confidence=minimum_confidence,
+                )
+                metrics = _transition_record_metrics(
+                    selected,
+                    denominator=len(bucket_records),
+                )
+                metrics["minimum_native_support"] = minimum_support
+                metrics["minimum_provider_confidence"] = minimum_confidence
+                if _transition_metrics_meet(
+                    metrics,
+                    minimum_precision=fit_minimum_precision,
+                    minimum_wilson_lower_95=fit_minimum_wilson_lower_95,
+                    minimum_predicted=fit_minimum_predicted,
+                ):
+                    qualified.append((metrics, selected))
+        if not qualified:
+            inactive_buckets.append(
+                {
+                    "layout_stratum": layout_stratum,
+                    "position_band": position_band,
+                    "fit_transition_count": len(bucket_records),
+                    "reason": "no-fit-curve-point-meets-quality-and-coverage",
+                }
+            )
+            continue
+        fit_metrics, _fit_selected = max(
+            qualified,
+            key=lambda item: (
+                int(item[0]["predicted"]),
+                float(item[0]["precision_wilson_lower_95"]),
+                float(item[0]["precision"]),
+                int(item[0]["minimum_native_support"]),
+                float(item[0]["minimum_provider_confidence"]),
+            ),
+        )
+        calibration_bucket_records = calibration_buckets.get(
+            (layout_stratum, position_band),
+            [],
+        )
+        calibration_selected = _select_transition_records(
+            calibration_bucket_records,
+            minimum_support=int(fit_metrics["minimum_native_support"]),
+            minimum_confidence=float(fit_metrics["minimum_provider_confidence"]),
+        )
+        rules.append(
+            {
+                "layout_stratum": layout_stratum,
+                "position_band": position_band,
+                "minimum_native_support": int(
+                    fit_metrics["minimum_native_support"]
+                ),
+                "minimum_provider_confidence": float(
+                    fit_metrics["minimum_provider_confidence"]
+                ),
+                "fit_metrics": fit_metrics,
+                "calibration_metrics": _transition_record_metrics(
+                    calibration_selected,
+                    denominator=len(calibration_bucket_records),
+                ),
+            }
+        )
+    if not rules:
+        raise ValueError("no layout/position transition bucket has a qualified fit rule")
+
+    fit_selected = _apply_stratified_transition_rules(fit_records, rules)
+    calibration_selected = _apply_stratified_transition_rules(
+        calibration_records,
+        rules,
+    )
+    fit_aggregate = _transition_record_metrics(
+        fit_selected,
+        denominator=len(fit_records),
+    )
+    calibration_aggregate = _transition_record_metrics(
+        calibration_selected,
+        denominator=len(calibration_records),
+    )
+    calibration_accepted = _transition_metrics_meet(
+        calibration_aggregate,
+        minimum_precision=calibration_minimum_precision,
+        minimum_wilson_lower_95=calibration_minimum_wilson_lower_95,
+        minimum_predicted=calibration_minimum_predicted,
+    )
+    gate = {
+        "schema": "scriptorium-provider-transition-gate/v2",
+        "status": (
+            "frozen-review-only"
+            if calibration_accepted
+            else "calibration-rejected-review-only"
+        ),
+        "runtime_reorder": False,
+        "policy_type": "layout-position-selective-abstention",
+        "source_suite_report": str(source_path),
+        "source_suite_report_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "source_corpus_manifest_sha256": suite.get("corpus_manifest_sha256"),
+        "source_corpus": suite.get("corpus"),
+        "fit_partition": fit_partition,
+        "calibration_partition": calibration_partition,
+        "selection_uses_semantic_labels": True,
+        "calibration_can_modify_rules": False,
+        "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
+        "bucket_definition": {
+            "dimensions": ["layout_stratum", "position_band"],
+            "position_bands": ["start", "middle", "end", "single"],
+            "unruled_bucket_policy": "abstain",
+        },
+        "fit_selection_criteria": {
+            "minimum_precision": fit_minimum_precision,
+            "minimum_precision_wilson_lower_95": fit_minimum_wilson_lower_95,
+            "minimum_predicted": fit_minimum_predicted,
+            "objective": "maximize-eligible-transitions-after-bucket-quality-constraints",
+        },
+        "calibration_acceptance_criteria": {
+            "minimum_precision": calibration_minimum_precision,
+            "minimum_precision_wilson_lower_95": (
+                calibration_minimum_wilson_lower_95
+            ),
+            "minimum_predicted": calibration_minimum_predicted,
+        },
+        "independent_acceptance_criteria": {
+            "minimum_precision": test_minimum_precision,
+            "minimum_precision_wilson_lower_95": test_minimum_wilson_lower_95,
+            "minimum_predicted": test_minimum_predicted,
+        },
+        "independent_bucket_acceptance_criteria": {
+            "minimum_precision": test_bucket_minimum_precision,
+            "minimum_precision_wilson_lower_95": (
+                test_bucket_minimum_wilson_lower_95
+            ),
+            "minimum_predicted": test_bucket_minimum_predicted,
+        },
+        "rules": rules,
+        "inactive_buckets": inactive_buckets,
+        "fit_aggregate_metrics": fit_aggregate,
+        "calibration_aggregate_metrics": calibration_aggregate,
+        "calibration_accepted": calibration_accepted,
+    }
+    gate_path = (
+        Path(output)
+        if output is not None
+        else source_path.with_name(f"{source_path.stem}.stratified-transition-gate.json")
+    )
+    gate_path.parent.mkdir(parents=True, exist_ok=True)
+    gate_path.write_text(
+        json.dumps(gate, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return ProviderTransitionGateResult(gate_path, gate)
+
+
 def _evaluate_provider_transition_gate(
     review: Mapping[str, Any],
     gate: Mapping[str, Any],
+    *,
+    cases: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    if gate.get("schema") != "scriptorium-provider-transition-gate/v1":
-        raise ValueError("unsupported provider transition gate schema")
     if gate.get("runtime_reorder") is not False:
         raise ValueError("provider transition gate must remain review-only")
     if list(gate.get("candidate_orders") or []) != list(
         review.get("candidate_orders") or []
     ):
         raise ValueError("provider transition gate candidate orders do not match")
+    if gate.get("schema") == "scriptorium-provider-transition-gate/v2":
+        if cases is None:
+            raise ValueError("stratified provider transition gate requires case records")
+        return _evaluate_stratified_provider_transition_gate(cases, gate)
+    if gate.get("schema") != "scriptorium-provider-transition-gate/v1":
+        raise ValueError("unsupported provider transition gate schema")
     minimum_support = int(gate["minimum_native_support"])
     minimum_confidence = float(gate["minimum_provider_confidence"])
     point = next(
@@ -696,6 +941,262 @@ def _evaluate_provider_transition_gate(
     }
 
 
+def _evaluate_stratified_provider_transition_gate(
+    cases: Sequence[Mapping[str, Any]],
+    gate: Mapping[str, Any],
+) -> dict[str, Any]:
+    if gate.get("runtime_reorder") is not False:
+        raise ValueError("provider transition gate must remain review-only")
+    if gate.get("calibration_accepted") is not True:
+        raise ValueError("stratified provider transition gate failed calibration")
+    rules = [
+        dict(rule)
+        for rule in gate.get("rules", [])
+        if isinstance(rule, Mapping)
+    ]
+    if not rules:
+        raise ValueError("stratified provider transition gate has no active rules")
+    records = _suite_transition_records({"cases": list(cases)}, partition=None)
+    selected = _apply_stratified_transition_rules(records, rules)
+    aggregate_metrics = _transition_record_metrics(
+        selected,
+        denominator=len(records),
+    )
+    aggregate_criteria = gate.get("independent_acceptance_criteria")
+    bucket_criteria = gate.get("independent_bucket_acceptance_criteria")
+    if not isinstance(aggregate_criteria, Mapping) or not isinstance(
+        bucket_criteria,
+        Mapping,
+    ):
+        raise ValueError("stratified gate independent acceptance criteria are required")
+    aggregate_checks = _transition_metric_checks(
+        aggregate_metrics,
+        aggregate_criteria,
+    )
+    bucket_evaluations: list[dict[str, Any]] = []
+    for rule in rules:
+        bucket_records = [
+            record
+            for record in records
+            if record["layout_stratum"] == rule["layout_stratum"]
+            and record["position_band"] == rule["position_band"]
+        ]
+        bucket_selected = _select_transition_records(
+            bucket_records,
+            minimum_support=int(rule["minimum_native_support"]),
+            minimum_confidence=float(rule["minimum_provider_confidence"]),
+        )
+        metrics = _transition_record_metrics(
+            bucket_selected,
+            denominator=len(bucket_records),
+        )
+        checks = _transition_metric_checks(metrics, bucket_criteria)
+        bucket_evaluations.append(
+            {
+                "layout_stratum": rule["layout_stratum"],
+                "position_band": rule["position_band"],
+                "minimum_native_support": int(rule["minimum_native_support"]),
+                "minimum_provider_confidence": float(
+                    rule["minimum_provider_confidence"]
+                ),
+                "metrics": metrics,
+                "criterion_results": checks,
+                "meets_frozen_acceptance_criteria": all(checks.values()),
+            }
+        )
+    active_bucket_keys = {
+        (str(rule["layout_stratum"]), str(rule["position_band"]))
+        for rule in rules
+    }
+    unruled_transition_count = sum(
+        (record["layout_stratum"], record["position_band"])
+        not in active_bucket_keys
+        for record in records
+    )
+    bucket_checks_passed = all(
+        evaluation["meets_frozen_acceptance_criteria"]
+        for evaluation in bucket_evaluations
+    )
+    accepted = all(aggregate_checks.values()) and bucket_checks_passed
+    return {
+        "schema": "scriptorium-provider-transition-gate-evaluation/v2",
+        "status": "review-only",
+        "runtime_reorder": False,
+        "policy_type": gate.get("policy_type"),
+        "aggregate_metrics": aggregate_metrics,
+        "aggregate_acceptance_criteria": dict(aggregate_criteria),
+        "aggregate_criterion_results": aggregate_checks,
+        "bucket_acceptance_criteria": dict(bucket_criteria),
+        "bucket_evaluations": bucket_evaluations,
+        "all_active_buckets_meet_frozen_acceptance_criteria": (
+            bucket_checks_passed
+        ),
+        "unruled_transition_count": unruled_transition_count,
+        "threshold_rejected_transition_count": (
+            len(records) - unruled_transition_count - len(selected)
+        ),
+        "abstained_transition_count": len(records) - len(selected),
+        "meets_frozen_acceptance_criteria": accepted,
+        "next_stage_decision": (
+            "eligible-for-shadow-runtime-experiment"
+            if accepted
+            else "reject-runtime-promotion"
+        ),
+    }
+
+
+def _validate_transition_quality_criteria(
+    *,
+    precision: float,
+    wilson: float,
+    predicted: int,
+    prefix: str,
+) -> None:
+    if not 0.0 <= precision <= 1.0:
+        raise ValueError(f"{prefix}_minimum_precision must be between 0 and 1")
+    if not 0.0 <= wilson <= 1.0:
+        raise ValueError(
+            f"{prefix}_minimum_wilson_lower_95 must be between 0 and 1"
+        )
+    if predicted < 1:
+        raise ValueError(f"{prefix}_minimum_predicted must be at least 1")
+
+
+def _suite_transition_records(
+    suite: Mapping[str, Any],
+    *,
+    partition: str | None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for case in suite.get("cases", []):
+        if not isinstance(case, Mapping):
+            continue
+        if partition is not None and str(case.get("partition")) != partition:
+            continue
+        review = case.get("provider_transition_review")
+        if not isinstance(review, Mapping):
+            continue
+        for transition in review.get("transitions", []):
+            if not isinstance(transition, Mapping):
+                continue
+            record = dict(transition)
+            record["sample_id"] = str(case.get("sample_id") or "")
+            record["partition"] = str(case.get("partition") or "unspecified")
+            record["layout_stratum"] = str(
+                case.get("layout_stratum") or "unspecified"
+            )
+            record["position_band"] = _provider_transition_position_band(record)
+            records.append(record)
+    return records
+
+
+def _select_transition_records(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    minimum_support: int,
+    minimum_confidence: float,
+) -> list[dict[str, Any]]:
+    return [
+        dict(record)
+        for record in records
+        if int(record.get("native_support_count", 0)) >= minimum_support
+        and record.get("minimum_provider_confidence") is not None
+        and float(record["minimum_provider_confidence"])
+        >= minimum_confidence
+    ]
+
+
+def _transition_record_metrics(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    denominator: int,
+) -> dict[str, Any]:
+    predicted = len(records)
+    correct = sum(int(bool(record.get("correct"))) for record in records)
+    return {
+        "correct": correct,
+        "incorrect": predicted - correct,
+        "predicted": predicted,
+        "precision": _ratio(correct, predicted),
+        "precision_wilson_lower_95": _wilson_lower_bound(correct, predicted),
+        "eligible_fraction": _ratio(predicted, denominator),
+        "denominator": denominator,
+    }
+
+
+def _transition_metrics_meet(
+    metrics: Mapping[str, Any],
+    *,
+    minimum_precision: float,
+    minimum_wilson_lower_95: float,
+    minimum_predicted: int,
+) -> bool:
+    return all(
+        _transition_metric_checks(
+            metrics,
+            {
+                "minimum_precision": minimum_precision,
+                "minimum_precision_wilson_lower_95": minimum_wilson_lower_95,
+                "minimum_predicted": minimum_predicted,
+            },
+        ).values()
+    )
+
+
+def _transition_metric_checks(
+    metrics: Mapping[str, Any],
+    criteria: Mapping[str, Any],
+) -> dict[str, bool]:
+    return {
+        "minimum_precision": float(metrics.get("precision", 0.0))
+        >= float(criteria["minimum_precision"]),
+        "minimum_precision_wilson_lower_95": float(
+            metrics.get("precision_wilson_lower_95", 0.0)
+        )
+        >= float(criteria["minimum_precision_wilson_lower_95"]),
+        "minimum_predicted": int(metrics.get("predicted", 0))
+        >= int(criteria["minimum_predicted"]),
+    }
+
+
+def _apply_stratified_transition_rules(
+    records: Sequence[Mapping[str, Any]],
+    rules: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    rules_by_bucket = {
+        (str(rule["layout_stratum"]), str(rule["position_band"])): rule
+        for rule in rules
+    }
+    selected: list[dict[str, Any]] = []
+    for record in records:
+        rule = rules_by_bucket.get(
+            (str(record["layout_stratum"]), str(record["position_band"]))
+        )
+        if rule is None:
+            continue
+        selected.extend(
+            _select_transition_records(
+                [record],
+                minimum_support=int(rule["minimum_native_support"]),
+                minimum_confidence=float(rule["minimum_provider_confidence"]),
+            )
+        )
+    return selected
+
+
+def _provider_transition_position_band(transition: Mapping[str, Any]) -> str:
+    transition_count = int(transition.get("page_transition_count", 0))
+    transition_index = int(transition.get("transition_index", 0))
+    if transition_count <= 1:
+        return "single"
+    relative_position = transition_index / (transition_count - 1)
+    if relative_position < 1 / 3:
+        return "start"
+    if relative_position < 2 / 3:
+        return "middle"
+    return "end"
+
+
 def _provider_transition_position_audit(
     cases: Sequence[Mapping[str, Any]],
     gate: Mapping[str, Any],
@@ -722,19 +1223,7 @@ def _provider_transition_position_audit(
                 or float(confidence) < minimum_confidence
             ):
                 continue
-            transition_count = int(transition.get("page_transition_count", 0))
-            transition_index = int(transition.get("transition_index", 0))
-            if transition_count <= 1:
-                band = "single"
-            else:
-                relative_position = transition_index / (transition_count - 1)
-                band = (
-                    "start"
-                    if relative_position < 1 / 3
-                    else "middle"
-                    if relative_position < 2 / 3
-                    else "end"
-                )
+            band = _provider_transition_position_band(transition)
             counts[band][0] += int(bool(transition.get("correct")))
             counts[band][1] += 1
     return {

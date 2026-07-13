@@ -10,6 +10,7 @@ from scriptorium.provider_anchor_benchmark import (
     _serialized_provider_edge_groups,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
+    freeze_stratified_provider_transition_gate,
     freeze_provider_transition_gate,
     match_provider_anchors,
     normalize_provider_anchors,
@@ -316,6 +317,97 @@ def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
     assert position_audit["end"]["predicted"] == 0
 
 
+def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration(
+    tmp_path,
+) -> None:
+    fit_good = _transition_case(
+        "fit-good",
+        partition="fit",
+        layout_stratum="multicolumn",
+        correct=[True, True, True, True, False],
+    )
+    fit_bad = _transition_case(
+        "fit-bad",
+        partition="fit",
+        layout_stratum="graphical-multicolumn",
+        correct=[False, False, False, False, True],
+    )
+    calibration = _transition_case(
+        "calibration-good",
+        partition="calibration",
+        layout_stratum="multicolumn",
+        correct=[True, True, True],
+    )
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "corpus_manifest_sha256": "train-corpus",
+                "corpus": {"dataset": "Comp-HRDoc train"},
+                "cases": [fit_good, fit_bad, calibration],
+            }
+        )
+    )
+
+    result = freeze_stratified_provider_transition_gate(
+        suite_path,
+        fit_minimum_precision=0.8,
+        fit_minimum_wilson_lower_95=0.0,
+        fit_minimum_predicted=3,
+        calibration_minimum_precision=0.8,
+        calibration_minimum_wilson_lower_95=0.0,
+        calibration_minimum_predicted=2,
+        test_minimum_precision=0.8,
+        test_minimum_wilson_lower_95=0.0,
+        test_minimum_predicted=2,
+        test_bucket_minimum_precision=0.8,
+        test_bucket_minimum_wilson_lower_95=0.0,
+        test_bucket_minimum_predicted=2,
+    )
+
+    gate = result.gate
+    assert gate["schema"] == "scriptorium-provider-transition-gate/v2"
+    assert gate["calibration_accepted"] is True
+    assert gate["calibration_can_modify_rules"] is False
+    assert [
+        (rule["layout_stratum"], rule["position_band"])
+        for rule in gate["rules"]
+    ] == [("multicolumn", "start")]
+    assert gate["inactive_buckets"] == [
+        {
+            "layout_stratum": "graphical-multicolumn",
+            "position_band": "start",
+            "fit_transition_count": 5,
+            "reason": "no-fit-curve-point-meets-quality-and-coverage",
+        }
+    ]
+    held_out_cases = [
+        _transition_case(
+            "test-good",
+            partition="test",
+            layout_stratum="multicolumn",
+            correct=[True, True, True],
+        ),
+        _transition_case(
+            "test-abstain",
+            partition="test",
+            layout_stratum="graphical-multicolumn",
+            correct=[False, False],
+        ),
+    ]
+    evaluation = _evaluate_provider_transition_gate(
+        {
+            "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+        },
+        gate,
+        cases=held_out_cases,
+    )
+    assert evaluation["meets_frozen_acceptance_criteria"] is True
+    assert evaluation["aggregate_metrics"]["correct"] == 3
+    assert evaluation["unruled_transition_count"] == 2
+    assert evaluation["abstained_transition_count"] == 2
+
+
 def test_paddle_vl_raw_results_are_supported() -> None:
     payload = {
         "source": "paddleocr-vl",
@@ -573,6 +665,32 @@ def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeyp
         == 1
     )
     assert result.report["floating_model_sha256"] == "floating"
+
+
+def _transition_case(
+    sample_id: str,
+    *,
+    partition: str,
+    layout_stratum: str,
+    correct: list[bool],
+) -> dict:
+    return {
+        "sample_id": sample_id,
+        "partition": partition,
+        "layout_stratum": layout_stratum,
+        "provider_transition_review": {
+            "transitions": [
+                {
+                    "transition_index": 0,
+                    "page_transition_count": 3,
+                    "native_support_count": 1,
+                    "minimum_provider_confidence": 0.9,
+                    "correct": value,
+                }
+                for value in correct
+            ]
+        },
+    }
 
 
 def _curve_point(

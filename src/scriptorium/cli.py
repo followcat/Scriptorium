@@ -48,6 +48,7 @@ from .provider_anchor_benchmark import (
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     freeze_provider_transition_gate,
+    freeze_stratified_provider_transition_gate,
 )
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import (
@@ -490,6 +491,70 @@ def freeze_provider_transition_gate_command(
         f"{gate['fit_metrics']['precision_wilson_lower_95']}/"
         f"{gate['fit_metrics']['predicted']}"
     )
+    typer.echo(f"Gate: {result.gate_path}")
+
+
+@app.command("freeze-stratified-provider-transition-gate")
+def freeze_stratified_provider_transition_gate_command(
+    suite_report: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    fit_minimum_precision: float = typer.Option(0.95, min=0.0, max=1.0),
+    fit_minimum_wilson_lower_95: float = typer.Option(
+        0.8,
+        min=0.0,
+        max=1.0,
+    ),
+    fit_minimum_predicted: int = typer.Option(20, min=1),
+    calibration_minimum_precision: float = typer.Option(
+        0.95,
+        min=0.0,
+        max=1.0,
+    ),
+    calibration_minimum_wilson_lower_95: float = typer.Option(
+        0.85,
+        min=0.0,
+        max=1.0,
+    ),
+    calibration_minimum_predicted: int = typer.Option(30, min=1),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Freeze fit bucket rules, then accept or reject them on calibration."""
+
+    try:
+        result = freeze_stratified_provider_transition_gate(
+            suite_report,
+            fit_minimum_precision=fit_minimum_precision,
+            fit_minimum_wilson_lower_95=fit_minimum_wilson_lower_95,
+            fit_minimum_predicted=fit_minimum_predicted,
+            calibration_minimum_precision=calibration_minimum_precision,
+            calibration_minimum_wilson_lower_95=(
+                calibration_minimum_wilson_lower_95
+            ),
+            calibration_minimum_predicted=calibration_minimum_predicted,
+            output=output,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="suite_report") from exc
+    gate = result.gate
+    typer.echo(f"Active bucket rules: {len(gate['rules'])}")
+    typer.echo(f"Inactive buckets: {len(gate['inactive_buckets'])}")
+    typer.echo(
+        "Fit precision/Wilson/predicted: "
+        f"{gate['fit_aggregate_metrics']['precision']}/"
+        f"{gate['fit_aggregate_metrics']['precision_wilson_lower_95']}/"
+        f"{gate['fit_aggregate_metrics']['predicted']}"
+    )
+    typer.echo(
+        "Calibration precision/Wilson/predicted: "
+        f"{gate['calibration_aggregate_metrics']['precision']}/"
+        f"{gate['calibration_aggregate_metrics']['precision_wilson_lower_95']}/"
+        f"{gate['calibration_aggregate_metrics']['predicted']}"
+    )
+    typer.echo(f"Calibration accepted: {gate['calibration_accepted']}")
     typer.echo(f"Gate: {result.gate_path}")
 
 
