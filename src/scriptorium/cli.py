@@ -516,6 +516,14 @@ def freeze_stratified_provider_transition_gate_command(
         max=len(PROVIDER_TRANSITION_CANDIDATES),
         help="Minimum answer-free native candidate votes for every active rule.",
     ),
+    support_candidate_names: Optional[list[str]] = typer.Option(
+        None,
+        "--support-candidate",
+        help=(
+            "Repeat to select independently calibrated native evidence channels; "
+            "the stable three-channel set is used by default."
+        ),
+    ),
     cross_validation_folds: int = typer.Option(
         5,
         min=0,
@@ -567,6 +575,7 @@ def freeze_stratified_provider_transition_gate_command(
         result = freeze_stratified_provider_transition_gate(
             suite_report,
             minimum_native_support=minimum_native_support,
+            support_candidate_names=support_candidate_names,
             cross_validation_folds=cross_validation_folds,
             fit_minimum_precision=fit_minimum_precision,
             fit_minimum_wilson_lower_95=fit_minimum_wilson_lower_95,
@@ -587,6 +596,9 @@ def freeze_stratified_provider_transition_gate_command(
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="suite_report") from exc
     gate = result.gate
+    typer.echo(
+        "Support candidates: " + ", ".join(gate["support_candidate_names"])
+    )
     typer.echo(f"Active bucket rules: {len(gate['rules'])}")
     typer.echo(f"Inactive buckets: {len(gate['inactive_buckets'])}")
     cross_validation = gate["document_cross_validation"]

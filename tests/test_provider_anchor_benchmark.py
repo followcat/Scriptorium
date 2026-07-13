@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
     PROVIDER_TRANSITION_CANDIDATES,
@@ -13,6 +15,7 @@ from scriptorium.provider_anchor_benchmark import (
     _suite_provider_transition_candidate_evidence,
     _suite_transition_records,
     _sum_provider_transition_reviews,
+    _transition_records_with_support_candidates,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     freeze_stratified_provider_transition_gate,
@@ -524,7 +527,12 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
     )
 
     gate = result.gate
-    assert gate["schema"] == "scriptorium-provider-transition-gate/v3"
+    assert gate["schema"] == "scriptorium-provider-transition-gate/v4"
+    assert gate["support_candidate_names"] == [
+        "visual-yx",
+        "box-flow",
+        "relation-graph",
+    ]
     assert gate["calibration_accepted"] is True
     assert gate["calibration_can_modify_rules"] is False
     assert gate["bucket_definition"]["allowed_layout_strata"] == ["multicolumn"]
@@ -568,10 +576,32 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
         gate,
         cases=held_out_cases,
     )
+    assert evaluation["schema"] == (
+        "scriptorium-provider-transition-gate-evaluation/v3"
+    )
+    assert evaluation["support_candidate_names"] == [
+        "visual-yx",
+        "box-flow",
+        "relation-graph",
+    ]
     assert evaluation["meets_frozen_acceptance_criteria"] is True
     assert evaluation["aggregate_metrics"]["correct"] == 3
     assert evaluation["unruled_transition_count"] == 2
     assert evaluation["abstained_transition_count"] == 2
+
+    legacy_gate = dict(gate)
+    legacy_gate["schema"] = "scriptorium-provider-transition-gate/v3"
+    legacy_gate.pop("support_candidate_names")
+    legacy_cases = json.loads(json.dumps(held_out_cases))
+    for case in legacy_cases:
+        for transition in case["provider_transition_review"]["transitions"]:
+            transition.pop("native_supporting_candidates")
+    legacy_evaluation = _evaluate_provider_transition_gate(
+        {"candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES)},
+        legacy_gate,
+        cases=legacy_cases,
+    )
+    assert legacy_evaluation["aggregate_metrics"]["correct"] == 3
 
 
 def test_stratified_gate_rejects_low_partial_label_scorability(tmp_path) -> None:
@@ -654,6 +684,7 @@ def test_stratified_gate_cross_validates_consensus_by_document(tmp_path) -> None
                 "transition_index": 0,
                 "page_transition_count": 3,
                 "native_support_count": 1,
+                "native_supporting_candidates": ["visual-yx"],
                 "minimum_provider_confidence": 0.99,
                 "correct": False,
             }
@@ -689,7 +720,7 @@ def test_stratified_gate_cross_validates_consensus_by_document(tmp_path) -> None
 
     gate = result.gate
     cross_validation = gate["document_cross_validation"]
-    assert gate["schema"] == "scriptorium-provider-transition-gate/v3"
+    assert gate["schema"] == "scriptorium-provider-transition-gate/v4"
     assert gate["minimum_native_support"] == 2
     assert all(rule["minimum_native_support"] >= 2 for rule in gate["rules"])
     assert cross_validation["accepted"] is True
@@ -708,6 +739,47 @@ def test_stratified_gate_cross_validates_consensus_by_document(tmp_path) -> None
     assert gate["calibration_quality_accepted"] is True
     assert all(gate["calibration_criterion_results"].values())
     assert gate["calibration_accepted"] is True
+
+
+def test_transition_gate_filters_uncalibrated_xy_cut_support() -> None:
+    records = [
+        {
+            "native_support_count": 2,
+            "native_supporting_candidates": [
+                "visual-yx",
+                "recursive-xy-cut",
+            ],
+        }
+    ]
+
+    filtered = _transition_records_with_support_candidates(
+        records,
+        available_candidates=PROVIDER_TRANSITION_CANDIDATES,
+        support_candidates=["visual-yx", "box-flow", "relation-graph"],
+    )
+
+    assert records[0]["native_support_count"] == 2
+    assert filtered[0]["available_native_support_count"] == 2
+    assert filtered[0]["available_native_supporting_candidates"] == [
+        "visual-yx",
+        "recursive-xy-cut",
+    ]
+    assert filtered[0]["native_support_count"] == 1
+    assert filtered[0]["native_supporting_candidates"] == ["visual-yx"]
+
+    with pytest.raises(ValueError, match="without native_supporting_candidates"):
+        _transition_records_with_support_candidates(
+            [{"native_support_count": 2}],
+            available_candidates=PROVIDER_TRANSITION_CANDIDATES,
+            support_candidates=["visual-yx", "box-flow", "relation-graph"],
+        )
+
+    legacy = _transition_records_with_support_candidates(
+        [{"native_support_count": 2}],
+        available_candidates=PROVIDER_TRANSITION_CANDIDATES,
+        support_candidates=PROVIDER_TRANSITION_CANDIDATES,
+    )
+    assert legacy[0]["native_support_count"] == 2
 
 
 def test_paddle_vl_raw_results_are_supported() -> None:
@@ -1037,11 +1109,15 @@ def _transition_case(
         "partition": partition,
         "layout_stratum": layout_stratum,
         "provider_transition_review": {
+            "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
             "transitions": [
                 {
                     "transition_index": transition_index,
                     "page_transition_count": 3,
                     "native_support_count": native_support_count,
+                    "native_supporting_candidates": list(
+                        PROVIDER_TRANSITION_CANDIDATES[:native_support_count]
+                    ),
                     "minimum_provider_confidence": 0.9,
                     "correct": value,
                 }

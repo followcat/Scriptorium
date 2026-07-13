@@ -33,6 +33,11 @@ PROVIDER_TRANSITION_CANDIDATE_EDGE_SEMANTICS = {
     "recursive-xy-cut": "adjacent-edges-from-nontrivial-recursive-xy-cut-tree",
     "relation-graph": "selected-edges-from-max-regret-path-cover",
 }
+PROVIDER_TRANSITION_GATE_SUPPORT_CANDIDATES = (
+    "visual-yx",
+    "box-flow",
+    "relation-graph",
+)
 PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS: tuple[float | None, ...] = (
     None,
     0.5,
@@ -659,6 +664,7 @@ def freeze_stratified_provider_transition_gate(
     fit_partition: str = "fit",
     calibration_partition: str = "calibration",
     minimum_native_support: int = 2,
+    support_candidate_names: Sequence[str] | None = None,
     cross_validation_folds: int = 5,
     fit_minimum_precision: float = 0.95,
     fit_minimum_wilson_lower_95: float = 0.8,
@@ -718,14 +724,23 @@ def freeze_stratified_provider_transition_gate(
     candidate_orders, candidate_edge_semantics = (
         _suite_provider_transition_candidate_evidence(suite)
     )
-    if not 1 <= minimum_native_support <= len(candidate_orders):
+    normalized_support_candidates = _normalize_transition_support_candidates(
+        support_candidate_names,
+        available_candidates=candidate_orders,
+    )
+    if not 1 <= minimum_native_support <= len(normalized_support_candidates):
         raise ValueError(
-            "minimum_native_support must be between 1 and the report candidate count"
+            "minimum_native_support must be between 1 and the support candidate count"
         )
-    fit_records = _suite_transition_records(suite, partition=fit_partition)
-    calibration_records = _suite_transition_records(
-        suite,
-        partition=calibration_partition,
+    fit_records = _transition_records_with_support_candidates(
+        _suite_transition_records(suite, partition=fit_partition),
+        available_candidates=candidate_orders,
+        support_candidates=normalized_support_candidates,
+    )
+    calibration_records = _transition_records_with_support_candidates(
+        _suite_transition_records(suite, partition=calibration_partition),
+        available_candidates=candidate_orders,
+        support_candidates=normalized_support_candidates,
     )
     if not fit_records:
         raise ValueError(f"provider suite contains no {fit_partition!r} transitions")
@@ -877,7 +892,7 @@ def freeze_stratified_provider_transition_gate(
         and document_cross_validation["accepted"]
     )
     gate = {
-        "schema": "scriptorium-provider-transition-gate/v3",
+        "schema": "scriptorium-provider-transition-gate/v4",
         "status": (
             "frozen-review-only"
             if calibration_accepted
@@ -900,6 +915,7 @@ def freeze_stratified_provider_transition_gate(
         "calibration_can_modify_rules": False,
         "candidate_orders": candidate_orders,
         "candidate_edge_semantics": candidate_edge_semantics,
+        "support_candidate_names": normalized_support_candidates,
         "minimum_native_support": minimum_native_support,
         "bucket_definition": {
             "dimensions": ["layout_stratum", "position_band"],
@@ -917,6 +933,7 @@ def freeze_stratified_provider_transition_gate(
             "unruled_bucket_policy": "abstain",
         },
         "fit_selection_criteria": {
+            "support_candidate_names": normalized_support_candidates,
             "minimum_native_support": minimum_native_support,
             "minimum_precision": fit_minimum_precision,
             "minimum_precision_wilson_lower_95": fit_minimum_wilson_lower_95,
@@ -1384,6 +1401,7 @@ def _evaluate_provider_transition_gate(
     if gate.get("schema") in {
         "scriptorium-provider-transition-gate/v2",
         "scriptorium-provider-transition-gate/v3",
+        "scriptorium-provider-transition-gate/v4",
     }:
         if cases is None:
             raise ValueError("stratified provider transition gate requires case records")
@@ -1451,6 +1469,29 @@ def _evaluate_stratified_provider_transition_gate(
     if not rules:
         raise ValueError("stratified provider transition gate has no active rules")
     records = _suite_transition_records({"cases": list(cases)}, partition=None)
+    support_candidate_names: list[str] | None = None
+    if gate.get("schema") == "scriptorium-provider-transition-gate/v4":
+        if "support_candidate_names" not in gate:
+            raise ValueError(
+                "v4 provider transition gate requires support_candidate_names"
+            )
+        support_candidate_names = _normalize_transition_support_candidates(
+            gate.get("support_candidate_names"),
+            available_candidates=gate.get("candidate_orders") or [],
+        )
+        records = _transition_records_with_support_candidates(
+            records,
+            available_candidates=gate.get("candidate_orders") or [],
+            support_candidates=support_candidate_names,
+        )
+        if any(
+            int(rule.get("minimum_native_support", 0))
+            > len(support_candidate_names)
+            for rule in rules
+        ):
+            raise ValueError(
+                "provider transition rule support exceeds the gate candidate count"
+            )
     selected = _apply_stratified_transition_rules(records, rules)
     aggregate_metrics = _transition_record_metrics(
         selected,
@@ -1513,10 +1554,19 @@ def _evaluate_stratified_provider_transition_gate(
     )
     accepted = all(aggregate_checks.values()) and bucket_checks_passed
     return {
-        "schema": "scriptorium-provider-transition-gate-evaluation/v2",
+        "schema": (
+            "scriptorium-provider-transition-gate-evaluation/v3"
+            if support_candidate_names is not None
+            else "scriptorium-provider-transition-gate-evaluation/v2"
+        ),
         "status": "review-only",
         "runtime_reorder": False,
         "policy_type": gate.get("policy_type"),
+        **(
+            {"support_candidate_names": support_candidate_names}
+            if support_candidate_names is not None
+            else {}
+        ),
         "aggregate_metrics": aggregate_metrics,
         "aggregate_acceptance_criteria": dict(aggregate_criteria),
         "aggregate_criterion_results": aggregate_checks,
@@ -1594,6 +1644,116 @@ def _suite_provider_transition_candidate_evidence(
     return list(PROVIDER_TRANSITION_CANDIDATES), dict(
         PROVIDER_TRANSITION_CANDIDATE_EDGE_SEMANTICS
     )
+
+
+def _normalize_transition_support_candidates(
+    requested_candidates: Sequence[str] | None,
+    *,
+    available_candidates: Sequence[str],
+) -> list[str]:
+    available = [str(name).strip() for name in available_candidates]
+    if not available or any(not name for name in available):
+        raise ValueError("provider transition candidates must be non-empty")
+    if len(available) != len(set(available)):
+        raise ValueError("provider transition candidate names must be unique")
+
+    if requested_candidates is None:
+        requested = [
+            name
+            for name in available
+            if name in PROVIDER_TRANSITION_GATE_SUPPORT_CANDIDATES
+        ]
+    else:
+        raw_requested = (
+            [requested_candidates]
+            if isinstance(requested_candidates, str)
+            else list(requested_candidates)
+        )
+        requested = [str(name).strip() for name in raw_requested]
+        if any(not name for name in requested):
+            raise ValueError("support candidate names must be non-empty")
+        if len(requested) != len(set(requested)):
+            raise ValueError("support candidate names must be unique")
+        unknown = sorted(set(requested) - set(available))
+        if unknown:
+            raise ValueError(
+                "unknown support candidate names: " + ", ".join(unknown)
+            )
+        requested_set = set(requested)
+        requested = [name for name in available if name in requested_set]
+    if not requested:
+        raise ValueError("at least one support candidate is required")
+    return requested
+
+
+def _transition_records_with_support_candidates(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    available_candidates: Sequence[str],
+    support_candidates: Sequence[str],
+) -> list[dict[str, Any]]:
+    available = [str(name).strip() for name in available_candidates]
+    selected = _normalize_transition_support_candidates(
+        support_candidates,
+        available_candidates=available,
+    )
+    filtering = selected != available
+    available_set = set(available)
+    selected_set = set(selected)
+    normalized_records: list[dict[str, Any]] = []
+    for source_record in records:
+        record = dict(source_record)
+        try:
+            raw_support_count = int(record.get("native_support_count", 0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("native support count must be an integer") from exc
+        if not 0 <= raw_support_count <= len(available):
+            raise ValueError(
+                "native support count must be between zero and the candidate count"
+            )
+
+        raw_supporting_candidates = record.get("native_supporting_candidates")
+        if raw_supporting_candidates is None:
+            if filtering:
+                raise ValueError(
+                    "cannot filter transition support without "
+                    "native_supporting_candidates provenance"
+                )
+            normalized_records.append(record)
+            continue
+        if isinstance(raw_supporting_candidates, (str, bytes)) or not isinstance(
+            raw_supporting_candidates,
+            Sequence,
+        ):
+            raise ValueError("native_supporting_candidates must be a sequence")
+        supporting_candidates = [
+            str(name).strip() for name in raw_supporting_candidates
+        ]
+        if any(not name for name in supporting_candidates):
+            raise ValueError("native supporting candidate names must be non-empty")
+        if len(supporting_candidates) != len(set(supporting_candidates)):
+            raise ValueError("native supporting candidate names must be unique")
+        unknown = sorted(set(supporting_candidates) - available_set)
+        if unknown:
+            raise ValueError(
+                "unknown native supporting candidates: " + ", ".join(unknown)
+            )
+        if raw_support_count != len(supporting_candidates):
+            raise ValueError(
+                "native support count does not match supporting candidate provenance"
+            )
+
+        supporting_set = set(supporting_candidates)
+        observed_support = [name for name in available if name in supporting_set]
+        effective_support = [
+            name for name in observed_support if name in selected_set
+        ]
+        record["available_native_support_count"] = raw_support_count
+        record["available_native_supporting_candidates"] = observed_support
+        record["native_support_count"] = len(effective_support)
+        record["native_supporting_candidates"] = effective_support
+        normalized_records.append(record)
+    return normalized_records
 
 
 def _suite_transition_records(
