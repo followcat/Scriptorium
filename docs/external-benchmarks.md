@@ -669,7 +669,7 @@ images are downloaded or redistributed. The same model is scored in three modes:
 |---|---:|---:|---:|---:|
 | Native ranker | 8895 / 10681 / 10465 | 0.83278719 | 0.84997611 | 0.84129386 |
 | Native + global/calibrated structure role | 9193 / 10963 / 10465 | 0.83854784 | 0.87845198 | 0.85803621 |
-| Native + trained floating | 9208 / 10963 / 10465 | 0.83991608 | 0.87988533 | 0.85943625 |
+| Native + trained floating | 9210 / 10964 / 10465 | 0.84002189 | 0.88007645 | 0.85958281 |
 
 The calibrated global structure-role F1 delta over native is `+0.01674235`.
 Its graphical edges alone score 306/350 against 347 labels: precision
@@ -685,22 +685,33 @@ Every changed fit/calibration page improves. After freezing the gate, three
 fixed-test pages change and all three improve, adding five correct edges with
 four predictions over global assignment alone. Role fusion remains review-only.
 
-That train-only gate is now implemented. Its graphical edges score 321/356
-correct against 347 labels: precision `0.90168539`, recall `0.92507205`, F1
-`0.91322902`. Overall F1 improves by `+0.01814239` over native and by
-`+0.00140004` over calibrated global heuristic fusion. Threshold `0.27` comes only from the
-official-train document-hash calibration split; the 250-page test prefix was
-not used to select it. The learned gate remains review-only pending confidence
-reliability and document-family rejection analysis.
+The learned decoder now runs the same cardinality-first maximum-weight global
+assignment during threshold calibration and inference. Its margin is the
+minimum score gap against both a competing caption in the source row and a
+competing graphical block in the target column. On the official-train
+document-hash calibration partition, threshold `0.36` scores 1,373/1,489
+against 1,446 labels: precision `0.92209537`, recall `0.94951591`, F1
+`0.93560477`, up from the greedy decoder's `0.91295681`. The 250-page test was
+not used for threshold or reliability selection.
 
-The train-calibrated high-precision review tier selects 85 test edges, with
-83 correct: precision `0.97647059`, recall `0.23919308`. Requiring zero outlier
-features under the fit-only 1%/99% envelope narrows this to 72/72, precision
-`1.00000000`, recall `0.20749280`, across 28 document families. This rejection
-rule removes both errors from the confidence-only tier, but also rejects 11
-correct edges. The result is validation evidence only: because the calibration
-partition could not establish a `0.97` strict gate with minimum support, even
-the 72/72 subset stays review-only and is not inserted into runtime path cover.
+With that decoder frozen, graphical test edges improve from 321/356 and F1
+`0.91322902` to 323/357 and F1 `0.91761364`; the only changed page is
+`1507.01067_7`, improving from 2/3 to 4/4. Overall F1 gains `+0.01828895` over
+native and `+0.00154660` over calibrated global heuristic fusion.
+
+| Train-calibrated test subset | Correct / predicted / labels | Precision | Recall |
+|---|---:|---:|---:|
+| High-precision review | 235 / 242 / 347 | 0.97107438 | 0.67723343 |
+| Review + zero OOD | 204 / 209 / 347 | 0.97607656 | 0.58789625 |
+| Strict | 196 / 201 / 347 | 0.97512438 | 0.56484150 |
+| Strict + zero OOD | 169 / 173 / 347 | 0.97687861 | 0.48703170 |
+
+The answer-free label audit finds 306 exact local-geometry agreements, 32
+conflicting official graphical labels across 24 pages, nine labels without a
+geometry proposal, and 12 proposals without an official label. All five clean
+strict errors touch a graphical object in the conflict set; all four strict
+zero-OOD errors do as well. This is diagnostic context, not permission to change
+the official score or labels.
 
 ### Joint Body/Floating Path Cover
 
@@ -711,14 +722,14 @@ This filters contradictory raw edges and scores only selected graph relations:
 |---|---:|---:|---:|---:|---:|
 | Native ranker | 8667 / 9481 / 10465 | 0.91414408 | 0.82818920 | 0.86904643 | 18 |
 | Native + calibrated global role | 8951 / 9746 / 10465 | 0.91842807 | 0.85532728 | 0.88575528 | 3 |
-| Native + trained floating | 8976 / 9757 / 10465 | 0.91995490 | 0.85771620 | 0.88774602 | 2 |
+| Native + trained floating | 8983 / 9758 / 10465 | 0.92057799 | 0.85838509 | 0.88839440 | 2 |
 
-The trained mode protects and retains all 72 high-precision zero-OOD floating
+The trained mode protects and retains all 209 high-precision zero-OOD floating
 edges. It rejects 14 outgoing conflicts and 1,190 incoming conflicts across the
 corpus. The constrained F1 gain is real diagnostic evidence that body and float
-relations can share one graph, but it is not a runtime promotion: official
-calibration still lacks a valid strict gate, and the corpus has oracle layout
-anchors rather than OCR detection errors.
+relations can share one graph, but it is not a runtime promotion: the corpus has
+oracle layout anchors, and the strict gate still has to survive noisy and real
+provider inputs.
 
 ### Deterministic Layout/OCR Noise Sensitivity
 
@@ -726,20 +737,21 @@ The fixed 250 pages were replayed under the predefined synthetic profiles. Mild
 retains 11,267/11,369 elements and 10,276/10,465 resolvable labels; stress
 retains 11,028/11,369 elements and 9,829/10,465 labels.
 
-| Profile and mode | Raw F1 | Joint path-cover F1 | Joint precision | Joint recall | Protected float |
-|---|---:|---:|---:|---:|---:|
-| Mild native | 0.81361888 | 0.84100588 | 0.89577708 | 0.79254658 | 0 |
-| Mild trained floating | 0.82951773 | 0.85760048 | 0.90046248 | 0.81863354 | 65 |
-| Stress native | 0.59203145 | 0.59914677 | 0.71294831 | 0.51667463 | 0 |
-| Stress trained floating | 0.60318967 | 0.61358904 | 0.71920360 | 0.53502150 | 39 |
+| Profile and mode | Raw F1 | Joint F1 | Joint P/R | Protected | Strict P | Strict zero-OOD P |
+|---|---:|---:|---:|---:|---:|---:|
+| Mild native | 0.81361888 | 0.84100588 | 0.89577708 / 0.79254658 | 0 | n/a | n/a |
+| Mild trained floating | 0.82955665 | 0.85764341 | 0.90055713 / 0.81863354 | 170 | 0.96571429 | 0.96551724 |
+| Stress native | 0.59203145 | 0.59914677 | 0.71294831 / 0.51667463 | 0 | n/a | n/a |
+| Stress trained floating | 0.60318967 | 0.61366500 | 0.71923966 / 0.53511706 | 101 | 0.93495935 | 0.96551724 |
 
-The zero-OOD protected subsets remain 65/65 under mild noise and 39/39 under
-stress. Trained floating evidence therefore retains a positive joint-order
-delta under both controlled profiles. Absolute stress performance collapses,
-with 2,698 fragmented elements and 341 dropped elements, showing that layout
-detection quality remains a first-order dependency. These synthetic results do
-not establish real OCR robustness; provider output must be matched to the
-oracle anchors next.
+Trained floating evidence retains a positive joint-order delta under both
+controlled profiles, but neither mild nor stress strict precision reaches the
+`0.97` promotion target. All six mild strict errors touch audit-conflict
+graphicals; only two of eight stress errors do, so high-noise failures cannot be
+explained away as label ambiguity. Absolute stress performance also collapses,
+with 2,698 fragmented elements and 341 dropped elements. The next reliability
+experiment must fit noise-aware rejection only on train-derived perturbations;
+these synthetic results do not establish real OCR robustness.
 
 ### Real PaddleOCR-VL and Docling Anchors
 
@@ -752,10 +764,10 @@ first five rendered pages of `1401.3699`. This prefix is mostly single-column:
 | PaddleOCR-VL 1.6 | 224/224 | 63/66 | 207 / 219 / 207 | 0.94520548 | 1.00000000 | 0.97183099 |
 
 Both find 2/2 oracle figures. Docling emits two correct explicit float edges;
-Paddle emits no explicit relations. The trained gate contributes one reliable
-1/1 Paddle float edge, but it is already present in the serialized candidate,
-so combined F1 does not change. The graphical-label audit finds 2/2 exact
-geometry agreements and no official-label conflict on this prefix.
+Paddle emits no explicit relations. Global trained review edges remain correct,
+but none passes the strict gate on this prefix, and combined F1 does not change.
+The graphical-label audit finds 2/2 exact geometry agreements and no
+official-label conflict.
 
 A fixed complex page, `1412.1395` p. 4, contains two columns, two interleaved
 figures/captions, code, a full-width top diagram, and body text:
@@ -775,8 +787,10 @@ the upper “Fig. 1” caption. The answer-free local-geometry audit therefore m
 
 Docling's explicit edge and both trained-provider edges agree with the local
 geometry proposal on 1/1 predicted edge (precision `1.0`, recall `0.5` over two
-geometry proposals), at confidence about `0.985`. The calibrated `0.99` plus
-zero-OOD reliability gate still rejects both trained edges. This corrects the
-earlier “provider mispair” diagnosis: provider recognition and text ordering
-remain weak on the page, but the observed float penalty comes from an audited
-oracle conflict rather than duplicate graphical-anchor assignment.
+geometry proposals). Docling's trained edge does not pass the new strict gate;
+Paddle's does pass strict plus zero-OOD, but remains wrong under the crossed
+official raw label. This corrects the earlier “provider mispair” diagnosis:
+provider recognition and text ordering remain weak on the page, but the observed
+float penalty comes from an audited oracle conflict rather than duplicate
+graphical-anchor assignment. The edge remains review-only and does not reorder
+runtime output.

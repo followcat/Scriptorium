@@ -892,23 +892,36 @@ caption as a positive and nearby same-page text blocks as hard negatives. The
 27 shallow features cover graphical kind, normalized pair geometry, overlap,
 relative direction, block line count, text length, and caption prefixes. The
 model is a balanced histogram gradient booster. Its threshold is selected only
-on the train-derived calibration partition. Prediction applies a one-to-one,
-margin-first assignment and emits isolated review-only edges; answer-bearing
-inputs are rejected and runtime reorder remains disabled.
+on the train-derived calibration partition. Every threshold candidate is decoded
+with the same cardinality-first maximum-weight one-to-one assignment used at
+inference. Edge margin is the smaller score gap against another caption for the
+same graphical source and another graphical source for the same caption. This
+captures both row and column competition instead of accepting a source-local
+top score that loses the global assignment. Prediction emits isolated review-only
+edges; answer-bearing inputs are rejected and runtime reorder remains disabled.
+Older manifests without assignment-policy fields retain the original greedy
+source-best-margin decoder so historical models remain reproducible.
 
 The generated manifest records archive/member hashes, split policy, 4,102 fit
-pages, 1,073 calibration pages, 49,763 examples, 5,638 positives, threshold
-`0.27`, and calibration precision/recall/F1
-`0.87851662/0.95020747/0.91295681`.
+pages, 1,073 calibration pages, 49,763 examples, 5,638 positives,
+`assignment_policy = global-cardinality-weight-v1`, and
+`selection_margin_policy = min-row-column-score-gap-v1`. Threshold `0.36`
+produces 1,373/1,489 correct/predicted against 1,446 calibration labels:
+precision/recall/F1 `0.92209537/0.94951591/0.93560477`, up from the greedy
+decoder's calibration F1 `0.91295681`. Training twice produces byte-identical
+model files; manifests retain identical metrics and policy fields while
+recording their respective output filenames.
 
 Reliability is calibrated separately from the F1 operating point. A review gate
-requires at least 25 calibration predictions and precision `>= 0.95`; it selects
-confidence `>= 0.99`, giving 429/451 correct, precision `0.95121951`, recall
-`0.29668050`. A stricter `0.97` promotion target has no qualifying calibration
-gate and is explicitly serialized as unavailable. The model also stores fit-only
-1%/99% feature envelopes. Every selected edge reports feature outlier count and
-ratio, reliability tier, and strict-gate status. None of these fields enables
-runtime reorder.
+requires at least 25 calibration predictions and precision `>= 0.95`; confidence
+`>= 0.85` and assignment margin `>= 0.72` give 995/1,047 correct, precision
+`0.95033429`, recall `0.68810512`. The strict `0.97` target is now available at
+confidence `>= 0.05` and margin `>= 0.84`, giving 871/897 correct, precision
+`0.97101449`, recall `0.60235131`. The model also stores fit-only 1%/99% feature
+envelopes. Every selected edge reports feature outlier count and ratio,
+reliability tier, and strict-gate status. Clean calibration availability alone
+does not enable runtime reorder; robustness profiles and real providers remain
+separate promotion gates.
 
 The relation corpus now passes body and floating candidates through a shared
 degree-one acyclic selector. Candidate edges are confidence-sorted; only the
@@ -963,9 +976,35 @@ three improve; relative to the original greedy baseline, graphical correct
 increases by 11 with eight additional predictions. Real Docling/Paddle anchor
 recall and raw relation metrics remain unchanged.
 
-Provider floating predictions retain the same reliability boundary. Reports
-separate all review edges from high-confidence zero-OOD edges. They never write
-matches or provider order back into `DocumentIR`.
+The learned floating decoder is also global. With its train-only operating point
+frozen, raw graphical test F1 improves from `0.91322902` to `0.91761364`
+(`323/357/347`), and joint path-cover F1 improves from `0.88774602` to
+`0.88839440` (`8983/9758/10465`). The only raw page change is
+`1507.01067_7`, improving from `2/3` to `4/4`. The clean strict subset is
+`196/201` (precision `0.97512438`), or `169/173` with zero feature outliers
+(precision `0.97687861`). All five strict raw errors touch graphical objects
+where the independent local-geometry audit conflicts with the official label;
+the report records this fact without relabeling the corpus.
+
+Noise remains the limiting promotion gate. Mild strict precision is
+`0.96571429`, or `0.96551724` with zero OOD features; stress is `0.93495935`,
+or `0.96551724` with zero OOD features. Under stress, only two of eight strict
+raw errors touch audit-conflict graphicals, so the remaining errors cannot be
+explained by label ambiguity. Provider floating predictions expose the same
+review, strict, and feature-envelope subsets, but never write matches or order
+back into `DocumentIR`; `runtime_reorder` remains false. The next calibration
+experiment must fit robustness/rejection on train-derived perturbations and
+evaluate clean/noise risk-coverage jointly, rather than relaxing a test gate.
+
+Assignment-confidence analysis motivates score-gap and assignment-stability
+features beyond pair probability: https://doi.org/10.1016/j.patrec.2015.07.010
+
+Calibrated structured prediction motivates a separate correctness forecaster
+using margin and pseudo-margin features: https://proceedings.neurips.cc/paper/2015/file/52d2752b150f9c35ccb6869cbf074e48-Paper.pdf
+
+Noise-aware selective calibration is a candidate for train-only rejection
+fitting, not a claim of distribution-free test robustness:
+https://arxiv.org/abs/2208.12084
 
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture

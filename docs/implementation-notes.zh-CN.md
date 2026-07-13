@@ -491,19 +491,28 @@ hash 拆分，同一论文的页不会跨越 fit/calibration。每个图形 bloc
 组成正例，同页附近文本 block 作为 hard negative。27 个浅层特征包含图形类型、
 归一化 pair 几何、overlap、相对方向、block 行数、文本长度和 caption prefix。
 模型是 balanced histogram gradient booster，阈值只由 train 内 calibration partition 选择。
-推理使用一对一、margin-first assignment，只输出 isolated review-only edge；含答案输入会被
-拒绝，runtime reorder 仍关闭。
+每个阈值候选都会使用与推理一致的 cardinality-first 最大权重全局一对一 assignment。
+Edge margin 取两类竞争差值中的较小者：同一 graphical source 的其他 caption，以及同一
+caption 的其他 graphical source。这样不会把失去全局 assignment 的 source-local top score
+误当作高 margin。推理只输出 isolated review-only edge；含答案输入会被拒绝，runtime
+reorder 仍关闭。缺少 assignment policy 字段的旧 manifest 继续使用原始 greedy
+source-best-margin decoder，保证历史模型可复现。
 
 Manifest 记录 archive/member hash、split policy、4,102 个 fit 页、1,073 个 calibration 页、
-49,763 个样本、5,638 个正例、阈值 `0.27`，以及 calibration precision/recall/F1
-`0.87851662/0.95020747/0.91295681`。
+49,763 个样本、5,638 个正例、`assignment_policy = global-cardinality-weight-v1` 和
+`selection_margin_policy = min-row-column-score-gap-v1`。阈值 `0.36` 在 1,446 条
+calibration label 上得到 1,373/1,489 correct/predicted，precision/recall/F1 为
+`0.92209537/0.94951591/0.93560477`，高于 greedy decoder 的 calibration F1
+`0.91295681`。两次训练产生字节完全相同的 model；manifest 的指标与 policy 相同，
+只分别记录各自输出文件名。
 
 Reliability 与 F1 operating point 分开校准。Review gate 要求 calibration 上至少 25 条
-预测且 precision `>= 0.95`；最终选择 confidence `>= 0.99`，得到 429/451 correct、
-precision `0.95121951`、recall `0.29668050`。更严格的 `0.97` promotion 目标没有
-满足条件的 calibration gate，manifest 会明确写为 unavailable。模型还保存仅由 fit
-数据计算的 1%/99% feature envelope。每条 edge 都会报告 outlier count/ratio、
-reliability tier 和 strict-gate status；任何字段都不会开启 runtime reorder。
+预测且 precision `>= 0.95`；confidence `>= 0.85`、assignment margin `>= 0.72`
+得到 995/1,047 correct，precision `0.95033429`、recall `0.68810512`。严格的 `0.97`
+目标现在可用：confidence `>= 0.05`、margin `>= 0.84` 得到 871/897 correct，
+precision `0.97101449`、recall `0.60235131`。模型还保存仅由 fit 数据计算的 1%/99%
+feature envelope。每条 edge 都会报告 outlier count/ratio、reliability tier 和 strict-gate
+status。Clean calibration 可用不等于 runtime 可用；噪声与真实 provider 仍是独立 promotion gate。
 
 Relation corpus 现在会把 body 和 floating candidate 输入共享的 degree-one acyclic
 selector。Candidate edge 按 confidence 排序；只有由 train calibration 得到的 high-precision、
@@ -545,8 +554,30 @@ precision/recall/F1 为 `0.87428571/0.88184438/0.87804878`。整体 structure-ro
 3 个变化页全部改善；相对原始 greedy baseline，graphical correct 净增 11，prediction
 增加 8。真实 Docling/Paddle anchor recall 与 raw relation 指标保持不变。
 
-Provider floating prediction 保留相同 reliability 边界。报告将所有 review edge 与
-high-confidence zero-OOD edge 分开，且绝不会把 match 或 provider order 写回 `DocumentIR`。
+Learned floating decoder 也改为全局 assignment。Train-only operating point 冻结后，
+raw graphical test F1 从 `0.91322902` 提高到 `0.91761364`（`323/357/347`），joint
+path-cover F1 从 `0.88774602` 提高到 `0.88839440`（`8983/9758/10465`）。唯一变化的
+raw 页是 `1507.01067_7`，从 `2/3` 提高到 `4/4`。Clean strict subset 为 `196/201`
+（precision `0.97512438`），要求 zero feature outlier 后为 `169/173`（precision
+`0.97687861`）。五条 strict raw 错误全部触及独立局部几何审计与官方 label 冲突的
+graphical 对象；报告只记录这一事实，不改写 corpus label。
+
+噪声仍是 promotion 的限制条件。Mild strict precision 为 `0.96571429`，zero-OOD 后为
+`0.96551724`；stress 为 `0.93495935`，zero-OOD 后为 `0.96551724`。Stress 的八条
+strict raw 错误中只有两条触及 audit-conflict graphical，其余错误不能由 label 歧义解释。
+Provider floating prediction 会暴露相同的 review、strict 与 feature-envelope 子集，但绝不会
+把 match 或 order 写回 `DocumentIR`；`runtime_reorder` 保持 false。下一轮校准必须只在
+train-derived perturbation 上拟合 robustness/rejection，并联合评估 clean/noise risk-coverage，
+不能放宽 test gate。
+
+Assignment-confidence 研究支持继续加入 score-gap 与 assignment-stability 特征：
+https://doi.org/10.1016/j.patrec.2015.07.010
+
+Calibrated structured prediction 支持用 margin/pseudo-margin 训练独立 correctness forecaster：
+https://proceedings.neurips.cc/paper/2015/file/52d2752b150f9c35ccb6869cbf074e48-Paper.pdf
+
+Noise-aware selective calibration 可用于 train-only rejection 拟合，但不能据此声称 test
+具有 distribution-free 鲁棒性：https://arxiv.org/abs/2208.12084
 
 Sparse graph segmentation 将文本行与区域建模为双向几何关系，再做 cluster-and-sort；
 这是 train-only floating-pair gate 的候选架构：https://arxiv.org/abs/2305.02577

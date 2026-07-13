@@ -208,11 +208,15 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
   --floating-model outputs/models/floating-ranker.joblib
 ```
 
-The trained provider emits standard and high-precision review tiers plus
-fit-only feature-envelope diagnostics. These remain evidence, not automatic
-runtime constraints.
-The corpus report also scores a diagnostic joint path cover over body and
-floating edges, including degree conflicts and cycle rejections.
+The trained provider runs global one-to-one assignment at every candidate
+threshold and calibrates margin from the smaller source- and target-competitor
+score gap. It emits review/strict tiers plus fit-only feature-envelope
+diagnostics. On the fixed 250-page test, the strict graphical subset is
+`196/201`, or `169/173` with zero OOD features; precision remains below `0.97`
+under mild/stress noise, so these are review evidence rather than automatic
+runtime constraints. The corpus report also scores a joint body/floating path
+cover, degree/cycle conflicts, and whether strict errors touch graphical
+objects flagged by the answer-free label audit.
 Use `--noise-profile mild` or `stress` for deterministic synthetic robustness
 checks; these profiles do not replace benchmarks from real OCR providers.
 
