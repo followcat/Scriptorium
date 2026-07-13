@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -285,12 +286,14 @@ def benchmark_comphrdoc_relation_corpus(
     model_path: str | Path,
     *,
     floating_model_path: str | Path | None = None,
+    noise_profile: str = "clean",
     output: str | Path | None = None,
 ) -> CompHrDocRelationBenchmarkResult:
     """Score relation-role fusion on an answer-separated Comp-HRDoc corpus."""
 
     from . import relation_ranker
     from .relation_order import merge_relation_edge_path_cover
+    from .relation_noise import perturb_relation_structure
 
     corpus = Path(corpus_dir)
     manifest_path = corpus / "comphrdoc_relation_corpus_manifest.json"
@@ -311,13 +314,38 @@ def benchmark_comphrdoc_relation_corpus(
         )
         modes["native-plus-trained-floating"] = False
     totals = {name: _empty_relation_totals() for name in modes}
+    noise_totals: Counter[str] = Counter()
     page_results: list[dict[str, Any]] = []
     for sample in manifest.get("samples", []):
         structure_path = corpus / str(sample["structure"])
         semantic_path = corpus / str(sample["semantic_sidecar"])
         structure = json.loads(structure_path.read_text(encoding="utf-8"))
+        structure, noise_diagnostics = perturb_relation_structure(
+            structure,
+            profile=noise_profile,
+        )
+        for key in (
+            "source_element_count",
+            "retained_element_count",
+            "jittered_element",
+            "fragmented_element",
+            "type_dropout",
+            "element_dropout",
+            "prefix_corruption",
+        ):
+            noise_totals[key] += int(noise_diagnostics.get(key, 0))
         semantic = json.loads(semantic_path.read_text(encoding="utf-8"))
         truth = {tuple(edge) for edge in semantic.get("ro_linkings", [])}
+        retained_ids = {
+            element.get("id")
+            for element in structure.get("document", [])
+            if isinstance(element, Mapping)
+        }
+        noise_totals["label_count"] += len(truth)
+        noise_totals["resolvable_label_count"] += sum(
+            int(source in retained_ids and target in retained_ids)
+            for source, target in truth
+        )
         nodes = {
             node.get("id"): node
             for node in semantic.get("document", [])
@@ -435,6 +463,23 @@ def benchmark_comphrdoc_relation_corpus(
         "sample_count": len(page_results),
         "selection": manifest.get("selection"),
         "inference_inputs_are_answer_free": manifest.get("inference_inputs_are_answer_free"),
+        "noise": {
+            "profile": noise_profile,
+            **dict(noise_totals),
+            "element_retention_ratio": round(
+                noise_totals["retained_element_count"]
+                / noise_totals["source_element_count"],
+                8,
+            )
+            if noise_totals["source_element_count"]
+            else 0.0,
+            "resolvable_label_ratio": round(
+                noise_totals["resolvable_label_count"] / noise_totals["label_count"],
+                8,
+            )
+            if noise_totals["label_count"]
+            else 0.0,
+        },
         "summary": summarized,
         "f1_delta": round(fused_f1 - baseline_f1, 8),
         "pages": page_results,

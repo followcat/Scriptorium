@@ -177,6 +177,11 @@ def benchmark_comphrdoc_relations_command(
         exists=True,
         readable=True,
     ),
+    noise_profile: Literal["clean", "mild", "stress"] = typer.Option(
+        "clean",
+        "--noise-profile",
+        help="Deterministic synthetic layout/OCR perturbation profile.",
+    ),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ) -> None:
     """A/B score structure-role fusion on a Comp-HRDoc relation corpus."""
@@ -186,12 +191,14 @@ def benchmark_comphrdoc_relations_command(
             corpus_dir,
             model,
             floating_model_path=floating_model,
+            noise_profile=noise_profile,
             output=output,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
     summary = result.report["summary"]
     typer.echo(f"Samples: {result.report['sample_count']}")
+    typer.echo(f"Noise profile: {result.report['noise']['profile']}")
     typer.echo(f"Native ranker F1: {summary['native-ranker']['f1']}")
     typer.echo(f"Native plus structure-role F1: {summary['native-plus-structure-role']['f1']}")
     if "native-plus-trained-floating" in summary:

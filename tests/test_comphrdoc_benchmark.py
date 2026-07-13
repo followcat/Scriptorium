@@ -207,6 +207,8 @@ def test_relation_corpus_benchmark_reports_role_fusion_ab(
 
     assert result.report["sample_count"] == 1
     assert result.report["inference_inputs_are_answer_free"] is True
+    assert result.report["noise"]["profile"] == "clean"
+    assert result.report["noise"]["resolvable_label_ratio"] == 1.0
     assert result.report["summary"]["native-plus-structure-role"]["graphical"] == {
         "correct": 1,
         "predicted": 1,
