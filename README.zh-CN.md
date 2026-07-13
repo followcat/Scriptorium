@@ -234,10 +234,10 @@ partial label，因此当前报告将候选分为 `eligible`、`scorable` 与 `u
 `209/219` 是 partial-label-unaware 历史值。同一已打开 test window 的当前结果为
 `256/268 = 0.95522388`，另有 16 条未评分边，但页首与页末 Wilson 下界仍未过线。
 
-64 页 train-only suite 的 gate v3 要求至少两个 answer-free candidate 同意，并按 document
-执行 5-fold out-of-fold 选择。Aggregate OOF 为 `192/195 = 0.98461538`，但两个 fold 与
-两个 layout×position bucket 未通过；calibration 只有 `21/21`，Wilson `0.84536098` 且
-不足 30 条。因此 runtime promotion 继续关闭，也没有打开新的 test window。
+64 页 train-only suite 的 gate v4 把可观测候选与允许计入支持票的通道分开。默认三通道的
+aggregate OOF 为 `192/195 = 0.98461538`，calibration 为 `21/21`；加入 recursive XY-cut
+后 calibration 变为 `23/24`，说明它还不能作为独立支持票。Fold、bucket、Wilson 和数量门槛
+仍未全部通过，因此 runtime promotion 继续关闭，也没有打开新的 test window。
 
 Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/table 则使用
 全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出

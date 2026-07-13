@@ -981,15 +981,18 @@ every prediction as scorable and is therefore only a raw exact-match view:
 | Partial-label-aware direct precision | 237/278 = 0.85251799 | 50/84 = 0.59523810 | 287/362 = 0.79281768 |
 | Unscored direct transitions | 28 | 18 | 46 |
 
-Each direct transition now records the minimum detection confidence of its two
-Provider endpoints and how many answer-free native candidates (`visual-yx`,
-`box-flow`, and `relation-graph`) emit the same direct successor. Eligibility is
-computed from those fields before the scorer opens the semantic sidecar;
-changing relation labels cannot change eligible edges. The curve also reports a
-95% Wilson precision lower bound. Comp-HRDoc `ro_linkings` are partial labels,
-so review v2 scores an edge only when both endpoints occur in the relation
-endpoint universe; other selected edges are `unscored`. Gates also require a
-minimum `scorable_fraction`.
+Each direct transition records the minimum detection confidence of its two
+Provider endpoints and the exact answer-free native candidates that emit the
+same direct successor. Suite v8 exposes four observable channels: `visual-yx`,
+`box-flow`, non-trivial `recursive-xy-cut` tree edges, and selected
+`relation-graph` max-regret path-cover edges. Candidate provenance is retained
+separately from the subset approved for a gate. Eligibility is computed from
+those fields before the scorer opens the semantic sidecar; changing relation
+labels cannot change eligible edges. The curve also reports a 95% Wilson
+precision lower bound. Comp-HRDoc `ro_linkings` are partial labels, so review v3
+scores an edge only when both endpoints occur in the relation endpoint universe;
+other selected edges are `unscored`. Gates also require a minimum
+`scorable_fraction`.
 
 On the same 32-page fit/calibration suite, the endpoint-aware legacy v1 gate is
 `native support >= 1 && confidence >= 0.5`: fit is
@@ -1043,14 +1046,18 @@ with Wilson bounds `0.84216770`, `0.94097214`, and `0.88607548`. Start and end
 still fail, so this window remains veto-only.
 
 The next train-only suite expands to 64 pages and 32 documents: 25 fit documents
-and 7 calibration documents. Gate v3 predeclares at least two native candidate
-votes for every rule and performs five-fold document-grouped OOF selection:
+and 7 calibration documents. Gate v4 separates all observable candidates from
+the candidates allowed to contribute support. Its default support set is the
+previously calibrated `visual-yx`, `box-flow`, and selected `relation-graph`
+edges; `recursive-xy-cut` remains observable but does not count as an independent
+vote. Every rule still requires at least two support votes and five-fold
+document-grouped OOF selection:
 
 ```bash
 scriptorium freeze-stratified-provider-transition-gate \
-  outputs/pp-doclayoutv3-calibration-64/suite-v7.json \
+  outputs/pp-doclayoutv3-calibration-64/suite-v8-structural-edges.json \
   --minimum-native-support 2 --cross-validation-folds 5 \
-  --output outputs/pp-doclayoutv3-transition-gate-v3.json
+  --output outputs/pp-doclayoutv3-transition-gate-v4.json
 ```
 
 Full-fit rules reach `234/237 = 0.98734177`. Aggregate OOF is
@@ -1059,5 +1066,13 @@ with Wilson `0.83805895`. `graphical-multicolumn/middle` has only 18 scorable
 predictions; `multicolumn/start` is only `8/9`, Wilson `0.56500029`, with `0.75`
 scorable fraction. Calibration is `21/21`, but Wilson `0.84536098 < 0.85` and
 `21 < 30`. Requiring unanimous support 3 leaves no fit bucket with 20 examples.
-Gate v3 is therefore `document-cross-validation-rejected-review-only`; the
-fourth test window was not opened.
+Gate v4 reproduces these three-channel results exactly. Enabling all four
+channels explicitly keeps full-fit at `234/237`, but OOF becomes
+`173/176 = 0.98295455` and calibration becomes `23/24 = 0.95833333`, Wilson
+`0.79758194`. The added calibration error is supported only by `visual-yx` and
+`recursive-xy-cut`, confirming that the latter is correlated geometry evidence,
+not an independently calibrated vote. A strict `visual-yx + box-flow` control
+with support 2 produces no qualified fit bucket. Gate v4 is therefore still
+`document-cross-validation-rejected-review-only`; the fourth test window was
+not opened. Legacy v2/v3 gates retain their original support counts, while v4
+fails closed if candidate-level provenance is missing during filtering.

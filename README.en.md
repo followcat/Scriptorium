@@ -259,12 +259,12 @@ universe. The old `209/219` result was partial-label-unaware. On the same alread
 opened test window, the corrected result is `256/268 = 0.95522388`, with 16
 unscored transitions; start and end Wilson bounds still fail.
 
-Gate v3 requires at least two answer-free candidate votes and performs
-document-grouped five-fold rule selection on the 64-page train-only suite.
-Aggregate OOF precision is `192/195 = 0.98461538`, but two folds and two
-layout-by-position buckets fail. Calibration retains only `21/21`, with Wilson
-`0.84536098` and fewer than the required 30 scorable transitions. Runtime
-promotion remains rejected and no new test window was opened.
+Gate v4 separates observable candidates from channels allowed to contribute a
+support vote. On the 64-page train-only suite, the default three-channel set
+reaches OOF `192/195 = 0.98461538` and calibration `21/21`; adding recursive
+XY-cut changes calibration to `23/24`, so it is not an independent support vote.
+Fold, bucket, Wilson, and count gates still do not all pass. Runtime promotion
+remains rejected and no new test window was opened.
 
 Provider paragraphs still accept many oracle lines per block; figure/table
 anchors use global one-to-one assignment. Reports preserve raw official-relation

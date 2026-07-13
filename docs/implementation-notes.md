@@ -1163,28 +1163,33 @@ the corpus/sample/input SHA-256 provenance. Existing outputs are skipped only
 when their corpus manifest hash matches; `--refresh` is explicit, and a stale
 output from another corpus fails instead of being silently reused.
 
-Provider benchmark schema v5 separates serialized edges into
+Provider benchmark schema v6 separates serialized edges into
 `within_anchor`, `between_anchors`, and `direct_between_anchors`. A Provider
 paragraph may own many oracle lines, so within-anchor edges are geometry-local
 segmentation evidence, not evidence that the model ordered two blocks. Provider
 confidence is retained during normalization and copied into anchor assignment
-provenance. For each direct block transition, the evaluator computes exact
-direct-successor support from three answer-free native orders: visual Y/X,
-box-flow, and relation-graph. It emits the full support/confidence curve with a
-95% Wilson precision lower bound. Semantic labels score each already-selected
-point only; a label-invariance test verifies that changing `ro_linkings` cannot
-change eligible edges.
+provenance. For each direct block transition, the evaluator records exact
+direct-successor provenance from visual Y/X, box-flow, non-trivial recursive
+XY-cut tree edges, and the actual edges selected by relation-graph max-regret
+path cover. It emits the full support/confidence curve with a 95% Wilson
+precision lower bound. Semantic labels score each already-selected point only;
+a label-invariance test verifies that changing `ro_linkings` cannot change
+eligible edges.
 
-Comp-HRDoc `ro_linkings` are partial labels. Transition review v2 therefore
+Comp-HRDoc `ro_linkings` are partial labels. Transition review v3 therefore
 separates threshold-selected edges into `eligible`, `scorable`, and `unscored`.
 Precision includes an edge only when both endpoints occur in the relation
 endpoint universe; an unlabelled edge is no longer assumed false. Gates also
 require a minimum `scorable_fraction`, preventing apparently high precision from
-hiding mostly unscored output. Suite v7 aggregates the same counters by case,
+hiding mostly unscored output. Suite v8 aggregates the same counters by case,
 partition, layout, and position.
 
-`freeze_stratified_provider_transition_gate()` now writes gate v3. Its default
-predeclares `minimum_native_support = 2`, so single-candidate edges abstain.
+`freeze_stratified_provider_transition_gate()` now writes gate v4. The artifact
+separates `candidate_orders` from `support_candidate_names`; by default only
+visual Y/X, box-flow, and selected relation-graph edges contribute support.
+Recursive XY-cut stays available for explicit A/B and audit, but does not count
+as an independent default vote. The default still predeclares
+`minimum_native_support = 2`, so single-candidate edges abstain.
 Layout-by-position-by-confidence rules are selected on fit labels only. A
 SHA-256 document ordering then creates five out-of-fold splits: each validation
 fold is scored only with rules selected from the other documents. Aggregate,
@@ -1193,10 +1198,13 @@ minimum scorable count, and `scorable_fraction`. Calibration cannot modify any
 rule; it can only accept or reject. `cross_validation_folds = 0` exists only for
 legacy diagnostics.
 
-The artifact pins the source report and corpus SHA-256 values, candidate set,
-document folds, criteria, and criterion results, and always keeps
-`runtime_reorder: false`. `benchmark_provider_anchor_suite()` can load the gate
-on another corpus only after both document CV and calibration pass; no test-time
+The artifact pins the source report and corpus SHA-256 values, observable and
+support candidate sets, document folds, criteria, and criterion results, and
+always keeps `runtime_reorder: false`. Train and independent evaluation both
+recompute support from `native_supporting_candidates`. Gate v4 fails closed when
+filtering is requested without that provenance; legacy v2/v3 artifacts retain
+their original counts. `benchmark_provider_anchor_suite()` can load the gate on
+another corpus only after both document CV and calibration pass; no test-time
 threshold search occurs.
 
 `fetch_comphrdoc_provider_test_corpus()` applies a separate deterministic
@@ -1212,11 +1220,15 @@ partial-label-unaware and is withdrawn as a current metric. Start is `72/78`
 with Wilson `0.84216770`, middle is `91/92` with Wilson `0.94097214`, and end is
 `93/98` with Wilson `0.88607548`, so the audit can only reject promotion.
 
-On the enlarged 64-page train-only suite, gate v3 reaches `192/195` across 25
+On the enlarged 64-page train-only suite, gate v4's default three-channel set
+reproduces `192/195` across 25
 fit-document OOF predictions, but folds 2 and 3 each have Wilson `0.83805895`.
 The `graphical-multicolumn/middle` bucket has only 18 scorable predictions;
 `multicolumn/start` is only `8/9` with `0.75` scorable fraction. Seven
 calibration documents retain only `21/21`, with Wilson `0.84536098` and fewer
-than 30 predictions. Unanimous support 3 leaves no fit bucket with 20 examples.
-The gate is therefore `document-cross-validation-rejected-review-only`, and no
-new test window was opened.
+than 30 predictions. Explicitly adding recursive XY-cut changes OOF to
+`173/176` and calibration to `23/24`, Wilson `0.79758194`; the added error is a
+visual-Y/X plus XY-cut edge. A visual-Y/X plus box-flow support-2 control has no
+qualified fit bucket. The gate is therefore
+`document-cross-validation-rejected-review-only`, and no new test window was
+opened.
