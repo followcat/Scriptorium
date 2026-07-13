@@ -18,6 +18,8 @@ RELATION_FEATURE_VERSION = "roor-pair-geometry-text-branch-v2"
 RELATION_PROVIDER_SOURCE = "scriptorium-trained-relation-ranker"
 RELATION_DATASET_LICENSE = "CC-BY-4.0"
 DEFAULT_NEGATIVE_CANDIDATES = 20
+STRUCTURE_ROLE_MAX_VERTICAL_GAP_RATIO = 0.12
+STRUCTURE_ROLE_MAX_HORIZONTAL_CENTER_DISTANCE_RATIO = 0.35
 
 
 @dataclass(frozen=True)
@@ -512,12 +514,13 @@ def _is_local_caption(
 ) -> bool:
     gx0, gy0, gx1, gy1 = (float(value) for value in graphical["box"])
     cx0, cy0, cx1, cy1 = (float(value) for value in caption["box"])
-    horizontal_overlap = max(0.0, min(gx1, cx1) - max(gx0, cx0))
-    overlap_ratio = horizontal_overlap / max(1.0, min(gx1 - gx0, cx1 - cx0))
-    if overlap_ratio < 0.25:
-        return False
     gap = max(0.0, cy0 - gy1, gy0 - cy1)
-    return gap <= 0.12 * height and abs((cx0 + cx1) - (gx0 + gx1)) <= width
+    horizontal_center_distance = abs((cx0 + cx1 - gx0 - gx1) / 2)
+    return (
+        gap <= STRUCTURE_ROLE_MAX_VERTICAL_GAP_RATIO * height
+        and horizontal_center_distance
+        <= STRUCTURE_ROLE_MAX_HORIZONTAL_CENTER_DISTANCE_RATIO * width
+    )
 
 
 def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:

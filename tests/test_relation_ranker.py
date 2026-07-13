@@ -232,6 +232,30 @@ def test_structure_role_matching_is_global_and_input_order_independent() -> None
     ) == dict(reversed(list(expected.items())))
 
 
+def test_structure_role_locality_accepts_offset_caption_without_box_overlap() -> None:
+    segments = [
+        {"id": "figure", "box": [100, 20, 160, 80], "type": "figure"},
+        {
+            "id": "offset-caption",
+            "box": [55, 83, 95, 92],
+            "text": "Figure 1. Offset but local",
+        },
+        {
+            "id": "remote-caption",
+            "box": [0, 83, 30, 92],
+            "text": "Figure 2. Remote column",
+        },
+    ]
+
+    relations = relation_ranker._structure_role_successors(
+        segments,
+        width=200,
+        height=200,
+    )
+
+    assert relations["figure"][0] == "offset-caption"
+
+
 def test_document_ir_prediction_emits_page_local_generic_structure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
