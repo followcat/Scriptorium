@@ -11,9 +11,15 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
 
+from .bipartite_matching import maximum_weight_bipartite_matching
+
 
 FLOATING_RANKER_SCHEMA = "scriptorium-floating-relation-ranker/v1"
 FLOATING_FEATURE_VERSION = "comphrdoc-float-pair-v1"
+FLOATING_ASSIGNMENT_POLICY_LEGACY = "source-best-margin-greedy-v1"
+FLOATING_ASSIGNMENT_POLICY_GLOBAL = "global-cardinality-weight-v1"
+FLOATING_MARGIN_POLICY_LEGACY = "source-score-gap-v1"
+FLOATING_MARGIN_POLICY_GLOBAL = "min-row-column-score-gap-v1"
 COMPHRDOC_TRAIN_MEMBER = (
     "datasets/Comp-HRDoc/HRDH_MSRA_POD_TRAIN/unified_layout_analysis_train.json"
 )
@@ -61,15 +67,15 @@ def train_floating_relation_ranker(
     features, labels = _training_examples(fit_pages, negative_candidates=negative_candidates)
     feature_envelope = _feature_envelope(features)
     estimator, sklearn_version = _fit_estimator(features, labels, random_seed=random_seed)
-    calibration_records, calibration_label_count = _calibration_records(
+    scored_calibration_pages = _score_training_pages(
         estimator,
         calibration_pages,
     )
-    threshold, calibration = _calibrate_threshold(
-        calibration_records,
-        label_count=calibration_label_count,
+    threshold, calibration, calibration_records = _calibrate_global_assignment_threshold(
+        scored_calibration_pages,
         page_count=len(calibration_pages),
     )
+    calibration_label_count = int(calibration["label_count"])
     reliability_gate = _calibrate_reliability_gate(
         calibration_records,
         label_count=calibration_label_count,
@@ -86,6 +92,8 @@ def train_floating_relation_ranker(
     bundle = {
         "schema": FLOATING_RANKER_SCHEMA,
         "feature_version": FLOATING_FEATURE_VERSION,
+        "assignment_policy": FLOATING_ASSIGNMENT_POLICY_GLOBAL,
+        "selection_margin_policy": FLOATING_MARGIN_POLICY_GLOBAL,
         "threshold": threshold,
         "reliability_gate": reliability_gate,
         "promotion_gate": promotion_gate,
@@ -98,6 +106,8 @@ def train_floating_relation_ranker(
     manifest = {
         "schema": FLOATING_RANKER_SCHEMA,
         "feature_version": FLOATING_FEATURE_VERSION,
+        "assignment_policy": FLOATING_ASSIGNMENT_POLICY_GLOBAL,
+        "selection_margin_policy": FLOATING_MARGIN_POLICY_GLOBAL,
         "dataset": "Comp-HRDoc",
         "dataset_split": "official train only",
         "dataset_repository": "https://github.com/microsoft/CompHRDoc",
@@ -148,45 +158,46 @@ def _predict_floating_relations(
     width = _positive_float(payload.get("img", {}).get("width"), "img.width")
     height = _positive_float(payload.get("img", {}).get("height"), "img.height")
     blocks = _inference_blocks(payload.get("document"))
+    assignment_policy = _floating_assignment_policy(bundle)
     graphical = [block for block in blocks if block["kind"] in {"figure", "table"}]
     text_blocks = [block for block in blocks if block["kind"] == "text" and block["text"]]
+    if assignment_policy == FLOATING_ASSIGNMENT_POLICY_GLOBAL:
+        graphical = sorted(graphical, key=_block_geometry_key)
+        text_blocks = sorted(text_blocks, key=_block_geometry_key)
     estimator = bundle["estimator"]
     threshold = float(bundle["threshold"])
-    reliability_gate = bundle.get("reliability_gate", {})
+    reliability_gate = bundle.get("reliability_gate") or {}
     reliability_confidence = float(reliability_gate.get("confidence_threshold", 1.1))
     reliability_margin = float(reliability_gate.get("margin_threshold", 1.1))
-    promotion_gate = bundle.get("promotion_gate", {})
+    promotion_gate = bundle.get("promotion_gate") or {}
     promotion_confidence = float(promotion_gate.get("confidence_threshold", 1.1))
     promotion_margin = float(promotion_gate.get("margin_threshold", 1.1))
-    ranked: list[tuple[float, float, dict[str, Any], dict[str, Any], list[float]]] = []
-    candidate_count = 0
-    for source in graphical:
-        if not text_blocks:
-            continue
-        rows = [_pair_features(source, target, width=width, height=height) for target in text_blocks]
-        scores = [float(row[1]) for row in estimator.predict_proba(rows)]
-        candidate_count += len(scores)
-        order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-        best = order[0]
-        second_score = scores[order[1]] if len(order) > 1 else 0.0
-        ranked.append(
-            (scores[best], scores[best] - second_score, source, text_blocks[best], rows[best])
+    feature_rows, score_rows = _score_pair_matrix(
+        estimator,
+        graphical,
+        text_blocks,
+        width=width,
+        height=height,
+    )
+    candidate_count = sum(len(row) for row in score_rows)
+    if assignment_policy == FLOATING_ASSIGNMENT_POLICY_GLOBAL:
+        ranked = _global_assignment_pairs(
+            graphical,
+            text_blocks,
+            feature_rows,
+            score_rows,
+            threshold=threshold,
         )
-
-    claimed_graphical: set[Any] = set()
-    claimed_caption_blocks: set[Any] = set()
+    else:
+        ranked = _legacy_assignment_pairs(
+            graphical,
+            text_blocks,
+            feature_rows,
+            score_rows,
+            threshold=threshold,
+        )
     edges: list[dict[str, Any]] = []
-    for confidence, margin, graphical_block, caption_block, pair_features in sorted(
-        ranked,
-        key=lambda item: (item[1], item[0]),
-        reverse=True,
-    ):
-        if confidence < threshold:
-            continue
-        if graphical_block["block_id"] in claimed_graphical or caption_block["block_id"] in claimed_caption_blocks:
-            continue
-        claimed_graphical.add(graphical_block["block_id"])
-        claimed_caption_blocks.add(caption_block["block_id"])
+    for confidence, margin, graphical_block, caption_block, pair_features in ranked:
         outlier_count, outlier_ratio = _feature_outliers(
             pair_features,
             bundle.get("feature_envelope"),
@@ -226,6 +237,12 @@ def _predict_floating_relations(
         candidate_count,
         {
             "feature_version": FLOATING_FEATURE_VERSION,
+            "assignment_policy": assignment_policy,
+            "selection_margin_policy": (
+                FLOATING_MARGIN_POLICY_GLOBAL
+                if assignment_policy == FLOATING_ASSIGNMENT_POLICY_GLOBAL
+                else FLOATING_MARGIN_POLICY_LEGACY
+            ),
             "threshold": threshold,
             "reliability_gate": reliability_gate,
             "promotion_gate": promotion_gate,
@@ -249,6 +266,14 @@ def load_floating_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any
         raise ValueError("unsupported floating relation ranker schema")
     if bundle.get("feature_version") != FLOATING_FEATURE_VERSION:
         raise ValueError("unsupported floating relation feature version")
+    assignment_policy = _floating_assignment_policy(bundle)
+    manifest_policy = manifest.get("assignment_policy")
+    if manifest_policy is not None and str(manifest_policy) != assignment_policy:
+        raise ValueError("floating assignment policy does not match its manifest")
+    if assignment_policy == FLOATING_ASSIGNMENT_POLICY_GLOBAL:
+        margin_policy = str(bundle.get("selection_margin_policy") or "")
+        if margin_policy != FLOATING_MARGIN_POLICY_GLOBAL:
+            raise ValueError("unsupported floating selection margin policy")
     return bundle, manifest
 
 
@@ -349,6 +374,148 @@ def _inference_blocks(document: Any) -> list[dict[str, Any]]:
     return blocks
 
 
+def _floating_assignment_policy(bundle: Mapping[str, Any]) -> str:
+    policy = str(
+        bundle.get("assignment_policy") or FLOATING_ASSIGNMENT_POLICY_LEGACY
+    )
+    if policy not in {
+        FLOATING_ASSIGNMENT_POLICY_LEGACY,
+        FLOATING_ASSIGNMENT_POLICY_GLOBAL,
+    }:
+        raise ValueError(f"unsupported floating assignment policy: {policy}")
+    return policy
+
+
+def _block_geometry_key(block: Mapping[str, Any]) -> tuple[float, float, str]:
+    box = block["box"]
+    return float(box[1]), float(box[0]), str(block.get("block_id"))
+
+
+def _score_pair_matrix(
+    estimator: Any,
+    graphical: Sequence[Mapping[str, Any]],
+    text_blocks: Sequence[Mapping[str, Any]],
+    *,
+    width: float,
+    height: float,
+) -> tuple[list[list[list[float]]], list[list[float]]]:
+    feature_rows: list[list[list[float]]] = []
+    score_rows: list[list[float]] = []
+    for source in graphical:
+        features = [
+            _pair_features(source, target, width=width, height=height)
+            for target in text_blocks
+        ]
+        scores = (
+            [float(row[1]) for row in estimator.predict_proba(features)]
+            if features
+            else []
+        )
+        feature_rows.append(features)
+        score_rows.append(scores)
+    return feature_rows, score_rows
+
+
+def _legacy_assignment_pairs(
+    graphical: Sequence[dict[str, Any]],
+    text_blocks: Sequence[dict[str, Any]],
+    feature_rows: Sequence[Sequence[list[float]]],
+    score_rows: Sequence[Sequence[float]],
+    *,
+    threshold: float,
+) -> list[tuple[float, float, dict[str, Any], dict[str, Any], list[float]]]:
+    ranked: list[tuple[float, float, dict[str, Any], dict[str, Any], list[float]]] = []
+    for source_index, source in enumerate(graphical):
+        scores = score_rows[source_index]
+        if not scores:
+            continue
+        order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+        best = order[0]
+        second_score = scores[order[1]] if len(order) > 1 else 0.0
+        ranked.append(
+            (
+                scores[best],
+                scores[best] - second_score,
+                source,
+                text_blocks[best],
+                feature_rows[source_index][best],
+            )
+        )
+
+    claimed_graphical: set[Any] = set()
+    claimed_caption_blocks: set[Any] = set()
+    selected = []
+    for candidate in sorted(
+        ranked,
+        key=lambda item: (item[1], item[0]),
+        reverse=True,
+    ):
+        confidence, _, graphical_block, caption_block, _ = candidate
+        if confidence < threshold:
+            continue
+        if (
+            graphical_block["block_id"] in claimed_graphical
+            or caption_block["block_id"] in claimed_caption_blocks
+        ):
+            continue
+        claimed_graphical.add(graphical_block["block_id"])
+        claimed_caption_blocks.add(caption_block["block_id"])
+        selected.append(candidate)
+    return selected
+
+
+def _global_assignment_pairs(
+    graphical: Sequence[dict[str, Any]],
+    text_blocks: Sequence[dict[str, Any]],
+    feature_rows: Sequence[Sequence[list[float]]],
+    score_rows: Sequence[Sequence[float]],
+    *,
+    threshold: float,
+) -> list[tuple[float, float, dict[str, Any], dict[str, Any], list[float]]]:
+    selected = []
+    for match in maximum_weight_bipartite_matching(
+        score_rows,
+        minimum_score=threshold,
+    ):
+        source_index = match.left_index
+        target_index = match.right_index
+        selected.append(
+            (
+                match.score,
+                _global_selection_margin(score_rows, source_index, target_index),
+                graphical[source_index],
+                text_blocks[target_index],
+                feature_rows[source_index][target_index],
+            )
+        )
+    return selected
+
+
+def _global_selection_margin(
+    score_rows: Sequence[Sequence[float]],
+    source_index: int,
+    target_index: int,
+) -> float:
+    selected_score = float(score_rows[source_index][target_index])
+    row_competitor = max(
+        (
+            float(score)
+            for index, score in enumerate(score_rows[source_index])
+            if index != target_index
+        ),
+        default=0.0,
+    )
+    column_competitor = max(
+        (
+            float(row[target_index])
+            for index, row in enumerate(score_rows)
+            if index != source_index
+        ),
+        default=0.0,
+    )
+    return selected_score - max(row_competitor, column_competitor)
+
+
 def _document_hash_split(
     pages: Sequence[dict[str, Any]],
     *,
@@ -396,45 +563,122 @@ def _training_examples(
     return features, labels
 
 
-def _calibration_records(
+def _score_training_pages(
     estimator: Any,
     pages: Sequence[dict[str, Any]],
-) -> tuple[list[tuple[float, float, bool]], int]:
-    records: list[tuple[float, float, bool]] = []
-    label_count = sum(len(page["positives"]) for page in pages)
+) -> list[dict[str, Any]]:
+    scored_pages: list[dict[str, Any]] = []
     for page in pages:
-        graphical = [block for block in page["blocks"] if block["kind"] in {"figure", "table"}]
-        texts = [block for block in page["blocks"] if block["kind"] == "text" and block["text"]]
-        for source in graphical:
-            if not texts:
-                continue
-            rows = [_pair_features(source, target, width=page["width"], height=page["height"]) for target in texts]
-            scores = [float(row[1]) for row in estimator.predict_proba(rows)]
-            order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-            best = order[0]
-            second_score = scores[order[1]] if len(order) > 1 else 0.0
+        graphical = sorted(
+            [
+                block
+                for block in page["blocks"]
+                if block["kind"] in {"figure", "table"}
+            ],
+            key=_block_geometry_key,
+        )
+        text_blocks = sorted(
+            [
+                block
+                for block in page["blocks"]
+                if block["kind"] == "text" and block["text"]
+            ],
+            key=_block_geometry_key,
+        )
+        feature_rows, score_rows = _score_pair_matrix(
+            estimator,
+            graphical,
+            text_blocks,
+            width=page["width"],
+            height=page["height"],
+        )
+        scored_pages.append(
+            {
+                "graphical": graphical,
+                "text_blocks": text_blocks,
+                "feature_rows": feature_rows,
+                "score_rows": score_rows,
+                "positives": page["positives"],
+            }
+        )
+    return scored_pages
+
+
+def _global_calibration_records(
+    scored_pages: Sequence[Mapping[str, Any]],
+    *,
+    threshold: float,
+) -> tuple[list[tuple[float, float, bool]], dict[str, int]]:
+    records: list[tuple[float, float, bool]] = []
+    diagnostics = {
+        "negative_margin_count": 0,
+        "non_top_source_assignment_count": 0,
+        "contested_target_assignment_count": 0,
+    }
+    for page in scored_pages:
+        graphical = page["graphical"]
+        text_blocks = page["text_blocks"]
+        score_rows = page["score_rows"]
+        source_indices = {id(block): index for index, block in enumerate(graphical)}
+        target_indices = {id(block): index for index, block in enumerate(text_blocks)}
+        for confidence, margin, source, target, _ in _global_assignment_pairs(
+            graphical,
+            text_blocks,
+            page["feature_rows"],
+            score_rows,
+            threshold=threshold,
+        ):
+            source_index = source_indices[id(source)]
+            target_index = target_indices[id(target)]
+            row_competitor = max(
+                (
+                    float(score)
+                    for index, score in enumerate(score_rows[source_index])
+                    if index != target_index
+                ),
+                default=0.0,
+            )
+            column_competitor = max(
+                (
+                    float(row[target_index])
+                    for index, row in enumerate(score_rows)
+                    if index != source_index
+                ),
+                default=0.0,
+            )
+            diagnostics["negative_margin_count"] += int(margin < 0)
+            diagnostics["non_top_source_assignment_count"] += int(
+                row_competitor > confidence
+            )
+            diagnostics["contested_target_assignment_count"] += int(
+                column_competitor > confidence
+            )
             records.append(
                 (
-                    scores[best],
-                    scores[best] - second_score,
-                    (source["block_id"], texts[best]["block_id"]) in page["positives"],
+                    confidence,
+                    margin,
+                    (source["block_id"], target["block_id"])
+                    in page["positives"],
                 )
             )
-    return records, label_count
+    return records, diagnostics
 
 
-def _calibrate_threshold(
-    records: Sequence[tuple[float, float, bool]],
+def _calibrate_global_assignment_threshold(
+    scored_pages: Sequence[Mapping[str, Any]],
     *,
-    label_count: int,
     page_count: int,
-) -> tuple[float, dict[str, Any]]:
+) -> tuple[float, dict[str, Any], list[tuple[float, float, bool]]]:
+    label_count = sum(len(page["positives"]) for page in scored_pages)
     best_result: tuple[float, float, float, int, int] | None = None
     for step in range(5, 100):
         threshold = step / 100
-        selected = [correct for score, _, correct in records if score >= threshold]
-        predicted = len(selected)
-        correct = sum(selected)
+        records, _ = _global_calibration_records(
+            scored_pages,
+            threshold=threshold,
+        )
+        predicted = len(records)
+        correct = sum(int(record[2]) for record in records)
         precision = correct / predicted if predicted else 0.0
         recall = correct / label_count if label_count else 0.0
         f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
@@ -444,6 +688,10 @@ def _calibrate_threshold(
     assert best_result is not None
     f1, precision, threshold, predicted, correct = best_result
     recall = correct / label_count if label_count else 0.0
+    selected_records, assignment_diagnostics = _global_calibration_records(
+        scored_pages,
+        threshold=threshold,
+    )
     return threshold, {
         "page_count": page_count,
         "label_count": label_count,
@@ -452,7 +700,10 @@ def _calibrate_threshold(
         "precision": round(precision, 8),
         "recall": round(recall, 8),
         "f1": round(f1, 8),
-    }
+        "assignment_policy": FLOATING_ASSIGNMENT_POLICY_GLOBAL,
+        "selection_margin_policy": FLOATING_MARGIN_POLICY_GLOBAL,
+        **assignment_diagnostics,
+    }, selected_records
 
 
 def _calibrate_reliability_gate(

@@ -11,6 +11,18 @@ class _FakeEstimator:
         return [[1 - score, score] for score in scores]
 
 
+class _MatrixEstimator:
+    def predict_proba(self, features):
+        scores = {
+            (0.1, 0.1): 0.90,
+            (0.1, 0.8): 0.80,
+            (0.5, 0.1): 0.88,
+            (0.5, 0.8): 0.10,
+        }
+        values = [scores[(round(row[2], 1), round(row[6], 1))] for row in features]
+        return [[1 - score, score] for score in values]
+
+
 def _payload() -> dict:
     return {
         "img": {"width": 100, "height": 100},
@@ -40,12 +52,51 @@ def _payload() -> dict:
     }
 
 
+def _ambiguous_payload() -> dict:
+    return {
+        "img": {"width": 100, "height": 100},
+        "document": [
+            {
+                "id": "figure-a",
+                "block_id": "figure-a-block",
+                "type": "figure",
+                "box": [10, 10, 40, 40],
+            },
+            {
+                "id": "figure-b",
+                "block_id": "figure-b-block",
+                "type": "figure",
+                "box": [50, 10, 70, 40],
+            },
+            {
+                "id": "caption-a",
+                "block_id": "caption-a-block",
+                "type": "text",
+                "box": [10, 50, 40, 60],
+                "text": "Figure 1. Shared candidate",
+            },
+            {
+                "id": "caption-b",
+                "block_id": "caption-b-block",
+                "type": "text",
+                "box": [80, 50, 95, 60],
+                "text": "Figure 2. Alternate candidate",
+            },
+        ],
+    }
+
+
 def test_prediction_emits_review_only_trained_float_edge(monkeypatch) -> None:
     monkeypatch.setattr(
         floating_ranker,
         "load_floating_relation_ranker",
         lambda _: (
-            {"estimator": _FakeEstimator(), "threshold": 0.5},
+            {
+                "estimator": _FakeEstimator(),
+                "threshold": 0.5,
+                "reliability_gate": None,
+                "promotion_gate": None,
+            },
             {"model_sha256": "test"},
         ),
     )
@@ -72,6 +123,47 @@ def test_prediction_emits_review_only_trained_float_edge(monkeypatch) -> None:
         }
     ]
     assert result.diagnostics["runtime_reorder"] is False
+    assert (
+        result.diagnostics["assignment_policy"]
+        == floating_ranker.FLOATING_ASSIGNMENT_POLICY_LEGACY
+    )
+
+
+def test_global_assignment_recovers_conflicting_second_choice(monkeypatch) -> None:
+    monkeypatch.setattr(
+        floating_ranker,
+        "load_floating_relation_ranker",
+        lambda _: (
+            {
+                "estimator": _MatrixEstimator(),
+                "threshold": 0.5,
+                "assignment_policy": floating_ranker.FLOATING_ASSIGNMENT_POLICY_GLOBAL,
+                "selection_margin_policy": floating_ranker.FLOATING_MARGIN_POLICY_GLOBAL,
+            },
+            {"model_sha256": "global"},
+        ),
+    )
+
+    result = floating_ranker.predict_floating_relations(
+        _ambiguous_payload(),
+        "model.joblib",
+    )
+    reversed_payload = _ambiguous_payload()
+    reversed_payload["document"].reverse()
+    reversed_result = floating_ranker.predict_floating_relations(
+        reversed_payload,
+        "model.joblib",
+    )
+
+    expected = {("figure-a", "caption-b"), ("figure-b", "caption-a")}
+    assert {(edge["source"], edge["target"]) for edge in result.successor_edges} == expected
+    assert {
+        (edge["source"], edge["target"])
+        for edge in reversed_result.successor_edges
+    } == expected
+    assert result.candidate_pair_count == 4
+    assert result.diagnostics["assignment_policy"] == "global-cardinality-weight-v1"
+    assert all(edge["selection_margin"] < 0 for edge in result.successor_edges)
 
 
 def test_prediction_rejects_answer_bearing_input(monkeypatch) -> None:
@@ -119,6 +211,32 @@ def test_reliability_gate_meets_precision_floor_without_test_labels() -> None:
     assert gate["predicted_count"] == 60
     assert gate["precision"] == 1.0
     assert gate["recall"] == 1.0
+
+
+def test_global_threshold_calibration_runs_the_assignment_constraint() -> None:
+    graphical = [{"block_id": "figure-a"}, {"block_id": "figure-b"}]
+    text_blocks = [{"block_id": "caption-a"}, {"block_id": "caption-b"}]
+    scored_pages = [
+        {
+            "graphical": graphical,
+            "text_blocks": text_blocks,
+            "feature_rows": [[[0.0], [0.0]], [[0.0], [0.0]]],
+            "score_rows": [[0.90, 0.80], [0.88, 0.10]],
+            "positives": {("figure-a", "caption-b"), ("figure-b", "caption-a")},
+        }
+    ]
+
+    threshold, report, records = floating_ranker._calibrate_global_assignment_threshold(
+        scored_pages,
+        page_count=1,
+    )
+
+    assert threshold == 0.8
+    assert report["correct_count"] == 2
+    assert report["predicted_count"] == 2
+    assert report["f1"] == 1.0
+    assert report["negative_margin_count"] == 2
+    assert len(records) == 2
 
 
 def test_feature_envelope_reports_pair_domain_shift() -> None:

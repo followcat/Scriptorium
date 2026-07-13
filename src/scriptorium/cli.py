@@ -1015,6 +1015,7 @@ def train_floating_ranker_command(
         raise typer.BadParameter(str(exc), param_hint="annotation_archive") from exc
     typer.echo(f"Floating ranker model: {result.model_path}")
     typer.echo(f"Floating ranker manifest: {result.manifest_path}")
+    typer.echo(f"Assignment policy: {result.manifest['assignment_policy']}")
     typer.echo(f"Calibration F1: {result.manifest['calibration']['f1']}")
     typer.echo(f"Pair threshold: {result.manifest['threshold']}")
     review_gate = result.manifest["reliability_gate"]
