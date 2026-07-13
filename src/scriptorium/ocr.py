@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import tempfile
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -1203,6 +1205,24 @@ class PaddleOcrAdapter:
             "source": source,
             "model": model,
             "pipeline_version": pipeline_version,
+            "provenance": {
+                "adapter": type(self).__name__,
+                "pipeline_factory": (
+                    "custom" if self.pipeline_factory is not None else "installed-package"
+                ),
+                "pipeline_options": _provenance_options(self.options),
+                "predict_options": _provenance_options(self.predict_options),
+                "package_versions": _provider_package_versions(),
+                "inputs": [
+                    {
+                        "path": str(path),
+                        "source_page_index": page_index,
+                        "size_bytes": path.stat().st_size,
+                        "sha256": _file_sha256(path),
+                    }
+                    for path, page_index in zip(paths, source_page_indices, strict=True)
+                ],
+            },
             "raw_results": raw_results,
         }
 
@@ -1246,6 +1266,62 @@ class PaddleOcrAdapter:
             normalized = normalize_paddleocr_vl_payload(dict(serialized))
             return [normalized] if isinstance(normalized, dict) else []
         return []
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _provenance_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): (
+            "[redacted]"
+            if _is_sensitive_provenance_key(str(key))
+            else _provenance_value(value)
+        )
+        for key, value in sorted(options.items(), key=lambda item: str(item[0]))
+    }
+
+
+def _is_sensitive_provenance_key(key: str) -> bool:
+    normalized = key.casefold()
+    return normalized in {"key", "token"} or any(
+        marker in normalized
+        for marker in (
+            "api_key",
+            "password",
+            "secret",
+            "access_token",
+            "auth_token",
+            "bearer_token",
+        )
+    )
+
+
+def _provenance_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return _provenance_options(value)
+    if isinstance(value, (list, tuple)):
+        return [_provenance_value(item) for item in value]
+    return repr(value)
+
+
+def _provider_package_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for distribution in ("paddleocr", "paddlex", "paddlepaddle"):
+        try:
+            versions[distribution] = package_version(distribution)
+        except PackageNotFoundError:
+            continue
+    return versions
 
 
 class PpStructureAdapter(PaddleOcrAdapter):

@@ -751,6 +751,16 @@ def run_paddleocr_vl_command(
         None,
         help="Optional local PaddleOCR-VL recognition model directory.",
     ),
+    max_new_tokens: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Maximum VLM output tokens per page; omitted delegates to Paddle's default.",
+    ),
+    queued: bool = typer.Option(
+        False,
+        "--queued/--synchronous",
+        help="Use Paddle queue workers; synchronous mode is deterministic for local runs.",
+    ),
 ) -> None:
     """Run PaddleOCR-VL 1.6 on rendered source pages and persist its raw JSON."""
 
@@ -772,7 +782,13 @@ def run_paddleocr_vl_command(
         options["device"] = device
     if vl_rec_model_dir is not None:
         options["vl_rec_model_dir"] = str(vl_rec_model_dir)
-    payload = PaddleOcrAdapter(**options).analyze(
+    predict_options: dict[str, object] = {"use_queues": queued}
+    if max_new_tokens is not None:
+        predict_options["max_new_tokens"] = max_new_tokens
+    payload = PaddleOcrAdapter(
+        predict_options=predict_options,
+        **options,
+    ).analyze(
         [page.background_image for page in rendered.pages],
         page_indices=[page.page_index for page in rendered.pages],
     )

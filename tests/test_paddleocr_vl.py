@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -56,6 +57,18 @@ def test_paddle_adapter_preserves_source_page_index_through_result_wrappers(tmp_
     assert captured["predict_options"] == {"max_new_tokens": 512}
     assert payload["source"] == "paddleocr-vl"
     assert payload["model"] == "PaddleOCR-VL-1.6"
+    assert payload["provenance"]["adapter"] == "PaddleOcrAdapter"
+    assert payload["provenance"]["pipeline_factory"] == "custom"
+    assert payload["provenance"]["pipeline_options"] == {"device": "cpu"}
+    assert payload["provenance"]["predict_options"] == {"max_new_tokens": 512}
+    assert payload["provenance"]["inputs"] == [
+        {
+            "path": str(page_image),
+            "source_page_index": 135,
+            "size_bytes": page_image.stat().st_size,
+            "sha256": hashlib.sha256(page_image.read_bytes()).hexdigest(),
+        }
+    ]
     result = payload["raw_results"][0]
     assert result["page_index"] == 135
     assert result["input_path"] == str(page_image)
@@ -319,11 +332,17 @@ def test_paddleocr_vl_command_writes_replayable_structure_json_and_image_convert
             str(structure_json),
             "--device",
             "cpu",
+            "--max-new-tokens",
+            "768",
+            "--synchronous",
         ],
     )
 
     assert run_result.exit_code == 0, run_result.output
-    assert calls["options"] == {"device": "cpu"}
+    assert calls["options"] == {
+        "device": "cpu",
+        "predict_options": {"max_new_tokens": 768, "use_queues": False},
+    }
     assert calls["page_indices"] == [0]
     payload = json.loads(structure_json.read_text(encoding="utf-8"))
     assert payload["source"] == "paddleocr-vl"
