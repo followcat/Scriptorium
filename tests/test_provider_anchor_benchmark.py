@@ -467,6 +467,8 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
 
     result = freeze_stratified_provider_transition_gate(
         suite_path,
+        minimum_native_support=1,
+        cross_validation_folds=0,
         fit_minimum_precision=0.8,
         fit_minimum_wilson_lower_95=0.0,
         fit_minimum_predicted=3,
@@ -484,7 +486,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
     )
 
     gate = result.gate
-    assert gate["schema"] == "scriptorium-provider-transition-gate/v2"
+    assert gate["schema"] == "scriptorium-provider-transition-gate/v3"
     assert gate["calibration_accepted"] is True
     assert gate["calibration_can_modify_rules"] is False
     assert gate["bucket_definition"]["allowed_layout_strata"] == ["multicolumn"]
@@ -563,6 +565,8 @@ def test_stratified_gate_rejects_low_partial_label_scorability(tmp_path) -> None
 
     result = freeze_stratified_provider_transition_gate(
         suite_path,
+        minimum_native_support=1,
+        cross_validation_folds=0,
         fit_minimum_precision=1.0,
         fit_minimum_wilson_lower_95=0.0,
         fit_minimum_predicted=2,
@@ -584,6 +588,88 @@ def test_stratified_gate_rejects_low_partial_label_scorability(tmp_path) -> None
     assert metrics["precision"] == 1.0
     assert metrics["scorable_fraction"] == 0.5
     assert result.gate["calibration_accepted"] is False
+
+
+def test_stratified_gate_cross_validates_consensus_by_document(tmp_path) -> None:
+    fit_cases = [
+        _transition_case(
+            f"document-{index}_0",
+            document_id=f"document-{index}",
+            partition="fit",
+            layout_stratum="multicolumn",
+            correct=[True, True],
+            native_support_count=2,
+        )
+        for index in range(4)
+    ]
+    calibration = _transition_case(
+        "calibration-document_0",
+        document_id="calibration-document",
+        partition="calibration",
+        layout_stratum="multicolumn",
+        correct=[True, True],
+        native_support_count=2,
+    )
+    for case in [*fit_cases, calibration]:
+        case["provider_transition_review"]["transitions"].append(
+            {
+                "transition_index": 0,
+                "page_transition_count": 3,
+                "native_support_count": 1,
+                "minimum_provider_confidence": 0.99,
+                "correct": False,
+            }
+        )
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "corpus_manifest_sha256": "train-corpus",
+                "corpus": {"dataset": "Comp-HRDoc train"},
+                "cases": [*fit_cases, calibration],
+            }
+        )
+    )
+
+    result = freeze_stratified_provider_transition_gate(
+        suite_path,
+        minimum_native_support=2,
+        cross_validation_folds=2,
+        fit_minimum_precision=1.0,
+        fit_minimum_wilson_lower_95=0.0,
+        fit_minimum_predicted=2,
+        calibration_minimum_precision=1.0,
+        calibration_minimum_wilson_lower_95=0.0,
+        calibration_minimum_predicted=2,
+        test_minimum_precision=1.0,
+        test_minimum_wilson_lower_95=0.0,
+        test_minimum_predicted=2,
+        test_bucket_minimum_precision=1.0,
+        test_bucket_minimum_wilson_lower_95=0.0,
+        test_bucket_minimum_predicted=2,
+    )
+
+    gate = result.gate
+    cross_validation = gate["document_cross_validation"]
+    assert gate["schema"] == "scriptorium-provider-transition-gate/v3"
+    assert gate["minimum_native_support"] == 2
+    assert all(rule["minimum_native_support"] >= 2 for rule in gate["rules"])
+    assert cross_validation["accepted"] is True
+    assert cross_validation["out_of_fold_metrics"]["eligible"] == 8
+    assert cross_validation["out_of_fold_metrics"]["predicted"] == 8
+    assert cross_validation["out_of_fold_metrics"]["precision"] == 1.0
+    assert cross_validation["document_count"] == 4
+    assert len(cross_validation["bucket_evaluations"]) == 1
+    assert cross_validation["bucket_evaluations"][0][
+        "meets_acceptance_criteria"
+    ] is True
+    for fold in cross_validation["folds"]:
+        assert set(fold["training_document_ids"]).isdisjoint(
+            fold["validation_document_ids"]
+        )
+    assert gate["calibration_quality_accepted"] is True
+    assert all(gate["calibration_criterion_results"].values())
+    assert gate["calibration_accepted"] is True
 
 
 def test_paddle_vl_raw_results_are_supported() -> None:
@@ -879,13 +965,16 @@ def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeyp
 def _transition_case(
     sample_id: str,
     *,
+    document_id: str | None = None,
     partition: str,
     layout_stratum: str,
     correct: list[bool],
     transition_index: int = 0,
+    native_support_count: int = 1,
 ) -> dict:
     return {
         "sample_id": sample_id,
+        "document_id": document_id or sample_id,
         "partition": partition,
         "layout_stratum": layout_stratum,
         "provider_transition_review": {
@@ -893,7 +982,7 @@ def _transition_case(
                 {
                     "transition_index": transition_index,
                     "page_transition_count": 3,
-                    "native_support_count": 1,
+                    "native_support_count": native_support_count,
                     "minimum_provider_confidence": 0.9,
                     "correct": value,
                 }

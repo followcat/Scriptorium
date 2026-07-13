@@ -509,6 +509,17 @@ def freeze_stratified_provider_transition_gate_command(
         dir_okay=False,
         readable=True,
     ),
+    minimum_native_support: int = typer.Option(
+        2,
+        min=1,
+        max=3,
+        help="Minimum answer-free native candidate votes for every active rule.",
+    ),
+    cross_validation_folds: int = typer.Option(
+        5,
+        min=0,
+        help="Document-grouped fit folds; use 0 only for legacy diagnostics.",
+    ),
     fit_minimum_precision: float = typer.Option(0.95, min=0.0, max=1.0),
     fit_minimum_wilson_lower_95: float = typer.Option(
         0.8,
@@ -516,6 +527,11 @@ def freeze_stratified_provider_transition_gate_command(
         max=1.0,
     ),
     fit_minimum_predicted: int = typer.Option(20, min=1),
+    fit_minimum_scorable_fraction: float = typer.Option(
+        0.8,
+        min=0.0,
+        max=1.0,
+    ),
     calibration_minimum_precision: float = typer.Option(
         0.95,
         min=0.0,
@@ -527,6 +543,11 @@ def freeze_stratified_provider_transition_gate_command(
         max=1.0,
     ),
     calibration_minimum_predicted: int = typer.Option(30, min=1),
+    calibration_minimum_scorable_fraction: float = typer.Option(
+        0.8,
+        min=0.0,
+        max=1.0,
+    ),
     allowed_layout_strata: Optional[list[str]] = typer.Option(
         None,
         "--allowed-layout-stratum",
@@ -539,19 +560,25 @@ def freeze_stratified_provider_transition_gate_command(
     ),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ) -> None:
-    """Freeze fit bucket rules, then accept or reject them on calibration."""
+    """Freeze consensus bucket rules with document CV and calibration."""
 
     try:
         result = freeze_stratified_provider_transition_gate(
             suite_report,
+            minimum_native_support=minimum_native_support,
+            cross_validation_folds=cross_validation_folds,
             fit_minimum_precision=fit_minimum_precision,
             fit_minimum_wilson_lower_95=fit_minimum_wilson_lower_95,
             fit_minimum_predicted=fit_minimum_predicted,
+            fit_minimum_scorable_fraction=fit_minimum_scorable_fraction,
             calibration_minimum_precision=calibration_minimum_precision,
             calibration_minimum_wilson_lower_95=(
                 calibration_minimum_wilson_lower_95
             ),
             calibration_minimum_predicted=calibration_minimum_predicted,
+            calibration_minimum_scorable_fraction=(
+                calibration_minimum_scorable_fraction
+            ),
             allowed_layout_strata=allowed_layout_strata,
             allowed_position_bands=allowed_position_bands,
             output=output,
@@ -561,6 +588,15 @@ def freeze_stratified_provider_transition_gate_command(
     gate = result.gate
     typer.echo(f"Active bucket rules: {len(gate['rules'])}")
     typer.echo(f"Inactive buckets: {len(gate['inactive_buckets'])}")
+    cross_validation = gate["document_cross_validation"]
+    cross_validation_metrics = cross_validation["out_of_fold_metrics"]
+    typer.echo(
+        "Document CV precision/Wilson/predicted: "
+        f"{cross_validation_metrics['precision']}/"
+        f"{cross_validation_metrics['precision_wilson_lower_95']}/"
+        f"{cross_validation_metrics['predicted']}"
+    )
+    typer.echo(f"Document CV accepted: {cross_validation['accepted']}")
     typer.echo(
         "Fit precision/Wilson/predicted: "
         f"{gate['fit_aggregate_metrics']['precision']}/"
