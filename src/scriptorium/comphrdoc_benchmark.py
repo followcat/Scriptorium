@@ -290,6 +290,7 @@ def benchmark_comphrdoc_relation_corpus(
     """Score relation-role fusion on an answer-separated Comp-HRDoc corpus."""
 
     from . import relation_ranker
+    from .relation_order import merge_relation_edge_path_cover
 
     corpus = Path(corpus_dir)
     manifest_path = corpus / "comphrdoc_relation_corpus_manifest.json"
@@ -381,18 +382,43 @@ def benchmark_comphrdoc_relation_corpus(
                 high_reliability_in_envelope_predicted,
                 graphical_truth,
             )
+            ordered_edges = sorted(
+                prediction_edges,
+                key=lambda edge: float(edge.get("confidence", 0.0)),
+                reverse=True,
+            )
+            protected_path_edges = [
+                (edge["source"], edge["target"])
+                for edge in ordered_edges
+                if edge.get("reliability_tier") == "high-precision-review"
+                and int(edge.get("feature_outlier_count", 0)) == 0
+            ]
+            merged_path = merge_relation_edge_path_cover(
+                ((edge["source"], edge["target"]) for edge in ordered_edges),
+                protected_edges=protected_path_edges,
+            )
+            joint_path_metrics = _relation_counts(set(merged_path.selected_edges), truth)
             _accumulate_relation_totals(
                 totals[mode],
                 metrics,
                 role_metrics,
                 high_reliability_metrics,
                 high_reliability_in_envelope_metrics,
+                joint_path_metrics,
+                merged_path,
             )
             page_result[mode] = {
                 **metrics,
                 "graphical": role_metrics,
                 "high_reliability_graphical": high_reliability_metrics,
                 "high_reliability_in_envelope_graphical": high_reliability_in_envelope_metrics,
+                "joint_path_cover": {
+                    **joint_path_metrics,
+                    "protected_selected": len(merged_path.protected_selected_edges),
+                    "rejected_outgoing_conflict": merged_path.rejected_outgoing_conflict_count,
+                    "rejected_incoming_conflict": merged_path.rejected_incoming_conflict_count,
+                    "rejected_cycle": merged_path.rejected_cycle_count,
+                },
             }
         page_results.append(page_result)
     summarized = {name: _summarize_relation_totals(value) for name, value in totals.items()}
@@ -438,6 +464,13 @@ def _empty_relation_totals() -> dict[str, int]:
         "high_reliability_in_envelope_correct": 0,
         "high_reliability_in_envelope_predicted": 0,
         "high_reliability_in_envelope_labels": 0,
+        "joint_path_correct": 0,
+        "joint_path_predicted": 0,
+        "joint_path_labels": 0,
+        "joint_path_protected_selected": 0,
+        "joint_path_rejected_outgoing_conflict": 0,
+        "joint_path_rejected_incoming_conflict": 0,
+        "joint_path_rejected_cycle": 0,
     }
 
 
@@ -451,6 +484,8 @@ def _accumulate_relation_totals(
     graphical: Mapping[str, int],
     high_reliability: Mapping[str, int],
     high_reliability_in_envelope: Mapping[str, int],
+    joint_path: Mapping[str, int],
+    merged_path: Any,
 ) -> None:
     for key in ("correct", "predicted", "labels"):
         totals[key] += int(metrics[key])
@@ -459,6 +494,11 @@ def _accumulate_relation_totals(
         totals[f"high_reliability_in_envelope_{key}"] += int(
             high_reliability_in_envelope[key]
         )
+        totals[f"joint_path_{key}"] += int(joint_path[key])
+    totals["joint_path_protected_selected"] += len(merged_path.protected_selected_edges)
+    totals["joint_path_rejected_outgoing_conflict"] += merged_path.rejected_outgoing_conflict_count
+    totals["joint_path_rejected_incoming_conflict"] += merged_path.rejected_incoming_conflict_count
+    totals["joint_path_rejected_cycle"] += merged_path.rejected_cycle_count
 
 
 def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
@@ -494,12 +534,36 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
             totals["high_reliability_in_envelope_labels"],
         ),
     }
+    result["joint_path_cover"] = {
+        "correct": totals["joint_path_correct"],
+        "predicted": totals["joint_path_predicted"],
+        "labels": totals["joint_path_labels"],
+        **_precision_recall_f1(
+            totals["joint_path_correct"],
+            totals["joint_path_predicted"],
+            totals["joint_path_labels"],
+        ),
+        "protected_selected": totals["joint_path_protected_selected"],
+        "rejected_outgoing_conflict": totals["joint_path_rejected_outgoing_conflict"],
+        "rejected_incoming_conflict": totals["joint_path_rejected_incoming_conflict"],
+        "rejected_cycle": totals["joint_path_rejected_cycle"],
+    }
     for key in ("graphical_correct", "graphical_predicted", "graphical_labels"):
         result.pop(key)
     for key in (
         "high_reliability_correct",
         "high_reliability_predicted",
         "high_reliability_labels",
+    ):
+        result.pop(key)
+    for key in (
+        "joint_path_correct",
+        "joint_path_predicted",
+        "joint_path_labels",
+        "joint_path_protected_selected",
+        "joint_path_rejected_outgoing_conflict",
+        "joint_path_rejected_incoming_conflict",
+        "joint_path_rejected_cycle",
     ):
         result.pop(key)
     for key in (

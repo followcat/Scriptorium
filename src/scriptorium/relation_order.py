@@ -1,5 +1,91 @@
 from __future__ import annotations
 
+from collections.abc import Hashable, Iterable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class RelationEdgeMergeResult:
+    selected_edges: tuple[tuple[Hashable, Hashable], ...]
+    protected_selected_edges: tuple[tuple[Hashable, Hashable], ...]
+    rejected_outgoing_conflict_count: int
+    rejected_incoming_conflict_count: int
+    rejected_cycle_count: int
+    rejected_self_loop_count: int
+
+
+def merge_relation_edge_path_cover(
+    candidate_edges: Iterable[tuple[Hashable, Hashable]],
+    *,
+    protected_edges: Iterable[tuple[Hashable, Hashable]] = (),
+) -> RelationEdgeMergeResult:
+    """Merge ordered relation evidence into an acyclic degree-one path cover."""
+
+    successor: dict[Hashable, Hashable] = {}
+    predecessor: dict[Hashable, Hashable] = {}
+    selected: list[tuple[Hashable, Hashable]] = []
+    protected_selected: list[tuple[Hashable, Hashable]] = []
+    seen: set[tuple[Hashable, Hashable]] = set()
+    outgoing_rejections = 0
+    incoming_rejections = 0
+    cycle_rejections = 0
+    self_loop_rejections = 0
+
+    def consider(edge: tuple[Hashable, Hashable], *, protected: bool) -> None:
+        nonlocal outgoing_rejections, incoming_rejections, cycle_rejections, self_loop_rejections
+        source, target = edge
+        if edge in seen:
+            return
+        seen.add(edge)
+        if source == target:
+            self_loop_rejections += 1
+            return
+        if source in successor:
+            outgoing_rejections += 1
+            return
+        if target in predecessor:
+            incoming_rejections += 1
+            return
+        if _generic_successor_path_reaches(successor, start=target, target=source):
+            cycle_rejections += 1
+            return
+        successor[source] = target
+        predecessor[target] = source
+        selected.append(edge)
+        if protected:
+            protected_selected.append(edge)
+
+    for edge in protected_edges:
+        consider(edge, protected=True)
+    for edge in candidate_edges:
+        consider(edge, protected=False)
+    return RelationEdgeMergeResult(
+        tuple(selected),
+        tuple(protected_selected),
+        outgoing_rejections,
+        incoming_rejections,
+        cycle_rejections,
+        self_loop_rejections,
+    )
+
+
+def _generic_successor_path_reaches(
+    successor: dict[Hashable, Hashable],
+    *,
+    start: Hashable,
+    target: Hashable,
+) -> bool:
+    current = start
+    seen: set[Hashable] = set()
+    while current in successor:
+        if current in seen:
+            return True
+        seen.add(current)
+        current = successor[current]
+        if current == target:
+            return True
+    return False
+
 
 def relation_edge_candidate_order(
     *,
