@@ -663,26 +663,27 @@ and motivates a larger document-diverse floating split.
 The annotation-only corpus selects the first 250 graphical floating pages by
 published image-name order before inference. It spans 53 test documents,
 10,465 official successor labels, and 347 floating graphical labels. No page
-images are downloaded or redistributed. The same model is scored twice:
+images are downloaded or redistributed. The same model is scored in three modes:
 
 | Mode | Correct / predicted / labels | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|
 | Native ranker | 8895 / 10681 / 10465 | 0.83278719 | 0.84997611 | 0.84129386 |
-| Native + structure role | 9182 / 10959 / 10465 | 0.83785017 | 0.87740086 | 0.85716953 |
+| Native + global structure role | 9188 / 10959 / 10465 | 0.83839766 | 0.87797420 | 0.85772965 |
 | Native + trained floating | 9208 / 10963 / 10465 | 0.83991608 | 0.87988533 | 0.85943625 |
 
-The F1 delta is `+0.01587567`. Structure-role edges alone score 295/342
-correct against 347 graphical labels: precision `0.86257310`, recall
-`0.85014409`, F1 `0.85631350`. This supersedes the optimistic 18/18 result as
-the stronger generalization evidence. Caption text heuristics and fixed geometry
-remain insufficient for all document families, so role fusion stays review-only.
-The follow-up experiment was constrained to train a float-pair gate only on
-Comp-HRDoc train annotations while keeping this test prefix untouched.
+The global structure-role F1 delta over native is `+0.01643579`. Its graphical
+edges alone score 301/346 against 347 labels: precision `0.86994220`, recall
+`0.86743516`, F1 `0.86868687`, up from 295/342 and `0.85631350`. A cardinality-
+first maximum-weight assignment recovers six net correct edges without using
+test labels. Seven pages change, four improve, and one regresses because the
+pre-existing 25% horizontal-overlap gate excludes its true caption. That gate
+is not adjusted from test evidence; any threshold change requires train-only
+calibration. Role fusion remains review-only.
 
 That train-only gate is now implemented. Its graphical edges score 321/356
 correct against 347 labels: precision `0.90168539`, recall `0.92507205`, F1
 `0.91322902`. Overall F1 improves by `+0.01814239` over native and by
-`+0.00226672` over the heuristic fusion. Threshold `0.27` comes only from the
+`+0.00170660` over global heuristic fusion. Threshold `0.27` comes only from the
 official-train document-hash calibration split; the 250-page test prefix was
 not used to select it. The learned gate remains review-only pending confidence
 reliability and document-family rejection analysis.
@@ -704,7 +705,7 @@ This filters contradictory raw edges and scores only selected graph relations:
 | Mode | Correct / selected / labels | Precision | Recall | F1 | Cycles rejected |
 |---|---:|---:|---:|---:|---:|
 | Native ranker | 8667 / 9481 / 10465 | 0.91414408 | 0.82818920 | 0.86904643 | 18 |
-| Native + heuristic role | 8940 / 9738 / 10465 | 0.91805299 | 0.85427616 | 0.88501708 | 3 |
+| Native + global heuristic role | 8946 / 9742 / 10465 | 0.91829193 | 0.85484950 | 0.88543574 | 3 |
 | Native + trained floating | 8976 / 9757 / 10465 | 0.91995490 | 0.85771620 | 0.88774602 | 2 |
 
 The trained mode protects and retains all 72 high-precision zero-OOD floating
@@ -748,7 +749,8 @@ first five rendered pages of `1401.3699`. This prefix is mostly single-column:
 Both find 2/2 oracle figures. Docling emits two correct explicit float edges;
 Paddle emits no explicit relations. The trained gate contributes one reliable
 1/1 Paddle float edge, but it is already present in the serialized candidate,
-so combined F1 does not change.
+so combined F1 does not change. The graphical-label audit finds 2/2 exact
+geometry agreements and no official-label conflict on this prefix.
 
 A fixed complex page, `1412.1395` p. 4, contains two columns, two interleaved
 figures/captions, code, a full-width top diagram, and body text:
@@ -760,9 +762,16 @@ figures/captions, code, a full-width top diagram, and body text:
 
 Docling produces 70 text/caption anchors but only 10 match oracle text lines,
 showing severe granularity/region over-segmentation. Paddle has stronger text
-matching but misses one figure. On this page, both providers lead the trained
-float gate to the same wrong Figure-1-to-Figure-2-caption edge (`0/1`), at
-confidence about `0.985`. The calibrated `0.99` plus zero-OOD reliability gate
-rejects both (`0/0`), so provider relation F1 is not degraded. These results
-confirm that the complex-page bottleneck is real and that provider recognition,
-anchor association, and relation inference must be scored separately.
+matching but misses one figure. The raw scores above remain unchanged. However,
+both pinned Comp-HRDoc unified annotations and `test_eval/1412.1395.json` bind
+the top Figure 1 box to the lower “Fig. 2” caption and the lower Figure 2 box to
+the upper “Fig. 1” caption. The answer-free local-geometry audit therefore marks
+2/2 official graphical labels as conflicts; it does not replace them.
+
+Docling's explicit edge and both trained-provider edges agree with the local
+geometry proposal on 1/1 predicted edge (precision `1.0`, recall `0.5` over two
+geometry proposals), at confidence about `0.985`. The calibrated `0.99` plus
+zero-OOD reliability gate still rejects both trained edges. This corrects the
+earlier “provider mispair” diagnosis: provider recognition and text ordering
+remain weak on the page, but the observed float penalty comes from an audited
+oracle conflict rather than duplicate graphical-anchor assignment.

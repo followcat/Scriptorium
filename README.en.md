@@ -178,7 +178,10 @@ SHA-256 digest and records the training split and calibration metrics.
 Explicit figure/table roles are also retained: local caption geometry adds
 review-only `figure -> caption` or `caption -> table` evidence without changing
 runtime order. Multi-line captions use answer-free layout block membership, and
-this evidence is labelled separately from learned text edges.
+this evidence is labelled separately from learned text edges. When several
+figures/tables and captions coexist, a global one-to-one assignment maximizes
+valid pair count and then total geometry score, so input-list order cannot let
+an early graphical block claim a shared caption.
 
 An independent cross-domain relation benchmark can be generated from a fixed
 Comp-HRDoc test document. Official order labels and answer-free layout anchors
@@ -216,6 +219,12 @@ Match saved PaddleOCR-VL or Docling output to rendered oracle anchors with:
 scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
   outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
 ```
+
+Provider paragraphs still accept many oracle lines per block; figure/table
+anchors use global one-to-one assignment. Reports preserve raw official-relation
+scores and add `graphical_relation_audit`, comparing official graphical labels
+with an answer-free local-geometry proposal. This audit detects label/association
+conflicts; it is not replacement ground truth and cannot change runtime order.
 
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,

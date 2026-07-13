@@ -172,7 +172,8 @@ scriptorium run-relation-ranker page.structure.json \
 显式 figure/table role 也会保留：局部 caption 几何关系会产生 review-only
 `figure -> caption` 或 `caption -> table` 证据，但不会改变 runtime 顺序；
 多行 caption 使用不含答案的 layout block membership，这类证据与 learned text
-edge 分开标记。
+edge 分开标记。多个 figure/table 与 caption 同时出现时，使用全局一对一匹配，
+先最大化有效配对数，再最大化总几何得分，不再让输入列表中靠前的图形抢占 caption。
 
 独立跨域关系基准可从 Comp-HRDoc 固定 test 文档生成；命令会把官方 order label 与
 answer-free layout anchors 分开保存：
@@ -208,6 +209,11 @@ profile 不能取代真实 OCR provider benchmark。
 scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
   outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
 ```
+
+Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/table 则使用
+全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出
+`graphical_relation_audit`，比较官方 graphical label 与 answer-free 局部几何建议。
+该审计只用于发现 label/association 冲突，不是替代 ground truth，也不会改变 runtime。
 
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，

@@ -929,14 +929,32 @@ sensitivity tests, not measured OCR error distributions.
 
 `benchmark-provider-anchors` normalizes Docling documents, PaddleOCR-VL 1.6
 `raw_results`, ROOR-style pages, and generic `pages/elements` providers into one
-top-left anchor contract. Matching is many oracle lines to one provider block:
-each oracle anchor selects its strongest type-compatible geometry match, while
-one provider paragraph may own several lines. Within a matched provider block,
-oracle lines are ordered by geometry rather than JSON list position, preventing
-answer-order leakage. Reports include total and type-specific anchor recall,
-provider match rate, serialized relation edges, explicit figure/table-caption
-edges, and optional trained floating edges. The suite command aggregates files
-selected by a rendered Comp-HRDoc manifest.
+top-left anchor contract. Text/caption matching is many oracle lines to one
+provider paragraph. Figure/table matching is globally one-to-one: a dependency-
+free Hungarian solver first maximizes eligible match cardinality, then total
+geometry score, with dummy columns for unmatched anchors. The same primitive
+replaces input-order caption claiming in structure-role relation fusion. Within
+a matched provider paragraph, oracle lines are ordered by geometry rather than
+JSON list position, preventing answer-order leakage.
+
+Reports include total and type-specific anchor recall, provider match rate,
+serialized relation edges, explicit figure/table-caption edges, and optional
+trained floating edges. `graphical_relation_audit` retains raw official scores
+while comparing official graphical labels with an answer-free local-geometry
+proposal. It reports exact agreement, conflicts, unresolved labels, and provider
+agreement against that diagnostic proposal. The proposal is explicitly not
+ground truth and never rewrites labels or `DocumentIR`. The suite command
+aggregates the same counters over files selected by a rendered Comp-HRDoc
+manifest.
+
+On the fixed 250-page graphical test corpus, global structure-role assignment
+raises graphical correct/predicted from `295/342` to `301/346` and graphical F1
+from `0.85631350` to `0.86868687`. Overall structure-role F1 changes from
+`0.85716953` to `0.85772965`; diagnostic joint path-cover F1 changes from
+`0.88501708` to `0.88543574`. Seven pages change, four improve, and one loses a
+correct edge because the pre-existing 25% horizontal-overlap gate rejects its
+true caption. That threshold must be calibrated from train-only data rather
+than adjusted against this test page.
 
 Provider floating predictions retain the same reliability boundary. Reports
 separate all review edges from high-confidence zero-OOD edges. They never write
