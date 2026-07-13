@@ -332,6 +332,13 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
         layout_stratum="graphical-multicolumn",
         correct=[False, False, False, False, True],
     )
+    fit_middle = _transition_case(
+        "fit-middle",
+        partition="fit",
+        layout_stratum="multicolumn",
+        correct=[True, True, True],
+        transition_index=1,
+    )
     calibration = _transition_case(
         "calibration-good",
         partition="calibration",
@@ -344,7 +351,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
             {
                 "corpus_manifest_sha256": "train-corpus",
                 "corpus": {"dataset": "Comp-HRDoc train"},
-                "cases": [fit_good, fit_bad, calibration],
+                "cases": [fit_good, fit_bad, fit_middle, calibration],
             }
         )
     )
@@ -364,6 +371,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
         test_bucket_minimum_wilson_lower_95=0.0,
         test_bucket_minimum_predicted=2,
         allowed_layout_strata=["multicolumn"],
+        allowed_position_bands=["start"],
     )
 
     gate = result.gate
@@ -371,6 +379,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
     assert gate["calibration_accepted"] is True
     assert gate["calibration_can_modify_rules"] is False
     assert gate["bucket_definition"]["allowed_layout_strata"] == ["multicolumn"]
+    assert gate["bucket_definition"]["allowed_position_bands"] == ["start"]
     assert [
         (rule["layout_stratum"], rule["position_band"])
         for rule in gate["rules"]
@@ -381,7 +390,13 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
             "position_band": "start",
             "fit_transition_count": 5,
             "reason": "excluded-by-predeclared-layout-policy",
-        }
+        },
+        {
+            "layout_stratum": "multicolumn",
+            "position_band": "middle",
+            "fit_transition_count": 3,
+            "reason": "excluded-by-predeclared-position-policy",
+        },
     ]
     held_out_cases = [
         _transition_case(
@@ -675,6 +690,7 @@ def _transition_case(
     partition: str,
     layout_stratum: str,
     correct: list[bool],
+    transition_index: int = 0,
 ) -> dict:
     return {
         "sample_id": sample_id,
@@ -683,7 +699,7 @@ def _transition_case(
         "provider_transition_review": {
             "transitions": [
                 {
-                    "transition_index": 0,
+                    "transition_index": transition_index,
                     "page_transition_count": 3,
                     "native_support_count": 1,
                     "minimum_provider_confidence": 0.9,

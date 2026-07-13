@@ -532,6 +532,11 @@ def freeze_stratified_provider_transition_gate_command(
         "--allowed-layout-stratum",
         help="Repeat to predeclare layout families that may receive active rules.",
     ),
+    allowed_position_bands: Optional[list[str]] = typer.Option(
+        None,
+        "--allowed-position-band",
+        help="Repeat to predeclare start/middle/end/single bands that may receive rules.",
+    ),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ) -> None:
     """Freeze fit bucket rules, then accept or reject them on calibration."""
@@ -548,6 +553,7 @@ def freeze_stratified_provider_transition_gate_command(
             ),
             calibration_minimum_predicted=calibration_minimum_predicted,
             allowed_layout_strata=allowed_layout_strata,
+            allowed_position_bands=allowed_position_bands,
             output=output,
         )
     except (OSError, RuntimeError, ValueError) as exc:

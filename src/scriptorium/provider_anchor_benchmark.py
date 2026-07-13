@@ -661,6 +661,7 @@ def freeze_stratified_provider_transition_gate(
     test_bucket_minimum_wilson_lower_95: float = 0.8,
     test_bucket_minimum_predicted: int = 20,
     allowed_layout_strata: Sequence[str] | None = None,
+    allowed_position_bands: Sequence[str] | None = None,
     output: str | Path | None = None,
 ) -> ProviderTransitionGateResult:
     """Freeze layout/position bucket rules, then accept or reject on calibration."""
@@ -737,6 +738,33 @@ def freeze_stratified_provider_transition_gate(
     )
     if allowed_layout_strata is not None and not normalized_allowed_layout_strata:
         raise ValueError("allowed_layout_strata must contain at least one value")
+    allowed_position_values = (
+        (allowed_position_bands,)
+        if isinstance(allowed_position_bands, str)
+        else allowed_position_bands
+    )
+    normalized_allowed_position_bands = (
+        tuple(
+            sorted(
+                {
+                    str(value).strip()
+                    for value in allowed_position_values
+                    if str(value).strip()
+                }
+            )
+        )
+        if allowed_position_values is not None
+        else None
+    )
+    valid_position_bands = {"start", "middle", "end", "single"}
+    if allowed_position_bands is not None and not normalized_allowed_position_bands:
+        raise ValueError("allowed_position_bands must contain at least one value")
+    if normalized_allowed_position_bands is not None and not set(
+        normalized_allowed_position_bands
+    ).issubset(valid_position_bands):
+        raise ValueError(
+            "allowed_position_bands must contain only start, middle, end, or single"
+        )
 
     rules: list[dict[str, Any]] = []
     inactive_buckets: list[dict[str, Any]] = []
@@ -752,6 +780,19 @@ def freeze_stratified_provider_transition_gate(
                     "position_band": position_band,
                     "fit_transition_count": len(bucket_records),
                     "reason": "excluded-by-predeclared-layout-policy",
+                }
+            )
+            continue
+        if (
+            normalized_allowed_position_bands is not None
+            and position_band not in normalized_allowed_position_bands
+        ):
+            inactive_buckets.append(
+                {
+                    "layout_stratum": layout_stratum,
+                    "position_band": position_band,
+                    "fit_transition_count": len(bucket_records),
+                    "reason": "excluded-by-predeclared-position-policy",
                 }
             )
             continue
@@ -873,6 +914,11 @@ def freeze_stratified_provider_transition_gate(
                 list(normalized_allowed_layout_strata)
                 if normalized_allowed_layout_strata is not None
                 else "all-fit-layout-strata"
+            ),
+            "allowed_position_bands": (
+                list(normalized_allowed_position_bands)
+                if normalized_allowed_position_bands is not None
+                else "all-position-bands"
             ),
             "unruled_bucket_policy": "abstain",
         },
