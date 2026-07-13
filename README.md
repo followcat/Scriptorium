@@ -120,8 +120,10 @@ scriptorium run-paddle-layout path/to/paper.pdf \
   --output outputs/paper.pp-doclayoutv3.json
 ```
 
-固定 8 页 train-only 多栏语料上，PP-DocLayoutV3 relation F1 为 `0.89198606`，
-Docling 为 `0.87148936`；样本仍小，因此两者都保持 review-only。完整方法和分区结果见
+扩大到 32 页 train-only 语料后，PP-DocLayoutV3 的序列化 relation F1 为
+`0.88870500`，但其中同一 block 内的 line precision 为 `0.99456226`，真正跨 block 的
+direct transition precision 只有 `0.70343137`。因此总 F1 不再作为模型顺序能力的代表，
+Provider 仍保持 review-only。完整方法和独立 test 结果见
 [外部基准](docs/external-benchmarks.zh-CN.md#train-only-多栏-provider-校准)。
 
 若需要可重放的 PP-StructureV3 版面证据，可先安装可选 OCR 运行时、保存模型
@@ -224,9 +226,18 @@ profile 不能取代真实 OCR provider benchmark。
 可将已保存的 PaddleOCR-VL 或 Docling 输出与渲染 oracle anchor 匹配：
 
 ```bash
+scriptorium run-paddle-layout-corpus data/external/comphrdoc-rendered \
+  --out-dir outputs/provider-structure --partition all --device cpu
+
 scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
   outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
 ```
+
+Suite report 会分开 `serialized_within_anchor`、`serialized_direct_between_anchors`，并输出
+native candidate support / provider confidence 曲线。冻结 gate 必须只读取 `fit` partition；
+独立 test 只加载 gate 文件评分。当前冻结点在 test aggregate 为 `209/219 = 0.95433790`，
+但 graphical-multicolumn 的 Wilson 下界和 multicolumn 的 point precision 未同时过线，
+所以分层审计明确拒绝 runtime promotion。
 
 Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/table 则使用
 全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出

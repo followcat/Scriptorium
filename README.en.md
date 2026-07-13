@@ -121,11 +121,13 @@ scriptorium run-paddle-layout path/to/paper.pdf \
   --output outputs/paper.pp-doclayoutv3.json
 ```
 
-On the fixed eight-page train-only multi-column corpus, PP-DocLayoutV3 reaches
-`0.89198606` relation F1 versus Docling's `0.87148936`. The sample is still too
-small for runtime promotion, so both remain review-only. See the
+On the expanded 32-page train-only corpus, PP-DocLayoutV3 reaches `0.88870500`
+serialized relation F1. That aggregate hides `0.99456226` within-block line
+precision and only `0.70343137` direct inter-block transition precision, so
+aggregate F1 is no longer treated as evidence of model ordering quality. The
+provider remains review-only. See the
 [external benchmark](docs/external-benchmarks.md#train-only-multi-column-provider-calibration)
-for the method and partitioned results.
+for the method and independent test results.
 
 For reproducible PP-StructureV3 layout evidence, install the optional OCR
 runtime, persist a model run, then pass that JSON back through the ordinary
@@ -239,9 +241,20 @@ checks; these profiles do not replace benchmarks from real OCR providers.
 Match saved PaddleOCR-VL or Docling output to rendered oracle anchors with:
 
 ```bash
+scriptorium run-paddle-layout-corpus data/external/comphrdoc-rendered \
+  --out-dir outputs/provider-structure --partition all --device cpu
+
 scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
   outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
 ```
+
+The suite separates `serialized_within_anchor` from
+`serialized_direct_between_anchors` and reports native-candidate-support versus
+provider-confidence curves. A gate may be frozen only from the `fit` partition;
+an independent test run only evaluates the saved gate. The current frozen point
+reaches `209/219 = 0.95433790` aggregate test precision, but its graphical
+multi-column Wilson bound and ordinary multi-column point precision do not both
+pass. Stratified validation therefore rejects runtime promotion.
 
 Provider paragraphs still accept many oracle lines per block; figure/table
 anchors use global one-to-one assignment. Reports preserve raw official-relation

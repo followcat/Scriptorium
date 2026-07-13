@@ -871,3 +871,91 @@ PP-DocLayoutV3 声明 `text_recognition: false`，因此空文本字段会标记
 继续保留 `review-only`、`runtime_reorder: false`、包版本、模型参数、输入 hash 和 capability
 provenance。8 个 train-only 页不足以覆盖真实域，因此没有据此晋升 runtime order，也没有
 调整任何运行时 threshold。
+
+### 32 页粒度审计与独立 Test Gate
+
+8 页结果把同一个 Provider paragraph 内的多条 oracle line 与真正的跨 block order 混在
+一个 serialized F1 中。32 页扩展语料固定为 16 篇 train 文档、24 个 fit 页和 8 个
+calibration 页；每个 partition 都包含 `multicolumn` 与
+`graphical-multicolumn`。arXiv 使用 `v1`，避免 annotation 与后续修订页数错位。
+本地 annotation archive 可以直接复用，但仍校验固定 SHA-256：
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 32 --document-count 16 --calibration-fraction 0.2 \
+  --arxiv-version v1 --annotation-archive /path/to/CompHRDoc.zip \
+  --out-dir data/external/comphrdoc-provider-calibration-32
+
+scriptorium run-paddle-layout-corpus \
+  data/external/comphrdoc-provider-calibration-32 \
+  --out-dir outputs/pp-doclayoutv3-calibration-32 --partition all --device cpu
+
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-calibration-32 \
+  outputs/pp-doclayoutv3-calibration-32 \
+  --output outputs/pp-doclayoutv3-calibration-32/suite.json
+```
+
+Suite schema v5 将 Provider 顺序拆为三种粒度。`within-anchor` 是同一模型 block 内按
+oracle 几何排列的 line edge；`direct inter-anchor` 才是两个相邻模型 block 的直接
+transition。结果证明 aggregate F1 被前者显著抬高：
+
+| 指标 | Fit 24 页 | Calibration 8 页 | Overall 32 页 |
+|---|---:|---:|---:|
+| Serialized aggregate F1 | 0.90329611 | 0.84264832 | 0.88870500 |
+| Within-anchor precision | 1389/1396 = 0.99498567 | 440/443 = 0.99322799 | 1829/1839 = 0.99456226 |
+| Direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+
+每条 direct transition 现在记录两个端点的最小 detection confidence，以及
+`visual-yx`、`box-flow`、`relation-graph` 三个 answer-free native candidate 中有多少个
+给出同一直接 successor。Eligibility 先根据这些字段确定，之后评分器才读取 semantic
+sidecar；改变 relation label 不会改变 eligible edge。曲线还报告 precision 的 95%
+Wilson 下界，避免选择只有少数 edge 的“满分”点。
+
+Gate 只从 fit partition 冻结。预先声明 precision 至少 `0.95`、Wilson 下界至少 `0.90`、
+eligible transition 至少 50 条，再最大化覆盖量，得到
+`native support >= 1 && confidence >= 0.85`：fit 为 `161/168 = 0.95833333`，Wilson
+下界 `0.91650244`；calibration 为 `43/44 = 0.97727273`。Artifact 保留 source report 和
+corpus SHA-256，且始终声明 `runtime_reorder: false`：
+
+```bash
+scriptorium freeze-provider-transition-gate \
+  outputs/pp-doclayoutv3-calibration-32/suite.json \
+  --partition fit --minimum-precision 0.95 \
+  --minimum-wilson-lower-95 0.90 --minimum-predicted 50 \
+  --output outputs/pp-doclayoutv3-transition-gate.json
+```
+
+独立验证使用官方 Comp-HRDoc test annotation 的另一组固定 document hash：16 篇文档、
+32 页，其中 17 页 graphical-multicolumn、15 页 multicolumn。选择仍不读取 relation label。
+使用 latest arXiv source 时 annotation/PDF token alignment F1 为最低 `0.69785276`、平均
+`0.90739489`；Provider 仍只读取渲染图。test 过程只加载冻结 gate，不重新搜索阈值：
+
+```bash
+scriptorium fetch-comphrdoc-provider-test \
+  --sample-count 32 --document-count 16 \
+  --annotation-archive /path/to/CompHRDoc.zip \
+  --out-dir data/external/comphrdoc-provider-test-32
+scriptorium run-paddle-layout-corpus \
+  data/external/comphrdoc-provider-test-32 \
+  --out-dir outputs/pp-doclayoutv3-test-32 --partition all --device cpu
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-test-32 outputs/pp-doclayoutv3-test-32 \
+  --transition-gate outputs/pp-doclayoutv3-transition-gate.json
+```
+
+未筛选 test direct transition 为 `269/384 = 0.70052083`；冻结 gate 保留 219 条并达到
+`209/219 = 0.95433790`，Wilson 下界 `0.91800058`。这说明 native support 与 detector
+confidence 确实能过滤大量错误 block transition，但仍不能晋升 runtime：
+
+| 独立 test 分层 | Correct / predicted | Precision | Wilson lower 95% | 冻结标准 |
+|---|---:|---:|---:|---|
+| Aggregate | 209/219 | 0.95433790 | 0.91800058 | 通过 |
+| Graphical-multicolumn | 60/62 | 0.96774194 | 0.88979530 | Wilson 未通过 |
+| Multicolumn | 149/157 | 0.94904459 | 0.90268273 | Precision 未通过 |
+
+FocalOrder 指出的 positional disparity 也纳入 veto-only 事后审计。test 中页首、页中、页末
+分别为 `58/63`、`80/81`、`71/75`；只有中段同时达到较高 point precision 与 Wilson
+下界。该分层是在 test 后观察到的，因此只能否决 promotion，不能反过来调 threshold 或
+授权 runtime。下一轮必须先在 train/fit 冻结 position/layout-aware rejection，再使用未看过的
+官方 test 文档或其他复杂语料验证。

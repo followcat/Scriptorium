@@ -942,3 +942,102 @@ versions, model options, input hashes, and capability provenance. Eight
 train-only pages are useful evidence, not enough domain coverage to promote a
 provider into runtime ordering. No runtime threshold was changed from these
 results.
+
+### 32-Page Granularity Audit and Independent Test Gate
+
+The eight-page result combined oracle-line edges inside one Provider paragraph
+with actual cross-block ordering. The expanded corpus fixes 16 train documents,
+24 fit pages, and eight calibration pages; both partitions contain
+`multicolumn` and `graphical-multicolumn` pages. arXiv sources use `v1` so later
+revisions cannot silently move or remove annotated pages. A local annotation
+archive can be reused, but its pinned SHA-256 is still verified:
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 32 --document-count 16 --calibration-fraction 0.2 \
+  --arxiv-version v1 --annotation-archive /path/to/CompHRDoc.zip \
+  --out-dir data/external/comphrdoc-provider-calibration-32
+
+scriptorium run-paddle-layout-corpus \
+  data/external/comphrdoc-provider-calibration-32 \
+  --out-dir outputs/pp-doclayoutv3-calibration-32 --partition all --device cpu
+
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-calibration-32 \
+  outputs/pp-doclayoutv3-calibration-32 \
+  --output outputs/pp-doclayoutv3-calibration-32/suite.json
+```
+
+Suite schema v5 separates three granularities. `within-anchor` is an oracle-line
+edge ordered geometrically inside one model block; `direct inter-anchor` is the
+actual transition between adjacent model blocks. The aggregate F1 is dominated
+by the former:
+
+| Metric | 24 fit pages | 8 calibration pages | 32 overall pages |
+|---|---:|---:|---:|
+| Serialized aggregate F1 | 0.90329611 | 0.84264832 | 0.88870500 |
+| Within-anchor precision | 1389/1396 = 0.99498567 | 440/443 = 0.99322799 | 1829/1839 = 0.99456226 |
+| Direct inter-anchor precision | 237/306 = 0.77450980 | 50/102 = 0.49019608 | 287/408 = 0.70343137 |
+
+Each direct transition now records the minimum detection confidence of its two
+Provider endpoints and how many answer-free native candidates (`visual-yx`,
+`box-flow`, and `relation-graph`) emit the same direct successor. Eligibility is
+computed from those fields before the scorer opens the semantic sidecar;
+changing relation labels cannot change eligible edges. The curve also reports a
+95% Wilson precision lower bound, preventing sparse perfect-score points from
+winning threshold selection.
+
+The gate is frozen only from the fit partition. Predeclared constraints require
+precision at least `0.95`, Wilson lower bound at least `0.90`, and at least 50
+eligible transitions, then maximize coverage. This selects
+`native support >= 1 && confidence >= 0.85`: fit is
+`161/168 = 0.95833333` with Wilson lower bound `0.91650244`; calibration is
+`43/44 = 0.97727273`. The artifact pins source report and corpus SHA-256 values
+and always declares `runtime_reorder: false`:
+
+```bash
+scriptorium freeze-provider-transition-gate \
+  outputs/pp-doclayoutv3-calibration-32/suite.json \
+  --partition fit --minimum-precision 0.95 \
+  --minimum-wilson-lower-95 0.90 --minimum-predicted 50 \
+  --output outputs/pp-doclayoutv3-transition-gate.json
+```
+
+Independent validation uses a separate document-hash selection from official
+Comp-HRDoc test annotations: 16 documents and 32 pages, with 17 graphical
+multi-column and 15 multi-column pages. Selection still does not read relation
+labels. With latest arXiv sources, annotation/PDF token-alignment F1 is at least
+`0.69785276` and averages `0.90739489`; the Provider still sees only rendered
+images. The test run only loads the frozen gate and never searches thresholds:
+
+```bash
+scriptorium fetch-comphrdoc-provider-test \
+  --sample-count 32 --document-count 16 \
+  --annotation-archive /path/to/CompHRDoc.zip \
+  --out-dir data/external/comphrdoc-provider-test-32
+scriptorium run-paddle-layout-corpus \
+  data/external/comphrdoc-provider-test-32 \
+  --out-dir outputs/pp-doclayoutv3-test-32 --partition all --device cpu
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-test-32 outputs/pp-doclayoutv3-test-32 \
+  --transition-gate outputs/pp-doclayoutv3-transition-gate.json
+```
+
+Unfiltered direct test transitions are `269/384 = 0.70052083`. The frozen gate
+keeps 219 and reaches `209/219 = 0.95433790`, with Wilson lower bound
+`0.91800058`. Native support plus detector confidence removes many bad block
+transitions, but the evidence still cannot promote runtime ordering:
+
+| Independent test stratum | Correct / predicted | Precision | Wilson lower 95% | Frozen criterion |
+|---|---:|---:|---:|---|
+| Aggregate | 209/219 | 0.95433790 | 0.91800058 | pass |
+| Graphical multi-column | 60/62 | 0.96774194 | 0.88979530 | Wilson fails |
+| Multi-column | 149/157 | 0.94904459 | 0.90268273 | precision fails |
+
+FocalOrder's positional-disparity result also motivates a veto-only post-hoc
+audit. Test start, middle, and end bands reach `58/63`, `80/81`, and `71/75`;
+only the middle band has both strong point precision and a strong Wilson bound.
+Because these strata were inspected after test evaluation, they may veto
+promotion but cannot tune a threshold or authorize runtime behavior. The next
+round must freeze a position/layout-aware rejection policy on train/fit before
+opening new official test documents or another complex corpus.

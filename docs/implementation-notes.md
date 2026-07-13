@@ -1156,3 +1156,47 @@ by max-regret path cover. Scriptorium already implements degree-one, acyclic,
 max-regret path-cover selection. A semantic next-sentence scorer is deferred
 until provider text is cleaner and a larger held-out calibration set can justify
 its cost; the current eight train-only pages cannot justify runtime promotion.
+
+`run_paddle_layout_corpus()` loads one `PP-DocLayoutV3` predictor and walks the
+manifest rather than paying model startup for every page. Each output records
+the corpus/sample/input SHA-256 provenance. Existing outputs are skipped only
+when their corpus manifest hash matches; `--refresh` is explicit, and a stale
+output from another corpus fails instead of being silently reused.
+
+Provider benchmark schema v4 separates serialized edges into
+`within_anchor`, `between_anchors`, and `direct_between_anchors`. A Provider
+paragraph may own many oracle lines, so within-anchor edges are geometry-local
+segmentation evidence, not evidence that the model ordered two blocks. Provider
+confidence is retained during normalization and copied into anchor assignment
+provenance. For each direct block transition, the evaluator computes exact
+direct-successor support from three answer-free native orders: visual Y/X,
+box-flow, and relation-graph. It emits the full support/confidence curve with a
+95% Wilson precision lower bound. Semantic labels score each already-selected
+point only; a label-invariance test verifies that changing `ro_linkings` cannot
+change eligible edges.
+
+`freeze_provider_transition_gate()` reads one named fit partition and writes a
+content-addressed review-only artifact. The default policy requires at least 50
+eligible edges, precision `>= 0.95`, and Wilson lower bound `>= 0.90`, then
+maximizes retained transitions. `benchmark_provider_anchor_suite()` can load
+that artifact on another corpus with `--transition-gate`; it validates the gate
+schema, native candidate set, source/evaluation corpus hashes, and exact frozen
+curve point. No test-time threshold search occurs and the artifact cannot set
+`runtime_reorder` true.
+
+`fetch_comphrdoc_provider_test_corpus()` applies a separate deterministic
+document/page hash namespace to official test annotations. Calibration and test
+reconstruction share one materializer, while their manifests keep the official
+split, selection fields, source revision, and answer boundary explicit. Both
+fetchers accept `--annotation-archive`; the local 130 MB archive still has to
+match `530f482b75523a80fe1b0a7480fd8273c44f9239e0189650a4841c0aae61d03d`.
+
+Suite schema v5 adds partition and layout-stratum summaries plus a veto-only
+position audit. The latter divides direct transitions into start/middle/end
+bands before reporting precision and Wilson bounds, following FocalOrder's
+observation that transition difficulty is position-dependent
+(https://aclanthology.org/2026.acl-long.868.pdf). This post-hoc audit can reject
+promotion but cannot authorize it. On the independent 32-page test, aggregate
+gate precision passes, while both layout strata fail one frozen criterion;
+runtime promotion is explicitly rejected. A future bucketed policy must be
+frozen on train/fit and evaluated on previously unopened documents.
