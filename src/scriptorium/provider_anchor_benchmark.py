@@ -338,6 +338,7 @@ def benchmark_provider_anchor_suite(
             output=providers / "anchor-benchmarks" / f"{sample_id}.json",
         ).report
         case["sample_id"] = sample_id
+        case["document_id"] = str(sample.get("document_id") or sample_id)
         case["partition"] = partition
         case["layout_stratum"] = str(sample.get("layout_stratum") or "unspecified")
         cases.append(case)
@@ -1194,6 +1195,10 @@ def _suite_transition_records(
                 continue
             record = dict(transition)
             record["sample_id"] = str(case.get("sample_id") or "")
+            record["document_id"] = str(
+                case.get("document_id")
+                or _document_id_from_sample_id(record["sample_id"])
+            )
             record["partition"] = str(case.get("partition") or "unspecified")
             record["layout_stratum"] = str(
                 case.get("layout_stratum") or "unspecified"
@@ -1201,6 +1206,13 @@ def _suite_transition_records(
             record["position_band"] = _provider_transition_position_band(record)
             records.append(record)
     return records
+
+
+def _document_id_from_sample_id(sample_id: str) -> str:
+    prefix, separator, page_index = sample_id.rpartition("_")
+    if separator and prefix and page_index.isdigit():
+        return prefix
+    return sample_id
 
 
 def _select_transition_records(

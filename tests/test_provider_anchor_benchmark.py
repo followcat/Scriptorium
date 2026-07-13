@@ -8,6 +8,7 @@ from scriptorium.provider_anchor_benchmark import (
     _evaluate_provider_transition_gate,
     _provider_transition_position_audit,
     _serialized_provider_edge_groups,
+    _suite_transition_records,
     _sum_provider_transition_reviews,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
@@ -637,6 +638,7 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
                 "samples": [
                     {
                         "id": "sample_0",
+                        "document_id": "document-0",
                         "partition": "calibration",
                         "layout_stratum": "multicolumn",
                         "structure": "structure/sample_0.structure.json",
@@ -650,6 +652,8 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     result = benchmark_provider_anchor_suite(corpus, providers)
 
     assert result.report["case_count"] == 1
+    assert result.report["cases"][0]["document_id"] == "document-0"
+    assert result.report["cases"][0]["sample_id"] == "sample_0"
     assert result.report["relations"]["combined"]["correct"] == 1
     assert result.report["relations"]["combined"]["f1"] > 0
     assert result.report["graphical_relation_audit"]["cases_with_conflicts"] == 0
@@ -675,6 +679,34 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
         result.report["partitions"]["calibration"]["provider_transition_review"]
         == transition_review
     )
+
+
+def test_suite_transition_records_preserve_document_groups() -> None:
+    records = _suite_transition_records(
+        {
+            "cases": [
+                {
+                    "sample_id": "paper_3",
+                    "document_id": "paper",
+                    "partition": "fit",
+                    "layout_stratum": "multicolumn",
+                    "provider_transition_review": {
+                        "transitions": [
+                            {
+                                "page_transition_count": 1,
+                                "transition_index": 0,
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        partition="fit",
+    )
+
+    assert len(records) == 1
+    assert records[0]["sample_id"] == "paper_3"
+    assert records[0]["document_id"] == "paper"
 
 
 def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
