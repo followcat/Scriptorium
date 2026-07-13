@@ -96,7 +96,8 @@ def benchmark_provider_anchors(
         matched_provider_ids,
     )
     truth = {tuple(map(str, edge)) for edge in semantic.get("ro_linkings", [])}
-    serialized_edges = _serialized_provider_edges(anchors, assignments)
+    serialized_edge_groups = _serialized_provider_edge_groups(anchors, assignments)
+    serialized_edges = serialized_edge_groups["all"]
     explicit_edges = _mapped_explicit_relations(explicit_relations, assignments)
     trained_floating_edges: set[tuple[str, str]] = set()
     reliable_trained_floating_edges: set[tuple[str, str]] = set()
@@ -194,6 +195,11 @@ def benchmark_provider_anchors(
     )
     relation_predictions = {
         "serialized": serialized_edges,
+        "serialized_within_anchor": serialized_edge_groups["within_anchor"],
+        "serialized_between_anchors": serialized_edge_groups["between_anchors"],
+        "serialized_direct_between_anchors": serialized_edge_groups[
+            "direct_between_anchors"
+        ],
         "explicit": explicit_edges,
         "combined": combined_edges,
         "trained_floating": trained_floating_edges,
@@ -220,7 +226,7 @@ def benchmark_provider_anchors(
         ),
     }
     report = {
-        "schema": "scriptorium-provider-anchor-benchmark/v2",
+        "schema": "scriptorium-provider-anchor-benchmark/v3",
         "provider": provider_name,
         "provider_capabilities": provider_capabilities,
         "floating_model_sha256": floating_model_sha256,
@@ -300,6 +306,9 @@ def benchmark_provider_anchor_suite(
         raise ValueError("provider directory contains no matching structure JSON files")
     relation_keys = (
         "serialized",
+        "serialized_within_anchor",
+        "serialized_between_anchors",
+        "serialized_direct_between_anchors",
         "explicit",
         "combined",
         "trained_floating",
@@ -386,7 +395,7 @@ def benchmark_provider_anchor_suite(
         for partition in sorted({str(case["partition"]) for case in cases})
     }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v2",
+        "schema": "scriptorium-provider-anchor-suite/v3",
         "corpus_manifest": str(manifest_path),
         "selection": manifest.get("selection"),
         "provider": cases[0]["provider"],
@@ -738,22 +747,71 @@ def _serialized_provider_edges(
     anchors: Sequence[ProviderAnchor],
     assignments: Mapping[str, Mapping[str, Any]],
 ) -> set[tuple[str, str]]:
+    return _serialized_provider_edge_groups(anchors, assignments)["all"]
+
+
+def _serialized_provider_edge_groups(
+    anchors: Sequence[ProviderAnchor],
+    assignments: Mapping[str, Mapping[str, Any]],
+) -> dict[str, set[tuple[str, str]]]:
+    """Separate geometry-local edges from model anchor transitions.
+
+    A provider paragraph often owns many oracle text lines. Sorting those lines
+    inside one matched anchor tests segmentation-local geometry, while crossing
+    from one provider anchor to the next tests the provider's actual block
+    order. Keeping both under one score can hide weak inter-block ordering.
+    """
+
     oracle_by_provider: dict[str, list[str]] = defaultdict(list)
     for oracle_id, match in assignments.items():
         oracle_by_provider[str(match["provider_id"])].append(oracle_id)
     ordered = sorted(
         (anchor for anchor in anchors if anchor.order is not None),
-        key=lambda item: (item.page_index, item.order),
+        key=lambda item: (item.page_index, item.order, item.id),
     )
-    flattened: list[str] = []
+    within_anchor: set[tuple[str, str]] = set()
+    between_anchors: set[tuple[str, str]] = set()
+    direct_between_anchors: set[tuple[str, str]] = set()
+    anchors_by_page: dict[int, list[tuple[ProviderAnchor, list[str]]]] = defaultdict(list)
     for anchor in ordered:
-        flattened.extend(
-            sorted(
-                oracle_by_provider.get(anchor.id, []),
-                key=lambda oracle_id: _assignment_geometry_key(assignments[oracle_id]),
-            )
+        oracle_ids = sorted(
+            oracle_by_provider.get(anchor.id, []),
+            key=lambda oracle_id: _assignment_geometry_key(assignments[oracle_id]),
         )
-    return {(source, target) for source, target in zip(flattened, flattened[1:]) if source != target}
+        anchors_by_page[anchor.page_index].append((anchor, oracle_ids))
+        within_anchor.update(
+            (source, target)
+            for source, target in zip(oracle_ids, oracle_ids[1:], strict=False)
+            if source != target
+        )
+
+    for page_anchors in anchors_by_page.values():
+        matched_groups = [oracle_ids for _anchor, oracle_ids in page_anchors if oracle_ids]
+        between_anchors.update(
+            (source_ids[-1], target_ids[0])
+            for source_ids, target_ids in zip(
+                matched_groups,
+                matched_groups[1:],
+                strict=False,
+            )
+            if source_ids[-1] != target_ids[0]
+        )
+        direct_between_anchors.update(
+            (source_ids[-1], target_ids[0])
+            for (_source_anchor, source_ids), (_target_anchor, target_ids) in zip(
+                page_anchors,
+                page_anchors[1:],
+                strict=False,
+            )
+            if source_ids and target_ids and source_ids[-1] != target_ids[0]
+        )
+
+    return {
+        "all": within_anchor | between_anchors,
+        "within_anchor": within_anchor,
+        "between_anchors": between_anchors,
+        "direct_between_anchors": direct_between_anchors,
+    }
 
 
 def _mapped_explicit_relations(

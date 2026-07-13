@@ -5,6 +5,7 @@ import json
 import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
     ProviderAnchor,
+    _serialized_provider_edge_groups,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     match_provider_anchors,
@@ -38,6 +39,19 @@ def test_docling_blocks_match_multiple_oracle_lines_and_explicit_float(tmp_path)
     assert result.report["provider_anchor_match_rate"] == 1.0
     assert result.report["relations"]["explicit"]["correct"] == 1
     assert result.report["relations"]["serialized"]["correct"] == 2
+    assert result.report["relations"]["serialized_within_anchor"] == {
+        "correct": 1,
+        "predicted": 1,
+        "labels": 2,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.66666667,
+    }
+    assert result.report["relations"]["serialized_between_anchors"]["correct"] == 1
+    assert (
+        result.report["relations"]["serialized_direct_between_anchors"]["correct"]
+        == 1
+    )
     assert result.report["graphical_relation_audit"]["exact_agreement_count"] == 1
     assert result.report["graphical_relation_audit"]["conflicting_label_count"] == 0
     assert result.report["provider_degradation"]["answer_free_relation_policy"][
@@ -169,6 +183,29 @@ def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
     matches = match_provider_anchors(nodes, anchors)
 
     assert matches["later"]["oracle_box"][1] > matches["earlier"]["oracle_box"][1]
+
+
+def test_serialized_provider_edges_separate_anchor_scope_and_page_boundaries() -> None:
+    anchors = [
+        ProviderAnchor("page-1-a", 0, "text", (0, 0, 10, 20), "", 0),
+        ProviderAnchor("page-1-unmatched", 0, "text", (0, 30, 10, 40), "", 1),
+        ProviderAnchor("page-1-c", 0, "text", (0, 50, 10, 60), "", 2),
+        ProviderAnchor("page-2-a", 1, "text", (0, 0, 10, 10), "", 0),
+    ]
+    assignments = {
+        "line-1": {"provider_id": "page-1-a", "oracle_box": [0, 0, 10, 8]},
+        "line-2": {"provider_id": "page-1-a", "oracle_box": [0, 10, 10, 18]},
+        "line-3": {"provider_id": "page-1-c", "oracle_box": [0, 50, 10, 58]},
+        "line-4": {"provider_id": "page-2-a", "oracle_box": [0, 0, 10, 8]},
+    }
+
+    groups = _serialized_provider_edge_groups(anchors, assignments)
+
+    assert groups["within_anchor"] == {("line-1", "line-2")}
+    assert groups["between_anchors"] == {("line-2", "line-3")}
+    assert groups["direct_between_anchors"] == set()
+    assert groups["all"] == {("line-1", "line-2"), ("line-2", "line-3")}
+    assert ("line-3", "line-4") not in groups["all"]
 
 
 def test_graphical_anchor_matcher_is_one_to_one() -> None:
