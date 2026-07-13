@@ -65,6 +65,10 @@ def test_prediction_emits_review_only_trained_float_edge(monkeypatch) -> None:
             "relation_policy": "review-only",
             "provider": "scriptorium-trained-floating-ranker",
             "relation_origin": "trained-floating-pair",
+            "reliability_tier": "standard-review",
+            "strict_gate_passed": False,
+            "feature_outlier_count": 0,
+            "feature_outlier_ratio": 0.0,
         }
     ]
     assert result.diagnostics["runtime_reorder"] is False
@@ -96,3 +100,29 @@ def test_document_hash_split_keeps_documents_isolated() -> None:
     assert {page["document_id"] for page in fit}.isdisjoint(
         {page["document_id"] for page in calibration}
     )
+
+
+def test_reliability_gate_meets_precision_floor_without_test_labels() -> None:
+    records = [
+        *[(0.95, 0.8, True) for _ in range(40)],
+        *[(0.90, 0.1, False) for _ in range(10)],
+        *[(0.40, 0.2, True) for _ in range(20)],
+    ]
+
+    gate = floating_ranker._calibrate_reliability_gate(
+        records,
+        label_count=60,
+        minimum_precision=0.97,
+    )
+
+    assert gate["available"] is True
+    assert gate["predicted_count"] == 60
+    assert gate["precision"] == 1.0
+    assert gate["recall"] == 1.0
+
+
+def test_feature_envelope_reports_pair_domain_shift() -> None:
+    envelope = {"lower": [0.0, 0.0], "upper": [1.0, 1.0]}
+
+    assert floating_ranker._feature_outliers([0.5, 1.5], envelope) == (1, 0.5)
+    assert floating_ranker._feature_outliers([0.5, 0.75], envelope) == (0, 0.0)

@@ -329,13 +329,16 @@ def benchmark_comphrdoc_relation_corpus(
             or nodes.get(edge[1], {}).get("type") in {"figure", "table"}
         }
         page_result: dict[str, Any] = {"id": sample["id"], "label_count": len(truth)}
+        prediction_cache: dict[bool, dict[str, Any]] = {}
         for mode, enabled in modes.items():
-            prediction = relation_ranker._predict_roor_page_relations(
-                structure,
-                bundle=bundle,
-                manifest=model_manifest,
-                structure_role_fusion=enabled,
-            ).structure_payload
+            if enabled not in prediction_cache:
+                prediction_cache[enabled] = relation_ranker._predict_roor_page_relations(
+                    structure,
+                    bundle=bundle,
+                    manifest=model_manifest,
+                    structure_role_fusion=enabled,
+                ).structure_payload
+            prediction = prediction_cache[enabled]
             prediction_edges = list(prediction.get("successor_edges", []))
             if mode == "native-plus-trained-floating":
                 assert floating_bundle is not None and floating_manifest is not None
@@ -357,10 +360,40 @@ def benchmark_comphrdoc_relation_corpus(
                 for edge in prediction_edges
                 if edge.get("relation_origin") == role_origin
             }
+            high_reliability_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("reliability_tier") == "high-precision-review"
+            }
+            high_reliability_in_envelope_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("reliability_tier") == "high-precision-review"
+                and int(edge.get("feature_outlier_count", 0)) == 0
+            }
             metrics = _relation_counts(predicted, truth)
             role_metrics = _relation_counts(role_predicted, graphical_truth)
-            _accumulate_relation_totals(totals[mode], metrics, role_metrics)
-            page_result[mode] = {**metrics, "graphical": role_metrics}
+            high_reliability_metrics = _relation_counts(
+                high_reliability_predicted,
+                graphical_truth,
+            )
+            high_reliability_in_envelope_metrics = _relation_counts(
+                high_reliability_in_envelope_predicted,
+                graphical_truth,
+            )
+            _accumulate_relation_totals(
+                totals[mode],
+                metrics,
+                role_metrics,
+                high_reliability_metrics,
+                high_reliability_in_envelope_metrics,
+            )
+            page_result[mode] = {
+                **metrics,
+                "graphical": role_metrics,
+                "high_reliability_graphical": high_reliability_metrics,
+                "high_reliability_in_envelope_graphical": high_reliability_in_envelope_metrics,
+            }
         page_results.append(page_result)
     summarized = {name: _summarize_relation_totals(value) for name, value in totals.items()}
     baseline_f1 = summarized["native-ranker"]["f1"]
@@ -399,6 +432,12 @@ def _empty_relation_totals() -> dict[str, int]:
         "graphical_correct": 0,
         "graphical_predicted": 0,
         "graphical_labels": 0,
+        "high_reliability_correct": 0,
+        "high_reliability_predicted": 0,
+        "high_reliability_labels": 0,
+        "high_reliability_in_envelope_correct": 0,
+        "high_reliability_in_envelope_predicted": 0,
+        "high_reliability_in_envelope_labels": 0,
     }
 
 
@@ -410,10 +449,16 @@ def _accumulate_relation_totals(
     totals: dict[str, int],
     metrics: Mapping[str, int],
     graphical: Mapping[str, int],
+    high_reliability: Mapping[str, int],
+    high_reliability_in_envelope: Mapping[str, int],
 ) -> None:
     for key in ("correct", "predicted", "labels"):
         totals[key] += int(metrics[key])
         totals[f"graphical_{key}"] += int(graphical[key])
+        totals[f"high_reliability_{key}"] += int(high_reliability[key])
+        totals[f"high_reliability_in_envelope_{key}"] += int(
+            high_reliability_in_envelope[key]
+        )
 
 
 def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
@@ -429,7 +474,39 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
             totals["graphical_labels"],
         ),
     }
+    result["high_reliability_graphical"] = {
+        "correct": totals["high_reliability_correct"],
+        "predicted": totals["high_reliability_predicted"],
+        "labels": totals["high_reliability_labels"],
+        **_precision_recall_f1(
+            totals["high_reliability_correct"],
+            totals["high_reliability_predicted"],
+            totals["high_reliability_labels"],
+        ),
+    }
+    result["high_reliability_in_envelope_graphical"] = {
+        "correct": totals["high_reliability_in_envelope_correct"],
+        "predicted": totals["high_reliability_in_envelope_predicted"],
+        "labels": totals["high_reliability_in_envelope_labels"],
+        **_precision_recall_f1(
+            totals["high_reliability_in_envelope_correct"],
+            totals["high_reliability_in_envelope_predicted"],
+            totals["high_reliability_in_envelope_labels"],
+        ),
+    }
     for key in ("graphical_correct", "graphical_predicted", "graphical_labels"):
+        result.pop(key)
+    for key in (
+        "high_reliability_correct",
+        "high_reliability_predicted",
+        "high_reliability_labels",
+    ):
+        result.pop(key)
+    for key in (
+        "high_reliability_in_envelope_correct",
+        "high_reliability_in_envelope_predicted",
+        "high_reliability_in_envelope_labels",
+    ):
         result.pop(key)
     return result
 

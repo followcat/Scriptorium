@@ -941,6 +941,14 @@ def train_floating_ranker_command(
     typer.echo(f"Floating ranker manifest: {result.manifest_path}")
     typer.echo(f"Calibration F1: {result.manifest['calibration']['f1']}")
     typer.echo(f"Pair threshold: {result.manifest['threshold']}")
+    review_gate = result.manifest["reliability_gate"]
+    promotion_gate = result.manifest["promotion_gate"]
+    typer.echo(
+        "High-precision review gate: "
+        f"available={review_gate['available']} precision={review_gate['precision']} "
+        f"recall={review_gate['recall']}"
+    )
+    typer.echo(f"Strict promotion gate available: {promotion_gate['available']}")
 
 
 @app.command("run-floating-ranker")

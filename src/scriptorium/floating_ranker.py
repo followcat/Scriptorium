@@ -59,8 +59,27 @@ def train_floating_relation_ranker(
         calibration_fraction=calibration_fraction,
     )
     features, labels = _training_examples(fit_pages, negative_candidates=negative_candidates)
+    feature_envelope = _feature_envelope(features)
     estimator, sklearn_version = _fit_estimator(features, labels, random_seed=random_seed)
-    threshold, calibration = _calibrate_threshold(estimator, calibration_pages)
+    calibration_records, calibration_label_count = _calibration_records(
+        estimator,
+        calibration_pages,
+    )
+    threshold, calibration = _calibrate_threshold(
+        calibration_records,
+        label_count=calibration_label_count,
+        page_count=len(calibration_pages),
+    )
+    reliability_gate = _calibrate_reliability_gate(
+        calibration_records,
+        label_count=calibration_label_count,
+        minimum_precision=0.95,
+    )
+    promotion_gate = _calibrate_reliability_gate(
+        calibration_records,
+        label_count=calibration_label_count,
+        minimum_precision=0.97,
+    )
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +87,10 @@ def train_floating_relation_ranker(
         "schema": FLOATING_RANKER_SCHEMA,
         "feature_version": FLOATING_FEATURE_VERSION,
         "threshold": threshold,
+        "reliability_gate": reliability_gate,
+        "promotion_gate": promotion_gate,
         "estimator": estimator,
+        "feature_envelope": feature_envelope,
     }
     joblib = _joblib_module()
     joblib.dump(bundle, output_path)
@@ -88,10 +110,14 @@ def train_floating_relation_ranker(
         "calibration_page_count": len(calibration_pages),
         "training_example_count": len(labels),
         "training_positive_count": int(sum(labels)),
+        "feature_count": len(feature_envelope["lower"]),
+        "feature_envelope_quantiles": [0.01, 0.99],
         "negative_candidates_per_graphical_block": negative_candidates,
         "calibration_fraction": calibration_fraction,
         "threshold": threshold,
         "calibration": calibration,
+        "reliability_gate": reliability_gate,
+        "promotion_gate": promotion_gate,
         "random_seed": random_seed,
         "scikit_learn_version": sklearn_version,
         "model_sha256": model_sha256,
@@ -126,7 +152,13 @@ def _predict_floating_relations(
     text_blocks = [block for block in blocks if block["kind"] == "text" and block["text"]]
     estimator = bundle["estimator"]
     threshold = float(bundle["threshold"])
-    ranked: list[tuple[float, float, dict[str, Any], dict[str, Any]]] = []
+    reliability_gate = bundle.get("reliability_gate", {})
+    reliability_confidence = float(reliability_gate.get("confidence_threshold", 1.1))
+    reliability_margin = float(reliability_gate.get("margin_threshold", 1.1))
+    promotion_gate = bundle.get("promotion_gate", {})
+    promotion_confidence = float(promotion_gate.get("confidence_threshold", 1.1))
+    promotion_margin = float(promotion_gate.get("margin_threshold", 1.1))
+    ranked: list[tuple[float, float, dict[str, Any], dict[str, Any], list[float]]] = []
     candidate_count = 0
     for source in graphical:
         if not text_blocks:
@@ -137,12 +169,14 @@ def _predict_floating_relations(
         order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
         best = order[0]
         second_score = scores[order[1]] if len(order) > 1 else 0.0
-        ranked.append((scores[best], scores[best] - second_score, source, text_blocks[best]))
+        ranked.append(
+            (scores[best], scores[best] - second_score, source, text_blocks[best], rows[best])
+        )
 
     claimed_graphical: set[Any] = set()
     claimed_caption_blocks: set[Any] = set()
     edges: list[dict[str, Any]] = []
-    for confidence, margin, graphical_block, caption_block in sorted(
+    for confidence, margin, graphical_block, caption_block, pair_features in sorted(
         ranked,
         key=lambda item: (item[1], item[0]),
         reverse=True,
@@ -153,6 +187,10 @@ def _predict_floating_relations(
             continue
         claimed_graphical.add(graphical_block["block_id"])
         claimed_caption_blocks.add(caption_block["block_id"])
+        outlier_count, outlier_ratio = _feature_outliers(
+            pair_features,
+            bundle.get("feature_envelope"),
+        )
         if graphical_block["kind"] == "figure":
             source_id, target_id = graphical_block["first_id"], caption_block["first_id"]
         else:
@@ -168,6 +206,18 @@ def _predict_floating_relations(
                 "relation_policy": "review-only",
                 "provider": "scriptorium-trained-floating-ranker",
                 "relation_origin": "trained-floating-pair",
+                "reliability_tier": (
+                    "high-precision-review"
+                    if confidence >= reliability_confidence and margin >= reliability_margin
+                    else "standard-review"
+                ),
+                "strict_gate_passed": bool(
+                    promotion_gate.get("available")
+                    and confidence >= promotion_confidence
+                    and margin >= promotion_margin
+                ),
+                "feature_outlier_count": outlier_count,
+                "feature_outlier_ratio": outlier_ratio,
             }
         )
     return FloatingRankerPredictionResult(
@@ -177,6 +227,8 @@ def _predict_floating_relations(
         {
             "feature_version": FLOATING_FEATURE_VERSION,
             "threshold": threshold,
+            "reliability_gate": reliability_gate,
+            "promotion_gate": promotion_gate,
             "model_sha256": manifest.get("model_sha256"),
             "selected_edge_count": len(edges),
             "runtime_reorder": False,
@@ -344,8 +396,11 @@ def _training_examples(
     return features, labels
 
 
-def _calibrate_threshold(estimator: Any, pages: Sequence[dict[str, Any]]) -> tuple[float, dict[str, Any]]:
-    records: list[tuple[float, bool]] = []
+def _calibration_records(
+    estimator: Any,
+    pages: Sequence[dict[str, Any]],
+) -> tuple[list[tuple[float, float, bool]], int]:
+    records: list[tuple[float, float, bool]] = []
     label_count = sum(len(page["positives"]) for page in pages)
     for page in pages:
         graphical = [block for block in page["blocks"] if block["kind"] in {"figure", "table"}]
@@ -355,12 +410,29 @@ def _calibrate_threshold(estimator: Any, pages: Sequence[dict[str, Any]]) -> tup
                 continue
             rows = [_pair_features(source, target, width=page["width"], height=page["height"]) for target in texts]
             scores = [float(row[1]) for row in estimator.predict_proba(rows)]
-            best = max(range(len(scores)), key=scores.__getitem__)
-            records.append((scores[best], (source["block_id"], texts[best]["block_id"]) in page["positives"]))
+            order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+            best = order[0]
+            second_score = scores[order[1]] if len(order) > 1 else 0.0
+            records.append(
+                (
+                    scores[best],
+                    scores[best] - second_score,
+                    (source["block_id"], texts[best]["block_id"]) in page["positives"],
+                )
+            )
+    return records, label_count
+
+
+def _calibrate_threshold(
+    records: Sequence[tuple[float, float, bool]],
+    *,
+    label_count: int,
+    page_count: int,
+) -> tuple[float, dict[str, Any]]:
     best_result: tuple[float, float, float, int, int] | None = None
     for step in range(5, 100):
         threshold = step / 100
-        selected = [correct for score, correct in records if score >= threshold]
+        selected = [correct for score, _, correct in records if score >= threshold]
         predicted = len(selected)
         correct = sum(selected)
         precision = correct / predicted if predicted else 0.0
@@ -373,13 +445,74 @@ def _calibrate_threshold(estimator: Any, pages: Sequence[dict[str, Any]]) -> tup
     f1, precision, threshold, predicted, correct = best_result
     recall = correct / label_count if label_count else 0.0
     return threshold, {
-        "page_count": len(pages),
+        "page_count": page_count,
         "label_count": label_count,
         "predicted_count": predicted,
         "correct_count": correct,
         "precision": round(precision, 8),
         "recall": round(recall, 8),
         "f1": round(f1, 8),
+    }
+
+
+def _calibrate_reliability_gate(
+    records: Sequence[tuple[float, float, bool]],
+    *,
+    label_count: int,
+    minimum_precision: float,
+) -> dict[str, Any]:
+    minimum_predictions = max(25, math.ceil(label_count * 0.01))
+    best: tuple[float, float, float, float, int, int] | None = None
+    for confidence_step in range(5, 100, 2):
+        confidence_threshold = confidence_step / 100
+        for margin_step in range(0, 91, 2):
+            margin_threshold = margin_step / 100
+            selected = [
+                correct
+                for confidence, margin, correct in records
+                if confidence >= confidence_threshold and margin >= margin_threshold
+            ]
+            predicted = len(selected)
+            if predicted < minimum_predictions:
+                continue
+            correct = sum(selected)
+            precision = correct / predicted
+            if precision < minimum_precision:
+                continue
+            recall = correct / label_count if label_count else 0.0
+            candidate = (
+                recall,
+                precision,
+                -confidence_threshold,
+                -margin_threshold,
+                predicted,
+                correct,
+            )
+            if best is None or candidate > best:
+                best = candidate
+    if best is None:
+        return {
+            "available": False,
+            "minimum_precision": minimum_precision,
+            "minimum_predictions": minimum_predictions,
+            "confidence_threshold": 1.1,
+            "margin_threshold": 1.1,
+            "predicted_count": 0,
+            "correct_count": 0,
+            "precision": None,
+            "recall": 0.0,
+        }
+    recall, precision, negative_confidence, negative_margin, predicted, correct = best
+    return {
+        "available": True,
+        "minimum_precision": minimum_precision,
+        "minimum_predictions": minimum_predictions,
+        "confidence_threshold": round(-negative_confidence, 2),
+        "margin_threshold": round(-negative_margin, 2),
+        "predicted_count": predicted,
+        "correct_count": correct,
+        "precision": round(precision, 8),
+        "recall": round(recall, 8),
     }
 
 
@@ -437,6 +570,32 @@ def _fit_estimator(features: Sequence[Sequence[float]], labels: Sequence[int], *
     )
     estimator.fit(features, labels)
     return estimator, sklearn.__version__
+
+
+def _feature_envelope(features: Sequence[Sequence[float]]) -> dict[str, list[float]]:
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError("Install requirements-relation-ranker.txt to train a floating ranker") from exc
+    matrix = np.asarray(features, dtype=float)
+    return {
+        "lower": [round(float(value), 10) for value in np.quantile(matrix, 0.01, axis=0)],
+        "upper": [round(float(value), 10) for value in np.quantile(matrix, 0.99, axis=0)],
+    }
+
+
+def _feature_outliers(features: Sequence[float], envelope: Any) -> tuple[int, float]:
+    if not isinstance(envelope, Mapping):
+        return 0, 0.0
+    lower = envelope.get("lower")
+    upper = envelope.get("upper")
+    if not isinstance(lower, list) or not isinstance(upper, list) or len(features) != len(lower) or len(lower) != len(upper):
+        return 0, 0.0
+    count = sum(
+        int(float(value) < float(minimum) or float(value) > float(maximum))
+        for value, minimum, maximum in zip(features, lower, upper, strict=True)
+    )
+    return count, round(count / len(features), 8) if features else 0.0
 
 
 def _xywh_bbox(value: Any) -> list[float] | None:
