@@ -244,6 +244,21 @@ def benchmark_provider_anchors_command(
     typer.echo(f"Oracle anchor recall: {report['oracle_anchor_recall']}")
     typer.echo(f"Provider anchor match rate: {report['provider_anchor_match_rate']}")
     typer.echo(f"Combined relation F1: {report['relations']['combined']['f1']}")
+    degradation = report["provider_degradation"]
+    typer.echo(
+        "Provider missing/hallucination: "
+        f"{degradation['error_taxonomy']['missing']['rate']}/"
+        f"{degradation['error_taxonomy']['hallucination']['rate']}"
+    )
+    typer.echo(
+        "Provider split/merge: "
+        f"{degradation['error_taxonomy']['split']['rate']}/"
+        f"{degradation['error_taxonomy']['merge']['rate']}"
+    )
+    typer.echo(
+        "Nearest synthetic profile: "
+        f"{degradation['synthetic_profile_comparison']['nearest_profile']}"
+    )
     typer.echo(f"Report: {result.report_path}")
 
 
@@ -276,6 +291,21 @@ def benchmark_provider_anchor_suite_command(
     typer.echo(f"Oracle anchor recall: {report['oracle_anchor_recall']}")
     typer.echo(f"Provider anchor match rate: {report['provider_anchor_match_rate']}")
     typer.echo(f"Combined relation F1: {report['relations']['combined']['f1']}")
+    degradation = report["provider_degradation"]
+    typer.echo(
+        "Provider missing/hallucination: "
+        f"{degradation['error_taxonomy']['missing']['rate']}/"
+        f"{degradation['error_taxonomy']['hallucination']['rate']}"
+    )
+    typer.echo(
+        "Provider split/merge: "
+        f"{degradation['error_taxonomy']['split']['rate']}/"
+        f"{degradation['error_taxonomy']['merge']['rate']}"
+    )
+    typer.echo(
+        "Nearest synthetic profile: "
+        f"{degradation['synthetic_profile_comparison']['nearest_profile']}"
+    )
     typer.echo(f"Report: {result.report_path}")
 
 

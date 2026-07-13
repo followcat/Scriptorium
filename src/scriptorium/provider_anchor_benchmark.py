@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from .bipartite_matching import maximum_weight_bipartite_matching
+from .provider_degradation import (
+    aggregate_provider_degradation,
+    characterize_provider_degradation,
+    compare_with_synthetic_profiles,
+)
+from .relation_noise import perturb_relation_structure
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,7 @@ class ProviderAnchor:
     bbox: tuple[float, float, float, float]
     text: str
     order: int | None
+    group_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +55,35 @@ def benchmark_provider_anchors(
     provider_name, anchors, explicit_relations = normalize_provider_anchors(provider)
     oracle_nodes = [node for node in oracle.get("document", []) if isinstance(node, Mapping)]
     assignments = match_provider_anchors(oracle_nodes, anchors)
+    image = oracle.get("img", {})
+    width = float(image.get("width") or 0)
+    height = float(image.get("height") or 0)
+    degradation = characterize_provider_degradation(
+        oracle_nodes,
+        anchors,
+        width=width,
+        height=height,
+    )
+    synthetic_reports: dict[str, dict[str, Any]] = {}
+    synthetic_noise: dict[str, dict[str, int | float | str]] = {}
+    for profile in ("clean", "mild", "stress"):
+        perturbed, noise_diagnostics = perturb_relation_structure(oracle, profile=profile)
+        _, synthetic_anchors, _ = normalize_provider_anchors(perturbed)
+        synthetic_reports[profile] = characterize_provider_degradation(
+            oracle_nodes,
+            synthetic_anchors,
+            width=width,
+            height=height,
+        )
+        synthetic_noise[profile] = noise_diagnostics
+    degradation["synthetic_profile_comparison"] = compare_with_synthetic_profiles(
+        degradation,
+        synthetic_reports,
+    )
+    for profile, diagnostics in synthetic_noise.items():
+        degradation["synthetic_profile_comparison"]["profiles"][profile][
+            "noise"
+        ] = diagnostics
     known_oracle_ids = {str(node.get("id")) for node in oracle_nodes}
     matched_oracle_ids = set(assignments)
     matched_provider_ids = {match["provider_id"] for match in assignments.values()}
@@ -72,7 +108,6 @@ def benchmark_provider_anchors(
 
         floating_bundle, floating_manifest = load_floating_relation_ranker(floating_model_path)
         floating_model_sha256 = floating_manifest.get("model_sha256")
-        image = oracle.get("img", {})
         provider_structure = {
             "uid": f"provider:{oracle.get('uid') or 'page'}",
             "img": {"width": image.get("width"), "height": image.get("height")},
@@ -183,7 +218,7 @@ def benchmark_provider_anchors(
         ),
     }
     report = {
-        "schema": "scriptorium-provider-anchor-benchmark/v1",
+        "schema": "scriptorium-provider-anchor-benchmark/v2",
         "provider": provider_name,
         "floating_model_sha256": floating_model_sha256,
         "oracle_sample": str(oracle.get("uid") or Path(oracle_structure_path).stem),
@@ -195,6 +230,7 @@ def benchmark_provider_anchors(
         "provider_anchor_match_rate": _ratio(len(matched_provider_ids), len(anchors)),
         "provider_to_oracle_granularity_ratio": _ratio(len(anchors), len(known_oracle_ids)),
         "anchor_kinds": anchor_kinds,
+        "provider_degradation": degradation,
         "assignments": assignments,
         "relations": {
             "labels": len(truth),
@@ -330,8 +366,11 @@ def benchmark_provider_anchor_suite(
         graphical_audit_summary["conflicting_label_count"],
         graphical_audit_summary["oracle_graphical_label_count"],
     )
+    provider_degradation = aggregate_provider_degradation(
+        [case["provider_degradation"] for case in cases]
+    )
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v1",
+        "schema": "scriptorium-provider-anchor-suite/v2",
         "corpus_manifest": str(manifest_path),
         "selection": manifest.get("selection"),
         "provider": cases[0]["provider"],
@@ -345,6 +384,7 @@ def benchmark_provider_anchor_suite(
         "matched_provider_anchor_count": provider_matched,
         "provider_anchor_match_rate": _ratio(provider_matched, provider_total),
         "anchor_kinds": anchor_kind_summary,
+        "provider_degradation": provider_degradation,
         "relations": relation_summary,
         "graphical_relation_audit": graphical_audit_summary,
         "cases": cases,
@@ -386,14 +426,16 @@ def _normalize_paddle_vl(
                 continue
             label = str(item.get("block_label") or "text")
             block_id = item.get("block_id", item_position)
+            anchor_id = f"page-{page_index}:block-{block_id}"
             anchors.append(
                 ProviderAnchor(
-                    f"page-{page_index}:block-{block_id}",
+                    anchor_id,
                     page_index,
                     _kind_alias(label),
                     tuple(map(float, box)),
                     str(item.get("block_content") or ""),
                     order,
+                    anchor_id,
                 )
             )
             order += 1
@@ -593,6 +635,7 @@ def _docling_anchor(
         normalized_box,
         str(item.get("text") or item.get("orig") or ""),
         order,
+        ref,
     )
 
 
@@ -611,6 +654,7 @@ def _normalize_roor_style(
                 tuple(map(float, item["box"])),
                 str(item.get("text") or ""),
                 order,
+                str(item.get("block_id", item.get("id", order))),
             )
         )
     return str(payload.get("source") or "roor-style"), anchors, _edge_pairs(payload.get("successor_edges"))
@@ -632,14 +676,16 @@ def _normalize_page_elements(
             box = item.get("bbox_pdf") or item.get("box") or item.get("bbox")
             if not isinstance(box, (list, tuple)) or len(box) != 4:
                 continue
+            anchor_id = str(item.get("id", f"page-{page_index}-anchor-{order}"))
             anchors.append(
                 ProviderAnchor(
-                    str(item.get("id", f"page-{page_index}-anchor-{order}")),
+                    anchor_id,
                     page_index,
                     _kind_alias(str(item.get("block_label") or item.get("type") or "text")),
                     tuple(map(float, box)),
                     str(item.get("block_content") or item.get("text") or ""),
                     order,
+                    str(item.get("block_id", item.get("group_id", anchor_id))),
                 )
             )
             order += 1

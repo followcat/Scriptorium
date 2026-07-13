@@ -40,6 +40,12 @@ def test_docling_blocks_match_multiple_oracle_lines_and_explicit_float(tmp_path)
     assert result.report["relations"]["serialized"]["correct"] == 2
     assert result.report["graphical_relation_audit"]["exact_agreement_count"] == 1
     assert result.report["graphical_relation_audit"]["conflicting_label_count"] == 0
+    assert result.report["provider_degradation"]["answer_free_relation_policy"][
+        "uses_relation_labels"
+    ] is False
+    assert result.report["provider_degradation"]["synthetic_profile_comparison"][
+        "nearest_profile"
+    ] in {"clean", "mild", "stress"}
     assert (
         result.report["graphical_relation_audit"]["provider_geometry_agreement"]["explicit"][
             "correct"
@@ -137,6 +143,10 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     assert result.report["relations"]["combined"]["correct"] == 1
     assert result.report["relations"]["combined"]["f1"] > 0
     assert result.report["graphical_relation_audit"]["cases_with_conflicts"] == 0
+    assert result.report["provider_degradation"]["case_count"] == 1
+    assert result.report["provider_degradation"]["error_taxonomy"]["missing"][
+        "denominator"
+    ] == 2
 
 
 def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
