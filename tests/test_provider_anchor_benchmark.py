@@ -8,6 +8,7 @@ from scriptorium.provider_anchor_benchmark import (
     _evaluate_provider_transition_gate,
     _provider_transition_position_audit,
     _serialized_provider_edge_groups,
+    _sum_provider_transition_reviews,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     freeze_stratified_provider_transition_gate,
@@ -137,7 +138,10 @@ def test_provider_transition_review_combines_native_support_and_endpoint_confide
             }
         ],
     }
-    paths = [tmp_path / name for name in ("oracle.json", "semantic.json", "provider.json")]
+    paths = [
+        tmp_path / name
+        for name in ("oracle.json", "semantic.json", "provider.json")
+    ]
     for path, payload in zip(
         paths,
         (oracle, {**oracle, "ro_linkings": [["line-1", "line-2"]]}, provider),
@@ -207,6 +211,100 @@ def test_provider_transition_gate_eligibility_is_relation_label_invariant(tmp_pa
     assert first["eligible_fraction"] == second["eligible_fraction"] == 1.0
     assert first["correct"] == 1
     assert second["correct"] == 0
+
+
+def test_provider_transition_precision_does_not_treat_unlabelled_edges_as_errors(
+    tmp_path,
+) -> None:
+    oracle = {
+        "uid": "partial-labels",
+        "img": {"width": 100, "height": 100},
+        "document": [
+            {"id": "header", "box": [10, 5, 90, 12], "type": "text"},
+            {"id": "body-1", "box": [10, 20, 90, 28], "type": "text"},
+            {"id": "body-2", "box": [10, 32, 90, 40], "type": "text"},
+        ],
+    }
+    provider = {
+        "source": "provider",
+        "pages": [
+            {
+                "elements": [
+                    {"id": "p-header", "box": [10, 5, 90, 12]},
+                    {"id": "p-body-1", "box": [10, 20, 90, 28]},
+                    {"id": "p-body-2", "box": [10, 32, 90, 40]},
+                ]
+            }
+        ],
+    }
+    paths = [tmp_path / name for name in ("oracle.json", "semantic.json", "provider.json")]
+    for path, payload in zip(
+        paths,
+        (oracle, {**oracle, "ro_linkings": [["body-1", "body-2"]]}, provider),
+        strict=True,
+    ):
+        path.write_text(json.dumps(payload))
+
+    review = benchmark_provider_anchors(*paths).report["provider_transition_review"]
+    baseline = _curve_point(review, support=0, confidence=None)
+
+    assert review["scorable_direct_transition_count"] == 1
+    assert baseline["eligible"] == 2
+    assert baseline["predicted"] == 1
+    assert baseline["unscored"] == 1
+    assert baseline["correct"] == 1
+    assert baseline["precision"] == 1.0
+    transitions = {
+        (item["source"], item["target"]): item
+        for item in review["transitions"]
+    }
+    assert transitions[("header", "body-1")]["scorable"] is False
+    assert transitions[("body-1", "body-2")]["scorable"] is True
+
+
+def test_provider_transition_suite_preserves_unscored_counts() -> None:
+    def review(*, correct: int, predicted: int, eligible: int) -> dict:
+        return {
+            "policy": {"partial_label_policy": "endpoint-universe"},
+            "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+            "direct_transition_count": eligible,
+            "labelled_node_count": 3,
+            "scorable_direct_transition_count": predicted,
+            "confidence_available_transition_count": eligible,
+            "support_histogram": {"0": 0, "1": eligible, "2": 0, "3": 0},
+            "candidate_direct_edge_counts": {
+                "visual-yx": eligible,
+                "box-flow": eligible,
+                "relation-graph": eligible,
+            },
+            "curve": [
+                {
+                    "minimum_native_support": 1,
+                    "minimum_provider_confidence": 0.85,
+                    "eligible": eligible,
+                    "predicted": predicted,
+                    "unscored": eligible - predicted,
+                    "correct": correct,
+                    "labels": 4,
+                }
+            ],
+        }
+
+    aggregate = _sum_provider_transition_reviews(
+        [
+            review(correct=2, predicted=2, eligible=3),
+            review(correct=1, predicted=2, eligible=4),
+        ]
+    )
+    point = aggregate["curve"][0]
+
+    assert point["eligible"] == 7
+    assert point["predicted"] == 4
+    assert point["unscored"] == 3
+    assert point["scorable_fraction"] == 0.57142857
+    assert point["correct"] == 3
+    assert point["incorrect"] == 1
+    assert point["precision"] == 0.75
 
 
 def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
@@ -292,6 +390,14 @@ def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
                             "correct": False,
                         },
                         {
+                            "transition_index": 0,
+                            "page_transition_count": 3,
+                            "native_support_count": 1,
+                            "minimum_provider_confidence": 0.85,
+                            "scorable": False,
+                            "correct": False,
+                        },
+                        {
                             "transition_index": 1,
                             "page_transition_count": 3,
                             "native_support_count": 2,
@@ -311,7 +417,9 @@ def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
         ],
         frozen.gate,
     )
+    assert position_audit["start"]["eligible"] == 2
     assert position_audit["start"]["predicted"] == 1
+    assert position_audit["start"]["unscored"] == 1
     assert position_audit["start"]["correct"] == 0
     assert position_audit["middle"]["precision"] == 1.0
     assert position_audit["end"]["predicted"] == 0
@@ -423,6 +531,58 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
     assert evaluation["aggregate_metrics"]["correct"] == 3
     assert evaluation["unruled_transition_count"] == 2
     assert evaluation["abstained_transition_count"] == 2
+
+
+def test_stratified_gate_rejects_low_partial_label_scorability(tmp_path) -> None:
+    fit = _transition_case(
+        "fit",
+        partition="fit",
+        layout_stratum="multicolumn",
+        correct=[True, True, True, True],
+    )
+    calibration = _transition_case(
+        "calibration",
+        partition="calibration",
+        layout_stratum="multicolumn",
+        correct=[True, True, False, False],
+    )
+    calibration_transitions = calibration["provider_transition_review"]["transitions"]
+    for transition in calibration_transitions[2:]:
+        transition["scorable"] = False
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "corpus_manifest_sha256": "train-corpus",
+                "corpus": {"dataset": "Comp-HRDoc train"},
+                "cases": [fit, calibration],
+            }
+        )
+    )
+
+    result = freeze_stratified_provider_transition_gate(
+        suite_path,
+        fit_minimum_precision=1.0,
+        fit_minimum_wilson_lower_95=0.0,
+        fit_minimum_predicted=2,
+        calibration_minimum_precision=1.0,
+        calibration_minimum_wilson_lower_95=0.0,
+        calibration_minimum_predicted=2,
+        calibration_minimum_scorable_fraction=0.8,
+        test_minimum_precision=1.0,
+        test_minimum_wilson_lower_95=0.0,
+        test_minimum_predicted=2,
+        test_bucket_minimum_precision=1.0,
+        test_bucket_minimum_wilson_lower_95=0.0,
+        test_bucket_minimum_predicted=2,
+    )
+
+    metrics = result.gate["calibration_aggregate_metrics"]
+    assert metrics["eligible"] == 4
+    assert metrics["predicted"] == 2
+    assert metrics["precision"] == 1.0
+    assert metrics["scorable_fraction"] == 0.5
+    assert result.gate["calibration_accepted"] is False
 
 
 def test_paddle_vl_raw_results_are_supported() -> None:

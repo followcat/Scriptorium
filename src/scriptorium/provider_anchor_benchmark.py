@@ -262,7 +262,7 @@ def benchmark_provider_anchors(
         ),
     }
     report = {
-        "schema": "scriptorium-provider-anchor-benchmark/v4",
+        "schema": "scriptorium-provider-anchor-benchmark/v5",
         "provider": provider_name,
         "provider_capabilities": provider_capabilities,
         "floating_model_sha256": floating_model_sha256,
@@ -498,7 +498,7 @@ def benchmark_provider_anchor_suite(
                 "runtime_promotion_decision": "reject-runtime-promotion",
             }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v6",
+        "schema": "scriptorium-provider-anchor-suite/v7",
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "corpus": {
@@ -651,15 +651,19 @@ def freeze_stratified_provider_transition_gate(
     fit_minimum_precision: float = 0.95,
     fit_minimum_wilson_lower_95: float = 0.8,
     fit_minimum_predicted: int = 20,
+    fit_minimum_scorable_fraction: float = 0.8,
     calibration_minimum_precision: float = 0.95,
     calibration_minimum_wilson_lower_95: float = 0.85,
     calibration_minimum_predicted: int = 30,
+    calibration_minimum_scorable_fraction: float = 0.8,
     test_minimum_precision: float = 0.95,
     test_minimum_wilson_lower_95: float = 0.9,
     test_minimum_predicted: int = 50,
+    test_minimum_scorable_fraction: float = 0.8,
     test_bucket_minimum_precision: float = 0.95,
     test_bucket_minimum_wilson_lower_95: float = 0.8,
     test_bucket_minimum_predicted: int = 20,
+    test_bucket_minimum_scorable_fraction: float = 0.8,
     allowed_layout_strata: Sequence[str] | None = None,
     allowed_position_bands: Sequence[str] | None = None,
     output: str | Path | None = None,
@@ -671,24 +675,28 @@ def freeze_stratified_provider_transition_gate(
         wilson=fit_minimum_wilson_lower_95,
         predicted=fit_minimum_predicted,
         prefix="fit",
+        scorable_fraction=fit_minimum_scorable_fraction,
     )
     _validate_transition_quality_criteria(
         precision=calibration_minimum_precision,
         wilson=calibration_minimum_wilson_lower_95,
         predicted=calibration_minimum_predicted,
         prefix="calibration",
+        scorable_fraction=calibration_minimum_scorable_fraction,
     )
     _validate_transition_quality_criteria(
         precision=test_minimum_precision,
         wilson=test_minimum_wilson_lower_95,
         predicted=test_minimum_predicted,
         prefix="test",
+        scorable_fraction=test_minimum_scorable_fraction,
     )
     _validate_transition_quality_criteria(
         precision=test_bucket_minimum_precision,
         wilson=test_bucket_minimum_wilson_lower_95,
         predicted=test_bucket_minimum_predicted,
         prefix="test_bucket",
+        scorable_fraction=test_bucket_minimum_scorable_fraction,
     )
     source_path = Path(suite_report_path)
     source_bytes = source_path.read_bytes()
@@ -819,6 +827,7 @@ def freeze_stratified_provider_transition_gate(
                     minimum_precision=fit_minimum_precision,
                     minimum_wilson_lower_95=fit_minimum_wilson_lower_95,
                     minimum_predicted=fit_minimum_predicted,
+                    minimum_scorable_fraction=fit_minimum_scorable_fraction,
                 ):
                     qualified.append((metrics, selected))
         if not qualified:
@@ -888,6 +897,7 @@ def freeze_stratified_provider_transition_gate(
         minimum_precision=calibration_minimum_precision,
         minimum_wilson_lower_95=calibration_minimum_wilson_lower_95,
         minimum_predicted=calibration_minimum_predicted,
+        minimum_scorable_fraction=calibration_minimum_scorable_fraction,
     )
     gate = {
         "schema": "scriptorium-provider-transition-gate/v2",
@@ -926,7 +936,10 @@ def freeze_stratified_provider_transition_gate(
             "minimum_precision": fit_minimum_precision,
             "minimum_precision_wilson_lower_95": fit_minimum_wilson_lower_95,
             "minimum_predicted": fit_minimum_predicted,
-            "objective": "maximize-eligible-transitions-after-bucket-quality-constraints",
+            "minimum_scorable_fraction": fit_minimum_scorable_fraction,
+            "objective": (
+                "maximize-scorable-transitions-after-bucket-quality-constraints"
+            ),
         },
         "calibration_acceptance_criteria": {
             "minimum_precision": calibration_minimum_precision,
@@ -934,11 +947,15 @@ def freeze_stratified_provider_transition_gate(
                 calibration_minimum_wilson_lower_95
             ),
             "minimum_predicted": calibration_minimum_predicted,
+            "minimum_scorable_fraction": (
+                calibration_minimum_scorable_fraction
+            ),
         },
         "independent_acceptance_criteria": {
             "minimum_precision": test_minimum_precision,
             "minimum_precision_wilson_lower_95": test_minimum_wilson_lower_95,
             "minimum_predicted": test_minimum_predicted,
+            "minimum_scorable_fraction": test_minimum_scorable_fraction,
         },
         "independent_bucket_acceptance_criteria": {
             "minimum_precision": test_bucket_minimum_precision,
@@ -946,6 +963,9 @@ def freeze_stratified_provider_transition_gate(
                 test_bucket_minimum_wilson_lower_95
             ),
             "minimum_predicted": test_bucket_minimum_predicted,
+            "minimum_scorable_fraction": (
+                test_bucket_minimum_scorable_fraction
+            ),
         },
         "rules": rules,
         "inactive_buckets": inactive_buckets,
@@ -1139,6 +1159,7 @@ def _validate_transition_quality_criteria(
     wilson: float,
     predicted: int,
     prefix: str,
+    scorable_fraction: float = 0.0,
 ) -> None:
     if not 0.0 <= precision <= 1.0:
         raise ValueError(f"{prefix}_minimum_precision must be between 0 and 1")
@@ -1148,6 +1169,10 @@ def _validate_transition_quality_criteria(
         )
     if predicted < 1:
         raise ValueError(f"{prefix}_minimum_predicted must be at least 1")
+    if not 0.0 <= scorable_fraction <= 1.0:
+        raise ValueError(
+            f"{prefix}_minimum_scorable_fraction must be between 0 and 1"
+        )
 
 
 def _suite_transition_records(
@@ -1199,15 +1224,27 @@ def _transition_record_metrics(
     *,
     denominator: int,
 ) -> dict[str, Any]:
-    predicted = len(records)
-    correct = sum(int(bool(record.get("correct"))) for record in records)
+    eligible = len(records)
+    scorable_records = [
+        record
+        for record in records
+        if bool(record.get("scorable", True))
+    ]
+    predicted = len(scorable_records)
+    correct = sum(
+        int(bool(record.get("correct")))
+        for record in scorable_records
+    )
     return {
+        "eligible": eligible,
         "correct": correct,
         "incorrect": predicted - correct,
         "predicted": predicted,
+        "unscored": eligible - predicted,
         "precision": _ratio(correct, predicted),
         "precision_wilson_lower_95": _wilson_lower_bound(correct, predicted),
-        "eligible_fraction": _ratio(predicted, denominator),
+        "eligible_fraction": _ratio(eligible, denominator),
+        "scorable_fraction": _ratio(predicted, eligible),
         "denominator": denominator,
     }
 
@@ -1218,6 +1255,7 @@ def _transition_metrics_meet(
     minimum_precision: float,
     minimum_wilson_lower_95: float,
     minimum_predicted: int,
+    minimum_scorable_fraction: float = 0.0,
 ) -> bool:
     return all(
         _transition_metric_checks(
@@ -1226,6 +1264,7 @@ def _transition_metrics_meet(
                 "minimum_precision": minimum_precision,
                 "minimum_precision_wilson_lower_95": minimum_wilson_lower_95,
                 "minimum_predicted": minimum_predicted,
+                "minimum_scorable_fraction": minimum_scorable_fraction,
             },
         ).values()
     )
@@ -1235,7 +1274,7 @@ def _transition_metric_checks(
     metrics: Mapping[str, Any],
     criteria: Mapping[str, Any],
 ) -> dict[str, bool]:
-    return {
+    checks = {
         "minimum_precision": float(metrics.get("precision", 0.0))
         >= float(criteria["minimum_precision"]),
         "minimum_precision_wilson_lower_95": float(
@@ -1245,6 +1284,11 @@ def _transition_metric_checks(
         "minimum_predicted": int(metrics.get("predicted", 0))
         >= int(criteria["minimum_predicted"]),
     }
+    if "minimum_scorable_fraction" in criteria:
+        checks["minimum_scorable_fraction"] = float(
+            metrics.get("scorable_fraction", 0.0)
+        ) >= float(criteria["minimum_scorable_fraction"])
+    return checks
 
 
 def _apply_stratified_transition_rules(
@@ -1291,11 +1335,17 @@ def _provider_transition_position_audit(
 ) -> dict[str, dict[str, Any]]:
     minimum_support = int(gate["minimum_native_support"])
     minimum_confidence = float(gate["minimum_provider_confidence"])
-    counts: dict[str, list[int]] = {
-        "start": [0, 0],
-        "middle": [0, 0],
-        "end": [0, 0],
-        "single": [0, 0],
+    records_by_band: dict[str, list[dict[str, Any]]] = {
+        "start": [],
+        "middle": [],
+        "end": [],
+        "single": [],
+    }
+    selected_by_band: dict[str, list[dict[str, Any]]] = {
+        "start": [],
+        "middle": [],
+        "end": [],
+        "single": [],
     }
     for case in cases:
         review = case.get("provider_transition_review")
@@ -1304,6 +1354,9 @@ def _provider_transition_position_audit(
         for transition in review.get("transitions", []):
             if not isinstance(transition, Mapping):
                 continue
+            band = _provider_transition_position_band(transition)
+            record = dict(transition)
+            records_by_band[band].append(record)
             confidence = transition.get("minimum_provider_confidence")
             if (
                 int(transition.get("native_support_count", 0)) < minimum_support
@@ -1311,20 +1364,13 @@ def _provider_transition_position_audit(
                 or float(confidence) < minimum_confidence
             ):
                 continue
-            band = _provider_transition_position_band(transition)
-            counts[band][0] += int(bool(transition.get("correct")))
-            counts[band][1] += 1
+            selected_by_band[band].append(record)
     return {
-        band: {
-            "correct": correct,
-            "predicted": predicted,
-            "precision": _ratio(correct, predicted),
-            "precision_wilson_lower_95": _wilson_lower_bound(
-                correct,
-                predicted,
-            ),
-        }
-        for band, (correct, predicted) in counts.items()
+        band: _transition_record_metrics(
+            selected_by_band[band],
+            denominator=len(records_by_band[band]),
+        )
+        for band in records_by_band
     }
 
 
@@ -1753,6 +1799,11 @@ def _provider_transition_review(
         height=height,
     )
     transitions = _mapped_direct_provider_transitions(anchors, assignments)
+    labelled_node_ids = {
+        node_id
+        for edge in truth
+        for node_id in edge
+    }
     transition_records: list[dict[str, Any]] = []
     for transition in transitions:
         edge = (transition["source"], transition["target"])
@@ -1780,6 +1831,10 @@ def _provider_transition_review(
                 "minimum_provider_confidence": minimum_confidence,
                 "native_support_count": len(supporting_candidates),
                 "native_supporting_candidates": supporting_candidates,
+                "scorable": (
+                    edge[0] in labelled_node_ids
+                    and edge[1] in labelled_node_ids
+                ),
                 "correct": edge in truth,
             }
         )
@@ -1791,8 +1846,8 @@ def _provider_transition_review(
     curve: list[dict[str, Any]] = []
     for minimum_support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS:
         for minimum_confidence in PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS:
-            eligible = {
-                (record["source"], record["target"])
+            eligible_records = [
+                record
                 for record in transition_records
                 if int(record["native_support_count"]) >= minimum_support
                 and (
@@ -1803,17 +1858,26 @@ def _provider_transition_review(
                         >= minimum_confidence
                     )
                 )
-            }
+            ]
+            metrics = _transition_record_metrics(
+                eligible_records,
+                denominator=len(direct_edges),
+            )
+            recall = _ratio(int(metrics["correct"]), len(truth))
+            precision = float(metrics["precision"])
+            f1 = (
+                2 * precision * recall / (precision + recall)
+                if precision + recall
+                else 0.0
+            )
             curve.append(
                 {
                     "minimum_native_support": minimum_support,
                     "minimum_provider_confidence": minimum_confidence,
-                    "eligible_fraction": _ratio(len(eligible), len(direct_edges)),
-                    "precision_wilson_lower_95": _wilson_lower_bound(
-                        len(eligible & truth),
-                        len(eligible),
-                    ),
-                    **_relation_metrics(eligible, truth),
+                    **metrics,
+                    "labels": len(truth),
+                    "recall": recall,
+                    "f1": round(f1, 8),
                 }
             )
 
@@ -1822,12 +1886,15 @@ def _provider_transition_review(
         for record in transition_records
     )
     return {
-        "schema": "scriptorium-provider-transition-review/v1",
+        "schema": "scriptorium-provider-transition-review/v2",
         "policy": {
             "status": "review-only",
             "runtime_reorder": False,
             "selection_uses_semantic_labels": False,
             "evaluation_uses_semantic_labels": True,
+            "partial_label_policy": (
+                "precision-scores-only-edges-with-both-endpoints-in-label-universe"
+            ),
             "confidence": "minimum-detection-confidence-of-provider-transition-endpoints",
             "support": "exact-direct-successor-votes-from-answer-free-native-candidates",
             "unknown_confidence_policy": "eligible-only-when-minimum-provider-confidence-is-null",
@@ -1838,6 +1905,11 @@ def _provider_transition_review(
             for name in PROVIDER_TRANSITION_CANDIDATES
         },
         "direct_transition_count": len(direct_edges),
+        "labelled_node_count": len(labelled_node_ids),
+        "scorable_direct_transition_count": sum(
+            bool(record["scorable"])
+            for record in transition_records
+        ),
         "confidence_available_transition_count": sum(
             record["minimum_provider_confidence"] is not None
             for record in transition_records
@@ -1982,15 +2054,28 @@ def _sum_provider_transition_reviews(
             int(point["minimum_native_support"]),
             point.get("minimum_provider_confidence"),
         )
-        metrics = _sum_relation_metrics(curve_by_key[key])
+        points = curve_by_key[key]
+        metrics = _sum_relation_metrics(points)
+        eligible = sum(
+            int(item.get("eligible", item.get("predicted", 0)))
+            for item in points
+        )
+        unscored = sum(int(item.get("unscored", 0)) for item in points)
         curve.append(
             {
                 "minimum_native_support": key[0],
                 "minimum_provider_confidence": key[1],
+                "eligible": eligible,
                 "eligible_fraction": _ratio(
-                    int(metrics["predicted"]),
+                    eligible,
                     direct_transition_count,
                 ),
+                "scorable_fraction": _ratio(
+                    int(metrics["predicted"]),
+                    eligible,
+                ),
+                "unscored": unscored,
+                "incorrect": int(metrics["predicted"]) - int(metrics["correct"]),
                 "precision_wilson_lower_95": _wilson_lower_bound(
                     int(metrics["correct"]),
                     int(metrics["predicted"]),
@@ -1999,7 +2084,7 @@ def _sum_provider_transition_reviews(
             }
         )
     return {
-        "schema": "scriptorium-provider-transition-review-suite/v1",
+        "schema": "scriptorium-provider-transition-review-suite/v2",
         "policy": first.get("policy"),
         "candidate_orders": first.get("candidate_orders"),
         "case_count": len(reviews),
@@ -2011,6 +2096,14 @@ def _sum_provider_transition_reviews(
             for name in PROVIDER_TRANSITION_CANDIDATES
         },
         "direct_transition_count": direct_transition_count,
+        "labelled_node_count": sum(
+            int(review.get("labelled_node_count", 0))
+            for review in reviews
+        ),
+        "scorable_direct_transition_count": sum(
+            int(review.get("scorable_direct_transition_count", 0))
+            for review in reviews
+        ),
         "confidence_available_transition_count": sum(
             int(review.get("confidence_available_transition_count", 0))
             for review in reviews
