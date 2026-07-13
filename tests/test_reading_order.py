@@ -861,6 +861,43 @@ def test_local_grid_island_becomes_translation_stream_without_table_semantics() 
     assert max(by_item[index].semantic_order for index in grid_indices) < by_item[after_index].semantic_order
 
 
+def test_grid_island_items_are_not_emitted_twice_as_sidebars() -> None:
+    raw_boxes = [
+        (3218, 1482, 3725, 1991),
+        (176, 338, 1891, 552),
+        (2554, 879, 3081, 1404),
+        (82, 95, 1153, 205),
+        (1995, 406, 2466, 873),
+        (2588, 402, 3064, 862),
+        (3350, 96, 3664, 350),
+        (2530, 1458, 3064, 1992),
+        (2003, 903, 2502, 1405),
+        (1992, 1471, 2490, 1966),
+        (3222, 893, 3715, 1382),
+        (179, 924, 1896, 1315),
+        (174, 1687, 1844, 1951),
+        (174, 1408, 1862, 1604),
+        (3223, 403, 3703, 879),
+        (175, 645, 1834, 828),
+    ]
+    bboxes = [BBox(x0=x0, y0=y0, x1=x1, y1=y1) for x0, y0, x1, y1 in raw_boxes]
+
+    assignments = infer_semantic_reading_order(
+        bboxes,
+        page_width=3840,
+        page_height=2160,
+    )
+    item_indices = [assignment.item_index for assignment in assignments]
+
+    assert len(assignments) == len(bboxes)
+    assert set(item_indices) == set(range(len(bboxes)))
+    assert len(item_indices) == len(set(item_indices))
+    assert any(
+        assignment.strategy.endswith("mixed-grid-column-flow-v1")
+        for assignment in assignments
+    )
+
+
 def test_formula_fragments_do_not_become_table_islands() -> None:
     bboxes: list[BBox] = []
     left_indices: list[int] = []

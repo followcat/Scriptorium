@@ -1461,8 +1461,20 @@ def _mixed_table_column_flow_assignments(
     if island_kinds == {"table"} and len(island_by_item) / max(len(bboxes), 1) >= 0.75:
         return None
 
-    artifact_type_by_item = _infer_marginal_artifacts(bboxes, page_width, page_height)
-    non_artifact_indices = [index for index in range(len(bboxes)) if index not in artifact_type_by_item]
+    artifact_type_by_item = {
+        index: artifact_type
+        for index, artifact_type in _infer_marginal_artifacts(
+            bboxes,
+            page_width,
+            page_height,
+        ).items()
+        if index not in island_by_item
+    }
+    non_artifact_indices = [
+        index
+        for index in range(len(bboxes))
+        if index not in artifact_type_by_item and index not in island_by_item
+    ]
     sidebar_type_by_item = _infer_sidebar_items(bboxes, page_width, page_height, indices=non_artifact_indices)
     non_sidebar_indices = [index for index in non_artifact_indices if index not in sidebar_type_by_item]
     footnote_indices = _infer_footnote_items(bboxes, page_width, page_height, indices=non_sidebar_indices)
