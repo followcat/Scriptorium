@@ -111,6 +111,19 @@ scriptorium export-html \
 `width`/`height` 映射像素 bbox，因此同一次模型运行可以安全地在不同转换或
 benchmark DPI 下重放。
 
+只需要布局和模型阅读顺序时，可跳过 OCR/VLM 识别，直接运行 PP-DocLayoutV3：
+
+```bash
+pip install -r requirements-ocr.txt
+scriptorium run-paddle-layout path/to/paper.pdf \
+  --page-ranges 1-3 --device cpu \
+  --output outputs/paper.pp-doclayoutv3.json
+```
+
+固定 8 页 train-only 多栏语料上，PP-DocLayoutV3 relation F1 为 `0.89198606`，
+Docling 为 `0.87148936`；样本仍小，因此两者都保持 review-only。完整方法和分区结果见
+[外部基准](docs/external-benchmarks.zh-CN.md#train-only-多栏-provider-校准)。
+
 若需要可重放的 PP-StructureV3 版面证据，可先安装可选 OCR 运行时、保存模型
 JSON，再走普通的结构 A/B 路径：
 
@@ -313,6 +326,7 @@ flowchart LR
 |---|---|
 | `native_pdf.py` | 提取 native 文本、图像、drawing 和页面几何。 |
 | `structure_evidence.py` | 归一化 PaddleOCR-VL / PP-Structure / Docling / ROOR 风格的结构证据。 |
+| `paddle_layout_provider.py` | 运行 PP-DocLayoutV3，保存 review-only layout/order JSON 与可复核 provenance。 |
 | `opendataloader_provider.py` | 运行 OpenDataLoader XY-Cut++ 并生成 review-only block/relation JSON。 |
 | `ocr.py` | 把 OCR/结构 JSON 归一为 image/source text anchors，并记录语义层来源；对 image source，结构 JSON 可以是 semantic driver。 |
 | `reading_order.py` | 处理多栏、表格岛、卡片网格、脚注、边栏、caption 和 reading streams。 |

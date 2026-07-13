@@ -111,6 +111,22 @@ Saved PaddleOCR-VL JSON retains the model input canvas. Scriptorium maps its
 pixel boxes through that saved `width`/`height`, so one model run can be
 replayed safely at a different conversion or benchmark DPI.
 
+When only layout and model reading order are needed, run PP-DocLayoutV3 without
+the OCR/VLM recognition stages:
+
+```bash
+pip install -r requirements-ocr.txt
+scriptorium run-paddle-layout path/to/paper.pdf \
+  --page-ranges 1-3 --device cpu \
+  --output outputs/paper.pp-doclayoutv3.json
+```
+
+On the fixed eight-page train-only multi-column corpus, PP-DocLayoutV3 reaches
+`0.89198606` relation F1 versus Docling's `0.87148936`. The sample is still too
+small for runtime promotion, so both remain review-only. See the
+[external benchmark](docs/external-benchmarks.md#train-only-multi-column-provider-calibration)
+for the method and partitioned results.
+
 For reproducible PP-StructureV3 layout evidence, install the optional OCR
 runtime, persist a model run, then pass that JSON back through the ordinary
 structure A/B path:
@@ -331,6 +347,7 @@ Main modules:
 |---|---|
 | `native_pdf.py` | Extract native text, images, drawings, and page geometry. |
 | `structure_evidence.py` | Normalize PaddleOCR-VL / PP-Structure / Docling / ROOR-style structure evidence. |
+| `paddle_layout_provider.py` | Run PP-DocLayoutV3 and persist review-only layout/order JSON with auditable provenance. |
 | `opendataloader_provider.py` | Run OpenDataLoader XY-Cut++ and emit review-only block/relation JSON. |
 | `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source; for image sources, structure JSON can be the semantic driver. |
 | `reading_order.py` | Build multi-column flow, table islands, card grids, footnotes, sidebars, captions, and reading streams. |

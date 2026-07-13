@@ -625,3 +625,71 @@ Sparse graph segmentation 将文本行与区域建模为双向几何关系，再
 
 亚像素正 bbox 的 crop 现在使用 floor/ceil 边界，不再把两侧 round 到同一坐标。
 这会保留至少一个像素，避免 image-source benchmark 因 `cannot write empty image` 中止。
+
+## Train-Only Provider 校准与快速 Paddle Layout
+
+`fetch_comphrdoc_provider_calibration_corpus()` 使用固定版本的 Comp-HRDoc train
+annotation archive 和原始 arXiv PDF 重建小规模真实图像 provider 语料。它只用 annotation
+geometry/category 将页面分为 `multicolumn` 或 `graphical-multicolumn`，样本选择不能读取
+relation label。文档 id 先按 SHA-256 分区，再选择页面；当前固定拆分包含 3 个 fit 文档和
+1 个 calibration 文档。Manifest 记录 annotation revision/hash、source PDF URL/hash、
+partition、layout stratum、选择字段和 source license policy。
+
+生成目录明确隔离数据边界：
+
+- `images/` 是 provider 唯一输入。
+- `structure/` 是已移除 relation 的 answer-free anchor，只用于 provider/oracle 匹配。
+- `semantic/` 保存评测 relation，只由评分器读取。
+- `sources/` 只是本地重建缓存；Scriptorium 不重新分发 arXiv PDF。
+
+`benchmark_provider_anchor_suite()` 现在为每个 case 保留 `sample_id`、`partition` 和
+`layout_stratum`，并输出每个 partition 的 micro summary 与缺失 provider case。Nested
+graphical 诊断使用 oracle group id，不再假定 line id 同时也是 grouped block id；因此
+Docling 图内 OCR 的 block/line namespace 重叠不会在 aggregate overlap 分析中触发冲突。
+
+`PaddleLayoutAdapter` 直接以 `PP-DocLayoutV3` 运行 Paddle `LayoutDetection`，跳过 OCR
+和 VLM 识别。每个有效 provider box 会归一化为稳定的页内 id、bbox、label、confidence、
+raw index 和可选数值 order；连续的数值 order box 会生成序列化 successor edge。Payload
+明确声明：
+
+```json
+{
+  "capabilities": {
+    "layout": true,
+    "reading_order": true,
+    "text_recognition": false
+  },
+  "semantic_policy": "review-only",
+  "order_policy": "review-only",
+  "relation_policy": "review-only",
+  "runtime_reorder": false
+}
+```
+
+`run-paddle-layout` 同时接受 PDF 和一等 image source，保留抽样后的原始 source page index，
+并记录模型参数、包版本、输入尺寸与输入 SHA-256。使用本地模型目录也不会改变输出契约。
+Degradation 评分会消费 capability 声明：layout-only 输出的文本 record 仍可审查，但 text
+fidelity 标为不适用，character、token、caption-loss 不进入 profile distance；其余 9 个
+layout 诊断仍正常评分。
+
+PaddleOCR-VL 与 PP-Structure payload 现在也带同类可复现 provenance：序列化 pipeline、
+adapter 与 prediction option，记录已安装的 `paddleocr`、`paddlex`、`paddlepaddle` 版本和
+每个输入 hash，并对凭据特征 key 脱敏。PaddleOCR-VL 本地运行默认 synchronous，同时显式
+暴露 `--queued` 与 `--max-new-tokens`，不再隐藏队列调度和生成长度条件。
+
+对于已经渲染且方向正常的 PDF 页，PP-Structure 默认关闭整页方向、文档去畸变和文本行
+方向模型，并继续把 table/formula/region 阶段设为可选。旋转、弯曲、拍照、密集表格或公式
+页面可通过 CLI 只重新启用所需阶段。CPU compatibility 环境和参数继续写入 provenance。
+
+在答案隔离的固定 8 页语料上，PP-DocLayoutV3 relation F1 在 fit 为 `0.89882353`、
+calibration 为 `0.87248322`、overall 为 `0.89198606`；Docling 在同页分别为
+`0.88119954`、`0.84415584`、`0.87148936`。PaddleOCR-VL 与轻量 PP-Structure 只运行了
+每个 partition 的一个 graphical 页，overall F1 分别为 `0.89510490` 和 `0.88732394`，
+这两个两页结果不是完整语料对比。所有 provider 继续保持 review-only。
+
+该架构与 RT-DocLayout/PP-DocLayoutV3 的证据一致：不运行完整 recognition 也能获得有用的
+layout 与 reading-order prediction（https://arxiv.org/html/2606.23344）。
+https://arxiv.org/html/2607.01018 的 CLM+NSP path-cover 方法也支持“局部 successor 评分后做
+max-regret path cover”。Scriptorium 已实现 degree-one、acyclic、max-regret path-cover
+selection；在 provider 文本更干净且有更大 held-out calibration set 证明收益之前，暂不接入
+昂贵的 semantic next-sentence scorer。当前 8 个 train-only 页不足以支持 runtime 晋升。

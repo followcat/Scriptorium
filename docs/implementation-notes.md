@@ -1070,3 +1070,89 @@ for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577
 Subpixel positive OCR boxes now use floor/ceil crop boundaries rather than
 rounding both sides to the same coordinate. This keeps a one-pixel crop instead
 of aborting image-source benchmarks with `cannot write empty image`.
+
+## Train-Only Provider Calibration and Fast Paddle Layout
+
+`fetch_comphrdoc_provider_calibration_corpus()` reconstructs a small real-image
+provider corpus from the pinned Comp-HRDoc train annotation archive and original
+arXiv PDFs. It uses annotation geometry and categories to stratify pages as
+`multicolumn` or `graphical-multicolumn`, but the selector is not allowed to read
+relation labels. Document ids are SHA-256 partitioned before pages are chosen;
+the current fixed split has three fit documents and one calibration document.
+The manifest records the annotation revision/hash, source PDF URL/hash,
+partition, layout stratum, selection fields, and source-license policy.
+
+The generated directories enforce the data boundary:
+
+- `images/` is the only provider input.
+- `structure/` contains answer-free anchors with relations removed and is used
+  only for provider-to-oracle matching.
+- `semantic/` contains evaluation relations and is opened only by the scorer.
+- `sources/` is a local reconstruction cache; Scriptorium does not redistribute
+  the arXiv PDFs.
+
+`benchmark_provider_anchor_suite()` now preserves `sample_id`, `partition`, and
+`layout_stratum` per case and emits micro summaries for each partition, including
+missing provider cases. Nested graphical diagnostics use oracle group ids rather
+than assuming a line id is also a grouped block id. This prevents Docling's
+nested chart OCR from colliding with block/line namespaces during aggregate
+overlap analysis.
+
+`PaddleLayoutAdapter` runs Paddle's `LayoutDetection` with
+`PP-DocLayoutV3`, without OCR or VLM recognition. Every valid provider box is
+normalized to a stable page-local id, bbox, label, confidence, raw index, and
+optional numeric order. Consecutive numeric-order boxes become serialized
+successor edges. The payload explicitly declares:
+
+```json
+{
+  "capabilities": {
+    "layout": true,
+    "reading_order": true,
+    "text_recognition": false
+  },
+  "semantic_policy": "review-only",
+  "order_policy": "review-only",
+  "relation_policy": "review-only",
+  "runtime_reorder": false
+}
+```
+
+The `run-paddle-layout` command accepts PDF and first-class image sources,
+preserves sampled source page indices, and records model options, package
+versions, input sizes, and input SHA-256 values. A local model directory can be
+used without changing the output contract. The capability declaration is also
+consumed by degradation scoring: layout-only output keeps text records available
+for inspection, but marks text fidelity not applicable and excludes character,
+token, and caption-loss features from profile distance. The remaining nine
+layout diagnostics continue to be scored.
+
+PaddleOCR-VL and PP-Structure payloads now carry the same class of reproducibility
+provenance. Pipeline, adapter, and prediction options are serialized; installed
+`paddleocr`, `paddlex`, and `paddlepaddle` versions and per-input hashes are
+recorded; keys containing credential markers are redacted. PaddleOCR-VL defaults
+to synchronous local prediction and exposes `--queued` and `--max-new-tokens`
+explicitly, so queue scheduling and generation limits are no longer hidden run
+conditions.
+
+For rendered upright PDF pages, PP-Structure now disables document orientation,
+document unwarping, and text-line orientation by default, alongside the existing
+optional table/formula/region stages. Rotated, curved, photographed, table-heavy,
+or formula-heavy inputs can re-enable only the required stages with explicit CLI
+flags. CPU compatibility environment and options remain part of provenance.
+
+On the answer-separated eight-page corpus, PP-DocLayoutV3 relation F1 is
+`0.89882353` on fit, `0.87248322` on calibration, and `0.89198606` overall.
+Docling on the same pages reaches `0.88119954`, `0.84415584`, and `0.87148936`.
+PaddleOCR-VL and lightweight PP-Structure were run only on one graphical page
+per partition and reach overall F1 `0.89510490` and `0.88732394`; those two-page
+results are not full-corpus comparisons. All providers remain review-only.
+
+The architecture matches the evidence from RT-DocLayout/PP-DocLayoutV3: layout
+and reading-order prediction can be useful without paying for full recognition
+(https://arxiv.org/html/2606.23344). The CLM+NSP path-cover approach in
+https://arxiv.org/html/2607.01018 also supports local successor scoring followed
+by max-regret path cover. Scriptorium already implements degree-one, acyclic,
+max-regret path-cover selection. A semantic next-sentence scorer is deferred
+until provider text is cleaner and a larger held-out calibration set can justify
+its cost; the current eight train-only pages cannot justify runtime promotion.

@@ -805,3 +805,69 @@ assignment。该 edge 仍为 review-only，不会重排 runtime 输出。
 Docling 到 clean/mild/stress 的距离几乎相同（`0.21559071/0.20701574/0.21405694`），这是当前
 合成扰动没有建模其“图内 OCR”域的直接证据。因此这些诊断仍只是 benchmark evidence；
 观察该页后没有改动任何 threshold、relation label 或 runtime gate。
+
+## Train-Only 多栏 Provider 校准
+
+此前固定 5 页 prefix 主要是单栏，而且来自公开 test split。现在新增命令从官方
+Comp-HRDoc **train** annotation 和原始 arXiv PDF 重建确定性的真实 provider 语料：
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 8 --document-count 4 --calibration-fraction 0.2 \
+  --out-dir data/external/comphrdoc-provider-calibration
+```
+
+命令校验固定 annotation archive 的 SHA-256，只在本地下载并重建 source PDF，同时记录
+每个 URL 与 PDF hash。Scriptorium 不重新分发这些 PDF；论文继续遵循各自 arXiv 记录中的
+许可。样本选择只读取 `bbox`、`category_id` 和 `textline_polys`，不读取
+`reading_order_id`、`reading_order_label` 或 `ro_linkings`。文档通过 SHA-256 分到互斥的
+fit/calibration partition，同一论文的页面不会跨 partition。
+
+固定语料包含 `1710.06349`、`1609.04214`、`1709.05631` 的 6 个 fit 页，以及
+`1702.07651` 的 2 个 calibration 页；两个 partition 都同时包含普通多栏页和
+graphical-multicolumn 页。Provider 只接收渲染图像；layout anchor 只用于匹配，semantic
+sidecar 只由评分器读取。
+
+每个 manifest 图片分别运行一次 provider，并用 sample id 作为输出文件名；快速 layout-only
+路径如下：
+
+```bash
+scriptorium run-paddle-layout \
+  data/external/comphrdoc-provider-calibration/images/1710.06349_4.png \
+  --input-kind image --device cpu \
+  --output outputs/pp-doclayoutv3/1710.06349_4.structure.json
+
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-calibration \
+  outputs/pp-doclayoutv3
+```
+
+下表是在 provider anchor 和序列化 order edge 映射到答案隔离 oracle 后得到的 micro relation
+F1。PaddleOCR-VL 与 PP-Structure 各运行了每个 partition 的一个 graphical 页；它们的两页
+结果不能直接视为与两个八页 provider 的完整语料对比。
+
+| Provider | 页数 | Fit F1 | Calibration F1 | Overall F1 | 能力 |
+|---|---:|---:|---:|---:|---|
+| PaddleOCR-VL 1.6 | 2 | 0.94193548 | 0.83969466 | 0.89510490 | OCR + layout/order |
+| PP-StructureV3 lightweight | 2 | 0.96774194 | 0.79069767 | 0.88732394 | OCR + layout/order |
+| PP-DocLayoutV3 | 8 | 0.89882353 | 0.87248322 | 0.89198606 | layout/order，不识别文本 |
+| Docling 2.111.0 | 8 | 0.88119954 | 0.84415584 | 0.87148936 | OCR + layout/order |
+
+在相同 8 页上，PP-DocLayoutV3 相对 Docling 全部非负，其中 7 页为正、1 页持平；平均
+page F1 delta 为 `+0.01846737`，micro F1 delta 为 `+0.02049670`，paired page bootstrap
+95% 区间为 `[+0.00832645, +0.02927668]`，四个文档的平均 delta 也都为正。
+Graphical-multicolumn 仍是较难 stratum：PP-DocLayoutV3 与 Docling 的 micro F1 分别为
+`0.82627119` 和 `0.80081301`，普通 multicolumn 则为 `0.93786982` 和 `0.92240117`。
+
+CPU 耗时是操作性记录，不是严格速度 benchmark：PP-DocLayoutV3 的受控单页探针约
+`8.48 s/page`、约 `1.28 GB`；Docling 约 `23 s/page`；轻量 PP-Structure 约
+`148-316 s/page`；PaddleOCR-VL 约 `682-2193 s/page`，包含模型和冷启动差异。关闭对已渲染
+直立 PDF 页冗余的整页方向、去畸变和文本行方向预处理后，PP-Structure fit 页从 `334 s`
+降到 `148 s`，relation F1 从 `0.9333` 变为 `0.9677`。旋转页或拍照页仍可通过显式参数
+重新开启这些阶段。
+
+PP-DocLayoutV3 声明 `text_recognition: false`，因此空文本字段会标记为不适用，字符、token
+和 caption 指标不会进入 synthetic-profile 距离；其余 9 个 layout 特征仍参与比较。所有输出
+继续保留 `review-only`、`runtime_reorder: false`、包版本、模型参数、输入 hash 和 capability
+provenance。8 个 train-only 页不足以覆盖真实域，因此没有据此晋升 runtime order，也没有
+调整任何运行时 threshold。

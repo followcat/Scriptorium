@@ -863,3 +863,82 @@ Docling is almost equally distant from clean, mild, and stress
 synthetic perturbations do not model its figure-internal OCR family. These
 diagnostics therefore remain benchmark evidence only; no threshold, relation
 label, or runtime gate was changed after observing this page.
+
+## Train-Only Multi-Column Provider Calibration
+
+The earlier five-page prefix is mostly single-column and belongs to the public
+test split. A separate command now reconstructs a deterministic provider corpus
+from the official Comp-HRDoc **train** annotations and the original arXiv PDFs:
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 8 --document-count 4 --calibration-fraction 0.2 \
+  --out-dir data/external/comphrdoc-provider-calibration
+```
+
+The command verifies the pinned annotation archive SHA-256, downloads source
+PDFs only for local reconstruction, and records each source URL and PDF hash.
+Scriptorium does not redistribute those PDFs; each paper keeps the license from
+its arXiv record. Selection reads only `bbox`, `category_id`, and
+`textline_polys`. It does not read `reading_order_id`, `reading_order_label`, or
+`ro_linkings`. Documents are assigned by SHA-256 to disjoint fit/calibration
+partitions, so pages from one paper cannot cross the split.
+
+The fixed corpus contains six fit pages from `1710.06349`, `1609.04214`, and
+`1709.05631`, plus two calibration pages from `1702.07651`. Each partition has
+both plain multi-column and graphical multi-column pages. Providers receive
+only rendered images; layout anchors are used only for matching, and semantic
+sidecars are opened only by the scorer.
+
+Run each provider once per manifest image, keeping the sample id in the output
+file name, then score the directory. For the fast layout-only path:
+
+```bash
+scriptorium run-paddle-layout \
+  data/external/comphrdoc-provider-calibration/images/1710.06349_4.png \
+  --input-kind image --device cpu \
+  --output outputs/pp-doclayoutv3/1710.06349_4.structure.json
+
+scriptorium benchmark-provider-anchor-suite \
+  data/external/comphrdoc-provider-calibration \
+  outputs/pp-doclayoutv3
+```
+
+The table reports micro relation F1 after provider anchors and serialized order
+edges are mapped to the answer-separated oracle. PaddleOCR-VL and PP-Structure
+were run on one graphical page per partition; their two-page numbers are not
+direct full-corpus comparisons with the eight-page providers.
+
+| Provider | Pages | Fit F1 | Calibration F1 | Overall F1 | Capability |
+|---|---:|---:|---:|---:|---|
+| PaddleOCR-VL 1.6 | 2 | 0.94193548 | 0.83969466 | 0.89510490 | OCR + layout/order |
+| PP-StructureV3 lightweight | 2 | 0.96774194 | 0.79069767 | 0.88732394 | OCR + layout/order |
+| PP-DocLayoutV3 | 8 | 0.89882353 | 0.87248322 | 0.89198606 | layout/order, no text recognition |
+| Docling 2.111.0 | 8 | 0.88119954 | 0.84415584 | 0.87148936 | OCR + layout/order |
+
+On the same eight pages, PP-DocLayoutV3 is non-negative against Docling on all
+pages, positive on seven, and tied on one. Mean per-page F1 delta is
+`+0.01846737`, micro F1 delta is `+0.02049670`, and a paired page bootstrap gives
+95% interval `[+0.00832645, +0.02927668]`; all four document-level mean deltas
+are positive. Graphical multi-column micro F1 remains the harder stratum
+(`0.82627119` for PP-DocLayoutV3 and `0.80081301` for Docling) than multi-column
+without graphicals (`0.93786982` and `0.92240117`).
+
+Observed CPU costs are operational measurements, not a controlled speed
+benchmark: PP-DocLayoutV3 took about `8.48 s/page` in a controlled single-page
+probe at roughly `1.28 GB`; Docling took about `23 s/page`; lightweight
+PP-Structure took `148-316 s/page`; PaddleOCR-VL took roughly
+`682-2193 s/page`, including model and cold-start variation. Disabling redundant
+orientation, unwarping, and text-line-orientation preprocessing reduced the
+PP-Structure fit-page run from `334 s` to `148 s` while relation F1 changed from
+`0.9333` to `0.9677`. Those stages remain available through explicit flags for
+rotated or photographed pages.
+
+PP-DocLayoutV3 declares `text_recognition: false`. Its zero text fields are
+therefore marked not applicable, and character/token/caption metrics are
+excluded from synthetic-profile distance; the remaining nine layout features
+still apply. All outputs retain `review-only`, `runtime_reorder: false`, package
+versions, model options, input hashes, and capability provenance. Eight
+train-only pages are useful evidence, not enough domain coverage to promote a
+provider into runtime ordering. No runtime threshold was changed from these
+results.
