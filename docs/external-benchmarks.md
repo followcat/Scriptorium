@@ -668,22 +668,27 @@ images are downloaded or redistributed. The same model is scored in three modes:
 | Mode | Correct / predicted / labels | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|
 | Native ranker | 8895 / 10681 / 10465 | 0.83278719 | 0.84997611 | 0.84129386 |
-| Native + global structure role | 9188 / 10959 / 10465 | 0.83839766 | 0.87797420 | 0.85772965 |
+| Native + global/calibrated structure role | 9193 / 10963 / 10465 | 0.83854784 | 0.87845198 | 0.85803621 |
 | Native + trained floating | 9208 / 10963 / 10465 | 0.83991608 | 0.87988533 | 0.85943625 |
 
-The global structure-role F1 delta over native is `+0.01643579`. Its graphical
-edges alone score 301/346 against 347 labels: precision `0.86994220`, recall
-`0.86743516`, F1 `0.86868687`, up from 295/342 and `0.85631350`. A cardinality-
-first maximum-weight assignment recovers six net correct edges without using
-test labels. Seven pages change, four improve, and one regresses because the
-pre-existing 25% horizontal-overlap gate excludes its true caption. That gate
-is not adjusted from test evidence; any threshold change requires train-only
-calibration. Role fusion remains review-only.
+The calibrated global structure-role F1 delta over native is `+0.01674235`.
+Its graphical edges alone score 306/350 against 347 labels: precision
+`0.87428571`, recall `0.88184438`, F1 `0.87804878`, up from the original greedy
+295/342 and `0.85631350`.
+
+Locality parameters were selected without this test corpus. A constrained
+official-train search kept vertical gap at `0.12` page height, removed mandatory
+horizontal bbox overlap, and tightened horizontal center distance from `0.50`
+to `0.35` page width. Fit changes `5284/5658 -> 5291/5665` correct/predicted;
+the document-hash calibration partition changes `1348/1473 -> 1349/1474`.
+Every changed fit/calibration page improves. After freezing the gate, three
+fixed-test pages change and all three improve, adding five correct edges with
+four predictions over global assignment alone. Role fusion remains review-only.
 
 That train-only gate is now implemented. Its graphical edges score 321/356
 correct against 347 labels: precision `0.90168539`, recall `0.92507205`, F1
 `0.91322902`. Overall F1 improves by `+0.01814239` over native and by
-`+0.00170660` over global heuristic fusion. Threshold `0.27` comes only from the
+`+0.00140004` over calibrated global heuristic fusion. Threshold `0.27` comes only from the
 official-train document-hash calibration split; the 250-page test prefix was
 not used to select it. The learned gate remains review-only pending confidence
 reliability and document-family rejection analysis.
@@ -705,7 +710,7 @@ This filters contradictory raw edges and scores only selected graph relations:
 | Mode | Correct / selected / labels | Precision | Recall | F1 | Cycles rejected |
 |---|---:|---:|---:|---:|---:|
 | Native ranker | 8667 / 9481 / 10465 | 0.91414408 | 0.82818920 | 0.86904643 | 18 |
-| Native + global heuristic role | 8946 / 9742 / 10465 | 0.91829193 | 0.85484950 | 0.88543574 | 3 |
+| Native + calibrated global role | 8951 / 9746 / 10465 | 0.91842807 | 0.85532728 | 0.88575528 | 3 |
 | Native + trained floating | 8976 / 9757 / 10465 | 0.91995490 | 0.85771620 | 0.88774602 | 2 |
 
 The trained mode protects and retains all 72 high-precision zero-OOD floating

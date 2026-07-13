@@ -948,13 +948,20 @@ aggregates the same counters over files selected by a rendered Comp-HRDoc
 manifest.
 
 On the fixed 250-page graphical test corpus, global structure-role assignment
-raises graphical correct/predicted from `295/342` to `301/346` and graphical F1
-from `0.85631350` to `0.86868687`. Overall structure-role F1 changes from
-`0.85716953` to `0.85772965`; diagnostic joint path-cover F1 changes from
-`0.88501708` to `0.88543574`. Seven pages change, four improve, and one loses a
-correct edge because the pre-existing 25% horizontal-overlap gate rejects its
-true caption. That threshold must be calibrated from train-only data rather
-than adjusted against this test page.
+first raised graphical correct/predicted from `295/342` to `301/346`. A separate
+train-only locality calibration then removes mandatory horizontal overlap while
+tightening maximum horizontal center distance from `0.50` to `0.35` page width;
+the vertical gap remains `0.12` page height. On 4,102 fit pages, correct/predicted
+changes `5284/5658 -> 5291/5665` with no regressed page. On 1,073 held-out
+calibration pages it changes `1348/1473 -> 1349/1474`, again with no regression.
+
+With both changes frozen, the untouched 250-page test reaches graphical
+`306/350/347`, precision/recall/F1 `0.87428571/0.88184438/0.87804878`. Overall
+structure-role F1 is `0.85803621`, and diagnostic joint path-cover F1 is
+`0.88575528`. Relative to global assignment alone, three pages change and all
+three improve; relative to the original greedy baseline, graphical correct
+increases by 11 with eight additional predictions. Real Docling/Paddle anchor
+recall and raw relation metrics remain unchanged.
 
 Provider floating predictions retain the same reliability boundary. Reports
 separate all review edges from high-confidence zero-OOD edges. They never write

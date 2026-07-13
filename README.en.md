@@ -181,7 +181,10 @@ runtime order. Multi-line captions use answer-free layout block membership, and
 this evidence is labelled separately from learned text edges. When several
 figures/tables and captions coexist, a global one-to-one assignment maximizes
 valid pair count and then total geometry score, so input-list order cannot let
-an early graphical block claim a shared caption.
+an early graphical block claim a shared caption. Caption locality does not
+require horizontal bbox overlap: train-only calibration uses a `0.35` page-width
+center-distance gate and a `0.12` page-height vertical gap, accepting legitimate
+offset/left-aligned captions while rejecting remote-column candidates.
 
 An independent cross-domain relation benchmark can be generated from a fixed
 Comp-HRDoc test document. Official order labels and answer-free layout anchors

@@ -174,6 +174,8 @@ scriptorium run-relation-ranker page.structure.json \
 多行 caption 使用不含答案的 layout block membership，这类证据与 learned text
 edge 分开标记。多个 figure/table 与 caption 同时出现时，使用全局一对一匹配，
 先最大化有效配对数，再最大化总几何得分，不再让输入列表中靠前的图形抢占 caption。
+Caption locality 不强制 bbox 水平相交，而使用 train-only 校准的 `0.35` 页宽中心距离
+和 `0.12` 页高纵向间隔，因此可覆盖合法的左对齐/偏移 caption，同时拒绝远栏候选。
 
 独立跨域关系基准可从 Comp-HRDoc 固定 test 文档生成；命令会把官方 order label 与
 answer-free layout anchors 分开保存：
