@@ -608,9 +608,13 @@ def _provider_overlap_diagnostics(
     nested_parent_associations: dict[str, set[str]] = defaultdict(set)
     for record in nested_graphical_content.get("records", []):
         provider_group_id = str(record["provider_group_id"])
-        oracle_parent_id = str(record["oracle_parent_id"])
-        associations[provider_group_id].add(oracle_parent_id)
-        nested_parent_associations[provider_group_id].add(oracle_parent_id)
+        oracle_parent_group_id = str(
+            record.get("oracle_parent_group_id") or record["oracle_parent_id"]
+        )
+        if oracle_parent_group_id not in oracle_boxes:
+            continue
+        associations[provider_group_id].add(oracle_parent_group_id)
+        nested_parent_associations[provider_group_id].add(oracle_parent_group_id)
     pairs: list[dict[str, Any]] = []
     group_ids = sorted(group_boxes)
     for left_index, left_id in enumerate(group_ids):
@@ -723,6 +727,7 @@ def _nested_graphical_content(
                 "provider_group_id": _provider_group_id(provider),
                 "provider_kind": _kind_alias(provider.kind),
                 "oracle_parent_id": parent.id,
+                "oracle_parent_group_id": parent.group_id,
                 "oracle_parent_kind": parent.kind,
                 "provider_to_parent_area_ratio": round(
                     provider_area / max(_bbox_area(parent.bbox), 1e-9),

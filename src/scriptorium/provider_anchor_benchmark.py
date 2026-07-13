@@ -273,11 +273,14 @@ def benchmark_provider_anchor_suite(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     cases: list[dict[str, Any]] = []
     missing: list[str] = []
+    missing_by_partition: dict[str, list[str]] = defaultdict(list)
     for sample in manifest.get("samples", []):
         sample_id = str(sample["id"])
+        partition = str(sample.get("partition") or "unspecified")
         provider_path = providers / f"{sample_id}.structure.json"
         if not provider_path.is_file():
             missing.append(sample_id)
+            missing_by_partition[partition].append(sample_id)
             continue
         case = benchmark_provider_anchors(
             corpus / str(sample["structure"]),
@@ -286,6 +289,9 @@ def benchmark_provider_anchor_suite(
             floating_model_path=floating_model_path,
             output=providers / "anchor-benchmarks" / f"{sample_id}.json",
         ).report
+        case["sample_id"] = sample_id
+        case["partition"] = partition
+        case["layout_stratum"] = str(sample.get("layout_stratum") or "unspecified")
         cases.append(case)
     if not cases:
         raise ValueError("provider directory contains no matching structure JSON files")
@@ -369,6 +375,13 @@ def benchmark_provider_anchor_suite(
     provider_degradation = aggregate_provider_degradation(
         [case["provider_degradation"] for case in cases]
     )
+    partitions = {
+        partition: _provider_case_subset_summary(
+            [case for case in cases if case["partition"] == partition],
+            relation_keys=relation_keys,
+        )
+        for partition in sorted({str(case["partition"]) for case in cases})
+    }
     report = {
         "schema": "scriptorium-provider-anchor-suite/v2",
         "corpus_manifest": str(manifest_path),
@@ -377,6 +390,10 @@ def benchmark_provider_anchor_suite(
         "case_count": len(cases),
         "missing_provider_case_count": len(missing),
         "missing_provider_cases": missing,
+        "missing_provider_cases_by_partition": {
+            partition: sample_ids
+            for partition, sample_ids in sorted(missing_by_partition.items())
+        },
         "oracle_anchor_count": oracle_total,
         "matched_oracle_anchor_count": oracle_matched,
         "oracle_anchor_recall": _ratio(oracle_matched, oracle_total),
@@ -387,6 +404,7 @@ def benchmark_provider_anchor_suite(
         "provider_degradation": provider_degradation,
         "relations": relation_summary,
         "graphical_relation_audit": graphical_audit_summary,
+        "partitions": partitions,
         "cases": cases,
     }
     report_path = Path(output) if output is not None else providers / "provider_anchor_suite_report.json"
@@ -974,6 +992,50 @@ def _sum_anchor_kind_metrics(metrics: Sequence[Mapping[str, Any]]) -> dict[str, 
         "provider": provider,
         "matched_provider": matched_provider,
         "provider_match_rate": _ratio(matched_provider, provider),
+    }
+
+
+def _provider_case_subset_summary(
+    cases: Sequence[Mapping[str, Any]],
+    *,
+    relation_keys: Sequence[str],
+) -> dict[str, Any]:
+    oracle_total = sum(int(case["oracle_anchor_count"]) for case in cases)
+    oracle_matched = sum(int(case["matched_oracle_anchor_count"]) for case in cases)
+    provider_total = sum(int(case["provider_anchor_count"]) for case in cases)
+    provider_matched = sum(int(case["matched_provider_anchor_count"]) for case in cases)
+    kind_names = sorted(
+        {
+            kind
+            for case in cases
+            for kind in case.get("anchor_kinds", {})
+        }
+    )
+    return {
+        "case_count": len(cases),
+        "sample_ids": [str(case["sample_id"]) for case in cases],
+        "layout_strata": dict(
+            sorted(Counter(str(case["layout_stratum"]) for case in cases).items())
+        ),
+        "oracle_anchor_count": oracle_total,
+        "matched_oracle_anchor_count": oracle_matched,
+        "oracle_anchor_recall": _ratio(oracle_matched, oracle_total),
+        "provider_anchor_count": provider_total,
+        "matched_provider_anchor_count": provider_matched,
+        "provider_anchor_match_rate": _ratio(provider_matched, provider_total),
+        "anchor_kinds": {
+            kind: _sum_anchor_kind_metrics(
+                [case.get("anchor_kinds", {}).get(kind, {}) for case in cases]
+            )
+            for kind in kind_names
+        },
+        "relations": {
+            key: _sum_relation_metrics([case["relations"][key] for case in cases])
+            for key in relation_keys
+        },
+        "provider_degradation": aggregate_provider_degradation(
+            [case["provider_degradation"] for case in cases]
+        ),
     }
 
 

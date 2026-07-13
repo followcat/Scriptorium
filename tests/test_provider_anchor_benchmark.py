@@ -129,6 +129,8 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
                 "samples": [
                     {
                         "id": "sample_0",
+                        "partition": "calibration",
+                        "layout_stratum": "multicolumn",
                         "structure": "structure/sample_0.structure.json",
                         "semantic_sidecar": "images/sample_0.semantic-order.json",
                     }
@@ -147,6 +149,14 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     assert result.report["provider_degradation"]["error_taxonomy"]["missing"][
         "denominator"
     ] == 2
+    assert result.report["cases"][0]["partition"] == "calibration"
+    assert result.report["partitions"]["calibration"]["sample_ids"] == ["sample_0"]
+    assert result.report["partitions"]["calibration"]["layout_strata"] == {
+        "multicolumn": 1
+    }
+    assert result.report["partitions"]["calibration"]["relations"]["combined"] == (
+        result.report["relations"]["combined"]
+    )
 
 
 def test_anchor_matcher_does_not_use_oracle_list_order() -> None:

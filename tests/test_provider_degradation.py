@@ -11,14 +11,14 @@ def test_exact_grouped_provider_has_zero_degradation_signature() -> None:
     oracle = [
         _oracle("a-1", "a", "text", [10, 10, 90, 18], "First line"),
         _oracle("a-2", "a", "text", [10, 20, 90, 28], "Second line"),
-        _oracle("figure", "figure", "figure", [10, 40, 90, 70], ""),
+        _oracle("figure-anchor", "figure-block", "figure", [10, 40, 90, 70], ""),
         _oracle("figure-label", "figure-label", "text", [20, 45, 80, 50], "Axis label"),
         _oracle("caption", "caption", "text", [10, 72, 90, 80], "Figure 1. Result"),
     ]
     provider = [
         _provider("pa-1", "a", "text", [10, 10, 90, 18], "First line", 0),
         _provider("pa-2", "a", "text", [10, 20, 90, 28], "Second line", 1),
-        _provider("pf", "figure", "figure", [10, 40, 90, 70], "", 2),
+        _provider("pf", "provider-figure", "figure", [10, 40, 90, 70], "", 2),
         _provider("pfl", "figure-label", "text", [20, 45, 80, 50], "Axis label", 3),
         _provider("nested", "nested", "text", [20, 52, 60, 64], "OCR", 4),
         _provider("pc", "caption", "caption", [10, 72, 90, 80], "Figure 1. Result", 5),
