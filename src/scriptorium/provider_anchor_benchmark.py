@@ -660,6 +660,7 @@ def freeze_stratified_provider_transition_gate(
     test_bucket_minimum_precision: float = 0.95,
     test_bucket_minimum_wilson_lower_95: float = 0.8,
     test_bucket_minimum_predicted: int = 20,
+    allowed_layout_strata: Sequence[str] | None = None,
     output: str | Path | None = None,
 ) -> ProviderTransitionGateResult:
     """Freeze layout/position bucket rules, then accept or reject on calibration."""
@@ -716,10 +717,44 @@ def freeze_stratified_provider_transition_gate(
             (record["layout_stratum"], record["position_band"])
         ].append(record)
 
+    allowed_layout_values = (
+        (allowed_layout_strata,)
+        if isinstance(allowed_layout_strata, str)
+        else allowed_layout_strata
+    )
+    normalized_allowed_layout_strata = (
+        tuple(
+            sorted(
+                {
+                    str(value).strip()
+                    for value in allowed_layout_values
+                    if str(value).strip()
+                }
+            )
+        )
+        if allowed_layout_values is not None
+        else None
+    )
+    if allowed_layout_strata is not None and not normalized_allowed_layout_strata:
+        raise ValueError("allowed_layout_strata must contain at least one value")
+
     rules: list[dict[str, Any]] = []
     inactive_buckets: list[dict[str, Any]] = []
     for layout_stratum, position_band in sorted(fit_buckets):
         bucket_records = fit_buckets[(layout_stratum, position_band)]
+        if (
+            normalized_allowed_layout_strata is not None
+            and layout_stratum not in normalized_allowed_layout_strata
+        ):
+            inactive_buckets.append(
+                {
+                    "layout_stratum": layout_stratum,
+                    "position_band": position_band,
+                    "fit_transition_count": len(bucket_records),
+                    "reason": "excluded-by-predeclared-layout-policy",
+                }
+            )
+            continue
         qualified: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
         for minimum_support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS[1:]:
             for minimum_confidence in (
@@ -834,6 +869,11 @@ def freeze_stratified_provider_transition_gate(
         "bucket_definition": {
             "dimensions": ["layout_stratum", "position_band"],
             "position_bands": ["start", "middle", "end", "single"],
+            "allowed_layout_strata": (
+                list(normalized_allowed_layout_strata)
+                if normalized_allowed_layout_strata is not None
+                else "all-fit-layout-strata"
+            ),
             "unruled_bucket_policy": "abstain",
         },
         "fit_selection_criteria": {

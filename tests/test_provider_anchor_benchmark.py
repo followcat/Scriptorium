@@ -363,12 +363,14 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
         test_bucket_minimum_precision=0.8,
         test_bucket_minimum_wilson_lower_95=0.0,
         test_bucket_minimum_predicted=2,
+        allowed_layout_strata=["multicolumn"],
     )
 
     gate = result.gate
     assert gate["schema"] == "scriptorium-provider-transition-gate/v2"
     assert gate["calibration_accepted"] is True
     assert gate["calibration_can_modify_rules"] is False
+    assert gate["bucket_definition"]["allowed_layout_strata"] == ["multicolumn"]
     assert [
         (rule["layout_stratum"], rule["position_band"])
         for rule in gate["rules"]
@@ -378,7 +380,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
             "layout_stratum": "graphical-multicolumn",
             "position_band": "start",
             "fit_transition_count": 5,
-            "reason": "no-fit-curve-point-meets-quality-and-coverage",
+            "reason": "excluded-by-predeclared-layout-policy",
         }
     ]
     held_out_cases = [
