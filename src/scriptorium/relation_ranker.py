@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .bipartite_matching import maximum_weight_bipartite_matching
 from .models import DocumentIR
 
 
@@ -396,33 +397,49 @@ def _structure_role_successors(
 ) -> dict[Any, tuple[Any, list[str]]]:
     """Derive review-only float/caption links from explicit structure roles."""
 
-    captions = [segment for segment in segments if _is_caption_segment(segment)]
-    result: dict[Any, tuple[Any, list[str]]] = {}
-    claimed_caption_ids: set[Any] = set()
-    for graphical in segments:
-        kind = _segment_kind(graphical)
-        if kind not in {"figure", "table"}:
+    captions: list[Mapping[str, Any]] = []
+    caption_blocks: set[Any] = set()
+    for segment in segments:
+        if not _is_caption_segment(segment):
             continue
-        candidates = [
-            caption
-            for caption in captions
-            if caption["id"] not in claimed_caption_ids
-            and _caption_matches_kind(caption, kind)
-            and _is_local_caption(graphical, caption, kind=kind, width=width, height=height)
-        ]
-        if not candidates:
-            continue
-        caption = min(
-            candidates,
-            key=lambda item: _normalized_center_distance(graphical, item, width, height),
+        block_id = segment.get("block_id")
+        block_key = (
+            ("block", block_id)
+            if block_id is not None
+            else ("segment", segment["id"])
         )
+        if block_key in caption_blocks:
+            continue
+        caption_blocks.add(block_key)
+        captions.append(segment)
+    graphical = [
+        segment
+        for segment in segments
+        if _segment_kind(segment) in {"figure", "table"}
+    ]
+    score_matrix: list[list[float | None]] = []
+    for source in graphical:
+        kind = _segment_kind(source)
+        score_matrix.append(
+            [
+                1.0 / (1.0 + _normalized_center_distance(source, caption, width, height))
+                if _caption_matches_kind(caption, kind)
+                and _is_local_caption(source, caption, kind=kind, width=width, height=height)
+                else None
+                for caption in captions
+            ]
+        )
+    result: dict[Any, tuple[Any, list[str]]] = {}
+    for match in maximum_weight_bipartite_matching(score_matrix):
+        source = graphical[match.left_index]
+        caption = captions[match.right_index]
+        kind = _segment_kind(source)
         caption_block = _caption_block(caption, segments)
-        claimed_caption_ids.update(item["id"] for item in caption_block)
         evidence = [f"explicit-{kind}-role", "caption-label", "local-float-caption"]
         if kind == "figure":
-            result[graphical["id"]] = (caption_block[0]["id"], evidence)
+            result[source["id"]] = (caption_block[0]["id"], evidence)
         else:
-            result[caption_block[-1]["id"]] = (graphical["id"], evidence)
+            result[caption_block[-1]["id"]] = (source["id"], evidence)
     return result
 
 

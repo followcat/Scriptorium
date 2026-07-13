@@ -192,6 +192,46 @@ def test_prediction_orders_table_caption_before_explicit_table(
     ]
 
 
+def test_structure_role_matching_is_global_and_input_order_independent() -> None:
+    segments = [
+        {"id": "figure-a", "box": [40, 0, 120, 60], "type": "figure"},
+        {"id": "figure-b", "box": [90, 0, 170, 60], "type": "figure"},
+        {
+            "id": "caption-shared",
+            "box": [60, 63, 120, 70],
+            "text": "Figure 1. Shared",
+            "block_id": None,
+        },
+        {
+            "id": "caption-left",
+            "box": [20, 63, 80, 70],
+            "text": "Figure 2. Left",
+            "block_id": None,
+        },
+    ]
+
+    expected = {
+        "figure-a": (
+            "caption-left",
+            ["explicit-figure-role", "caption-label", "local-float-caption"],
+        ),
+        "figure-b": (
+            "caption-shared",
+            ["explicit-figure-role", "caption-label", "local-float-caption"],
+        ),
+    }
+    assert relation_ranker._structure_role_successors(
+        segments,
+        width=200,
+        height=200,
+    ) == expected
+    assert relation_ranker._structure_role_successors(
+        list(reversed(segments)),
+        width=200,
+        height=200,
+    ) == dict(reversed(list(expected.items())))
+
+
 def test_document_ir_prediction_emits_page_local_generic_structure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

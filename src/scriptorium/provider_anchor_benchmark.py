@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .bipartite_matching import maximum_weight_bipartite_matching
+
 
 @dataclass(frozen=True)
 class ProviderAnchor:
@@ -105,6 +107,15 @@ def benchmark_provider_anchors(
     combined_edges = serialized_edges | explicit_edges
     trained_combined_edges = combined_edges | trained_floating_edges
     reliable_trained_combined_edges = combined_edges | reliable_trained_floating_edges
+    relation_predictions = {
+        "serialized": serialized_edges,
+        "explicit": explicit_edges,
+        "combined": combined_edges,
+        "trained_floating": trained_floating_edges,
+        "reliable_trained_floating": reliable_trained_floating_edges,
+        "combined_with_trained_floating": trained_combined_edges,
+        "combined_with_reliable_trained_floating": reliable_trained_combined_edges,
+    }
     report = {
         "schema": "scriptorium-provider-anchor-benchmark/v1",
         "provider": provider_name,
@@ -121,20 +132,17 @@ def benchmark_provider_anchors(
         "assignments": assignments,
         "relations": {
             "labels": len(truth),
-            "serialized": _relation_metrics(serialized_edges, truth),
-            "explicit": _relation_metrics(explicit_edges, truth),
-            "combined": _relation_metrics(combined_edges, truth),
-            "trained_floating": _relation_metrics(trained_floating_edges, truth),
-            "reliable_trained_floating": _relation_metrics(
-                reliable_trained_floating_edges,
-                truth,
-            ),
-            "combined_with_trained_floating": _relation_metrics(trained_combined_edges, truth),
-            "combined_with_reliable_trained_floating": _relation_metrics(
-                reliable_trained_combined_edges,
-                truth,
-            ),
+            **{
+                name: _relation_metrics(predicted, truth)
+                for name, predicted in relation_predictions.items()
+            },
         },
+        "graphical_relation_audit": _graphical_relation_audit(
+            oracle,
+            oracle_nodes,
+            truth,
+            relation_predictions,
+        ),
     }
     report_path = (
         Path(output)
@@ -209,6 +217,45 @@ def benchmark_provider_anchor_suite(
     oracle_matched = sum(case["matched_oracle_anchor_count"] for case in cases)
     provider_total = sum(case["provider_anchor_count"] for case in cases)
     provider_matched = sum(case["matched_provider_anchor_count"] for case in cases)
+    graphical_audits = [case["graphical_relation_audit"] for case in cases]
+    graphical_audit_summary = {
+        "reference_policy": "answer-free-local-geometry-diagnostic-not-ground-truth",
+        "oracle_graphical_label_count": sum(
+            int(audit["oracle_graphical_label_count"]) for audit in graphical_audits
+        ),
+        "geometry_proposal_count": sum(
+            int(audit["geometry_proposal_count"]) for audit in graphical_audits
+        ),
+        "exact_agreement_count": sum(
+            int(audit["exact_agreement_count"]) for audit in graphical_audits
+        ),
+        "conflicting_label_count": sum(
+            int(audit["conflicting_label_count"]) for audit in graphical_audits
+        ),
+        "oracle_without_geometry_count": sum(
+            int(audit["oracle_without_geometry_count"]) for audit in graphical_audits
+        ),
+        "geometry_without_oracle_count": sum(
+            int(audit["geometry_without_oracle_count"]) for audit in graphical_audits
+        ),
+        "cases_with_conflicts": sum(
+            int(bool(audit["conflicting_label_count"])) for audit in graphical_audits
+        ),
+        "provider_geometry_agreement": {
+            key: _sum_relation_metrics(
+                [audit["provider_geometry_agreement"][key] for audit in graphical_audits]
+            )
+            for key in relation_keys
+        },
+    }
+    graphical_audit_summary["oracle_geometry_exact_agreement"] = _ratio(
+        graphical_audit_summary["exact_agreement_count"],
+        graphical_audit_summary["oracle_graphical_label_count"],
+    )
+    graphical_audit_summary["oracle_geometry_conflict_rate"] = _ratio(
+        graphical_audit_summary["conflicting_label_count"],
+        graphical_audit_summary["oracle_graphical_label_count"],
+    )
     report = {
         "schema": "scriptorium-provider-anchor-suite/v1",
         "corpus_manifest": str(manifest_path),
@@ -225,6 +272,7 @@ def benchmark_provider_anchor_suite(
         "provider_anchor_match_rate": _ratio(provider_matched, provider_total),
         "anchor_kinds": anchor_kind_summary,
         "relations": relation_summary,
+        "graphical_relation_audit": graphical_audit_summary,
         "cases": cases,
     }
     report_path = Path(output) if output is not None else providers / "provider_anchor_suite_report.json"
@@ -284,9 +332,10 @@ def match_provider_anchors(
     *,
     minimum_score: float = 0.45,
 ) -> dict[str, dict[str, Any]]:
-    """Assign every oracle node to its strongest compatible provider block."""
+    """Match text many-to-one and graphical anchors globally one-to-one."""
 
     assignments: dict[str, dict[str, Any]] = {}
+    graphical_oracles: list[tuple[str, tuple[float, float, float, float], str]] = []
     for oracle in oracle_nodes:
         oracle_id = str(oracle.get("id"))
         box = oracle.get("box")
@@ -294,29 +343,101 @@ def match_provider_anchors(
             continue
         oracle_box = tuple(map(float, box))
         oracle_kind = _kind_alias(str(oracle.get("type") or "text"))
-        best: tuple[float, float, ProviderAnchor] | None = None
+        if oracle_kind in {"figure", "table"}:
+            graphical_oracles.append((oracle_id, oracle_box, oracle_kind))
+            continue
+        best: tuple[float, float, ProviderAnchor, float] | None = None
         for provider in provider_anchors:
             if not _compatible_kinds(oracle_kind, provider.kind):
                 continue
-            oracle_coverage, provider_coverage = _bbox_coverages(oracle_box, provider.bbox)
-            center_score = _center_containment_score(oracle_box, provider.bbox)
-            score = oracle_coverage * 0.65 + min(1.0, provider_coverage * 4) * 0.20 + center_score * 0.15
-            ranking = (score, oracle_coverage, provider)
+            score, oracle_coverage, provider_coverage = _anchor_match_metrics(
+                oracle_box,
+                provider.bbox,
+            )
+            ranking = (score, oracle_coverage, provider, provider_coverage)
             if best is None or ranking[:2] > best[:2]:
                 best = ranking
         if best is None or best[0] < minimum_score:
             continue
-        score, oracle_coverage, provider = best
-        _, provider_coverage = _bbox_coverages(oracle_box, provider.bbox)
-        assignments[oracle_id] = {
-            "provider_id": provider.id,
-            "provider_kind": provider.kind,
-            "score": round(score, 8),
-            "oracle_coverage": round(oracle_coverage, 8),
-            "provider_coverage": round(provider_coverage, 8),
-            "oracle_box": [round(value, 8) for value in oracle_box],
-        }
+        score, oracle_coverage, provider, provider_coverage = best
+        assignments[oracle_id] = _anchor_assignment(
+            provider,
+            oracle_box,
+            score,
+            oracle_coverage,
+            provider_coverage,
+        )
+
+    graphical_providers = list(
+        {
+            provider.id: provider
+            for provider in provider_anchors
+            if provider.kind in {"figure", "table"}
+        }.values()
+    )
+    score_matrix: list[list[float | None]] = []
+    metric_matrix: list[list[tuple[float, float, float] | None]] = []
+    for _, oracle_box, oracle_kind in graphical_oracles:
+        score_row: list[float | None] = []
+        metric_row: list[tuple[float, float, float] | None] = []
+        for provider in graphical_providers:
+            if not _compatible_kinds(oracle_kind, provider.kind):
+                score_row.append(None)
+                metric_row.append(None)
+                continue
+            metrics = _anchor_match_metrics(oracle_box, provider.bbox)
+            score_row.append(metrics[0])
+            metric_row.append(metrics)
+        score_matrix.append(score_row)
+        metric_matrix.append(metric_row)
+    for match in maximum_weight_bipartite_matching(
+        score_matrix,
+        minimum_score=minimum_score,
+    ):
+        oracle_id, oracle_box, _ = graphical_oracles[match.left_index]
+        provider = graphical_providers[match.right_index]
+        metrics = metric_matrix[match.left_index][match.right_index]
+        assert metrics is not None
+        score, oracle_coverage, provider_coverage = metrics
+        assignments[oracle_id] = _anchor_assignment(
+            provider,
+            oracle_box,
+            score,
+            oracle_coverage,
+            provider_coverage,
+        )
     return assignments
+
+
+def _anchor_match_metrics(
+    oracle_box: tuple[float, float, float, float],
+    provider_box: tuple[float, float, float, float],
+) -> tuple[float, float, float]:
+    oracle_coverage, provider_coverage = _bbox_coverages(oracle_box, provider_box)
+    center_score = _center_containment_score(oracle_box, provider_box)
+    score = (
+        oracle_coverage * 0.65
+        + min(1.0, provider_coverage * 4) * 0.20
+        + center_score * 0.15
+    )
+    return score, oracle_coverage, provider_coverage
+
+
+def _anchor_assignment(
+    provider: ProviderAnchor,
+    oracle_box: tuple[float, float, float, float],
+    score: float,
+    oracle_coverage: float,
+    provider_coverage: float,
+) -> dict[str, Any]:
+    return {
+        "provider_id": provider.id,
+        "provider_kind": provider.kind,
+        "score": round(score, 8),
+        "oracle_coverage": round(oracle_coverage, 8),
+        "provider_coverage": round(provider_coverage, 8),
+        "oracle_box": [round(value, 8) for value in oracle_box],
+    }
 
 
 def _normalize_docling(
@@ -496,6 +617,122 @@ def _mapped_explicit_relations(
 def _assignment_geometry_key(match: Mapping[str, Any]) -> tuple[float, float]:
     box = match.get("oracle_box", [0, 0, 0, 0])
     return float(box[1]), float(box[0])
+
+
+def _graphical_relation_audit(
+    oracle: Mapping[str, Any],
+    oracle_nodes: Sequence[Mapping[str, Any]],
+    truth: set[tuple[str, str]],
+    predictions: Mapping[str, set[tuple[str, str]]],
+) -> dict[str, Any]:
+    """Compare official float labels with an answer-free local geometry diagnostic."""
+
+    from .relation_ranker import _structure_role_successors
+
+    nodes = {str(node.get("id")): node for node in oracle_nodes}
+    graphical_ids = {
+        node_id
+        for node_id, node in nodes.items()
+        if _kind_alias(str(node.get("type") or "text")) in {"figure", "table"}
+    }
+    image = oracle.get("img", {})
+    width = float(image.get("width") or 0)
+    height = float(image.get("height") or 0)
+    geometry_relations: set[tuple[str, str]] = set()
+    if width > 0 and height > 0:
+        geometry_relations = {
+            (str(source), str(target))
+            for source, (target, _) in _structure_role_successors(
+                oracle_nodes,
+                width=width,
+                height=height,
+            ).items()
+        }
+    oracle_graphical = {
+        edge for edge in truth if edge[0] in graphical_ids or edge[1] in graphical_ids
+    }
+    geometry_graphical = {
+        edge
+        for edge in geometry_relations
+        if edge[0] in graphical_ids or edge[1] in graphical_ids
+    }
+    oracle_by_graphical = _relations_by_graphical(oracle_graphical, graphical_ids)
+    geometry_by_graphical = _relations_by_graphical(geometry_graphical, graphical_ids)
+    conflicts: list[dict[str, Any]] = []
+    conflicting_labels = 0
+    for graphical_id in sorted(set(oracle_by_graphical) & set(geometry_by_graphical)):
+        oracle_edges = oracle_by_graphical[graphical_id]
+        geometry_edges = geometry_by_graphical[graphical_id]
+        conflicting_edges = oracle_edges - geometry_edges
+        if not conflicting_edges:
+            continue
+        conflicting_labels += len(conflicting_edges)
+        conflicts.append(
+            {
+                "graphical_id": graphical_id,
+                "graphical_kind": _kind_alias(
+                    str(nodes.get(graphical_id, {}).get("type") or "text")
+                ),
+                "oracle_edges": [list(edge) for edge in sorted(conflicting_edges)],
+                "geometry_edges": [list(edge) for edge in sorted(geometry_edges)],
+            }
+        )
+    exact_agreement = oracle_graphical & geometry_graphical
+    oracle_without_geometry = {
+        edge
+        for graphical_id, edges in oracle_by_graphical.items()
+        if graphical_id not in geometry_by_graphical
+        for edge in edges
+    }
+    geometry_without_oracle = {
+        edge
+        for graphical_id, edges in geometry_by_graphical.items()
+        if graphical_id not in oracle_by_graphical
+        for edge in edges
+    }
+    report = {
+        "reference_policy": "answer-free-local-geometry-diagnostic-not-ground-truth",
+        "oracle_graphical_label_count": len(oracle_graphical),
+        "geometry_proposal_count": len(geometry_graphical),
+        "exact_agreement_count": len(exact_agreement),
+        "conflicting_label_count": conflicting_labels,
+        "oracle_without_geometry_count": len(oracle_without_geometry),
+        "geometry_without_oracle_count": len(geometry_without_oracle),
+        "oracle_geometry_exact_agreement": _ratio(
+            len(exact_agreement),
+            len(oracle_graphical),
+        ),
+        "oracle_geometry_conflict_rate": _ratio(
+            conflicting_labels,
+            len(oracle_graphical),
+        ),
+        "conflicts": conflicts,
+        "provider_geometry_agreement": {},
+    }
+    report["provider_geometry_agreement"] = {
+        name: _relation_metrics(
+            {
+                edge
+                for edge in predicted
+                if edge[0] in graphical_ids or edge[1] in graphical_ids
+            },
+            geometry_graphical,
+        )
+        for name, predicted in predictions.items()
+    }
+    return report
+
+
+def _relations_by_graphical(
+    relations: set[tuple[str, str]],
+    graphical_ids: set[str],
+) -> dict[str, set[tuple[str, str]]]:
+    grouped: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for edge in relations:
+        for endpoint in edge:
+            if endpoint in graphical_ids:
+                grouped[endpoint].add(edge)
+    return grouped
 
 
 def _docling_refs(value: Any) -> list[str]:

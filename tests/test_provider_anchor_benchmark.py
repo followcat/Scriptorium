@@ -4,6 +4,7 @@ import json
 
 import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
+    ProviderAnchor,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     match_provider_anchors,
@@ -37,6 +38,14 @@ def test_docling_blocks_match_multiple_oracle_lines_and_explicit_float(tmp_path)
     assert result.report["provider_anchor_match_rate"] == 1.0
     assert result.report["relations"]["explicit"]["correct"] == 1
     assert result.report["relations"]["serialized"]["correct"] == 2
+    assert result.report["graphical_relation_audit"]["exact_agreement_count"] == 1
+    assert result.report["graphical_relation_audit"]["conflicting_label_count"] == 0
+    assert (
+        result.report["graphical_relation_audit"]["provider_geometry_agreement"]["explicit"][
+            "correct"
+        ]
+        == 1
+    )
     assert result.report["assignments"]["line-1"]["provider_id"] == "#/texts/0"
     assert result.report["assignments"]["line-2"]["provider_id"] == "#/texts/0"
 
@@ -127,6 +136,7 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
     assert result.report["case_count"] == 1
     assert result.report["relations"]["combined"]["correct"] == 1
     assert result.report["relations"]["combined"]["f1"] > 0
+    assert result.report["graphical_relation_audit"]["cases_with_conflicts"] == 0
 
 
 def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
@@ -139,6 +149,72 @@ def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
     matches = match_provider_anchors(nodes, anchors)
 
     assert matches["later"]["oracle_box"][1] > matches["earlier"]["oracle_box"][1]
+
+
+def test_graphical_anchor_matcher_is_one_to_one() -> None:
+    nodes = [
+        {"id": "broad", "box": [0, 0, 100, 100], "type": "figure"},
+        {"id": "exact", "box": [10, 10, 90, 90], "type": "figure"},
+    ]
+    anchors = [
+        ProviderAnchor(
+            "provider-figure",
+            0,
+            "figure",
+            (10, 10, 90, 90),
+            "",
+            0,
+        )
+    ]
+
+    matches = match_provider_anchors(nodes, anchors)
+
+    assert set(matches) == {"exact"}
+    assert matches["exact"]["provider_id"] == "provider-figure"
+
+
+def test_graphical_audit_reports_crossed_oracle_without_replacing_raw_score(tmp_path) -> None:
+    oracle = {
+        "uid": "crossed",
+        "img": {"width": 200, "height": 200},
+        "document": [
+            {"id": "figure-1", "box": [10, 10, 90, 60], "type": "figure"},
+            {"id": "caption-1", "box": [10, 63, 90, 72], "text": "Figure 1. First"},
+            {"id": "figure-2", "box": [110, 10, 190, 60], "type": "figure"},
+            {"id": "caption-2", "box": [110, 63, 190, 72], "text": "Figure 2. Second"},
+        ],
+    }
+    semantic = {
+        **oracle,
+        "ro_linkings": [["figure-1", "caption-2"], ["figure-2", "caption-1"]],
+    }
+    provider = {
+        "source": "provider",
+        "pages": [
+            {
+                "page_index": 0,
+                "elements": [
+                    {"id": "pf1", "type": "figure", "box": [10, 10, 90, 60]},
+                    {"id": "pc1", "type": "caption", "box": [10, 63, 90, 72]},
+                    {"id": "pf2", "type": "figure", "box": [110, 10, 190, 60]},
+                    {"id": "pc2", "type": "caption", "box": [110, 63, 190, 72]},
+                ],
+                "successor_edges": [["pf1", "pc1"], ["pf2", "pc2"]],
+            }
+        ],
+    }
+    paths = [tmp_path / name for name in ("oracle.json", "semantic.json", "provider.json")]
+    for path, payload in zip(paths, (oracle, semantic, provider), strict=True):
+        path.write_text(json.dumps(payload))
+
+    report = benchmark_provider_anchors(*paths).report
+
+    assert report["relations"]["explicit"]["correct"] == 0
+    audit = report["graphical_relation_audit"]
+    assert audit["exact_agreement_count"] == 0
+    assert audit["conflicting_label_count"] == 2
+    assert audit["oracle_geometry_conflict_rate"] == 1.0
+    assert audit["provider_geometry_agreement"]["explicit"]["correct"] == 2
 
 
 def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeypatch) -> None:
