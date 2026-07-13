@@ -45,6 +45,7 @@ from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
 from .provider_anchor_benchmark import (
+    PROVIDER_TRANSITION_CANDIDATES,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
     freeze_provider_transition_gate,
@@ -512,7 +513,7 @@ def freeze_stratified_provider_transition_gate_command(
     minimum_native_support: int = typer.Option(
         2,
         min=1,
-        max=3,
+        max=len(PROVIDER_TRANSITION_CANDIDATES),
         help="Minimum answer-free native candidate votes for every active rule.",
     ),
     cross_validation_folds: int = typer.Option(

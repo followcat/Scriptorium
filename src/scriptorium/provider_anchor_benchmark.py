@@ -21,9 +21,18 @@ from .relation_noise import perturb_relation_structure
 PROVIDER_TRANSITION_CANDIDATES = (
     "visual-yx",
     "box-flow",
+    "recursive-xy-cut",
     "relation-graph",
 )
-PROVIDER_TRANSITION_SUPPORT_THRESHOLDS = (0, 1, 2, 3)
+PROVIDER_TRANSITION_SUPPORT_THRESHOLDS = tuple(
+    range(len(PROVIDER_TRANSITION_CANDIDATES) + 1)
+)
+PROVIDER_TRANSITION_CANDIDATE_EDGE_SEMANTICS = {
+    "visual-yx": "adjacent-edges-from-visual-yx-order",
+    "box-flow": "adjacent-edges-from-box-flow-order",
+    "recursive-xy-cut": "adjacent-edges-from-nontrivial-recursive-xy-cut-tree",
+    "relation-graph": "selected-edges-from-max-regret-path-cover",
+}
 PROVIDER_TRANSITION_CONFIDENCE_THRESHOLDS: tuple[float | None, ...] = (
     None,
     0.5,
@@ -262,7 +271,7 @@ def benchmark_provider_anchors(
         ),
     }
     report = {
-        "schema": "scriptorium-provider-anchor-benchmark/v5",
+        "schema": "scriptorium-provider-anchor-benchmark/v6",
         "provider": provider_name,
         "provider_capabilities": provider_capabilities,
         "floating_model_sha256": floating_model_sha256,
@@ -499,7 +508,7 @@ def benchmark_provider_anchor_suite(
                 "runtime_promotion_decision": "reject-runtime-promotion",
             }
     report = {
-        "schema": "scriptorium-provider-anchor-suite/v7",
+        "schema": "scriptorium-provider-anchor-suite/v8",
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "corpus": {
@@ -701,13 +710,18 @@ def freeze_stratified_provider_transition_gate(
         prefix="test_bucket",
         scorable_fraction=test_bucket_minimum_scorable_fraction,
     )
-    if minimum_native_support not in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS[1:]:
-        raise ValueError("minimum_native_support must be between 1 and 3")
     if cross_validation_folds < 0 or cross_validation_folds == 1:
         raise ValueError("cross_validation_folds must be 0 or at least 2")
     source_path = Path(suite_report_path)
     source_bytes = source_path.read_bytes()
     suite = json.loads(source_bytes)
+    candidate_orders, candidate_edge_semantics = (
+        _suite_provider_transition_candidate_evidence(suite)
+    )
+    if not 1 <= minimum_native_support <= len(candidate_orders):
+        raise ValueError(
+            "minimum_native_support must be between 1 and the report candidate count"
+        )
     fit_records = _suite_transition_records(suite, partition=fit_partition)
     calibration_records = _suite_transition_records(
         suite,
@@ -884,7 +898,8 @@ def freeze_stratified_provider_transition_gate(
         "selection_uses_semantic_labels": True,
         "document_grouping_uses_semantic_labels": False,
         "calibration_can_modify_rules": False,
-        "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
+        "candidate_orders": candidate_orders,
+        "candidate_edge_semantics": candidate_edge_semantics,
         "minimum_native_support": minimum_native_support,
         "bucket_definition": {
             "dimensions": ["layout_stratum", "position_band"],
@@ -1544,6 +1559,41 @@ def _validate_transition_quality_criteria(
         raise ValueError(
             f"{prefix}_minimum_scorable_fraction must be between 0 and 1"
         )
+
+
+def _suite_provider_transition_candidate_evidence(
+    suite: Mapping[str, Any],
+) -> tuple[list[str], dict[str, str]]:
+    reviews: list[Mapping[str, Any]] = []
+    aggregate_review = suite.get("provider_transition_review")
+    if isinstance(aggregate_review, Mapping):
+        reviews.append(aggregate_review)
+    reviews.extend(
+        review
+        for case in suite.get("cases", [])
+        if isinstance(case, Mapping)
+        for review in [case.get("provider_transition_review")]
+        if isinstance(review, Mapping)
+    )
+    for review in reviews:
+        candidates = [
+            str(name)
+            for name in review.get("candidate_orders", [])
+            if str(name)
+        ]
+        if not candidates:
+            continue
+        if len(candidates) != len(set(candidates)):
+            raise ValueError("provider transition candidate names must be unique")
+        raw_semantics = review.get("candidate_edge_semantics")
+        semantics = raw_semantics if isinstance(raw_semantics, Mapping) else {}
+        return candidates, {
+            name: str(semantics.get(name) or "legacy-report-unspecified")
+            for name in candidates
+        }
+    return list(PROVIDER_TRANSITION_CANDIDATES), dict(
+        PROVIDER_TRANSITION_CANDIDATE_EDGE_SEMANTICS
+    )
 
 
 def _suite_transition_records(
@@ -2268,7 +2318,7 @@ def _provider_transition_review(
         for record in transition_records
     )
     return {
-        "schema": "scriptorium-provider-transition-review/v2",
+        "schema": "scriptorium-provider-transition-review/v3",
         "policy": {
             "status": "review-only",
             "runtime_reorder": False,
@@ -2278,10 +2328,13 @@ def _provider_transition_review(
                 "precision-scores-only-edges-with-both-endpoints-in-label-universe"
             ),
             "confidence": "minimum-detection-confidence-of-provider-transition-endpoints",
-            "support": "exact-direct-successor-votes-from-answer-free-native-candidates",
+            "support": "exact-direct-successor-votes-from-answer-free-native-edge-evidence",
             "unknown_confidence_policy": "eligible-only-when-minimum-provider-confidence-is-null",
         },
         "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
+        "candidate_edge_semantics": dict(
+            PROVIDER_TRANSITION_CANDIDATE_EDGE_SEMANTICS
+        ),
         "candidate_direct_edge_counts": {
             name: len(candidate_edges[name])
             for name in PROVIDER_TRANSITION_CANDIDATES
@@ -2313,7 +2366,11 @@ def _native_candidate_direct_edges(
 ) -> dict[str, set[tuple[str, str]]]:
     from .geometry import reading_order_key
     from .models import BBox
-    from .reading_order import infer_box_flow_order, infer_relation_graph_order
+    from .reading_order import (
+        infer_box_flow_order,
+        infer_recursive_xy_cut_edges,
+        infer_relation_graph_selected_edges,
+    )
 
     node_ids: list[str] = []
     bboxes: list[BBox] = []
@@ -2335,18 +2392,29 @@ def _native_candidate_direct_edges(
         range(len(bboxes)),
         key=lambda index: reading_order_key(bboxes[index]),
     )
-    candidate_orders = {
-        "visual-yx": visual_order,
-        "box-flow": infer_box_flow_order(bboxes, width, height),
-        "relation-graph": infer_relation_graph_order(bboxes, width, height),
+    visual_edges = set(zip(visual_order, visual_order[1:], strict=False))
+    box_flow_order = infer_box_flow_order(bboxes, width, height)
+    candidate_edges = {
+        "visual-yx": visual_edges,
+        "box-flow": set(
+            zip(box_flow_order, box_flow_order[1:], strict=False)
+        ),
+        "recursive-xy-cut": infer_recursive_xy_cut_edges(
+            bboxes,
+            width,
+            height,
+        ),
+        "relation-graph": set(
+            infer_relation_graph_selected_edges(bboxes, width, height).keys()
+        ),
     }
     return {
         name: {
             (node_ids[source], node_ids[target])
-            for source, target in zip(order, order[1:], strict=False)
+            for source, target in edges
             if source != target
         }
-        for name, order in candidate_orders.items()
+        for name, edges in candidate_edges.items()
     }
 
 
@@ -2405,6 +2473,22 @@ def _sum_provider_transition_reviews(
     if not reviews:
         raise ValueError("provider transition review aggregation requires at least one case")
     first = reviews[0]
+    candidate_orders = [
+        str(name)
+        for name in (
+            first.get("candidate_orders") or PROVIDER_TRANSITION_CANDIDATES
+        )
+    ]
+    if len(candidate_orders) != len(set(candidate_orders)):
+        raise ValueError("provider transition candidate names must be unique")
+    candidate_edge_semantics = first.get("candidate_edge_semantics")
+    for review in reviews[1:]:
+        if list(review.get("candidate_orders") or []) != candidate_orders:
+            raise ValueError("provider transition reviews use different candidates")
+        if review.get("candidate_edge_semantics") != candidate_edge_semantics:
+            raise ValueError(
+                "provider transition reviews use different edge semantics"
+            )
     direct_transition_count = sum(
         int(review.get("direct_transition_count", 0))
         for review in reviews
@@ -2466,16 +2550,17 @@ def _sum_provider_transition_reviews(
             }
         )
     return {
-        "schema": "scriptorium-provider-transition-review-suite/v2",
+        "schema": "scriptorium-provider-transition-review-suite/v3",
         "policy": first.get("policy"),
-        "candidate_orders": first.get("candidate_orders"),
+        "candidate_orders": candidate_orders,
+        "candidate_edge_semantics": candidate_edge_semantics,
         "case_count": len(reviews),
         "candidate_direct_edge_counts": {
             name: sum(
                 int(review.get("candidate_direct_edge_counts", {}).get(name, 0))
                 for review in reviews
             )
-            for name in PROVIDER_TRANSITION_CANDIDATES
+            for name in candidate_orders
         },
         "direct_transition_count": direct_transition_count,
         "labelled_node_count": sum(
@@ -2495,7 +2580,7 @@ def _sum_provider_transition_reviews(
                 int(review.get("support_histogram", {}).get(str(support), 0))
                 for review in reviews
             )
-            for support in PROVIDER_TRANSITION_SUPPORT_THRESHOLDS
+            for support in range(len(candidate_orders) + 1)
         },
         "curve": curve,
     }

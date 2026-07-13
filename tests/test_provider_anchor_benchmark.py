@@ -4,10 +4,13 @@ import json
 
 import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
+    PROVIDER_TRANSITION_CANDIDATES,
     ProviderAnchor,
     _evaluate_provider_transition_gate,
+    _native_candidate_direct_edges,
     _provider_transition_position_audit,
     _serialized_provider_edge_groups,
+    _suite_provider_transition_candidate_evidence,
     _suite_transition_records,
     _sum_provider_transition_reviews,
     benchmark_provider_anchor_suite,
@@ -150,13 +153,22 @@ def test_provider_transition_review_combines_native_support_and_endpoint_confide
     ):
         path.write_text(json.dumps(payload))
 
-    review = benchmark_provider_anchors(*paths).report["provider_transition_review"]
+    report = benchmark_provider_anchors(*paths).report
+    review = report["provider_transition_review"]
 
+    assert report["schema"] == "scriptorium-provider-anchor-benchmark/v6"
+    assert review["schema"] == "scriptorium-provider-transition-review/v3"
     assert review["policy"]["runtime_reorder"] is False
     assert review["policy"]["selection_uses_semantic_labels"] is False
     assert review["direct_transition_count"] == 1
     assert review["confidence_available_transition_count"] == 1
-    assert review["support_histogram"] == {"0": 0, "1": 0, "2": 0, "3": 1}
+    assert review["support_histogram"] == {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 1,
+        "4": 0,
+    }
     transition = review["transitions"][0]
     assert transition["minimum_provider_confidence"] == 0.88
     assert transition["native_support_count"] == 3
@@ -165,9 +177,35 @@ def test_provider_transition_review_combines_native_support_and_endpoint_confide
         "box-flow",
         "relation-graph",
     ]
+    assert review["candidate_edge_semantics"]["relation-graph"] == (
+        "selected-edges-from-max-regret-path-cover"
+    )
     assert _curve_point(review, support=3, confidence=0.85)["precision"] == 1.0
     assert _curve_point(review, support=3, confidence=0.85)["predicted"] == 1
     assert _curve_point(review, support=3, confidence=0.9)["predicted"] == 0
+
+
+def test_provider_native_evidence_separates_xy_handoffs_from_relation_edges() -> None:
+    oracle_nodes = [
+        {"id": "left-top", "box": [60, 70, 240, 80]},
+        {"id": "left-bottom", "box": [60, 88, 240, 98]},
+        {"id": "right-top", "box": [320, 70, 500, 80]},
+        {"id": "right-bottom", "box": [320, 88, 500, 98]},
+    ]
+
+    evidence = _native_candidate_direct_edges(
+        oracle_nodes,
+        width=612,
+        height=792,
+    )
+
+    handoff = ("left-bottom", "right-top")
+    assert handoff in evidence["recursive-xy-cut"]
+    assert handoff not in evidence["relation-graph"]
+    assert evidence["relation-graph"] == {
+        ("left-top", "left-bottom"),
+        ("right-top", "right-bottom"),
+    }
 
 
 def test_provider_transition_gate_eligibility_is_relation_label_invariant(tmp_path) -> None:
@@ -267,7 +305,7 @@ def test_provider_transition_suite_preserves_unscored_counts() -> None:
     def review(*, correct: int, predicted: int, eligible: int) -> dict:
         return {
             "policy": {"partial_label_policy": "endpoint-universe"},
-            "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+            "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
             "direct_transition_count": eligible,
             "labelled_node_count": 3,
             "scorable_direct_transition_count": predicted,
@@ -312,7 +350,7 @@ def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
     tmp_path,
 ) -> None:
     review = {
-        "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+        "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
         "curve": [
             {
                 "minimum_native_support": 1,
@@ -525,7 +563,7 @@ def test_stratified_gate_abstains_unqualified_buckets_and_freezes_on_calibration
     ]
     evaluation = _evaluate_provider_transition_gate(
         {
-            "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+            "candidate_orders": list(PROVIDER_TRANSITION_CANDIDATES),
         },
         gate,
         cases=held_out_cases,
@@ -737,6 +775,7 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
 
     result = benchmark_provider_anchor_suite(corpus, providers)
 
+    assert result.report["schema"] == "scriptorium-provider-anchor-suite/v8"
     assert result.report["case_count"] == 1
     assert result.report["cases"][0]["document_id"] == "document-0"
     assert result.report["cases"][0]["sample_id"] == "sample_0"
@@ -759,6 +798,9 @@ def test_provider_anchor_suite_aggregates_matching_prefix(tmp_path) -> None:
         result.report["relations"]["combined"]
     )
     transition_review = result.report["provider_transition_review"]
+    assert transition_review["schema"] == (
+        "scriptorium-provider-transition-review-suite/v3"
+    )
     assert transition_review["case_count"] == 1
     assert transition_review["direct_transition_count"] == 0
     assert (
@@ -793,6 +835,23 @@ def test_suite_transition_records_preserve_document_groups() -> None:
     assert len(records) == 1
     assert records[0]["sample_id"] == "paper_3"
     assert records[0]["document_id"] == "paper"
+
+
+def test_legacy_suite_keeps_its_original_candidate_semantics() -> None:
+    candidates, semantics = _suite_provider_transition_candidate_evidence(
+        {
+            "provider_transition_review": {
+                "candidate_orders": [
+                    "visual-yx",
+                    "box-flow",
+                    "relation-graph",
+                ]
+            }
+        }
+    )
+
+    assert candidates == ["visual-yx", "box-flow", "relation-graph"]
+    assert set(semantics.values()) == {"legacy-report-unspecified"}
 
 
 def test_anchor_matcher_does_not_use_oracle_list_order() -> None:
