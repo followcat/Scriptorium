@@ -451,6 +451,17 @@ def benchmark_comphrdoc_relation_corpus(
                 if edge.get("strict_gate_passed") is True
                 and int(edge.get("feature_outlier_count", 0)) == 0
             }
+            noise_aware_review_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("noise_aware_reliability_tier")
+                == "robust-high-precision-review"
+            }
+            noise_aware_strict_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("noise_aware_strict_gate_passed") is True
+            }
             metrics = _relation_counts(predicted, truth)
             role_metrics = _relation_counts(role_predicted, graphical_truth)
             high_reliability_metrics = _relation_counts(
@@ -467,6 +478,14 @@ def benchmark_comphrdoc_relation_corpus(
             )
             strict_gate_in_envelope_metrics = _relation_counts(
                 strict_gate_in_envelope_predicted,
+                graphical_truth,
+            )
+            noise_aware_review_metrics = _relation_counts(
+                noise_aware_review_predicted,
+                graphical_truth,
+            )
+            noise_aware_strict_metrics = _relation_counts(
+                noise_aware_strict_predicted,
                 graphical_truth,
             )
             strict_conflict_predictions = _graphical_conflict_prediction_count(
@@ -489,6 +508,18 @@ def benchmark_comphrdoc_relation_corpus(
                     conflict_graphical_ids,
                 )
             )
+            noise_aware_strict_conflict_predictions = (
+                _graphical_conflict_prediction_count(
+                    noise_aware_strict_predicted,
+                    conflict_graphical_ids,
+                )
+            )
+            noise_aware_strict_conflict_incorrect = (
+                _graphical_conflict_prediction_count(
+                    noise_aware_strict_predicted - graphical_truth,
+                    conflict_graphical_ids,
+                )
+            )
             if mode == "native-plus-trained-floating":
                 graphical_audit_totals["strict_gate_conflict_prediction_count"] += (
                     strict_conflict_predictions
@@ -502,6 +533,12 @@ def benchmark_comphrdoc_relation_corpus(
                 graphical_audit_totals[
                     "strict_gate_in_envelope_conflict_incorrect_count"
                 ] += strict_in_envelope_conflict_incorrect
+                graphical_audit_totals[
+                    "noise_aware_strict_conflict_prediction_count"
+                ] += noise_aware_strict_conflict_predictions
+                graphical_audit_totals[
+                    "noise_aware_strict_conflict_incorrect_count"
+                ] += noise_aware_strict_conflict_incorrect
             ordered_edges = sorted(
                 prediction_edges,
                 key=lambda edge: float(edge.get("confidence", 0.0)),
@@ -518,6 +555,20 @@ def benchmark_comphrdoc_relation_corpus(
                 protected_edges=protected_path_edges,
             )
             joint_path_metrics = _relation_counts(set(merged_path.selected_edges), truth)
+            noise_aware_protected_path_edges = [
+                (edge["source"], edge["target"])
+                for edge in ordered_edges
+                if edge.get("noise_aware_reliability_tier")
+                == "robust-high-precision-review"
+            ]
+            noise_aware_merged_path = merge_relation_edge_path_cover(
+                ((edge["source"], edge["target"]) for edge in ordered_edges),
+                protected_edges=noise_aware_protected_path_edges,
+            )
+            noise_aware_joint_path_metrics = _relation_counts(
+                set(noise_aware_merged_path.selected_edges),
+                truth,
+            )
             _accumulate_relation_totals(
                 totals[mode],
                 metrics,
@@ -526,8 +577,12 @@ def benchmark_comphrdoc_relation_corpus(
                 high_reliability_in_envelope_metrics,
                 strict_gate_metrics,
                 strict_gate_in_envelope_metrics,
+                noise_aware_review_metrics,
+                noise_aware_strict_metrics,
                 joint_path_metrics,
                 merged_path,
+                noise_aware_joint_path_metrics,
+                noise_aware_merged_path,
             )
             page_result[mode] = {
                 **metrics,
@@ -536,6 +591,8 @@ def benchmark_comphrdoc_relation_corpus(
                 "high_reliability_in_envelope_graphical": high_reliability_in_envelope_metrics,
                 "strict_gate_graphical": strict_gate_metrics,
                 "strict_gate_in_envelope_graphical": strict_gate_in_envelope_metrics,
+                "noise_aware_review_graphical": noise_aware_review_metrics,
+                "noise_aware_strict_graphical": noise_aware_strict_metrics,
                 "strict_gate_conflict_prediction_count": strict_conflict_predictions,
                 "strict_gate_conflict_incorrect_count": strict_conflict_incorrect,
                 "strict_gate_in_envelope_conflict_prediction_count": (
@@ -544,12 +601,31 @@ def benchmark_comphrdoc_relation_corpus(
                 "strict_gate_in_envelope_conflict_incorrect_count": (
                     strict_in_envelope_conflict_incorrect
                 ),
+                "noise_aware_strict_conflict_prediction_count": (
+                    noise_aware_strict_conflict_predictions
+                ),
+                "noise_aware_strict_conflict_incorrect_count": (
+                    noise_aware_strict_conflict_incorrect
+                ),
                 "joint_path_cover": {
                     **joint_path_metrics,
                     "protected_selected": len(merged_path.protected_selected_edges),
                     "rejected_outgoing_conflict": merged_path.rejected_outgoing_conflict_count,
                     "rejected_incoming_conflict": merged_path.rejected_incoming_conflict_count,
                     "rejected_cycle": merged_path.rejected_cycle_count,
+                },
+                "noise_aware_joint_path_cover": {
+                    **noise_aware_joint_path_metrics,
+                    "protected_selected": len(
+                        noise_aware_merged_path.protected_selected_edges
+                    ),
+                    "rejected_outgoing_conflict": (
+                        noise_aware_merged_path.rejected_outgoing_conflict_count
+                    ),
+                    "rejected_incoming_conflict": (
+                        noise_aware_merged_path.rejected_incoming_conflict_count
+                    ),
+                    "rejected_cycle": noise_aware_merged_path.rejected_cycle_count,
                 },
             }
         page_results.append(page_result)
@@ -637,6 +713,12 @@ def _empty_relation_totals() -> dict[str, int]:
         "strict_gate_in_envelope_correct": 0,
         "strict_gate_in_envelope_predicted": 0,
         "strict_gate_in_envelope_labels": 0,
+        "noise_aware_review_correct": 0,
+        "noise_aware_review_predicted": 0,
+        "noise_aware_review_labels": 0,
+        "noise_aware_strict_correct": 0,
+        "noise_aware_strict_predicted": 0,
+        "noise_aware_strict_labels": 0,
         "joint_path_correct": 0,
         "joint_path_predicted": 0,
         "joint_path_labels": 0,
@@ -644,6 +726,13 @@ def _empty_relation_totals() -> dict[str, int]:
         "joint_path_rejected_outgoing_conflict": 0,
         "joint_path_rejected_incoming_conflict": 0,
         "joint_path_rejected_cycle": 0,
+        "noise_aware_joint_path_correct": 0,
+        "noise_aware_joint_path_predicted": 0,
+        "noise_aware_joint_path_labels": 0,
+        "noise_aware_joint_path_protected_selected": 0,
+        "noise_aware_joint_path_rejected_outgoing_conflict": 0,
+        "noise_aware_joint_path_rejected_incoming_conflict": 0,
+        "noise_aware_joint_path_rejected_cycle": 0,
     }
 
 
@@ -669,8 +758,12 @@ def _accumulate_relation_totals(
     high_reliability_in_envelope: Mapping[str, int],
     strict_gate: Mapping[str, int],
     strict_gate_in_envelope: Mapping[str, int],
+    noise_aware_review: Mapping[str, int],
+    noise_aware_strict: Mapping[str, int],
     joint_path: Mapping[str, int],
     merged_path: Any,
+    noise_aware_joint_path: Mapping[str, int],
+    noise_aware_merged_path: Any,
 ) -> None:
     for key in ("correct", "predicted", "labels"):
         totals[key] += int(metrics[key])
@@ -683,11 +776,28 @@ def _accumulate_relation_totals(
         totals[f"strict_gate_in_envelope_{key}"] += int(
             strict_gate_in_envelope[key]
         )
+        totals[f"noise_aware_review_{key}"] += int(noise_aware_review[key])
+        totals[f"noise_aware_strict_{key}"] += int(noise_aware_strict[key])
         totals[f"joint_path_{key}"] += int(joint_path[key])
+        totals[f"noise_aware_joint_path_{key}"] += int(
+            noise_aware_joint_path[key]
+        )
     totals["joint_path_protected_selected"] += len(merged_path.protected_selected_edges)
     totals["joint_path_rejected_outgoing_conflict"] += merged_path.rejected_outgoing_conflict_count
     totals["joint_path_rejected_incoming_conflict"] += merged_path.rejected_incoming_conflict_count
     totals["joint_path_rejected_cycle"] += merged_path.rejected_cycle_count
+    totals["noise_aware_joint_path_protected_selected"] += len(
+        noise_aware_merged_path.protected_selected_edges
+    )
+    totals["noise_aware_joint_path_rejected_outgoing_conflict"] += (
+        noise_aware_merged_path.rejected_outgoing_conflict_count
+    )
+    totals["noise_aware_joint_path_rejected_incoming_conflict"] += (
+        noise_aware_merged_path.rejected_incoming_conflict_count
+    )
+    totals["noise_aware_joint_path_rejected_cycle"] += (
+        noise_aware_merged_path.rejected_cycle_count
+    )
 
 
 def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
@@ -743,6 +853,26 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
             totals["strict_gate_in_envelope_labels"],
         ),
     }
+    result["noise_aware_review_graphical"] = {
+        "correct": totals["noise_aware_review_correct"],
+        "predicted": totals["noise_aware_review_predicted"],
+        "labels": totals["noise_aware_review_labels"],
+        **_precision_recall_f1(
+            totals["noise_aware_review_correct"],
+            totals["noise_aware_review_predicted"],
+            totals["noise_aware_review_labels"],
+        ),
+    }
+    result["noise_aware_strict_graphical"] = {
+        "correct": totals["noise_aware_strict_correct"],
+        "predicted": totals["noise_aware_strict_predicted"],
+        "labels": totals["noise_aware_strict_labels"],
+        **_precision_recall_f1(
+            totals["noise_aware_strict_correct"],
+            totals["noise_aware_strict_predicted"],
+            totals["noise_aware_strict_labels"],
+        ),
+    }
     result["joint_path_cover"] = {
         "correct": totals["joint_path_correct"],
         "predicted": totals["joint_path_predicted"],
@@ -756,6 +886,26 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
         "rejected_outgoing_conflict": totals["joint_path_rejected_outgoing_conflict"],
         "rejected_incoming_conflict": totals["joint_path_rejected_incoming_conflict"],
         "rejected_cycle": totals["joint_path_rejected_cycle"],
+    }
+    result["noise_aware_joint_path_cover"] = {
+        "correct": totals["noise_aware_joint_path_correct"],
+        "predicted": totals["noise_aware_joint_path_predicted"],
+        "labels": totals["noise_aware_joint_path_labels"],
+        **_precision_recall_f1(
+            totals["noise_aware_joint_path_correct"],
+            totals["noise_aware_joint_path_predicted"],
+            totals["noise_aware_joint_path_labels"],
+        ),
+        "protected_selected": totals[
+            "noise_aware_joint_path_protected_selected"
+        ],
+        "rejected_outgoing_conflict": totals[
+            "noise_aware_joint_path_rejected_outgoing_conflict"
+        ],
+        "rejected_incoming_conflict": totals[
+            "noise_aware_joint_path_rejected_incoming_conflict"
+        ],
+        "rejected_cycle": totals["noise_aware_joint_path_rejected_cycle"],
     }
     for key in ("graphical_correct", "graphical_predicted", "graphical_labels"):
         result.pop(key)
@@ -788,6 +938,22 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
         "strict_gate_in_envelope_correct",
         "strict_gate_in_envelope_predicted",
         "strict_gate_in_envelope_labels",
+        "noise_aware_review_correct",
+        "noise_aware_review_predicted",
+        "noise_aware_review_labels",
+        "noise_aware_strict_correct",
+        "noise_aware_strict_predicted",
+        "noise_aware_strict_labels",
+    ):
+        result.pop(key)
+    for key in (
+        "noise_aware_joint_path_correct",
+        "noise_aware_joint_path_predicted",
+        "noise_aware_joint_path_labels",
+        "noise_aware_joint_path_protected_selected",
+        "noise_aware_joint_path_rejected_outgoing_conflict",
+        "noise_aware_joint_path_rejected_incoming_conflict",
+        "noise_aware_joint_path_rejected_cycle",
     ):
         result.pop(key)
     return result

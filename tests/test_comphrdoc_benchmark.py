@@ -254,6 +254,8 @@ def test_relation_corpus_benchmark_can_score_trained_floating_mode(
                     "relation_origin": "trained-floating-pair",
                     "reliability_tier": "high-precision-review",
                     "strict_gate_passed": True,
+                    "noise_aware_reliability_tier": "robust-high-precision-review",
+                    "noise_aware_strict_gate_passed": True,
                     "feature_outlier_count": 0,
                 }
             ],
@@ -273,6 +275,9 @@ def test_relation_corpus_benchmark_can_score_trained_floating_mode(
     assert trained["graphical"]["correct"] == 1
     assert trained["strict_gate_graphical"]["correct"] == 1
     assert trained["strict_gate_in_envelope_graphical"]["correct"] == 1
+    assert trained["noise_aware_review_graphical"]["correct"] == 1
+    assert trained["noise_aware_strict_graphical"]["correct"] == 1
+    assert trained["noise_aware_joint_path_cover"]["protected_selected"] == 1
     assert result.report["graphical_label_audit"]["strict_gate_conflict_prediction_count"] == 0
     assert result.report["floating_model_sha256"] == "floating"
     assert "trained_floating_f1_delta" in result.report
@@ -314,6 +319,8 @@ def test_relation_corpus_benchmark_counts_strict_errors_on_conflicting_graphical
                     "target": "comphrdoc-p0002-l0002",
                     "relation_origin": "trained-floating-pair",
                     "strict_gate_passed": True,
+                    "noise_aware_reliability_tier": "robust-high-precision-review",
+                    "noise_aware_strict_gate_passed": True,
                     "feature_outlier_count": 0,
                 }
             ],
@@ -335,6 +342,8 @@ def test_relation_corpus_benchmark_counts_strict_errors_on_conflicting_graphical
     assert audit["conflicting_label_count"] == 1
     assert audit["strict_gate_conflict_prediction_count"] == 1
     assert audit["strict_gate_conflict_incorrect_count"] == 1
+    assert audit["noise_aware_strict_conflict_prediction_count"] == 1
+    assert audit["noise_aware_strict_conflict_incorrect_count"] == 1
 
 
 class _DownwardEstimator:

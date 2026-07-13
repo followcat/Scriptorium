@@ -1026,6 +1026,20 @@ def train_floating_ranker_command(
         f"recall={review_gate['recall']}"
     )
     typer.echo(f"Strict promotion gate available: {promotion_gate['available']}")
+    noise_review_gate = result.manifest["noise_aware_reliability_gate"]
+    noise_promotion_gate = result.manifest["noise_aware_promotion_gate"]
+    typer.echo(
+        "Noise-aware review gate: "
+        f"available={noise_review_gate['available']} "
+        f"threshold={noise_review_gate['confidence_threshold']} "
+        f"worst_precision={noise_review_gate.get('worst_profile_precision')}"
+    )
+    typer.echo(
+        "Noise-aware strict gate: "
+        f"available={noise_promotion_gate['available']} "
+        f"threshold={noise_promotion_gate['confidence_threshold']} "
+        f"worst_precision={noise_promotion_gate.get('worst_profile_precision')}"
+    )
 
 
 @app.command("run-floating-ranker")

@@ -245,6 +245,8 @@ def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeyp
                     "target": "#/texts/1",
                     "reliability_tier": "high-precision-review",
                     "strict_gate_passed": True,
+                    "noise_aware_reliability_tier": "robust-high-precision-review",
+                    "noise_aware_strict_gate_passed": True,
                     "feature_outlier_count": 0,
                 }
             ],
@@ -266,6 +268,16 @@ def test_provider_benchmark_can_map_trained_floating_relations(tmp_path, monkeyp
     assert result.report["relations"]["strict_trained_floating"]["correct"] == 1
     assert (
         result.report["relations"]["strict_in_envelope_trained_floating"]["correct"]
+        == 1
+    )
+    assert (
+        result.report["relations"]["noise_aware_reliable_trained_floating"][
+            "correct"
+        ]
+        == 1
+    )
+    assert (
+        result.report["relations"]["noise_aware_strict_trained_floating"]["correct"]
         == 1
     )
     assert result.report["floating_model_sha256"] == "floating"

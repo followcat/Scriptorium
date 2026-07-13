@@ -64,6 +64,8 @@ def benchmark_provider_anchors(
     reliable_trained_floating_edges: set[tuple[str, str]] = set()
     strict_trained_floating_edges: set[tuple[str, str]] = set()
     strict_in_envelope_trained_floating_edges: set[tuple[str, str]] = set()
+    noise_aware_reliable_trained_floating_edges: set[tuple[str, str]] = set()
+    noise_aware_strict_trained_floating_edges: set[tuple[str, str]] = set()
     floating_model_sha256 = None
     if floating_model_path is not None:
         from .floating_ranker import _predict_floating_relations, load_floating_relation_ranker
@@ -123,12 +125,35 @@ def benchmark_provider_anchors(
             ],
             assignments,
         )
+        noise_aware_reliable_trained_floating_edges = _mapped_explicit_relations(
+            [
+                (str(edge["source"]), str(edge["target"]))
+                for edge in floating_prediction.successor_edges
+                if edge.get("noise_aware_reliability_tier")
+                == "robust-high-precision-review"
+            ],
+            assignments,
+        )
+        noise_aware_strict_trained_floating_edges = _mapped_explicit_relations(
+            [
+                (str(edge["source"]), str(edge["target"]))
+                for edge in floating_prediction.successor_edges
+                if edge.get("noise_aware_strict_gate_passed") is True
+            ],
+            assignments,
+        )
     combined_edges = serialized_edges | explicit_edges
     trained_combined_edges = combined_edges | trained_floating_edges
     reliable_trained_combined_edges = combined_edges | reliable_trained_floating_edges
     strict_trained_combined_edges = combined_edges | strict_trained_floating_edges
     strict_in_envelope_trained_combined_edges = (
         combined_edges | strict_in_envelope_trained_floating_edges
+    )
+    noise_aware_reliable_trained_combined_edges = (
+        combined_edges | noise_aware_reliable_trained_floating_edges
+    )
+    noise_aware_strict_trained_combined_edges = (
+        combined_edges | noise_aware_strict_trained_floating_edges
     )
     relation_predictions = {
         "serialized": serialized_edges,
@@ -138,11 +163,23 @@ def benchmark_provider_anchors(
         "reliable_trained_floating": reliable_trained_floating_edges,
         "strict_trained_floating": strict_trained_floating_edges,
         "strict_in_envelope_trained_floating": strict_in_envelope_trained_floating_edges,
+        "noise_aware_reliable_trained_floating": (
+            noise_aware_reliable_trained_floating_edges
+        ),
+        "noise_aware_strict_trained_floating": (
+            noise_aware_strict_trained_floating_edges
+        ),
         "combined_with_trained_floating": trained_combined_edges,
         "combined_with_reliable_trained_floating": reliable_trained_combined_edges,
         "combined_with_strict_trained_floating": strict_trained_combined_edges,
         "combined_with_strict_in_envelope_trained_floating": (
             strict_in_envelope_trained_combined_edges
+        ),
+        "combined_with_noise_aware_reliable_trained_floating": (
+            noise_aware_reliable_trained_combined_edges
+        ),
+        "combined_with_noise_aware_strict_trained_floating": (
+            noise_aware_strict_trained_combined_edges
         ),
     }
     report = {
@@ -224,10 +261,14 @@ def benchmark_provider_anchor_suite(
         "reliable_trained_floating",
         "strict_trained_floating",
         "strict_in_envelope_trained_floating",
+        "noise_aware_reliable_trained_floating",
+        "noise_aware_strict_trained_floating",
         "combined_with_trained_floating",
         "combined_with_reliable_trained_floating",
         "combined_with_strict_trained_floating",
         "combined_with_strict_in_envelope_trained_floating",
+        "combined_with_noise_aware_reliable_trained_floating",
+        "combined_with_noise_aware_strict_trained_floating",
     )
     relation_summary = {
         key: _sum_relation_metrics([case["relations"][key] for case in cases])
