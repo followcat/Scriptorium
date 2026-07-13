@@ -8,6 +8,8 @@ from scriptorium.native_pdf import extract_native_pdf_to_ir
 from scriptorium.pdf_render import render_pdf
 from scriptorium.reading_order import (
     infer_box_flow_order,
+    infer_recursive_xy_cut_edges,
+    infer_recursive_xy_cut_order,
     infer_relation_graph_order,
     infer_relation_graph_selected_edge_diagnostics,
     infer_relation_graph_selected_edges,
@@ -270,6 +272,29 @@ def test_successor_disagreement_ignores_non_shared_items() -> None:
 
     assert disagreement.edge_count == 2
     assert disagreement.disagreement_count == 0
+
+
+def test_recursive_xy_cut_edges_require_a_structural_split() -> None:
+    split_boxes = [
+        BBox(x0=60, y0=70, x1=240, y1=80),
+        BBox(x0=60, y0=88, x1=240, y1=98),
+        BBox(x0=320, y0=70, x1=500, y1=80),
+        BBox(x0=320, y0=88, x1=500, y1=98),
+    ]
+    unsplit_boxes = [
+        BBox(x0=60, y0=70, x1=500, y1=80),
+        BBox(x0=60, y0=88, x1=500, y1=98),
+        BBox(x0=60, y0=106, x1=500, y1=116),
+    ]
+
+    assert infer_recursive_xy_cut_order(split_boxes, 612, 792) == [0, 1, 2, 3]
+    assert infer_recursive_xy_cut_edges(split_boxes, 612, 792) == {
+        (0, 1),
+        (1, 2),
+        (2, 3),
+    }
+    assert infer_recursive_xy_cut_order(unsplit_boxes, 612, 792) == [0, 1, 2]
+    assert infer_recursive_xy_cut_edges(unsplit_boxes, 612, 792) == set()
 
 
 def test_relation_graph_candidate_orders_column_successor_paths() -> None:

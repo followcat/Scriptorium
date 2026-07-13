@@ -424,6 +424,42 @@ def infer_box_flow_order(
     return sorted(range(len(bboxes)), key=sort_key)
 
 
+def infer_recursive_xy_cut_order(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> list[int]:
+    """Return the deterministic order produced by the recursive XY-cut tree."""
+
+    return _recursive_xy_cut_order(bboxes, page_width, page_height).ordered_indices
+
+
+def infer_recursive_xy_cut_edges(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> set[tuple[int, int]]:
+    """Return adjacent edges only when XY-cut found a structural split.
+
+    The internal fallback is visual Y/X order. Returning no edges for that case
+    prevents callers from counting the same geometry fallback as independent
+    structural evidence.
+    """
+
+    result = _recursive_xy_cut_order(bboxes, page_width, page_height)
+    if not result.has_horizontal_split and not result.has_vertical_split:
+        return set()
+    return {
+        (source, target)
+        for source, target in zip(
+            result.ordered_indices,
+            result.ordered_indices[1:],
+            strict=False,
+        )
+        if source != target
+    }
+
+
 def infer_relation_graph_order(
     bboxes: list[BBox],
     page_width: float,
