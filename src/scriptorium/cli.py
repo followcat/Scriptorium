@@ -219,6 +219,11 @@ def fetch_comphrdoc_provider_test_command(
         min=1,
         help="Test documents to sample; pages are balanced across documents.",
     ),
+    document_offset: int = typer.Option(
+        0,
+        min=0,
+        help="Skip this many documents in the fixed hash-ranked test selection.",
+    ),
     arxiv_version: Optional[str] = typer.Option(
         None,
         help="Optional pinned source revision such as v1; latest is used when omitted.",
@@ -240,6 +245,7 @@ def fetch_comphrdoc_provider_test_command(
             out_dir,
             sample_count=sample_count,
             document_count=document_count,
+            document_offset=document_offset,
             arxiv_version=arxiv_version,
             annotation_archive=annotation_archive,
             refresh=refresh,
@@ -253,6 +259,7 @@ def fetch_comphrdoc_provider_test_command(
         strata[stratum] = strata.get(stratum, 0) + 1
     typer.echo(f"Comp-HRDoc test samples: {len(result.samples)}")
     typer.echo(f"Documents: {len(result.source_pdf_paths)}")
+    typer.echo(f"Document offset: {manifest['document_offset']}")
     typer.echo(f"Layout strata: {json.dumps(strata, sort_keys=True)}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")

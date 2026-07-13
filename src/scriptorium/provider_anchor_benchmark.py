@@ -514,6 +514,8 @@ def benchmark_provider_anchor_suite(
                 "partition",
                 "sample_count",
                 "document_count",
+                "document_offset",
+                "selection_window",
             )
             if key in manifest
         },

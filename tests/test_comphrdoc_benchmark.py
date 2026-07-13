@@ -232,6 +232,11 @@ def test_fetch_provider_test_uses_official_split_and_local_verified_archive(
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert manifest["dataset"] == "Comp-HRDoc test"
     assert manifest["partition"] == "test"
+    assert manifest["document_offset"] == 0
+    assert manifest["selection_window"] == {
+        "document_offset": 0,
+        "document_count": 2,
+    }
     assert manifest["arxiv_version"] == "v1"
     assert manifest["selection_uses_relation_labels"] is False
     assert manifest["selection_uses_oracle_layout"] is True
@@ -278,6 +283,33 @@ def test_provider_test_selection_is_relation_label_invariant() -> None:
         ]
 
     assert selection_signature(payload) == selection_signature(relabeled)
+
+
+def test_provider_test_document_windows_are_deterministic_and_disjoint() -> None:
+    document_pages = {
+        f"2401.{index:05d}": [
+            {
+                "layout_stratum": "graphical-multicolumn",
+            }
+        ]
+        for index in range(6)
+    }
+
+    first = comphrdoc._select_provider_test_documents(
+        document_pages,
+        document_count=3,
+        document_offset=0,
+    )
+    second = comphrdoc._select_provider_test_documents(
+        document_pages,
+        document_count=3,
+        document_offset=3,
+    )
+
+    first_ids = {document["document_id"] for document in first}
+    second_ids = {document["document_id"] for document in second}
+    assert first_ids.isdisjoint(second_ids)
+    assert len(first_ids | second_ids) == 6
 
 
 def test_table_floating_order_is_independent_of_annotation_sequence() -> None:

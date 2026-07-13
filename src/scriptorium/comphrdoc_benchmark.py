@@ -340,6 +340,7 @@ def fetch_comphrdoc_provider_test_corpus(
     *,
     sample_count: int = 32,
     document_count: int = 16,
+    document_offset: int = 0,
     arxiv_version: str | None = None,
     annotation_archive: str | Path | None = None,
     refresh: bool = False,
@@ -351,6 +352,8 @@ def fetch_comphrdoc_provider_test_corpus(
         raise ValueError("Comp-HRDoc provider test sample_count must be at least 1")
     if document_count < 1 or document_count > sample_count:
         raise ValueError("document_count must be between 1 and sample_count")
+    if document_offset < 0:
+        raise ValueError("document_offset must be non-negative")
     normalized_arxiv_version = _normalized_arxiv_version(arxiv_version)
     download = downloader or _download_bytes
     archive_bytes, archive_sha256 = _comphrdoc_archive_bytes(
@@ -365,6 +368,7 @@ def fetch_comphrdoc_provider_test_corpus(
     selected_documents = _select_provider_test_documents(
         document_pages,
         document_count=document_count,
+        document_offset=document_offset,
     )
     page_quotas = _balanced_quotas(sample_count, len(selected_documents))
     selected_documents = [
@@ -423,6 +427,11 @@ def fetch_comphrdoc_provider_test_corpus(
                 "sample_count": len(materialized.samples),
                 "requested_sample_count": sample_count,
                 "document_count": len(selected_documents),
+                "document_offset": document_offset,
+                "selection_window": {
+                    "document_offset": document_offset,
+                    "document_count": len(selected_documents),
+                },
                 "inference_inputs_are_answer_free": True,
                 "answer_separation": {
                     "provider_input": "rendered-image-only",
@@ -707,6 +716,7 @@ def _select_provider_test_documents(
     document_pages: Mapping[str, list[dict[str, Any]]],
     *,
     document_count: int,
+    document_offset: int = 0,
 ) -> list[dict[str, Any]]:
     candidates: list[
         tuple[tuple[int, int, int], str, str, list[dict[str, Any]]]
@@ -725,15 +735,19 @@ def _select_provider_test_documents(
         )
         candidates.append((layout_rank, rank, document_id, pages))
     candidates.sort(key=lambda item: (item[0], item[1], item[2]))
-    if len(candidates) < document_count:
-        raise ValueError("Comp-HRDoc test split lacks enough documents")
+    if document_offset < 0:
+        raise ValueError("Comp-HRDoc test document_offset must be non-negative")
+    if len(candidates) < document_offset + document_count:
+        raise ValueError("Comp-HRDoc test split lacks enough documents for selection window")
     return [
         {
             "document_id": document_id,
             "partition": "test",
             "pages": pages,
         }
-        for _, _, document_id, pages in candidates[:document_count]
+        for _, _, document_id, pages in candidates[
+            document_offset : document_offset + document_count
+        ]
     ]
 
 
