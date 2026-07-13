@@ -18,6 +18,7 @@ from scriptorium.comphrdoc_benchmark import (
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
     fetch_comphrdoc_provider_calibration_corpus,
+    fetch_comphrdoc_provider_test_corpus,
     fetch_comphrdoc_relation_corpus,
 )
 
@@ -197,6 +198,86 @@ def test_provider_calibration_rejects_unpinned_arxiv_version_syntax(tmp_path) ->
             document_count=2,
             arxiv_version="1",
         )
+
+
+def test_fetch_provider_test_uses_official_split_and_local_verified_archive(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    annotation_archive = _provider_calibration_archive()
+    annotation_archive_path = tmp_path / "CompHRDoc.zip"
+    annotation_archive_path.write_bytes(annotation_archive)
+    pdf_bytes = _pdf_bytes()
+    monkeypatch.setattr(
+        comphrdoc,
+        "COMPHRDOC_ARCHIVE_SHA256",
+        hashlib.sha256(annotation_archive).hexdigest(),
+    )
+    downloaded_urls = []
+
+    def download(url: str) -> bytes:
+        downloaded_urls.append(url)
+        assert url != COMPHRDOC_ARCHIVE_URL
+        return pdf_bytes
+
+    result = fetch_comphrdoc_provider_test_corpus(
+        tmp_path / "test-corpus",
+        sample_count=4,
+        document_count=2,
+        arxiv_version="v1",
+        annotation_archive=annotation_archive_path,
+        downloader=download,
+    )
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["dataset"] == "Comp-HRDoc test"
+    assert manifest["partition"] == "test"
+    assert manifest["arxiv_version"] == "v1"
+    assert manifest["selection_uses_relation_labels"] is False
+    assert manifest["selection_uses_oracle_layout"] is True
+    assert manifest["selection"] == (
+        "document-hash-layout-stratified-test-documents-and-pages-v1"
+    )
+    assert {sample["partition"] for sample in manifest["samples"]} == {"test"}
+    assert len(result.samples) == 4
+    assert len(result.source_pdf_paths) == 2
+    assert len(downloaded_urls) == 2
+    assert all(url.endswith("v1") for url in downloaded_urls)
+    assert any(
+        sample["layout_stratum"] == "graphical-multicolumn"
+        for sample in manifest["samples"]
+    )
+
+
+def test_provider_test_selection_is_relation_label_invariant() -> None:
+    with ZipFile(BytesIO(_provider_calibration_archive())) as archive:
+        payload = json.loads(archive.read(COMPHRDOC_ANNOTATION_MEMBER))
+    relabeled = json.loads(json.dumps(payload))
+    for index, annotation in enumerate(relabeled["annotations"]):
+        annotation["reading_order_id"] = index * 17
+        annotation["reading_order_label"] = 99 - index
+
+    def selection_signature(annotation_payload):
+        documents = comphrdoc._provider_calibration_document_pages(annotation_payload)
+        selected = comphrdoc._select_provider_test_documents(
+            documents,
+            document_count=2,
+        )
+        return [
+            (
+                document["document_id"],
+                [
+                    (page["page_index"], page["layout_stratum"], page["layout_features"])
+                    for page in comphrdoc._select_provider_test_pages(
+                        document["pages"],
+                        quota=2,
+                    )
+                ],
+            )
+            for document in selected
+        ]
+
+    assert selection_signature(payload) == selection_signature(relabeled)
 
 
 def test_table_floating_order_is_independent_of_annotation_sequence() -> None:
@@ -601,6 +682,7 @@ def _provider_calibration_archive() -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr(COMPHRDOC_TRAIN_ANNOTATION_MEMBER, json.dumps(payload))
+        archive.writestr(COMPHRDOC_ANNOTATION_MEMBER, json.dumps(payload))
     return buffer.getvalue()
 
 

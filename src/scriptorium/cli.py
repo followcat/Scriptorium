@@ -21,6 +21,7 @@ from .comphrdoc_benchmark import (
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
     fetch_comphrdoc_provider_calibration_corpus,
+    fetch_comphrdoc_provider_test_corpus,
     fetch_comphrdoc_relation_corpus,
 )
 from .docling_provider import DoclingAdapter
@@ -46,6 +47,7 @@ from .playwright_capture import CaptureMode, capture_pdf
 from .provider_anchor_benchmark import (
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
+    freeze_provider_transition_gate,
 )
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import (
@@ -166,6 +168,14 @@ def fetch_comphrdoc_provider_calibration_command(
         None,
         help="Optional pinned source revision such as v1; latest is used when omitted.",
     ),
+    annotation_archive: Optional[Path] = typer.Option(
+        None,
+        "--annotation-archive",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional local Comp-HRDoc.zip; its pinned SHA-256 is still verified.",
+    ),
     refresh: bool = typer.Option(False, help="Redownload PDFs and rewrite derived files."),
 ) -> None:
     """Rebuild a train-only real-provider calibration corpus from arXiv PDFs."""
@@ -177,6 +187,7 @@ def fetch_comphrdoc_provider_calibration_command(
             document_count=document_count,
             calibration_fraction=calibration_fraction,
             arxiv_version=arxiv_version,
+            annotation_archive=annotation_archive,
             refresh=refresh,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -189,6 +200,59 @@ def fetch_comphrdoc_provider_calibration_command(
     typer.echo(f"Comp-HRDoc train samples: {len(result.samples)}")
     typer.echo(f"Documents: {len(result.source_pdf_paths)}")
     typer.echo(f"Partitions: {json.dumps(partitions, sort_keys=True)}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"Images: {result.out_dir / 'images'}")
+    typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+    typer.echo(f"Semantic sidecars: {result.out_dir / 'semantic'}")
+
+
+@app.command("fetch-comphrdoc-provider-test")
+def fetch_comphrdoc_provider_test_command(
+    out_dir: Path = typer.Option(
+        Path("data/external/comphrdoc-provider-test"),
+        help="Directory for locally reconstructed Comp-HRDoc test pages.",
+    ),
+    sample_count: int = typer.Option(32, min=1, help="Total test pages to reconstruct."),
+    document_count: int = typer.Option(
+        16,
+        min=1,
+        help="Test documents to sample; pages are balanced across documents.",
+    ),
+    arxiv_version: Optional[str] = typer.Option(
+        None,
+        help="Optional pinned source revision such as v1; latest is used when omitted.",
+    ),
+    annotation_archive: Optional[Path] = typer.Option(
+        None,
+        "--annotation-archive",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional local Comp-HRDoc.zip; its pinned SHA-256 is still verified.",
+    ),
+    refresh: bool = typer.Option(False, help="Redownload PDFs and rewrite derived files."),
+) -> None:
+    """Rebuild an independently selected official test corpus from arXiv PDFs."""
+
+    try:
+        result = fetch_comphrdoc_provider_test_corpus(
+            out_dir,
+            sample_count=sample_count,
+            document_count=document_count,
+            arxiv_version=arxiv_version,
+            annotation_archive=annotation_archive,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--sample-count") from exc
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    strata: dict[str, int] = {}
+    for sample in manifest["samples"]:
+        stratum = str(sample["layout_stratum"])
+        strata[stratum] = strata.get(stratum, 0) + 1
+    typer.echo(f"Comp-HRDoc test samples: {len(result.samples)}")
+    typer.echo(f"Documents: {len(result.source_pdf_paths)}")
+    typer.echo(f"Layout strata: {json.dumps(strata, sort_keys=True)}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
@@ -325,6 +389,14 @@ def benchmark_provider_anchor_suite_command(
         exists=True,
         readable=True,
     ),
+    transition_gate: Path | None = typer.Option(
+        None,
+        "--transition-gate",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Frozen review-only support/confidence gate to evaluate.",
+    ),
     output: Path | None = typer.Option(None, "--output", "-o"),
 ) -> None:
     """Score a real provider over a rendered Comp-HRDoc prefix."""
@@ -334,6 +406,7 @@ def benchmark_provider_anchor_suite_command(
             corpus_dir,
             provider_dir,
             floating_model_path=floating_model,
+            transition_gate_path=transition_gate,
             output=output,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -359,7 +432,65 @@ def benchmark_provider_anchor_suite_command(
         "Nearest synthetic profile: "
         f"{degradation['synthetic_profile_comparison']['nearest_profile']}"
     )
+    gate_evaluation = report.get("provider_transition_gate_evaluation")
+    if gate_evaluation is not None:
+        typer.echo(
+            "Frozen transition gate accepted: "
+            f"{gate_evaluation['meets_frozen_acceptance_criteria']}"
+        )
     typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("freeze-provider-transition-gate")
+def freeze_provider_transition_gate_command(
+    suite_report: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    partition: str = typer.Option("fit", help="Named train-only partition used to freeze thresholds."),
+    minimum_precision: float = typer.Option(0.95, min=0.0, max=1.0),
+    minimum_wilson_lower_95: float = typer.Option(
+        0.9,
+        min=0.0,
+        max=1.0,
+        help="Minimum 95% Wilson lower bound for transition precision.",
+    ),
+    minimum_predicted: int = typer.Option(
+        50,
+        min=1,
+        help="Minimum eligible transitions required on the freeze partition.",
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Freeze one fit-selected Provider transition gate for independent review."""
+
+    try:
+        result = freeze_provider_transition_gate(
+            suite_report,
+            partition=partition,
+            minimum_precision=minimum_precision,
+            minimum_wilson_lower_95=minimum_wilson_lower_95,
+            minimum_predicted=minimum_predicted,
+            output=output,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="suite_report") from exc
+    gate = result.gate
+    typer.echo(f"Partition: {gate['selection_partition']}")
+    typer.echo(
+        "Threshold: native support >= "
+        f"{gate['minimum_native_support']}, provider confidence >= "
+        f"{gate['minimum_provider_confidence']}"
+    )
+    typer.echo(
+        "Fit precision/Wilson lower/predicted: "
+        f"{gate['fit_metrics']['precision']}/"
+        f"{gate['fit_metrics']['precision_wilson_lower_95']}/"
+        f"{gate['fit_metrics']['predicted']}"
+    )
+    typer.echo(f"Gate: {result.gate_path}")
 
 
 @app.command("consensus-reading-sidecars")

@@ -36,6 +36,7 @@ COMPHRDOC_FETCH_SCHEMA = "scriptorium-comphrdoc-benchmark/v1"
 COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA = (
     "scriptorium-comphrdoc-provider-calibration/v1"
 )
+COMPHRDOC_PROVIDER_TEST_SCHEMA = "scriptorium-comphrdoc-provider-test/v1"
 DEFAULT_COMPHRDOC_DOCUMENT_ID = "1401.3699"
 
 
@@ -62,6 +63,22 @@ class CompHrDocProviderCalibrationFetchResult:
     manifest_path: Path
     source_pdf_paths: tuple[Path, ...]
     samples: tuple[CompHrDocBenchmarkSample, ...]
+
+
+@dataclass(frozen=True)
+class CompHrDocProviderTestFetchResult:
+    out_dir: Path
+    manifest_path: Path
+    source_pdf_paths: tuple[Path, ...]
+    samples: tuple[CompHrDocBenchmarkSample, ...]
+
+
+@dataclass(frozen=True)
+class _CompHrDocProviderMaterialization:
+    samples: tuple[CompHrDocBenchmarkSample, ...]
+    source_pdf_paths: tuple[Path, ...]
+    manifest_samples: tuple[dict[str, Any], ...]
+    manifest_documents: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True)
@@ -201,6 +218,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
     document_count: int = 4,
     calibration_fraction: float = 0.2,
     arxiv_version: str | None = None,
+    annotation_archive: str | Path | None = None,
     refresh: bool = False,
     downloader: CompHrDocDownloader | None = None,
 ) -> CompHrDocProviderCalibrationFetchResult:
@@ -214,10 +232,10 @@ def fetch_comphrdoc_provider_calibration_corpus(
         raise ValueError("calibration_fraction must be between 0.05 and 0.5")
     normalized_arxiv_version = _normalized_arxiv_version(arxiv_version)
     download = downloader or _download_bytes
-    archive_bytes = download(COMPHRDOC_ARCHIVE_URL)
-    archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
-    if archive_sha256 != COMPHRDOC_ARCHIVE_SHA256:
-        raise ValueError("Comp-HRDoc annotation archive SHA-256 mismatch")
+    archive_bytes, archive_sha256 = _comphrdoc_archive_bytes(
+        download,
+        annotation_archive=annotation_archive,
+    )
     annotations = _load_annotation_archive(
         archive_bytes,
         member=COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
@@ -230,7 +248,218 @@ def fetch_comphrdoc_provider_calibration_corpus(
     )
     page_quotas = _balanced_quotas(sample_count, len(selected_documents))
 
+    selected_documents = [
+        {
+            **document,
+            "pages": _select_provider_calibration_pages(
+                document["pages"],
+                quota=page_quotas[document_position],
+            ),
+        }
+        for document_position, document in enumerate(selected_documents)
+    ]
     target = Path(out_dir)
+    materialized = _materialize_comphrdoc_provider_corpus(
+        target,
+        selected_documents,
+        arxiv_version=normalized_arxiv_version,
+        refresh=refresh,
+        downloader=download,
+    )
+
+    manifest_path = target / "comphrdoc_benchmark_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema": COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA,
+                "dataset": "Comp-HRDoc train",
+                "repository": COMPHRDOC_REPOSITORY,
+                "revision": COMPHRDOC_REVISION,
+                "annotation_license": COMPHRDOC_LICENSE,
+                "annotation_archive_sha256": archive_sha256,
+                "annotation_member": COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
+                "annotation_images_present_in_archive": False,
+                "source_pdf_policy": (
+                    "download original arXiv submissions for local reconstruction; "
+                    "paper licenses remain those of their arXiv records"
+                ),
+                "arxiv_version": normalized_arxiv_version or "latest",
+                "source_pdfs_redistributed_by_project": False,
+                "selection": (
+                    "document-hash-partition-layout-stratified-documents-and-pages-v1"
+                ),
+                "selection_uses_relation_labels": False,
+                "selection_uses_oracle_layout": True,
+                "selection_allowed_annotation_fields": [
+                    "bbox",
+                    "category_id",
+                    "textline_polys",
+                ],
+                "selection_excluded_annotation_fields": [
+                    "reading_order_id",
+                    "reading_order_label",
+                    "ro_linkings",
+                ],
+                "split_policy": "document-id-sha256-fit-calibration-v1",
+                "split_unit": "document",
+                "calibration_fraction": calibration_fraction,
+                "sample_count": len(materialized.samples),
+                "requested_sample_count": sample_count,
+                "document_count": len(selected_documents),
+                "inference_inputs_are_answer_free": True,
+                "answer_separation": {
+                    "provider_input": "rendered-image-only",
+                    "oracle_structure_role": "evaluation-anchor-matching-only",
+                    "semantic_sidecar_role": "evaluation-labels-only",
+                    "provider_reads_oracle_structure": False,
+                    "provider_reads_semantic_sidecar": False,
+                },
+                "structure_input": {
+                    "kind": "line-layout-anchor-only",
+                    "relations_removed": True,
+                },
+                "documents": materialized.manifest_documents,
+                "samples": materialized.manifest_samples,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return CompHrDocProviderCalibrationFetchResult(
+        target,
+        manifest_path,
+        materialized.source_pdf_paths,
+        materialized.samples,
+    )
+
+
+def fetch_comphrdoc_provider_test_corpus(
+    out_dir: str | Path,
+    *,
+    sample_count: int = 32,
+    document_count: int = 16,
+    arxiv_version: str | None = None,
+    annotation_archive: str | Path | None = None,
+    refresh: bool = False,
+    downloader: CompHrDocDownloader | None = None,
+) -> CompHrDocProviderTestFetchResult:
+    """Rebuild a deterministic real-provider corpus from official test annotations."""
+
+    if sample_count < 1:
+        raise ValueError("Comp-HRDoc provider test sample_count must be at least 1")
+    if document_count < 1 or document_count > sample_count:
+        raise ValueError("document_count must be between 1 and sample_count")
+    normalized_arxiv_version = _normalized_arxiv_version(arxiv_version)
+    download = downloader or _download_bytes
+    archive_bytes, archive_sha256 = _comphrdoc_archive_bytes(
+        download,
+        annotation_archive=annotation_archive,
+    )
+    annotations = _load_annotation_archive(
+        archive_bytes,
+        member=COMPHRDOC_ANNOTATION_MEMBER,
+    )
+    document_pages = _provider_calibration_document_pages(annotations)
+    selected_documents = _select_provider_test_documents(
+        document_pages,
+        document_count=document_count,
+    )
+    page_quotas = _balanced_quotas(sample_count, len(selected_documents))
+    selected_documents = [
+        {
+            **document,
+            "pages": _select_provider_test_pages(
+                document["pages"],
+                quota=page_quotas[document_position],
+            ),
+        }
+        for document_position, document in enumerate(selected_documents)
+    ]
+
+    target = Path(out_dir)
+    materialized = _materialize_comphrdoc_provider_corpus(
+        target,
+        selected_documents,
+        arxiv_version=normalized_arxiv_version,
+        refresh=refresh,
+        downloader=download,
+    )
+    manifest_path = target / "comphrdoc_benchmark_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema": COMPHRDOC_PROVIDER_TEST_SCHEMA,
+                "dataset": "Comp-HRDoc test",
+                "repository": COMPHRDOC_REPOSITORY,
+                "revision": COMPHRDOC_REVISION,
+                "annotation_license": COMPHRDOC_LICENSE,
+                "annotation_archive_sha256": archive_sha256,
+                "annotation_member": COMPHRDOC_ANNOTATION_MEMBER,
+                "annotation_images_present_in_archive": False,
+                "source_pdf_policy": (
+                    "download original arXiv submissions for local reconstruction; "
+                    "paper licenses remain those of their arXiv records"
+                ),
+                "arxiv_version": normalized_arxiv_version or "latest",
+                "source_pdfs_redistributed_by_project": False,
+                "selection": "document-hash-layout-stratified-test-documents-and-pages-v1",
+                "selection_uses_relation_labels": False,
+                "selection_uses_oracle_layout": True,
+                "selection_allowed_annotation_fields": [
+                    "bbox",
+                    "category_id",
+                    "textline_polys",
+                ],
+                "selection_excluded_annotation_fields": [
+                    "reading_order_id",
+                    "reading_order_label",
+                    "ro_linkings",
+                ],
+                "split_policy": "official-test-only",
+                "split_unit": "document",
+                "partition": "test",
+                "sample_count": len(materialized.samples),
+                "requested_sample_count": sample_count,
+                "document_count": len(selected_documents),
+                "inference_inputs_are_answer_free": True,
+                "answer_separation": {
+                    "provider_input": "rendered-image-only",
+                    "oracle_structure_role": "evaluation-anchor-matching-only",
+                    "semantic_sidecar_role": "evaluation-labels-only",
+                    "provider_reads_oracle_structure": False,
+                    "provider_reads_semantic_sidecar": False,
+                },
+                "structure_input": {
+                    "kind": "line-layout-anchor-only",
+                    "relations_removed": True,
+                },
+                "documents": materialized.manifest_documents,
+                "samples": materialized.manifest_samples,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return CompHrDocProviderTestFetchResult(
+        target,
+        manifest_path,
+        materialized.source_pdf_paths,
+        materialized.samples,
+    )
+
+
+def _materialize_comphrdoc_provider_corpus(
+    target: Path,
+    selected_documents: list[dict[str, Any]],
+    *,
+    arxiv_version: str | None,
+    refresh: bool,
+    downloader: CompHrDocDownloader,
+) -> _CompHrDocProviderMaterialization:
     images_dir = target / "images"
     structure_dir = target / "structure"
     semantic_dir = target / "semantic"
@@ -242,31 +471,31 @@ def fetch_comphrdoc_provider_calibration_corpus(
     manifest_samples: list[dict[str, Any]] = []
     manifest_documents: list[dict[str, Any]] = []
     source_pdf_paths: list[Path] = []
-    for document_position, document in enumerate(selected_documents):
-        document_id = document["document_id"]
-        partition = document["partition"]
-        selected_pages = _select_provider_calibration_pages(
-            document["pages"],
-            quota=page_quotas[document_position],
-        )
-        versioned_document_id = f"{document_id}{normalized_arxiv_version or ''}"
+    for document in selected_documents:
+        document_id = str(document["document_id"])
+        partition = str(document["partition"])
+        selected_pages = document["pages"]
+        versioned_document_id = f"{document_id}{arxiv_version or ''}"
         pdf_url = f"https://arxiv.org/pdf/{versioned_document_id}"
         source_pdf_path = sources_dir / f"{versioned_document_id}.pdf"
         if source_pdf_path.exists() and not refresh:
             pdf_bytes = source_pdf_path.read_bytes()
         else:
-            pdf_bytes = download(pdf_url)
+            pdf_bytes = downloader(pdf_url)
             source_pdf_path.write_bytes(pdf_bytes)
         source_pdf_paths.append(source_pdf_path)
         with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
-            if not selected_pages or max(page["page_index"] for page in selected_pages) >= len(pdf):
+            if (
+                not selected_pages
+                or max(page["page_index"] for page in selected_pages) >= len(pdf)
+            ):
                 raise ValueError(
                     f"arXiv PDF {document_id} does not contain all selected annotation pages"
                 )
             for page_record in selected_pages:
                 image_record = page_record["image"]
                 page_annotations = page_record["annotations"]
-                page_index = page_record["page_index"]
+                page_index = int(page_record["page_index"])
                 sample_id = f"{document_id}_{page_index}"
                 image_path = images_dir / f"{sample_id}.png"
                 structure_path = structure_dir / f"{sample_id}.structure.json"
@@ -289,12 +518,14 @@ def fetch_comphrdoc_provider_calibration_corpus(
                 )
                 if refresh or not structure_path.exists():
                     structure_path.write_text(
-                        json.dumps(structure_payload, ensure_ascii=False, indent=2) + "\n",
+                        json.dumps(structure_payload, ensure_ascii=False, indent=2)
+                        + "\n",
                         encoding="utf-8",
                     )
                 if refresh or not semantic_path.exists():
                     semantic_path.write_text(
-                        json.dumps(semantic_payload, ensure_ascii=False, indent=2) + "\n",
+                        json.dumps(semantic_payload, ensure_ascii=False, indent=2)
+                        + "\n",
                         encoding="utf-8",
                     )
                 alignment = _source_text_alignment(pdf[page_index], page_annotations)
@@ -336,72 +567,11 @@ def fetch_comphrdoc_provider_calibration_corpus(
                     "selected_page_count": len(selected_pages),
                 }
             )
-
-    manifest_path = target / "comphrdoc_benchmark_manifest.json"
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "schema": COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA,
-                "dataset": "Comp-HRDoc train",
-                "repository": COMPHRDOC_REPOSITORY,
-                "revision": COMPHRDOC_REVISION,
-                "annotation_license": COMPHRDOC_LICENSE,
-                "annotation_archive_sha256": archive_sha256,
-                "annotation_member": COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
-                "annotation_images_present_in_archive": False,
-                "source_pdf_policy": (
-                    "download original arXiv submissions for local reconstruction; "
-                    "paper licenses remain those of their arXiv records"
-                ),
-                "arxiv_version": normalized_arxiv_version or "latest",
-                "source_pdfs_redistributed_by_project": False,
-                "selection": (
-                    "document-hash-partition-layout-stratified-documents-and-pages-v1"
-                ),
-                "selection_uses_relation_labels": False,
-                "selection_uses_oracle_layout": True,
-                "selection_allowed_annotation_fields": [
-                    "bbox",
-                    "category_id",
-                    "textline_polys",
-                ],
-                "selection_excluded_annotation_fields": [
-                    "reading_order_id",
-                    "reading_order_label",
-                    "ro_linkings",
-                ],
-                "split_policy": "document-id-sha256-fit-calibration-v1",
-                "split_unit": "document",
-                "calibration_fraction": calibration_fraction,
-                "sample_count": len(samples),
-                "requested_sample_count": sample_count,
-                "document_count": len(selected_documents),
-                "inference_inputs_are_answer_free": True,
-                "answer_separation": {
-                    "provider_input": "rendered-image-only",
-                    "oracle_structure_role": "evaluation-anchor-matching-only",
-                    "semantic_sidecar_role": "evaluation-labels-only",
-                    "provider_reads_oracle_structure": False,
-                    "provider_reads_semantic_sidecar": False,
-                },
-                "structure_input": {
-                    "kind": "line-layout-anchor-only",
-                    "relations_removed": True,
-                },
-                "documents": manifest_documents,
-                "samples": manifest_samples,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return CompHrDocProviderCalibrationFetchResult(
-        target,
-        manifest_path,
-        tuple(source_pdf_paths),
+    return _CompHrDocProviderMaterialization(
         tuple(samples),
+        tuple(source_pdf_paths),
+        tuple(manifest_samples),
+        tuple(manifest_documents),
     )
 
 
@@ -412,6 +582,22 @@ def _normalized_arxiv_version(value: str | None) -> str | None:
     if re.fullmatch(r"v[1-9]\d*", normalized) is None:
         raise ValueError("arxiv_version must look like v1, v2, or another positive revision")
     return normalized
+
+
+def _comphrdoc_archive_bytes(
+    downloader: CompHrDocDownloader,
+    *,
+    annotation_archive: str | Path | None,
+) -> tuple[bytes, str]:
+    archive_bytes = (
+        Path(annotation_archive).read_bytes()
+        if annotation_archive is not None
+        else downloader(COMPHRDOC_ARCHIVE_URL)
+    )
+    archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
+    if archive_sha256 != COMPHRDOC_ARCHIVE_SHA256:
+        raise ValueError("Comp-HRDoc annotation archive SHA-256 mismatch")
+    return archive_bytes, archive_sha256
 
 
 def _provider_calibration_document_pages(
@@ -517,6 +703,40 @@ def _select_provider_calibration_documents(
     return selected
 
 
+def _select_provider_test_documents(
+    document_pages: Mapping[str, list[dict[str, Any]]],
+    *,
+    document_count: int,
+) -> list[dict[str, Any]]:
+    candidates: list[
+        tuple[tuple[int, int, int], str, str, list[dict[str, Any]]]
+    ] = []
+    for document_id, pages in document_pages.items():
+        if not pages:
+            continue
+        rank = hashlib.sha256(
+            f"scriptorium-provider-test-document-v1:{document_id}".encode("utf-8")
+        ).hexdigest()
+        strata = {str(page["layout_stratum"]) for page in pages}
+        layout_rank = (
+            int(not any("multicolumn" in stratum for stratum in strata)),
+            int(not any("graphical" in stratum for stratum in strata)),
+            int("graphical-multicolumn" not in strata),
+        )
+        candidates.append((layout_rank, rank, document_id, pages))
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    if len(candidates) < document_count:
+        raise ValueError("Comp-HRDoc test split lacks enough documents")
+    return [
+        {
+            "document_id": document_id,
+            "partition": "test",
+            "pages": pages,
+        }
+        for _, _, document_id, pages in candidates[:document_count]
+    ]
+
+
 def _provider_calibration_partition(
     document_id: str,
     *,
@@ -540,6 +760,31 @@ def _select_provider_calibration_pages(
     *,
     quota: int,
 ) -> list[dict[str, Any]]:
+    return _select_provider_pages(
+        pages,
+        quota=quota,
+        hash_namespace="scriptorium-provider-calibration-page-v1",
+    )
+
+
+def _select_provider_test_pages(
+    pages: list[dict[str, Any]],
+    *,
+    quota: int,
+) -> list[dict[str, Any]]:
+    return _select_provider_pages(
+        pages,
+        quota=quota,
+        hash_namespace="scriptorium-provider-test-page-v1",
+    )
+
+
+def _select_provider_pages(
+    pages: list[dict[str, Any]],
+    *,
+    quota: int,
+    hash_namespace: str,
+) -> list[dict[str, Any]]:
     if len(pages) < quota:
         raise ValueError("selected Comp-HRDoc document has fewer pages than its quota")
     stratum_order = (
@@ -555,10 +800,9 @@ def _select_provider_calibration_pages(
         candidates.sort(
             key=lambda page: (
                 hashlib.sha256(
-                    (
-                        "scriptorium-provider-calibration-page-v1:"
-                        f"{stratum}:{page['image']['file_name']}"
-                    ).encode("utf-8")
+                    f"{hash_namespace}:{stratum}:{page['image']['file_name']}".encode(
+                        "utf-8"
+                    )
                 ).hexdigest(),
                 int(page["page_index"]),
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections import Counter, defaultdict
@@ -58,6 +59,12 @@ class ProviderAnchorBenchmarkResult:
 class ProviderAnchorSuiteResult:
     report_path: Path
     report: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProviderTransitionGateResult:
+    gate_path: Path
+    gate: dict[str, Any]
 
 
 def benchmark_provider_anchors(
@@ -300,6 +307,7 @@ def benchmark_provider_anchor_suite(
     provider_dir: str | Path,
     *,
     floating_model_path: str | Path | None = None,
+    transition_gate_path: str | Path | None = None,
     output: str | Path | None = None,
 ) -> ProviderAnchorSuiteResult:
     """Score matching provider JSON files over a rendered Comp-HRDoc prefix."""
@@ -309,7 +317,8 @@ def benchmark_provider_anchor_suite(
     manifest_path = corpus / "comphrdoc_benchmark_manifest.json"
     if not manifest_path.is_file():
         raise ValueError("rendered Comp-HRDoc benchmark manifest is required")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes)
     cases: list[dict[str, Any]] = []
     missing: list[str] = []
     missing_by_partition: dict[str, list[str]] = defaultdict(list)
@@ -427,9 +436,49 @@ def benchmark_provider_anchor_suite(
         )
         for partition in sorted({str(case["partition"]) for case in cases})
     }
+    transition_gate_evaluation = None
+    if transition_gate_path is not None:
+        gate_path = Path(transition_gate_path)
+        gate_bytes = gate_path.read_bytes()
+        gate = json.loads(gate_bytes)
+        transition_gate_evaluation = _evaluate_provider_transition_gate(
+            provider_transition_review,
+            gate,
+        )
+        transition_gate_evaluation["gate_path"] = str(gate_path)
+        transition_gate_evaluation["gate_sha256"] = hashlib.sha256(
+            gate_bytes
+        ).hexdigest()
+        transition_gate_evaluation["source_corpus_manifest_sha256"] = gate.get(
+            "source_corpus_manifest_sha256"
+        )
+        transition_gate_evaluation["evaluation_corpus_manifest_sha256"] = (
+            hashlib.sha256(manifest_bytes).hexdigest()
+        )
+        transition_gate_evaluation["independent_corpus"] = (
+            gate.get("source_corpus_manifest_sha256")
+            != hashlib.sha256(manifest_bytes).hexdigest()
+        )
     report = {
         "schema": "scriptorium-provider-anchor-suite/v4",
         "corpus_manifest": str(manifest_path),
+        "corpus_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "corpus": {
+            key: manifest.get(key)
+            for key in (
+                "schema",
+                "dataset",
+                "revision",
+                "annotation_archive_sha256",
+                "annotation_member",
+                "selection",
+                "selection_uses_relation_labels",
+                "partition",
+                "sample_count",
+                "document_count",
+            )
+            if key in manifest
+        },
         "selection": manifest.get("selection"),
         "provider": cases[0]["provider"],
         "provider_capabilities": cases[0].get("provider_capabilities"),
@@ -449,6 +498,7 @@ def benchmark_provider_anchor_suite(
         "anchor_kinds": anchor_kind_summary,
         "provider_degradation": provider_degradation,
         "provider_transition_review": provider_transition_review,
+        "provider_transition_gate_evaluation": transition_gate_evaluation,
         "relations": relation_summary,
         "graphical_relation_audit": graphical_audit_summary,
         "partitions": partitions,
@@ -458,6 +508,155 @@ def benchmark_provider_anchor_suite(
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return ProviderAnchorSuiteResult(report_path, report)
+
+
+def freeze_provider_transition_gate(
+    suite_report_path: str | Path,
+    *,
+    partition: str = "fit",
+    minimum_precision: float = 0.95,
+    minimum_wilson_lower_95: float = 0.9,
+    minimum_predicted: int = 50,
+    output: str | Path | None = None,
+) -> ProviderTransitionGateResult:
+    """Freeze a review-only transition gate using one named fit partition."""
+
+    if not 0.0 <= minimum_precision <= 1.0:
+        raise ValueError("minimum_precision must be between 0 and 1")
+    if not 0.0 <= minimum_wilson_lower_95 <= 1.0:
+        raise ValueError("minimum_wilson_lower_95 must be between 0 and 1")
+    if minimum_predicted < 1:
+        raise ValueError("minimum_predicted must be at least 1")
+    source_path = Path(suite_report_path)
+    source_bytes = source_path.read_bytes()
+    suite = json.loads(source_bytes)
+    partition_report = suite.get("partitions", {}).get(partition)
+    if not isinstance(partition_report, Mapping):
+        raise ValueError(f"provider suite report does not contain partition {partition!r}")
+    review = partition_report.get("provider_transition_review")
+    if not isinstance(review, Mapping):
+        raise ValueError("provider suite report does not contain transition review curves")
+    qualified = [
+        point
+        for point in review.get("curve", [])
+        if isinstance(point, Mapping)
+        and int(point.get("minimum_native_support", 0)) >= 1
+        and point.get("minimum_provider_confidence") is not None
+        and int(point.get("predicted", 0)) >= minimum_predicted
+        and float(point.get("precision", 0.0)) >= minimum_precision
+        and float(point.get("precision_wilson_lower_95", 0.0))
+        >= minimum_wilson_lower_95
+    ]
+    if not qualified:
+        raise ValueError("no provider transition curve point satisfies the freeze criteria")
+    selected = max(
+        qualified,
+        key=lambda point: (
+            int(point["predicted"]),
+            float(point["precision_wilson_lower_95"]),
+            float(point["precision"]),
+            int(point["minimum_native_support"]),
+            float(point["minimum_provider_confidence"]),
+        ),
+    )
+    gate = {
+        "schema": "scriptorium-provider-transition-gate/v1",
+        "status": "frozen-review-only",
+        "runtime_reorder": False,
+        "source_suite_report": str(source_path),
+        "source_suite_report_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "source_corpus_manifest_sha256": suite.get("corpus_manifest_sha256"),
+        "source_corpus": suite.get("corpus"),
+        "selection_partition": partition,
+        "selection_uses_semantic_labels": True,
+        "candidate_orders": review.get("candidate_orders"),
+        "selection_policy": {
+            "objective": "maximize-eligible-transitions-after-quality-constraints",
+            "minimum_native_support": 1,
+            "provider_confidence_required": True,
+            "minimum_precision": minimum_precision,
+            "minimum_precision_wilson_lower_95": minimum_wilson_lower_95,
+            "minimum_predicted": minimum_predicted,
+        },
+        "acceptance_criteria": {
+            "minimum_precision": minimum_precision,
+            "minimum_precision_wilson_lower_95": minimum_wilson_lower_95,
+            "minimum_predicted": minimum_predicted,
+        },
+        "minimum_native_support": int(selected["minimum_native_support"]),
+        "minimum_provider_confidence": float(
+            selected["minimum_provider_confidence"]
+        ),
+        "fit_metrics": dict(selected),
+    }
+    gate_path = (
+        Path(output)
+        if output is not None
+        else source_path.with_name(f"{source_path.stem}.transition-gate.json")
+    )
+    gate_path.parent.mkdir(parents=True, exist_ok=True)
+    gate_path.write_text(
+        json.dumps(gate, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return ProviderTransitionGateResult(gate_path, gate)
+
+
+def _evaluate_provider_transition_gate(
+    review: Mapping[str, Any],
+    gate: Mapping[str, Any],
+) -> dict[str, Any]:
+    if gate.get("schema") != "scriptorium-provider-transition-gate/v1":
+        raise ValueError("unsupported provider transition gate schema")
+    if gate.get("runtime_reorder") is not False:
+        raise ValueError("provider transition gate must remain review-only")
+    if list(gate.get("candidate_orders") or []) != list(
+        review.get("candidate_orders") or []
+    ):
+        raise ValueError("provider transition gate candidate orders do not match")
+    minimum_support = int(gate["minimum_native_support"])
+    minimum_confidence = float(gate["minimum_provider_confidence"])
+    point = next(
+        (
+            item
+            for item in review.get("curve", [])
+            if isinstance(item, Mapping)
+            and int(item.get("minimum_native_support", -1)) == minimum_support
+            and item.get("minimum_provider_confidence") is not None
+            and abs(
+                float(item["minimum_provider_confidence"])
+                - minimum_confidence
+            )
+            <= 1e-12
+        ),
+        None,
+    )
+    if point is None:
+        raise ValueError("provider transition gate threshold is absent from review curve")
+    criteria = gate.get("acceptance_criteria")
+    if not isinstance(criteria, Mapping):
+        raise ValueError("provider transition gate acceptance criteria are required")
+    checks = {
+        "minimum_precision": float(point.get("precision", 0.0))
+        >= float(criteria["minimum_precision"]),
+        "minimum_precision_wilson_lower_95": float(
+            point.get("precision_wilson_lower_95", 0.0)
+        )
+        >= float(criteria["minimum_precision_wilson_lower_95"]),
+        "minimum_predicted": int(point.get("predicted", 0))
+        >= int(criteria["minimum_predicted"]),
+    }
+    return {
+        "schema": "scriptorium-provider-transition-gate-evaluation/v1",
+        "status": "review-only",
+        "runtime_reorder": False,
+        "minimum_native_support": minimum_support,
+        "minimum_provider_confidence": minimum_confidence,
+        "acceptance_criteria": dict(criteria),
+        "criterion_results": checks,
+        "meets_frozen_acceptance_criteria": all(checks.values()),
+        "metrics": dict(point),
+    }
 
 
 def normalize_provider_anchors(

@@ -5,9 +5,11 @@ import json
 import scriptorium.floating_ranker as floating_ranker
 from scriptorium.provider_anchor_benchmark import (
     ProviderAnchor,
+    _evaluate_provider_transition_gate,
     _serialized_provider_edge_groups,
     benchmark_provider_anchor_suite,
     benchmark_provider_anchors,
+    freeze_provider_transition_gate,
     match_provider_anchors,
     normalize_provider_anchors,
 )
@@ -203,6 +205,77 @@ def test_provider_transition_gate_eligibility_is_relation_label_invariant(tmp_pa
     assert first["eligible_fraction"] == second["eligible_fraction"] == 1.0
     assert first["correct"] == 1
     assert second["correct"] == 0
+
+
+def test_transition_gate_freezes_fit_curve_and_evaluates_without_reselection(
+    tmp_path,
+) -> None:
+    review = {
+        "candidate_orders": ["visual-yx", "box-flow", "relation-graph"],
+        "curve": [
+            {
+                "minimum_native_support": 1,
+                "minimum_provider_confidence": 0.8,
+                "predicted": 100,
+                "correct": 94,
+                "labels": 500,
+                "precision": 0.94,
+                "precision_wilson_lower_95": 0.88,
+            },
+            {
+                "minimum_native_support": 1,
+                "minimum_provider_confidence": 0.85,
+                "predicted": 80,
+                "correct": 77,
+                "labels": 500,
+                "precision": 0.9625,
+                "precision_wilson_lower_95": 0.91,
+            },
+            {
+                "minimum_native_support": 2,
+                "minimum_provider_confidence": 0.85,
+                "predicted": 55,
+                "correct": 54,
+                "labels": 500,
+                "precision": 0.98181818,
+                "precision_wilson_lower_95": 0.91,
+            },
+        ],
+    }
+    report_path = tmp_path / "suite.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "corpus_manifest_sha256": "fit-corpus",
+                "corpus": {"dataset": "Comp-HRDoc train"},
+                "partitions": {"fit": {"provider_transition_review": review}},
+            }
+        )
+    )
+
+    frozen = freeze_provider_transition_gate(report_path)
+
+    assert frozen.gate["runtime_reorder"] is False
+    assert frozen.gate["minimum_native_support"] == 1
+    assert frozen.gate["minimum_provider_confidence"] == 0.85
+    assert frozen.gate["fit_metrics"]["predicted"] == 80
+    test_review = {
+        "candidate_orders": review["candidate_orders"],
+        "curve": [
+            {
+                "minimum_native_support": 1,
+                "minimum_provider_confidence": 0.85,
+                "predicted": 75,
+                "correct": 72,
+                "labels": 480,
+                "precision": 0.96,
+                "precision_wilson_lower_95": 0.905,
+            }
+        ],
+    }
+    evaluation = _evaluate_provider_transition_gate(test_review, frozen.gate)
+    assert evaluation["meets_frozen_acceptance_criteria"] is True
+    assert evaluation["metrics"]["predicted"] == 75
 
 
 def test_paddle_vl_raw_results_are_supported() -> None:
