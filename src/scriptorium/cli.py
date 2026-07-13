@@ -38,8 +38,8 @@ from .ocr import (
     normalize_ocr_to_ir,
     write_ocr_json,
 )
-from .paddle_layout_provider import PaddleLayoutAdapter
 from .opendataloader_provider import OpenDataLoaderAdapter
+from .paddle_layout_provider import PaddleLayoutAdapter, run_paddle_layout_corpus
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -162,6 +162,10 @@ def fetch_comphrdoc_provider_calibration_command(
         max=0.5,
         help="Document-hash partition reserved for provider calibration.",
     ),
+    arxiv_version: Optional[str] = typer.Option(
+        None,
+        help="Optional pinned source revision such as v1; latest is used when omitted.",
+    ),
     refresh: bool = typer.Option(False, help="Redownload PDFs and rewrite derived files."),
 ) -> None:
     """Rebuild a train-only real-provider calibration corpus from arXiv PDFs."""
@@ -172,6 +176,7 @@ def fetch_comphrdoc_provider_calibration_command(
             sample_count=sample_count,
             document_count=document_count,
             calibration_fraction=calibration_fraction,
+            arxiv_version=arxiv_version,
             refresh=refresh,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -863,6 +868,77 @@ def run_paddle_layout_command(
     typer.echo(f"PP-DocLayoutV3 JSON: {output_path}")
     typer.echo(f"Pages: {len(rendered.pages)}")
     typer.echo(f"Layout blocks: {sum(len(page['elements']) for page in payload['pages'])}")
+    typer.echo("Runtime reorder: disabled")
+
+
+@app.command("run-paddle-layout-corpus")
+def run_paddle_layout_corpus_command(
+    corpus_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Answer-separated Comp-HRDoc corpus directory.",
+    ),
+    out_dir: Path = typer.Option(
+        Path("outputs/pp-doclayoutv3-corpus"),
+        "--out-dir",
+        help="Directory for one review-only provider JSON per corpus sample.",
+    ),
+    partition: str = typer.Option(
+        "all",
+        help="Corpus partition to run: all, fit, or calibration.",
+    ),
+    max_samples: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Optional deterministic prefix limit after partition filtering.",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        help="Re-run samples whose provider JSON already exists.",
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        help="Optional Paddle device, for example gpu:0 or cpu.",
+    ),
+    model_name: str = typer.Option(
+        "PP-DocLayoutV3",
+        help="Paddle layout model with native reading-order prediction.",
+    ),
+    model_dir: Optional[Path] = typer.Option(
+        None,
+        help="Optional local Paddle layout model directory.",
+    ),
+) -> None:
+    """Run one reusable PP-DocLayoutV3 predictor over a corpus manifest."""
+
+    normalized_partition = partition.strip().lower()
+    if normalized_partition not in {"all", "fit", "calibration"}:
+        raise typer.BadParameter(
+            "partition must be all, fit, or calibration",
+            param_hint="--partition",
+        )
+    options: dict[str, object] = {"model_name": model_name}
+    if device:
+        options["device"] = device
+    if model_dir is not None:
+        options["model_dir"] = model_dir
+    try:
+        result = run_paddle_layout_corpus(
+            corpus_dir,
+            out_dir,
+            adapter=PaddleLayoutAdapter(**options),
+            partition=None if normalized_partition == "all" else normalized_partition,
+            max_samples=max_samples,
+            refresh=refresh,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    typer.echo(f"Corpus run report: {result.report_path}")
+    typer.echo(f"Provider JSON files: {len(result.output_paths)}")
+    typer.echo(f"Generated: {len(result.generated_sample_ids)}")
+    typer.echo(f"Skipped existing: {len(result.skipped_sample_ids)}")
     typer.echo("Runtime reorder: disabled")
 
 

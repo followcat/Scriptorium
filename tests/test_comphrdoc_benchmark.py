@@ -6,6 +6,7 @@ from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import fitz
+import pytest
 
 import scriptorium.comphrdoc_benchmark as comphrdoc
 import scriptorium.floating_ranker as floating_ranker
@@ -89,20 +90,22 @@ def test_fetch_provider_calibration_reconstructs_train_without_selection_labels(
     )
     downloads = {
         COMPHRDOC_ARCHIVE_URL: annotation_archive,
-        "https://arxiv.org/pdf/2401.01000": pdf_bytes,
-        "https://arxiv.org/pdf/2401.01007": pdf_bytes,
+        "https://arxiv.org/pdf/2401.01000v1": pdf_bytes,
+        "https://arxiv.org/pdf/2401.01007v1": pdf_bytes,
     }
 
     first = fetch_comphrdoc_provider_calibration_corpus(
         tmp_path / "first",
         sample_count=4,
         document_count=2,
+        arxiv_version="v1",
         downloader=downloads.__getitem__,
     )
     second = fetch_comphrdoc_provider_calibration_corpus(
         tmp_path / "second",
         sample_count=4,
         document_count=2,
+        arxiv_version="V1",
         downloader=downloads.__getitem__,
     )
 
@@ -110,6 +113,8 @@ def test_fetch_provider_calibration_reconstructs_train_without_selection_labels(
     repeated_manifest = json.loads(second.manifest_path.read_text(encoding="utf-8"))
     assert manifest == repeated_manifest
     assert manifest["dataset"] == "Comp-HRDoc train"
+    assert manifest["arxiv_version"] == "v1"
+    assert all(document["source_pdf_url"].endswith("v1") for document in manifest["documents"])
     assert manifest["selection_uses_relation_labels"] is False
     assert manifest["selection_uses_oracle_layout"] is True
     assert manifest["selection_excluded_annotation_fields"] == [
@@ -182,6 +187,16 @@ def test_provider_calibration_selection_is_relation_label_invariant() -> None:
         ]
 
     assert selection_signature(payload) == selection_signature(relabeled)
+
+
+def test_provider_calibration_rejects_unpinned_arxiv_version_syntax(tmp_path) -> None:
+    with pytest.raises(ValueError, match="arxiv_version"):
+        fetch_comphrdoc_provider_calibration_corpus(
+            tmp_path / "invalid-version",
+            sample_count=2,
+            document_count=2,
+            arxiv_version="1",
+        )
 
 
 def test_table_floating_order_is_independent_of_annotation_sequence() -> None:

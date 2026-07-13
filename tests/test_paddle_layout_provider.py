@@ -4,11 +4,15 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
 from scriptorium import cli
-from scriptorium.paddle_layout_provider import PaddleLayoutAdapter
+from scriptorium.paddle_layout_provider import (
+    PaddleLayoutAdapter,
+    run_paddle_layout_corpus,
+)
 from scriptorium.provider_anchor_benchmark import (
     benchmark_provider_anchors,
     normalize_provider_anchors,
@@ -207,3 +211,183 @@ def test_paddle_layout_command_writes_replayable_provider_json(tmp_path: Path, m
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["runtime_reorder"] is False
     assert payload["pages"][0]["elements"][0]["provider_order"] == 1
+
+
+def test_paddle_layout_corpus_reuses_predictor_and_splits_provenance(
+    tmp_path: Path,
+) -> None:
+    corpus = tmp_path / "corpus"
+    images = corpus / "images"
+    images.mkdir(parents=True)
+    image_paths = [images / "fit.png", images / "calibration.png"]
+    for index, image_path in enumerate(image_paths, start=1):
+        Image.new("RGB", (100 + index, 80), "white").save(image_path)
+    (corpus / "comphrdoc_benchmark_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "scriptorium-comphrdoc-provider-calibration/v1",
+                "samples": [
+                    {
+                        "id": "fit-sample",
+                        "partition": "fit",
+                        "layout_stratum": "multicolumn",
+                        "page_index": 3,
+                        "image": "images/fit.png",
+                    },
+                    {
+                        "id": "calibration-sample",
+                        "partition": "calibration",
+                        "layout_stratum": "graphical-multicolumn",
+                        "page_index": 7,
+                        "image": "images/calibration.png",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: dict[str, object] = {"paths": []}
+
+    class FakePredictor:
+        def __init__(self, **_options: object) -> None:
+            calls["created"] = int(calls.get("created", 0)) + 1
+
+        def predict(self, image_path: str, **_options: object):
+            cast_paths = calls["paths"]
+            assert isinstance(cast_paths, list)
+            cast_paths.append(image_path)
+            return [
+                {
+                    "boxes": [
+                        {
+                            "label": "text",
+                            "score": 0.95,
+                            "coordinate": [10, 10, 90, 30],
+                            "order": 1,
+                        }
+                    ]
+                }
+            ]
+
+        def close(self) -> None:
+            calls["closed"] = True
+
+    out_dir = tmp_path / "provider"
+    result = run_paddle_layout_corpus(
+        corpus,
+        out_dir,
+        adapter=PaddleLayoutAdapter(predictor_factory=FakePredictor, device="cpu"),
+    )
+
+    assert calls["created"] == 1
+    assert calls["paths"] == [str(path.resolve()) for path in image_paths]
+    assert calls["closed"] is True
+    assert result.generated_sample_ids == ("fit-sample", "calibration-sample")
+    assert result.skipped_sample_ids == ()
+    for sample_id, page_index, image_path in zip(
+        ("fit-sample", "calibration-sample"),
+        (3, 7),
+        image_paths,
+        strict=True,
+    ):
+        payload = json.loads(
+            (out_dir / f"{sample_id}.structure.json").read_text(encoding="utf-8")
+        )
+        assert len(payload["pages"]) == 1
+        assert payload["pages"][0]["page_index"] == page_index
+        assert payload["corpus_sample"]["id"] == sample_id
+        assert payload["provenance"]["inputs"][0]["sha256"] == hashlib.sha256(
+            image_path.read_bytes()
+        ).hexdigest()
+
+    class UnexpectedPredictor:
+        def __init__(self, **_options: object) -> None:
+            raise AssertionError("existing corpus outputs should not reload the model")
+
+    replay = run_paddle_layout_corpus(
+        corpus,
+        out_dir,
+        adapter=PaddleLayoutAdapter(predictor_factory=UnexpectedPredictor),
+    )
+    assert replay.generated_sample_ids == ()
+    assert replay.skipped_sample_ids == ("fit-sample", "calibration-sample")
+
+    stale_path = out_dir / "fit-sample.structure.json"
+    stale_payload = json.loads(stale_path.read_text(encoding="utf-8"))
+    stale_payload["corpus_sample"]["manifest_sha256"] = "stale"
+    stale_path.write_text(json.dumps(stale_payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="does not match this corpus manifest"):
+        run_paddle_layout_corpus(
+            corpus,
+            out_dir,
+            adapter=PaddleLayoutAdapter(predictor_factory=UnexpectedPredictor),
+        )
+
+
+def test_paddle_layout_corpus_command_filters_partition(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    corpus = tmp_path / "corpus"
+    (corpus / "images").mkdir(parents=True)
+    image_path = corpus / "images" / "page.png"
+    Image.new("RGB", (100, 80), "white").save(image_path)
+    (corpus / "comphrdoc_benchmark_manifest.json").write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {
+                        "id": "fit-page",
+                        "partition": "fit",
+                        "page_index": 2,
+                        "image": "images/page.png",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeAdapter:
+        model_name = "PP-DocLayoutV3"
+
+        def __init__(self, **options: object) -> None:
+            assert options == {"model_name": "PP-DocLayoutV3", "device": "cpu"}
+
+        def analyze(self, image_paths, *, page_indices):
+            path = Path(image_paths[0])
+            return {
+                "source": "paddle-pp-doclayoutv3",
+                "model": self.model_name,
+                "provenance": {
+                    "inputs": [
+                        {
+                            "path": str(path),
+                            "source_page_index": page_indices[0],
+                            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        }
+                    ]
+                },
+                "pages": [{"page_index": page_indices[0], "elements": []}],
+                "runtime_reorder": False,
+            }
+
+    monkeypatch.setattr(cli, "PaddleLayoutAdapter", FakeAdapter)
+    out_dir = tmp_path / "provider"
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "run-paddle-layout-corpus",
+            str(corpus),
+            "--out-dir",
+            str(out_dir),
+            "--partition",
+            "fit",
+            "--device",
+            "cpu",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Generated: 1" in result.output
+    assert (out_dir / "fit-page.structure.json").is_file()

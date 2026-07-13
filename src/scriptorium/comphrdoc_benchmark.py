@@ -200,6 +200,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
     sample_count: int = 8,
     document_count: int = 4,
     calibration_fraction: float = 0.2,
+    arxiv_version: str | None = None,
     refresh: bool = False,
     downloader: CompHrDocDownloader | None = None,
 ) -> CompHrDocProviderCalibrationFetchResult:
@@ -211,6 +212,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
         raise ValueError("document_count must be between 2 and sample_count")
     if not 0.05 <= calibration_fraction <= 0.5:
         raise ValueError("calibration_fraction must be between 0.05 and 0.5")
+    normalized_arxiv_version = _normalized_arxiv_version(arxiv_version)
     download = downloader or _download_bytes
     archive_bytes = download(COMPHRDOC_ARCHIVE_URL)
     archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
@@ -247,8 +249,9 @@ def fetch_comphrdoc_provider_calibration_corpus(
             document["pages"],
             quota=page_quotas[document_position],
         )
-        pdf_url = f"https://arxiv.org/pdf/{document_id}"
-        source_pdf_path = sources_dir / f"{document_id}.pdf"
+        versioned_document_id = f"{document_id}{normalized_arxiv_version or ''}"
+        pdf_url = f"https://arxiv.org/pdf/{versioned_document_id}"
+        source_pdf_path = sources_dir / f"{versioned_document_id}.pdf"
         if source_pdf_path.exists() and not refresh:
             pdf_bytes = source_pdf_path.read_bytes()
         else:
@@ -350,6 +353,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
                     "download original arXiv submissions for local reconstruction; "
                     "paper licenses remain those of their arXiv records"
                 ),
+                "arxiv_version": normalized_arxiv_version or "latest",
                 "source_pdfs_redistributed_by_project": False,
                 "selection": (
                     "document-hash-partition-layout-stratified-documents-and-pages-v1"
@@ -399,6 +403,15 @@ def fetch_comphrdoc_provider_calibration_corpus(
         tuple(source_pdf_paths),
         tuple(samples),
     )
+
+
+def _normalized_arxiv_version(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip().lower()
+    if re.fullmatch(r"v[1-9]\d*", normalized) is None:
+        raise ValueError("arxiv_version must look like v1, v2, or another positive revision")
+    return normalized
 
 
 def _provider_calibration_document_pages(
