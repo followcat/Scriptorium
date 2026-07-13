@@ -686,3 +686,12 @@ correct against 347 labels: precision `0.90168539`, recall `0.92507205`, F1
 official-train document-hash calibration split; the 250-page test prefix was
 not used to select it. The learned gate remains review-only pending confidence
 reliability and document-family rejection analysis.
+
+The train-calibrated high-precision review tier selects 85 test edges, with
+83 correct: precision `0.97647059`, recall `0.23919308`. Requiring zero outlier
+features under the fit-only 1%/99% envelope narrows this to 72/72, precision
+`1.00000000`, recall `0.20749280`, across 28 document families. This rejection
+rule removes both errors from the confidence-only tier, but also rejects 11
+correct edges. The result is validation evidence only: because the calibration
+partition could not establish a `0.97` strict gate with minimum support, even
+the 72/72 subset stays review-only and is not inserted into runtime path cover.

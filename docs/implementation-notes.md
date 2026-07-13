@@ -901,6 +901,15 @@ pages, 1,073 calibration pages, 49,763 examples, 5,638 positives, threshold
 `0.27`, and calibration precision/recall/F1
 `0.87851662/0.95020747/0.91295681`.
 
+Reliability is calibrated separately from the F1 operating point. A review gate
+requires at least 25 calibration predictions and precision `>= 0.95`; it selects
+confidence `>= 0.99`, giving 429/451 correct, precision `0.95121951`, recall
+`0.29668050`. A stricter `0.97` promotion target has no qualifying calibration
+gate and is explicitly serialized as unavailable. The model also stores fit-only
+1%/99% feature envelopes. Every selected edge reports feature outlier count and
+ratio, reliability tier, and strict-gate status. None of these fields enables
+runtime reorder.
+
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture
 for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577

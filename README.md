@@ -195,6 +195,9 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
   --floating-model outputs/models/floating-ranker.joblib
 ```
 
+训练 provider 会输出 standard/high-precision review tier 与仅由 fit 数据生成的
+feature-envelope 诊断。它们仍是证据，不是自动 runtime constraint。
+
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
 不会改变 runtime role、reading stream 或顺序：

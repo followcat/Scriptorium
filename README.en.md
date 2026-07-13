@@ -202,6 +202,10 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
   --floating-model outputs/models/floating-ranker.joblib
 ```
 
+The trained provider emits standard and high-precision review tiers plus
+fit-only feature-envelope diagnostics. These remain evidence, not automatic
+runtime constraints.
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,
