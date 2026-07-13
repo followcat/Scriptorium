@@ -734,3 +734,35 @@ with 2,698 fragmented elements and 341 dropped elements, showing that layout
 detection quality remains a first-order dependency. These synthetic results do
 not establish real OCR robustness; provider output must be matched to the
 oracle anchors next.
+
+### Real PaddleOCR-VL and Docling Anchors
+
+PaddleOCR-VL 1.6 and Docling 2.111.0 with Tesseract 4.1.1 were run on the fixed
+first five rendered pages of `1401.3699`. This prefix is mostly single-column:
+
+| Provider | Oracle anchors | Provider anchors | Relation correct / predicted / labels | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| Docling | 220/224 | 62/66 | 201 / 215 / 207 | 0.93488372 | 0.97101449 | 0.95260663 |
+| PaddleOCR-VL 1.6 | 224/224 | 63/66 | 207 / 219 / 207 | 0.94520548 | 1.00000000 | 0.97183099 |
+
+Both find 2/2 oracle figures. Docling emits two correct explicit float edges;
+Paddle emits no explicit relations. The trained gate contributes one reliable
+1/1 Paddle float edge, but it is already present in the serialized candidate,
+so combined F1 does not change.
+
+A fixed complex page, `1412.1395` p. 4, contains two columns, two interleaved
+figures/captions, code, a full-width top diagram, and body text:
+
+| Provider | Anchor recall | Figure recall | Relation precision | Relation recall | Relation F1 |
+|---|---:|---:|---:|---:|---:|
+| Docling | 43/49 | 2/2 | 0.69047619 | 0.74358974 | 0.71604938 |
+| PaddleOCR-VL 1.6 | 44/49 | 1/2 | 0.72093023 | 0.79487179 | 0.75609756 |
+
+Docling produces 70 text/caption anchors but only 10 match oracle text lines,
+showing severe granularity/region over-segmentation. Paddle has stronger text
+matching but misses one figure. On this page, both providers lead the trained
+float gate to the same wrong Figure-1-to-Figure-2-caption edge (`0/1`), at
+confidence about `0.985`. The calibrated `0.99` plus zero-OOD reliability gate
+rejects both (`0/0`), so provider relation F1 is not degraded. These results
+confirm that the complex-page bottleneck is real and that provider recognition,
+anchor association, and relation inference must be scored separately.

@@ -210,6 +210,13 @@ floating edges, including degree conflicts and cycle rejections.
 Use `--noise-profile mild` or `stress` for deterministic synthetic robustness
 checks; these profiles do not replace benchmarks from real OCR providers.
 
+Match saved PaddleOCR-VL or Docling output to rendered oracle anchors with:
+
+```bash
+scriptorium benchmark-provider-anchor-suite data/external/comphrdoc-rendered \
+  outputs/provider-structure --floating-model outputs/models/floating-ranker.joblib
+```
+
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
 labels, and successor relations remain review-only and cannot change runtime roles,

@@ -927,6 +927,21 @@ the same corpus always receives identical noise. Reports separate retained
 elements and resolvable labels from relation accuracy. These are controlled
 sensitivity tests, not measured OCR error distributions.
 
+`benchmark-provider-anchors` normalizes Docling documents, PaddleOCR-VL 1.6
+`raw_results`, ROOR-style pages, and generic `pages/elements` providers into one
+top-left anchor contract. Matching is many oracle lines to one provider block:
+each oracle anchor selects its strongest type-compatible geometry match, while
+one provider paragraph may own several lines. Within a matched provider block,
+oracle lines are ordered by geometry rather than JSON list position, preventing
+answer-order leakage. Reports include total and type-specific anchor recall,
+provider match rate, serialized relation edges, explicit figure/table-caption
+edges, and optional trained floating edges. The suite command aggregates files
+selected by a rendered Comp-HRDoc manifest.
+
+Provider floating predictions retain the same reliability boundary. Reports
+separate all review edges from high-confidence zero-OOD edges. They never write
+matches or provider order back into `DocumentIR`.
+
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture
 for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577
