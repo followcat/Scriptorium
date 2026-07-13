@@ -232,6 +232,11 @@ anchors use global one-to-one assignment. Reports preserve raw official-relation
 scores and add `graphical_relation_audit`, comparing official graphical labels
 with an answer-free local-geometry proposal. This audit detects label/association
 conflicts; it is not replacement ground truth and cannot change runtime order.
+The same report adds `provider_degradation`, separating missing, hallucination,
+size, split, merge, overlap, duplicate, and type-confusion errors from bbox and
+OCR/caption-text fidelity. Small OCR anchors nested inside figures or tables are
+reported as nested content instead of being mislabeled as hallucinations; the
+clean/mild/stress distance is descriptive and never acts as a runtime gate.
 
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,
@@ -329,6 +334,7 @@ Main modules:
 | `opendataloader_provider.py` | Run OpenDataLoader XY-Cut++ and emit review-only block/relation JSON. |
 | `ocr.py` | Normalize OCR/structure JSON into image/source text anchors and record the semantic-layer source; for image sources, structure JSON can be the semantic driver. |
 | `reading_order.py` | Build multi-column flow, table islands, card grids, footnotes, sidebars, captions, and reading streams. |
+| `provider_degradation.py` | Decompose real OCR/layout-provider geometry, granularity, type, and text degradation. |
 | `html_export.py` | Export structured/fidelity HTML with edit and translation anchors. |
 | `benchmark.py` | Run visual, semantic-order, structure A/B, and translation re-rendering benchmarks. |
 

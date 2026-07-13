@@ -758,6 +758,21 @@ PaddleOCR-VL 1.6 和 Docling 2.111.0 + Tesseract 4.1.1 在 `1401.3699` 固定前
 tier 为 0，两者都没有 strict edge。Combined F1 不变。Graphical-label audit 得到 2/2
 exact geometry agreement，官方 label conflict 为 0。
 
+v2 provider 报告不使用 relation label，会分解 recognition/layout degradation。各计数使用
+自然分母：missing/hallucination 使用 anchor，split/merge 使用语义 unit，size error 使用已匹配
+provider group。
+
+| Provider | Missing | Hallucination | 图内 Nested OCR | Split | Merge | Size error | 字符相似度 | Token F1 | Caption prefix | 最近合成 profile / 距离 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Docling | 4/224 | 2/66 | 2/66 | 4/56 | 0/66 | 7/62 | 0.74785572 | 0.71956298 | 0/2 | mild / 0.30899512 |
+| PaddleOCR-VL 1.6 | 0/224 | 1/66 | 2/66 | 4/56 | 0/66 | 8/63 | 0.85877792 | 0.88688310 | 2/2 | mild / 0.05474538 |
+
+两个 provider 的页归一化定位误差都很低：Docling p90 center/edge 为
+`0.00393755/0.00394033`，Paddle 为 `0.00415761/0.00564990`。Paddle 的 profile 距离更小，
+文本保真度也更高，说明合成 mild family 可以局部描述这个 prefix。Docling 虽然最近 mild，
+但距离仍很大，主要来自 OCR 文本损失和两个 caption prefix 都损坏；profile 名不能被理解为
+已校准的域标签。
+
 固定复杂页 `1412.1395` p. 4 包含两栏、两组交错 figure/caption、code、顶部全宽图和正文：
 
 | Provider | Anchor recall | Figure recall | Relation precision | Relation recall | Relation F1 |
@@ -765,9 +780,12 @@ exact geometry agreement，官方 label conflict 为 0。
 | Docling | 43/49 | 2/2 | 0.69047619 | 0.74358974 | 0.71604938 |
 | PaddleOCR-VL 1.6 | 44/49 | 1/2 | 0.72093023 | 0.79487179 | 0.75609756 |
 
-Docling 生成 70 个 text/caption anchor，但只有 10 个匹配 oracle text line，显示严重的
-粒度/区域过分割。Paddle 的文本匹配更强，但漏掉一个 figure；上表 raw score 保持不变。
-但固定版本的 Comp-HRDoc unified annotation 和 `test_eval/1412.1395.json` 都把顶部
+Degradation 报告改变了对 Docling 70 个 text/caption anchor 的解释。其 74 个 provider anchor 中有
+53 个是嵌套在两个 oracle figure 内的小型文本框，主要是图表/图示 OCR，而不是幻检正文区域。
+分开这个有用的 nested layer 后，真正 hallucination 为 9/74，missing 为 6/49。Paddle 在该页
+没有图内 nested OCR，hallucination 为 2/14、missing 为 4/49，文本保真度更高，但它合并了
+14 个 provider unit 中的 2 个，且漏掉一个 figure。上表 raw score 保持不变。但固定版本的
+Comp-HRDoc unified annotation 和 `test_eval/1412.1395.json` 都把顶部
 Figure 1 bbox 绑定到下方 “Fig. 2” caption，把下方 Figure 2 bbox 绑定到上方 “Fig. 1”
 caption。Answer-free 局部几何审计因此将 2/2 条官方 graphical label 标记为 conflict，
 但不会用诊断建议替换官方 label。
@@ -778,3 +796,12 @@ Docling explicit edge 与两个 provider 的 trained edge 都在预测的 1 条 
 官方 raw label 下仍判错。这修正了先前“provider 错配”的判断：该页 provider recognition 与文本顺序仍弱，
 但观测到的 float 扣分来自已审计的 oracle conflict，而不是 graphical anchor 重复
 assignment。该 edge 仍为 review-only，不会重排 runtime 输出。
+
+| Provider | Missing | Hallucination | 图内 Nested OCR | Split | Merge | Type error | 字符相似度 | Token F1 | Caption prefix | 最近合成 profile / 距离 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Docling | 6/49 | 9/74 | 53/74 | 3/17 | 2/74 | 0/43 | 0.70025503 | 0.64571963 | 1/2 | mild / 0.20701574 |
+| PaddleOCR-VL 1.6 | 4/49 | 2/14 | 0/14 | 3/17 | 2/14 | 1/45 | 0.75789504 | 0.76982884 | 2/2 | mild / 0.12464003 |
+
+Docling 到 clean/mild/stress 的距离几乎相同（`0.21559071/0.20701574/0.21405694`），这是当前
+合成扰动没有建模其“图内 OCR”域的直接证据。因此这些诊断仍只是 benchmark evidence；
+观察该页后没有改动任何 threshold、relation label 或 runtime gate。

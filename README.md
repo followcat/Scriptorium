@@ -219,6 +219,9 @@ Provider paragraph 仍允许多条 oracle line 映射到同一 block；figure/ta
 全局一对一 assignment。报告保留官方 relation 的原始分数，并额外输出
 `graphical_relation_audit`，比较官方 graphical label 与 answer-free 局部几何建议。
 该审计只用于发现 label/association 冲突，不是替代 ground truth，也不会改变 runtime。
+同一报告中的 `provider_degradation` 会分开 missing、hallucination、size、split、merge、
+overlap、duplicate 和 type confusion，并报告 bbox 误差、OCR/标题文本保真度与
+clean/mild/stress 描述性距离。图表内部的小型 OCR 块单独记为 nested content，不误报为幻检。
 
 可选的 Surya FastLayout provider 用独立环境安装。运行前必须明确接受模型权重
 许可；输出的 learned order、label 和 successor relation 全部是 review-only，
@@ -313,6 +316,7 @@ flowchart LR
 | `opendataloader_provider.py` | 运行 OpenDataLoader XY-Cut++ 并生成 review-only block/relation JSON。 |
 | `ocr.py` | 把 OCR/结构 JSON 归一为 image/source text anchors，并记录语义层来源；对 image source，结构 JSON 可以是 semantic driver。 |
 | `reading_order.py` | 处理多栏、表格岛、卡片网格、脚注、边栏、caption 和 reading streams。 |
+| `provider_degradation.py` | 分解真实 OCR/layout provider 的几何、粒度、类型与文本退化。 |
 | `html_export.py` | 导出 structured/fidelity HTML，保留编辑和翻译锚点。 |
 | `benchmark.py` | 运行视觉、语义顺序、结构 A/B 和翻译回渲染 benchmark。 |
 

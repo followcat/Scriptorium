@@ -803,6 +803,24 @@ provider has a strict edge on this prefix. Combined F1 does not change. The
 graphical-label audit finds 2/2 exact geometry agreements and no official-label
 conflict.
 
+The v2 provider report decomposes recognition/layout degradation without using
+relation labels. Counts use their natural denominators: anchors for
+missing/hallucination, semantic units for split/merge, and matched provider
+groups for size error.
+
+| Provider | Missing | Hallucination | Nested graphical OCR | Split | Merge | Size error | Character similarity | Token F1 | Caption prefix | Nearest synthetic / distance |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Docling | 4/224 | 2/66 | 2/66 | 4/56 | 0/66 | 7/62 | 0.74785572 | 0.71956298 | 0/2 | mild / 0.30899512 |
+| PaddleOCR-VL 1.6 | 0/224 | 1/66 | 2/66 | 4/56 | 0/66 | 8/63 | 0.85877792 | 0.88688310 | 2/2 | mild / 0.05474538 |
+
+Both providers have low page-normalized localization error (p90 center/edge
+error `0.00393755/0.00394033` for Docling and
+`0.00415761/0.00564990` for Paddle). Paddle's much smaller profile distance and
+stronger text fidelity show that the synthetic mild family is a useful local
+description for this prefix. Docling's nominally nearest profile is still far
+away, driven mainly by OCR text loss and both caption prefixes being corrupted;
+the profile name alone must not be read as a calibrated domain label.
+
 A fixed complex page, `1412.1395` p. 4, contains two columns, two interleaved
 figures/captions, code, a full-width top diagram, and body text:
 
@@ -811,9 +829,14 @@ figures/captions, code, a full-width top diagram, and body text:
 | Docling | 43/49 | 2/2 | 0.69047619 | 0.74358974 | 0.71604938 |
 | PaddleOCR-VL 1.6 | 44/49 | 1/2 | 0.72093023 | 0.79487179 | 0.75609756 |
 
-Docling produces 70 text/caption anchors but only 10 match oracle text lines,
-showing severe granularity/region over-segmentation. Paddle has stronger text
-matching but misses one figure. The raw scores above remain unchanged. However,
+The degradation report changes the interpretation of Docling's 70 text/caption
+anchors. Fifty-three of its 74 total provider anchors are small text boxes
+nested inside the two oracle figures, mostly chart/diagram OCR, rather than
+hallucinated body regions. After separating that useful nested layer, genuine
+hallucination is 9/74 and missing is 6/49. Paddle has no nested graphical OCR on
+this page; it has 2/14 hallucinations, 4/49 missing anchors, and stronger text
+fidelity, but merges two of 14 provider units and misses one figure. The raw
+scores above remain unchanged. However,
 both pinned Comp-HRDoc unified annotations and `test_eval/1412.1395.json` bind
 the top Figure 1 box to the lower “Fig. 2” caption and the lower Figure 2 box to
 the upper “Fig. 1” caption. The answer-free local-geometry audit therefore marks
@@ -829,3 +852,14 @@ provider recognition and text ordering remain weak on the page, but the observed
 float penalty comes from an audited oracle conflict rather than duplicate
 graphical-anchor assignment. The edge remains review-only and does not reorder
 runtime output.
+
+| Provider | Missing | Hallucination | Nested graphical OCR | Split | Merge | Type error | Character similarity | Token F1 | Caption prefix | Nearest synthetic / distance |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Docling | 6/49 | 9/74 | 53/74 | 3/17 | 2/74 | 0/43 | 0.70025503 | 0.64571963 | 1/2 | mild / 0.20701574 |
+| PaddleOCR-VL 1.6 | 4/49 | 2/14 | 0/14 | 3/17 | 2/14 | 1/45 | 0.75789504 | 0.76982884 | 2/2 | mild / 0.12464003 |
+
+Docling is almost equally distant from clean, mild, and stress
+(`0.21559071/0.20701574/0.21405694`), which is direct evidence that the current
+synthetic perturbations do not model its figure-internal OCR family. These
+diagnostics therefore remain benchmark evidence only; no threshold, relation
+label, or runtime gate was changed after observing this page.

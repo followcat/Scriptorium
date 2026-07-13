@@ -960,6 +960,38 @@ ground truth and never rewrites labels or `DocumentIR`. The suite command
 aggregates the same counters over files selected by a rendered Comp-HRDoc
 manifest.
 
+Provider reports now include a relation-answer-free `provider_degradation`
+section. The normalizer preserves a provider `group_id` independently from each
+anchor id, so exact text lines can be regrouped into the same semantic block
+while a real paragraph provider can remain one anchor. Geometry correspondence
+ignores type only for diagnosis; runtime matching and relation scoring retain
+their existing kind constraints. The diagnostic then separates the eight
+LED-style failure families: missing and hallucination at anchor level; size,
+split, merge, overlap, and duplicate at grouped-unit level; and type confusion
+from geometry-matched anchors. Split/merge multiplicity, unmatched counts by
+kind, normalized center/edge error, IoU/coverage/area ratio, NFC character
+similarity, bag-of-token precision/recall/F1, and caption-prefix preservation
+remain independently inspectable.
+
+Two document-specific guards prevent misleading error counts. Provider overlap
+is measured only when it is additional to oracle overlap, and high-IoU duplicate
+boxes are kept in the duplicate category. A provider text/caption anchor that is
+at least 90% contained in an oracle figure/table and at most 25% of the parent
+area is reported as `nested_graphical_content`; full-size figure-to-text type
+loss still remains a misclassification. This distinguishes useful chart/diagram
+OCR from a genuine hallucinated page region.
+
+Each real report is also compared with deterministic clean/mild/stress replays
+of the same oracle. The comparison is an unweighted RMSE over 12 normalized
+diagnostic rates and is explicitly descriptive: it is not fitted, does not read
+relation labels, and cannot promote an edge or change `runtime_reorder`. The
+suite command micro-aggregates raw counts and geometry/text records before
+recomputing the signature. This decomposition follows the split/merge-oriented
+document-structure evaluation tradition and the newer LED/COTe observation that
+plain IoU or mAP hides structurally different layout failures:
+https://www.haralick.org/journals/Liang_2001_Computer-Vision-and-Image-Understanding.pdf,
+https://arxiv.org/abs/2603.17265, and https://arxiv.org/abs/2603.12718.
+
 On the fixed 250-page graphical test corpus, global structure-role assignment
 first raised graphical correct/predicted from `295/342` to `301/346`. A separate
 train-only locality calibration then removes mandatory horizontal overlap while

@@ -541,6 +541,28 @@ raw score，同时用 answer-free 局部几何建议检查 graphical label，报
 conflict、未解析 label 和 provider 对该诊断建议的一致性。该建议明确不是 ground truth，
 不会改写 label 或 `DocumentIR`。Suite 命令会按渲染 Comp-HRDoc manifest 聚合相同计数。
 
+Provider 报告现在包含不读取 relation 答案的 `provider_degradation`。归一化层会把
+provider `group_id` 与单个 anchor id 分开保存，因此精确文本行可以重组回同一语义
+block，真实段落 provider 也可以保持单一 anchor。只有诊断几何对应会忽略 type；runtime
+匹配和 relation 评分仍保持原 kind 约束。诊断会分开八类 LED 风格错误：anchor 级的
+missing/hallucination，grouped-unit 级的 size/split/merge/overlap/duplicate，以及
+几何匹配 anchor 的 type confusion。Split/merge multiplicity、分 kind 未匹配计数、页归一化
+center/edge 误差、IoU/coverage/area ratio、NFC 字符相似度、bag-of-token P/R/F1 和
+caption prefix 保留率都可独立审查。
+
+两个文档特有 guard 避免误导性计数。Provider overlap 只记录相对 oracle 新增的重叠，
+high-IoU 重复框只留在 duplicate 类。如果 provider text/caption anchor 至少 90% 被 oracle
+figure/table 包含，且面积不超过父区域 25%，它会记为 `nested_graphical_content`；整图大小的
+figure-to-text 类型丢失仍是 misclassification。这样可以区分有用的图表/图示 OCR 和真正的页面幻检。
+
+每份真实报告还会与同一 oracle 的确定性 clean/mild/stress replay 比较。距离是 12 个归一化
+诊断率的无权 RMSE，只有描述意义：它不经拟合、不读取 relation label，也不能晋升 edge
+或改变 `runtime_reorder`。Suite 命令会先 micro-aggregate 原始计数和几何/文本 record，再重算
+signature。该分解延续 split/merge 导向的文档结构评测传统，也遵循 LED/COTe 对“单纯
+IoU 或 mAP 会隐藏不同结构错误”的结论：
+https://www.haralick.org/journals/Liang_2001_Computer-Vision-and-Image-Understanding.pdf、
+https://arxiv.org/abs/2603.17265 和 https://arxiv.org/abs/2603.12718。
+
 固定 250 页 graphical test corpus 上，全局 structure-role assignment 将 graphical
 correct/predicted 先从 `295/342` 提高到 `301/346`。随后独立执行 train-only locality
 calibration：取消强制水平 overlap，同时把最大水平中心距离从 `0.50` 收紧到 `0.35`
