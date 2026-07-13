@@ -505,6 +505,12 @@ precision `0.95121951`、recall `0.29668050`。更严格的 `0.97` promotion 目
 数据计算的 1%/99% feature envelope。每条 edge 都会报告 outlier count/ratio、
 reliability tier 和 strict-gate status；任何字段都不会开启 runtime reorder。
 
+Relation corpus 现在会把 body 和 floating candidate 输入共享的 degree-one acyclic
+selector。Candidate edge 按 confidence 排序；只有由 train calibration 得到的 high-precision、
+zero-OOD floating 子集会作为 protected 诊断证据先插入。Selector 会报告
+selected/protected edge、outgoing/incoming conflict、self-loop 和 cycle rejection。
+它是基于稳定 hashable id 的通用 path-cover primitive，但 corpus 中仍只用于 benchmark。
+
 Sparse graph segmentation 将文本行与区域建模为双向几何关系，再做 cluster-and-sort；
 这是 train-only floating-pair gate 的候选架构：https://arxiv.org/abs/2305.02577
 

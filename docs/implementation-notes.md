@@ -910,6 +910,14 @@ gate and is explicitly serialized as unavailable. The model also stores fit-only
 ratio, reliability tier, and strict-gate status. None of these fields enables
 runtime reorder.
 
+The relation corpus now passes body and floating candidates through a shared
+degree-one acyclic selector. Candidate edges are confidence-sorted; only the
+train-calibrated high-precision, zero-OOD floating subset is inserted first as
+protected diagnostic evidence. The selector reports selected/protected edges,
+outgoing and incoming conflicts, self-loops, and cycle rejections. This is a
+generic path-cover primitive over stable hashable ids, but corpus use remains
+benchmark-only.
+
 Sparse graph segmentation models bidimensional text-line and region relations,
 then applies cluster-and-sort post-processing. It is a candidate architecture
 for a train-only floating-pair gate: https://arxiv.org/abs/2305.02577

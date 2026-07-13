@@ -665,3 +665,20 @@ fit-only 1%/99% envelope 内，会收紧到 72/72，precision `1.00000000`、rec
 错误，同时也拒绝了 11 条正确 edge。这只是验证证据：由于 calibration partition
 无法在最小支持下建立 `0.97` strict gate，即使 72/72 子集也仍为 review-only，
 不会插入 runtime path cover。
+
+### Body/Floating 联合 Path Cover
+
+同一批 250 页通过共享 degree-one acyclic path cover 解码。它会过滤相互矛盾的
+raw edge，只评分被选中的图关系：
+
+| 模式 | Correct / selected / labels | Precision | Recall | F1 | Cycles rejected |
+|---|---:|---:|---:|---:|---:|
+| Native ranker | 8667 / 9481 / 10465 | 0.91414408 | 0.82818920 | 0.86904643 | 18 |
+| Native + heuristic role | 8940 / 9738 / 10465 | 0.91805299 | 0.85427616 | 0.88501708 | 3 |
+| Native + trained floating | 8976 / 9757 / 10465 | 0.91995490 | 0.85771620 | 0.88774602 | 2 |
+
+Trained 模式会优先保护并保留全部 72 条 high-precision zero-OOD floating edge。
+全 corpus 共拒绝 14 个 outgoing conflict 和 1,190 个 incoming conflict。约束后 F1 提升是
+body 与 float relation 可以共享一张图的真实诊断证据，但不是 runtime promotion：
+官方 calibration 仍没有有效 strict gate，且 corpus 使用 oracle layout anchor，未包含 OCR
+detection error。

@@ -205,6 +205,8 @@ scriptorium benchmark-comphrdoc-relations data/external/comphrdoc-relations \
 The trained provider emits standard and high-precision review tiers plus
 fit-only feature-envelope diagnostics. These remain evidence, not automatic
 runtime constraints.
+The corpus report also scores a diagnostic joint path cover over body and
+floating edges, including degree conflicts and cycle rejections.
 
 Install the optional Surya FastLayout provider in a dedicated environment. The
 command requires explicit acceptance of the model-weight license; learned order,

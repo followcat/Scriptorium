@@ -695,3 +695,21 @@ rule removes both errors from the confidence-only tier, but also rejects 11
 correct edges. The result is validation evidence only: because the calibration
 partition could not establish a `0.97` strict gate with minimum support, even
 the 72/72 subset stays review-only and is not inserted into runtime path cover.
+
+### Joint Body/Floating Path Cover
+
+The same 250 pages were decoded through a shared degree-one acyclic path cover.
+This filters contradictory raw edges and scores only selected graph relations:
+
+| Mode | Correct / selected / labels | Precision | Recall | F1 | Cycles rejected |
+|---|---:|---:|---:|---:|---:|
+| Native ranker | 8667 / 9481 / 10465 | 0.91414408 | 0.82818920 | 0.86904643 | 18 |
+| Native + heuristic role | 8940 / 9738 / 10465 | 0.91805299 | 0.85427616 | 0.88501708 | 3 |
+| Native + trained floating | 8976 / 9757 / 10465 | 0.91995490 | 0.85771620 | 0.88774602 | 2 |
+
+The trained mode protects and retains all 72 high-precision zero-OOD floating
+edges. It rejects 14 outgoing conflicts and 1,190 incoming conflicts across the
+corpus. The constrained F1 gain is real diagnostic evidence that body and float
+relations can share one graph, but it is not a runtime promotion: official
+calibration still lacks a valid strict gate, and the corpus has oracle layout
+anchors rather than OCR detection errors.
