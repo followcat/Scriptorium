@@ -41,6 +41,10 @@ from .opendataloader_provider import OpenDataLoaderAdapter
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
+from .provider_anchor_benchmark import (
+    benchmark_provider_anchor_suite,
+    benchmark_provider_anchors,
+)
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import (
     build_provider_consensus_sidecar,
@@ -207,6 +211,71 @@ def benchmark_comphrdoc_relations_command(
             f"{summary['native-plus-trained-floating']['f1']}"
         )
     typer.echo(f"F1 delta: {result.report['f1_delta']}")
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("benchmark-provider-anchors")
+def benchmark_provider_anchors_command(
+    oracle_structure: Path = typer.Argument(..., exists=True, readable=True),
+    semantic_sidecar: Path = typer.Argument(..., exists=True, readable=True),
+    provider_json: Path = typer.Argument(..., exists=True, readable=True),
+    floating_model: Path | None = typer.Option(
+        None,
+        "--floating-model",
+        exists=True,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Match real provider blocks to oracle anchors and score relations."""
+
+    try:
+        result = benchmark_provider_anchors(
+            oracle_structure,
+            semantic_sidecar,
+            provider_json,
+            floating_model_path=floating_model,
+            output=output,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="provider_json") from exc
+    report = result.report
+    typer.echo(f"Provider: {report['provider']}")
+    typer.echo(f"Oracle anchor recall: {report['oracle_anchor_recall']}")
+    typer.echo(f"Provider anchor match rate: {report['provider_anchor_match_rate']}")
+    typer.echo(f"Combined relation F1: {report['relations']['combined']['f1']}")
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("benchmark-provider-anchor-suite")
+def benchmark_provider_anchor_suite_command(
+    corpus_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
+    provider_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
+    floating_model: Path | None = typer.Option(
+        None,
+        "--floating-model",
+        exists=True,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Score a real provider over a rendered Comp-HRDoc prefix."""
+
+    try:
+        result = benchmark_provider_anchor_suite(
+            corpus_dir,
+            provider_dir,
+            floating_model_path=floating_model,
+            output=output,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="provider_dir") from exc
+    report = result.report
+    typer.echo(f"Provider: {report['provider']}")
+    typer.echo(f"Cases: {report['case_count']}")
+    typer.echo(f"Oracle anchor recall: {report['oracle_anchor_recall']}")
+    typer.echo(f"Provider anchor match rate: {report['provider_anchor_match_rate']}")
+    typer.echo(f"Combined relation F1: {report['relations']['combined']['f1']}")
     typer.echo(f"Report: {result.report_path}")
 
 
