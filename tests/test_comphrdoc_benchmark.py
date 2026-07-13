@@ -149,6 +149,8 @@ def test_fetch_provider_calibration_reconstructs_train_without_selection_labels(
         for sample in manifest["samples"]
     )
     assert all("f1" in sample["source_text_alignment"] for sample in manifest["samples"])
+    assert all("source_page_alignment" in sample for sample in manifest["samples"])
+    assert manifest["source_page_alignment"]["selection_uses_relation_labels"] is False
     structure = json.loads(first.samples[0].structure_path.read_text(encoding="utf-8"))
     semantic = json.loads(first.samples[0].semantic_sidecar_path.read_text(encoding="utf-8"))
     assert structure["relations_removed"] is True
@@ -310,6 +312,54 @@ def test_provider_test_document_windows_are_deterministic_and_disjoint() -> None
     second_ids = {document["document_id"] for document in second}
     assert first_ids.isdisjoint(second_ids)
     assert len(first_ids | second_ids) == 6
+
+
+def test_source_page_alignment_remaps_only_unique_high_confidence_text_match() -> None:
+    target_text = " ".join(f"unique-token-{index}" for index in range(50))
+    pdf = fitz.open()
+    matching_page = pdf.new_page(width=400, height=400)
+    matching_page.insert_textbox(
+        fitz.Rect(10, 10, 390, 390),
+        target_text,
+        fontsize=6,
+    )
+    wrong_page = pdf.new_page(width=400, height=400)
+    wrong_page.insert_textbox(
+        fitz.Rect(10, 10, 390, 390),
+        "unrelated content " * 30,
+        fontsize=6,
+    )
+    annotations = [{"textline_contents": [target_text]}]
+
+    selected_page, diagnostics = comphrdoc._align_source_page(
+        pdf,
+        annotation_page_index=1,
+        annotations=annotations,
+    )
+
+    assert selected_page == 0
+    assert diagnostics["policy"] == "remapped-by-text-alignment"
+    assert diagnostics["selection_uses_relation_labels"] is False
+    assert diagnostics["best_candidate_alignment"]["f1"] == 1.0
+    assert diagnostics["same_index_alignment"]["f1"] == 0.0
+    pdf.close()
+
+
+def test_source_page_alignment_keeps_sparse_annotation_on_same_index() -> None:
+    pdf = fitz.open()
+    pdf.new_page(width=100, height=100).insert_text((10, 20), "Figure appendix")
+    pdf.new_page(width=100, height=100).insert_text((10, 20), "Figure appendix")
+
+    selected_page, diagnostics = comphrdoc._align_source_page(
+        pdf,
+        annotation_page_index=1,
+        annotations=[{"textline_contents": ["Figure"]}],
+    )
+
+    assert selected_page == 1
+    assert diagnostics["policy"] == "same-index-sparse-annotation"
+    assert diagnostics["remapped"] is False
+    pdf.close()
 
 
 def test_table_floating_order_is_independent_of_annotation_sequence() -> None:

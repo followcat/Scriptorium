@@ -38,6 +38,11 @@ COMPHRDOC_PROVIDER_CALIBRATION_SCHEMA = (
 )
 COMPHRDOC_PROVIDER_TEST_SCHEMA = "scriptorium-comphrdoc-provider-test/v1"
 DEFAULT_COMPHRDOC_DOCUMENT_ID = "1401.3699"
+SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS = 40
+SOURCE_PAGE_ALIGNMENT_MIN_F1 = 0.6
+SOURCE_PAGE_ALIGNMENT_MIN_MARGIN = 0.15
+SOURCE_PAGE_ALIGNMENT_MIN_IMPROVEMENT = 0.15
+SOURCE_PAGE_ALIGNMENT_MIN_OVERLAP_TOKENS = 20
 
 
 @dataclass(frozen=True)
@@ -314,6 +319,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
                     "provider_reads_oracle_structure": False,
                     "provider_reads_semantic_sidecar": False,
                 },
+                "source_page_alignment": _source_page_alignment_policy(),
                 "structure_input": {
                     "kind": "line-layout-anchor-only",
                     "relations_removed": True,
@@ -440,6 +446,7 @@ def fetch_comphrdoc_provider_test_corpus(
                     "provider_reads_oracle_structure": False,
                     "provider_reads_semantic_sidecar": False,
                 },
+                "source_page_alignment": _source_page_alignment_policy(),
                 "structure_input": {
                     "kind": "line-layout-anchor-only",
                     "relations_removed": True,
@@ -494,17 +501,19 @@ def _materialize_comphrdoc_provider_corpus(
             source_pdf_path.write_bytes(pdf_bytes)
         source_pdf_paths.append(source_pdf_path)
         with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
-            if (
-                not selected_pages
-                or max(page["page_index"] for page in selected_pages) >= len(pdf)
-            ):
-                raise ValueError(
-                    f"arXiv PDF {document_id} does not contain all selected annotation pages"
-                )
+            if not selected_pages:
+                raise ValueError(f"Comp-HRDoc document {document_id} selected no pages")
+            source_page_remap_count = 0
             for page_record in selected_pages:
                 image_record = page_record["image"]
                 page_annotations = page_record["annotations"]
                 page_index = int(page_record["page_index"])
+                source_page_index, source_page_alignment = _align_source_page(
+                    pdf,
+                    annotation_page_index=page_index,
+                    annotations=page_annotations,
+                )
+                source_page_remap_count += int(source_page_index != page_index)
                 sample_id = f"{document_id}_{page_index}"
                 image_path = images_dir / f"{sample_id}.png"
                 structure_path = structure_dir / f"{sample_id}.structure.json"
@@ -513,7 +522,7 @@ def _materialize_comphrdoc_provider_corpus(
                 height = int(image_record["height"])
                 if refresh or not image_path.exists():
                     _render_annotated_page(
-                        pdf[page_index],
+                        pdf[source_page_index],
                         image_path,
                         width=width,
                         height=height,
@@ -537,7 +546,7 @@ def _materialize_comphrdoc_provider_corpus(
                         + "\n",
                         encoding="utf-8",
                     )
-                alignment = _source_text_alignment(pdf[page_index], page_annotations)
+                alignment = source_page_alignment["selected_alignment"]
                 samples.append(
                     CompHrDocBenchmarkSample(
                         sample_id,
@@ -552,6 +561,9 @@ def _materialize_comphrdoc_provider_corpus(
                         "id": sample_id,
                         "document_id": document_id,
                         "page_index": page_index,
+                        "annotation_page_index": page_index,
+                        "source_page_index": source_page_index,
+                        "source_page_alignment": source_page_alignment,
                         "partition": partition,
                         "layout_stratum": page_record["layout_stratum"],
                         "layout_features": page_record["layout_features"],
@@ -574,6 +586,7 @@ def _materialize_comphrdoc_provider_corpus(
                     "source_pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
                     "source_pdf_page_count": len(pdf),
                     "selected_page_count": len(selected_pages),
+                    "source_page_remap_count": source_page_remap_count,
                 }
             )
     return _CompHrDocProviderMaterialization(
@@ -915,6 +928,126 @@ def _source_text_alignment(
         "precision": round(precision, 8),
         "recall": round(recall, 8),
         "f1": round(f1, 8),
+    }
+
+
+def _align_source_page(
+    pdf: fitz.Document,
+    *,
+    annotation_page_index: int,
+    annotations: list[dict[str, Any]],
+) -> tuple[int, dict[str, Any]]:
+    """Resolve source revision page shifts without reading order labels."""
+
+    if len(pdf) < 1:
+        raise ValueError("source PDF contains no pages")
+    candidates = [
+        {
+            "source_page_index": source_page_index,
+            "alignment": _source_text_alignment(pdf[source_page_index], annotations),
+        }
+        for source_page_index in range(len(pdf))
+    ]
+    ranked = sorted(
+        candidates,
+        key=lambda candidate: (
+            float(candidate["alignment"]["f1"]),
+            float(candidate["alignment"]["recall"]),
+            int(candidate["alignment"]["overlap_token_count"]),
+            -int(candidate["source_page_index"]),
+        ),
+        reverse=True,
+    )
+    best = ranked[0]
+    second_best_f1 = (
+        float(ranked[1]["alignment"]["f1"])
+        if len(ranked) > 1
+        else 0.0
+    )
+    same_index = next(
+        (
+            candidate
+            for candidate in candidates
+            if int(candidate["source_page_index"]) == annotation_page_index
+        ),
+        None,
+    )
+    annotation_token_count = int(best["alignment"]["annotation_token_count"])
+    best_f1 = float(best["alignment"]["f1"])
+    best_margin = best_f1 - second_best_f1
+    best_has_evidence = (
+        annotation_token_count >= SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS
+        and int(best["alignment"]["overlap_token_count"])
+        >= SOURCE_PAGE_ALIGNMENT_MIN_OVERLAP_TOKENS
+        and best_f1 >= SOURCE_PAGE_ALIGNMENT_MIN_F1
+        and best_margin >= SOURCE_PAGE_ALIGNMENT_MIN_MARGIN
+    )
+    if same_index is None:
+        if not best_has_evidence:
+            raise ValueError(
+                "annotation page is outside the source PDF and text alignment is ambiguous"
+            )
+        selected = best
+        policy = "remapped-out-of-range-by-text-alignment"
+    else:
+        same_f1 = float(same_index["alignment"]["f1"])
+        best_improvement = best_f1 - same_f1
+        if (
+            int(best["source_page_index"]) != annotation_page_index
+            and best_has_evidence
+            and best_improvement >= SOURCE_PAGE_ALIGNMENT_MIN_IMPROVEMENT
+        ):
+            selected = best
+            policy = "remapped-by-text-alignment"
+        else:
+            selected = same_index
+            if annotation_token_count < SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS:
+                policy = "same-index-sparse-annotation"
+            elif same_f1 < SOURCE_PAGE_ALIGNMENT_MIN_F1:
+                policy = "same-index-low-confidence-no-safe-remap"
+            else:
+                policy = "same-index"
+    selected_page_index = int(selected["source_page_index"])
+    return selected_page_index, {
+        "policy": policy,
+        "selection_uses_relation_labels": False,
+        "alignment_field": "textline_contents",
+        "annotation_page_index": annotation_page_index,
+        "selected_source_page_index": selected_page_index,
+        "remapped": selected_page_index != annotation_page_index,
+        "candidate_page_count": len(candidates),
+        "same_index_alignment": (
+            same_index["alignment"] if same_index is not None else None
+        ),
+        "best_candidate_source_page_index": int(best["source_page_index"]),
+        "best_candidate_alignment": best["alignment"],
+        "second_best_f1": round(second_best_f1, 8),
+        "best_margin": round(best_margin, 8),
+        "selected_alignment": selected["alignment"],
+        "thresholds": {
+            "minimum_annotation_tokens": SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS,
+            "minimum_overlap_tokens": SOURCE_PAGE_ALIGNMENT_MIN_OVERLAP_TOKENS,
+            "minimum_f1": SOURCE_PAGE_ALIGNMENT_MIN_F1,
+            "minimum_best_vs_second_margin": SOURCE_PAGE_ALIGNMENT_MIN_MARGIN,
+            "minimum_best_vs_same_improvement": (
+                SOURCE_PAGE_ALIGNMENT_MIN_IMPROVEMENT
+            ),
+        },
+    }
+
+
+def _source_page_alignment_policy() -> dict[str, Any]:
+    return {
+        "policy": "same-index-unless-unique-high-confidence-text-remap-v1",
+        "selection_uses_relation_labels": False,
+        "alignment_field": "textline_contents",
+        "minimum_annotation_tokens": SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS,
+        "minimum_overlap_tokens": SOURCE_PAGE_ALIGNMENT_MIN_OVERLAP_TOKENS,
+        "minimum_f1": SOURCE_PAGE_ALIGNMENT_MIN_F1,
+        "minimum_best_vs_second_margin": SOURCE_PAGE_ALIGNMENT_MIN_MARGIN,
+        "minimum_best_vs_same_improvement": SOURCE_PAGE_ALIGNMENT_MIN_IMPROVEMENT,
+        "sparse_or_ambiguous_policy": "keep-same-index-and-record-low-confidence",
+        "out_of_range_ambiguous_policy": "fail",
     }
 
 
