@@ -1232,3 +1232,29 @@ visual-Y/X plus XY-cut edge. A visual-Y/X plus box-flow support-2 control has no
 qualified fit bucket. The gate is therefore
 `document-cross-validation-rejected-review-only`, and no new test window was
 opened.
+
+`chunkr_benchmark.py` adds a second, cross-domain development surface for
+block-level order. Acquisition pins the upstream Hugging Face revision and the
+1.9 MB COCO annotation SHA-256; source images are not required for geometry
+candidate scoring. Validation requires globally unique annotations, one or more
+valid in-page boxes per image, known categories, and contiguous ascending ids
+inside each image. Those ids define the published order but are removed from
+candidate input ordering: category/bbox fingerprints provide deterministic
+answer-free input permutations instead.
+
+The report separates complete serialized orders from actual evidence edges.
+Order metrics include exact page match, position accuracy, pairwise accuracy /
+Kendall tau, and adjacent successor accuracy for all, non-trivial, and 10+
+element pages. Edge metrics score visual and box-flow adjacency, only
+non-trivial recursive XY-cut tree edges, and only selected relation-graph
+path-cover edges. Stable-three-channel and all-four-channel support curves are
+reported independently, with per-domain and per-page diagnostics. The artifact
+is always `development-benchmark-only` and `runtime_reorder: false`.
+
+The first full run found a duplicate-assignment defect before producing scores:
+some right-side grid cells were owned by both a grid-island token and the
+sidebar secondary flow. Mixed island ordering now excludes island-owned items
+from artifact/sidebar/footnote classification, so every input element receives
+exactly one assignment. A fixed 16-box regression covers this conflict. The next
+learned candidate can use Chunkr only for development/cross-validation; runtime
+or promotion evidence still requires answer-separated external corpora.

@@ -1076,3 +1076,60 @@ with support 2 produces no qualified fit bucket. Gate v4 is therefore still
 `document-cross-validation-rejected-review-only`; the fourth test window was
 not opened. Legacy v2/v3 gates retain their original support counts, while v4
 fails closed if candidate-level provenance is missing during filtering.
+
+### Chunkr Cross-Domain Reading-Order Development Benchmark
+
+Chunkr Reading Order Bench OSS provides a permissively licensed, cross-domain
+COCO corpus covering financial, legal, government, research, magazine, and
+other document pages. Scriptorium pins revision
+`d6b5ddf06a6479a42bb0b33c243801171e042fc7` and annotation SHA-256
+`93974a16cb43a44656f293b933abd1a713d2bff2bfa71cd7b74987edb26bdbfa`.
+The pinned file contains 733 pages and 9,267 layout elements. These source-file
+counts are authoritative for this run; they are not copied from the evolving
+dataset-card summary.
+
+The standard COCO records do not contain a separate `reading_order` property.
+The published sequence is encoded by contiguous ascending annotation ids within
+each image. The loader rejects missing, duplicate, non-contiguous, out-of-order,
+unknown-category, and out-of-page records. Before candidate inference, anchors
+are reordered by a SHA-256 fingerprint of category and bbox; annotation ids are
+excluded. This prevents the answer sequence from becoming a stable-sort
+tie-break. The corpus is development-only and cannot authorize runtime reorder.
+
+```bash
+scriptorium fetch-chunkr-reading-order \
+  --out-dir data/external/chunkr-reading-order
+
+scriptorium benchmark-chunkr-reading-order \
+  data/external/chunkr-reading-order/_annotations.coco.json \
+  --output outputs/chunkr-reading-order/report.json
+```
+
+| Order candidate | Exact pages | Pairwise accuracy | Successor accuracy | Complex-page exact / pairwise |
+|---|---:|---:|---:|---:|
+| Selected `auto` | 449/733 = 0.61255116 | 0.87452713 | 0.75041012 | 136/331 = 0.41087613 / 0.86935761 |
+| Visual Y/X | 484/733 = 0.66030014 | 0.84918215 | 0.72099836 | 166/331 = 0.50151057 / 0.84227794 |
+| Box-flow | 163/733 = 0.22237381 | 0.85557652 | 0.53808296 | 28/331 = 0.08459215 / 0.85872998 |
+| Recursive XY-cut | 484/733 = 0.66030014 | 0.85826842 | 0.72931802 | 167/331 = 0.50453172 / 0.85193170 |
+| Relation graph | 342/733 = 0.46657572 | 0.81817613 | 0.70635107 | 94/331 = 0.28398792 / 0.81279666 |
+
+The selected algorithm improves long-range pairwise and local-successor quality
+over visual Y/X, but lowers whole-page exact match and position accuracy. This
+is a concrete optimization target: future arbitration must retain the pairwise
+gain without changing already-correct simple pages.
+
+| Direct edge evidence | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| Visual Y/X | 0.72099836 | 0.72099836 | 0.72099836 |
+| Box-flow | 0.53808296 | 0.53808296 | 0.53808296 |
+| Non-trivial recursive XY-cut edges | 0.78614579 | 0.45746426 | 0.57837037 |
+| Selected relation-graph edges | 0.80938502 | 0.65080853 | 0.72148610 |
+| Stable three-channel support >= 2 | 0.91591928 | 0.67014296 | 0.77398836 |
+| All four channels support >= 2 | 0.82393096 | 0.74958988 | 0.78500430 |
+
+The independent domain mix confirms the Provider result: adding XY-cut raises
+coverage and slightly raises F1, but drops support-2 precision by more than nine
+points. It remains audit-only. The first run also exposed and fixed a generic
+ownership bug where grid-island elements classified as sidebars were emitted
+twice; the corrected order is now always a complete permutation on all 733
+pages.

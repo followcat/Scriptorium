@@ -748,3 +748,22 @@ archive 仍必须匹配
 `173/176`，calibration 变为 `23/24`、Wilson `0.79758194`；新增错误是一条 visual Y/X 与
 XY-cut 共同支持的边。Visual Y/X + box-flow 的 support-2 对照没有任何 fit bucket 达标。因此
 gate 明确为 `document-cross-validation-rejected-review-only`，没有打开新的 test window。
+
+`chunkr_benchmark.py` 增加第二个跨领域 block-level order 开发面。获取过程固定上游 Hugging
+Face revision 和 1.9 MB COCO annotation 的 SHA-256；纯几何候选评分不需要下载 source
+image。校验要求 annotation 全局唯一、每页至少一个有效且不越界的 bbox、category 已知，且
+每页 id 连续递增。Id 定义发布顺序，但不会进入 candidate input order；category+bbox
+fingerprint 会生成确定性、answer-free 的输入 permutation。
+
+报告把完整 serialized order 与真正 evidence edge 分开。Order 指标包含 exact page match、
+position accuracy、pairwise accuracy / Kendall tau 和 adjacent successor accuracy，并分别统计
+all、non-trivial 与 10+ element 页面。Edge 指标分别评分 visual/box-flow adjacency、只有
+非平凡 split 的 recursive XY-cut tree edge，以及 relation-graph path-cover 真正选中的 edge。
+稳定三通道和全部四通道 support curve 独立报告，同时保留逐 domain 与逐 page 诊断。
+Artifact 始终为 `development-benchmark-only`、`runtime_reorder: false`。
+
+第一次全量运行在出分前发现 duplicate assignment：部分右侧 grid cell 同时属于 grid-island
+token 与 sidebar secondary flow。Mixed island ordering 现在会把 island-owned item 排除在
+artifact/sidebar/footnote 分类之外，每个输入元素只得到一个 assignment；固定 16-box 回归覆盖
+该冲突。下一种 learned candidate 可以把 Chunkr 用于 development/cross-validation，但 runtime
+或 promotion 仍必须依赖答案隔离的外部语料。
