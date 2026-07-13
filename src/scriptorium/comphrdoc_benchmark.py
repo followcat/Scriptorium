@@ -292,6 +292,7 @@ def benchmark_comphrdoc_relation_corpus(
     """Score relation-role fusion on an answer-separated Comp-HRDoc corpus."""
 
     from . import relation_ranker
+    from .provider_anchor_benchmark import _graphical_relation_audit
     from .relation_order import merge_relation_edge_path_cover
     from .relation_noise import perturb_relation_structure
 
@@ -315,6 +316,7 @@ def benchmark_comphrdoc_relation_corpus(
         modes["native-plus-trained-floating"] = False
     totals = {name: _empty_relation_totals() for name in modes}
     noise_totals: Counter[str] = Counter()
+    graphical_audit_totals: Counter[str] = Counter()
     page_results: list[dict[str, Any]] = []
     for sample in manifest.get("samples", []):
         structure_path = corpus / str(sample["structure"])
@@ -357,7 +359,45 @@ def benchmark_comphrdoc_relation_corpus(
             if nodes.get(edge[0], {}).get("type") in {"figure", "table"}
             or nodes.get(edge[1], {}).get("type") in {"figure", "table"}
         }
-        page_result: dict[str, Any] = {"id": sample["id"], "label_count": len(truth)}
+        graphical_audit = _graphical_relation_audit(
+            semantic,
+            [node for node in semantic.get("document", []) if isinstance(node, Mapping)],
+            truth,
+            {},
+        )
+        conflict_graphical_ids = {
+            str(conflict["graphical_id"])
+            for conflict in graphical_audit["conflicts"]
+        }
+        for key in (
+            "oracle_graphical_label_count",
+            "geometry_proposal_count",
+            "exact_agreement_count",
+            "conflicting_label_count",
+            "oracle_without_geometry_count",
+            "geometry_without_oracle_count",
+        ):
+            graphical_audit_totals[key] += int(graphical_audit[key])
+        graphical_audit_totals["cases_with_conflicts"] += int(
+            bool(graphical_audit["conflicting_label_count"])
+        )
+        page_result: dict[str, Any] = {
+            "id": sample["id"],
+            "label_count": len(truth),
+            "graphical_label_audit": {
+                key: graphical_audit[key]
+                for key in (
+                    "reference_policy",
+                    "oracle_graphical_label_count",
+                    "geometry_proposal_count",
+                    "exact_agreement_count",
+                    "conflicting_label_count",
+                    "oracle_without_geometry_count",
+                    "geometry_without_oracle_count",
+                    "conflicts",
+                )
+            },
+        }
         prediction_cache: dict[bool, dict[str, Any]] = {}
         for mode, enabled in modes.items():
             if enabled not in prediction_cache:
@@ -400,6 +440,17 @@ def benchmark_comphrdoc_relation_corpus(
                 if edge.get("reliability_tier") == "high-precision-review"
                 and int(edge.get("feature_outlier_count", 0)) == 0
             }
+            strict_gate_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("strict_gate_passed") is True
+            }
+            strict_gate_in_envelope_predicted = {
+                (edge["source"], edge["target"])
+                for edge in prediction_edges
+                if edge.get("strict_gate_passed") is True
+                and int(edge.get("feature_outlier_count", 0)) == 0
+            }
             metrics = _relation_counts(predicted, truth)
             role_metrics = _relation_counts(role_predicted, graphical_truth)
             high_reliability_metrics = _relation_counts(
@@ -410,6 +461,47 @@ def benchmark_comphrdoc_relation_corpus(
                 high_reliability_in_envelope_predicted,
                 graphical_truth,
             )
+            strict_gate_metrics = _relation_counts(
+                strict_gate_predicted,
+                graphical_truth,
+            )
+            strict_gate_in_envelope_metrics = _relation_counts(
+                strict_gate_in_envelope_predicted,
+                graphical_truth,
+            )
+            strict_conflict_predictions = _graphical_conflict_prediction_count(
+                strict_gate_predicted,
+                conflict_graphical_ids,
+            )
+            strict_conflict_incorrect = _graphical_conflict_prediction_count(
+                strict_gate_predicted - graphical_truth,
+                conflict_graphical_ids,
+            )
+            strict_in_envelope_conflict_predictions = (
+                _graphical_conflict_prediction_count(
+                    strict_gate_in_envelope_predicted,
+                    conflict_graphical_ids,
+                )
+            )
+            strict_in_envelope_conflict_incorrect = (
+                _graphical_conflict_prediction_count(
+                    strict_gate_in_envelope_predicted - graphical_truth,
+                    conflict_graphical_ids,
+                )
+            )
+            if mode == "native-plus-trained-floating":
+                graphical_audit_totals["strict_gate_conflict_prediction_count"] += (
+                    strict_conflict_predictions
+                )
+                graphical_audit_totals["strict_gate_conflict_incorrect_count"] += (
+                    strict_conflict_incorrect
+                )
+                graphical_audit_totals[
+                    "strict_gate_in_envelope_conflict_prediction_count"
+                ] += strict_in_envelope_conflict_predictions
+                graphical_audit_totals[
+                    "strict_gate_in_envelope_conflict_incorrect_count"
+                ] += strict_in_envelope_conflict_incorrect
             ordered_edges = sorted(
                 prediction_edges,
                 key=lambda edge: float(edge.get("confidence", 0.0)),
@@ -432,6 +524,8 @@ def benchmark_comphrdoc_relation_corpus(
                 role_metrics,
                 high_reliability_metrics,
                 high_reliability_in_envelope_metrics,
+                strict_gate_metrics,
+                strict_gate_in_envelope_metrics,
                 joint_path_metrics,
                 merged_path,
             )
@@ -440,6 +534,16 @@ def benchmark_comphrdoc_relation_corpus(
                 "graphical": role_metrics,
                 "high_reliability_graphical": high_reliability_metrics,
                 "high_reliability_in_envelope_graphical": high_reliability_in_envelope_metrics,
+                "strict_gate_graphical": strict_gate_metrics,
+                "strict_gate_in_envelope_graphical": strict_gate_in_envelope_metrics,
+                "strict_gate_conflict_prediction_count": strict_conflict_predictions,
+                "strict_gate_conflict_incorrect_count": strict_conflict_incorrect,
+                "strict_gate_in_envelope_conflict_prediction_count": (
+                    strict_in_envelope_conflict_predictions
+                ),
+                "strict_gate_in_envelope_conflict_incorrect_count": (
+                    strict_in_envelope_conflict_incorrect
+                ),
                 "joint_path_cover": {
                     **joint_path_metrics,
                     "protected_selected": len(merged_path.protected_selected_edges),
@@ -480,6 +584,24 @@ def benchmark_comphrdoc_relation_corpus(
             if noise_totals["label_count"]
             else 0.0,
         },
+        "graphical_label_audit": {
+            "reference_policy": "answer-free-local-geometry-diagnostic-not-ground-truth",
+            **dict(graphical_audit_totals),
+            "oracle_geometry_exact_agreement": round(
+                graphical_audit_totals["exact_agreement_count"]
+                / graphical_audit_totals["oracle_graphical_label_count"],
+                8,
+            )
+            if graphical_audit_totals["oracle_graphical_label_count"]
+            else 0.0,
+            "oracle_geometry_conflict_rate": round(
+                graphical_audit_totals["conflicting_label_count"]
+                / graphical_audit_totals["oracle_graphical_label_count"],
+                8,
+            )
+            if graphical_audit_totals["oracle_graphical_label_count"]
+            else 0.0,
+        },
         "summary": summarized,
         "f1_delta": round(fused_f1 - baseline_f1, 8),
         "pages": page_results,
@@ -509,6 +631,12 @@ def _empty_relation_totals() -> dict[str, int]:
         "high_reliability_in_envelope_correct": 0,
         "high_reliability_in_envelope_predicted": 0,
         "high_reliability_in_envelope_labels": 0,
+        "strict_gate_correct": 0,
+        "strict_gate_predicted": 0,
+        "strict_gate_labels": 0,
+        "strict_gate_in_envelope_correct": 0,
+        "strict_gate_in_envelope_predicted": 0,
+        "strict_gate_in_envelope_labels": 0,
         "joint_path_correct": 0,
         "joint_path_predicted": 0,
         "joint_path_labels": 0,
@@ -523,12 +651,24 @@ def _relation_counts(predicted: set[tuple[Any, Any]], truth: set[tuple[Any, Any]
     return {"correct": len(predicted & truth), "predicted": len(predicted), "labels": len(truth)}
 
 
+def _graphical_conflict_prediction_count(
+    predicted: set[tuple[Any, Any]],
+    conflict_graphical_ids: set[str],
+) -> int:
+    return sum(
+        int(str(source) in conflict_graphical_ids or str(target) in conflict_graphical_ids)
+        for source, target in predicted
+    )
+
+
 def _accumulate_relation_totals(
     totals: dict[str, int],
     metrics: Mapping[str, int],
     graphical: Mapping[str, int],
     high_reliability: Mapping[str, int],
     high_reliability_in_envelope: Mapping[str, int],
+    strict_gate: Mapping[str, int],
+    strict_gate_in_envelope: Mapping[str, int],
     joint_path: Mapping[str, int],
     merged_path: Any,
 ) -> None:
@@ -538,6 +678,10 @@ def _accumulate_relation_totals(
         totals[f"high_reliability_{key}"] += int(high_reliability[key])
         totals[f"high_reliability_in_envelope_{key}"] += int(
             high_reliability_in_envelope[key]
+        )
+        totals[f"strict_gate_{key}"] += int(strict_gate[key])
+        totals[f"strict_gate_in_envelope_{key}"] += int(
+            strict_gate_in_envelope[key]
         )
         totals[f"joint_path_{key}"] += int(joint_path[key])
     totals["joint_path_protected_selected"] += len(merged_path.protected_selected_edges)
@@ -579,6 +723,26 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
             totals["high_reliability_in_envelope_labels"],
         ),
     }
+    result["strict_gate_graphical"] = {
+        "correct": totals["strict_gate_correct"],
+        "predicted": totals["strict_gate_predicted"],
+        "labels": totals["strict_gate_labels"],
+        **_precision_recall_f1(
+            totals["strict_gate_correct"],
+            totals["strict_gate_predicted"],
+            totals["strict_gate_labels"],
+        ),
+    }
+    result["strict_gate_in_envelope_graphical"] = {
+        "correct": totals["strict_gate_in_envelope_correct"],
+        "predicted": totals["strict_gate_in_envelope_predicted"],
+        "labels": totals["strict_gate_in_envelope_labels"],
+        **_precision_recall_f1(
+            totals["strict_gate_in_envelope_correct"],
+            totals["strict_gate_in_envelope_predicted"],
+            totals["strict_gate_in_envelope_labels"],
+        ),
+    }
     result["joint_path_cover"] = {
         "correct": totals["joint_path_correct"],
         "predicted": totals["joint_path_predicted"],
@@ -615,6 +779,15 @@ def _summarize_relation_totals(totals: Mapping[str, int]) -> dict[str, Any]:
         "high_reliability_in_envelope_correct",
         "high_reliability_in_envelope_predicted",
         "high_reliability_in_envelope_labels",
+    ):
+        result.pop(key)
+    for key in (
+        "strict_gate_correct",
+        "strict_gate_predicted",
+        "strict_gate_labels",
+        "strict_gate_in_envelope_correct",
+        "strict_gate_in_envelope_predicted",
+        "strict_gate_in_envelope_labels",
     ):
         result.pop(key)
     return result

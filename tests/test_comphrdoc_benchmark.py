@@ -209,6 +209,8 @@ def test_relation_corpus_benchmark_reports_role_fusion_ab(
     assert result.report["inference_inputs_are_answer_free"] is True
     assert result.report["noise"]["profile"] == "clean"
     assert result.report["noise"]["resolvable_label_ratio"] == 1.0
+    assert result.report["graphical_label_audit"]["oracle_graphical_label_count"] == 1
+    assert result.report["graphical_label_audit"]["conflicting_label_count"] == 0
     assert result.report["summary"]["native-plus-structure-role"]["graphical"] == {
         "correct": 1,
         "predicted": 1,
@@ -250,6 +252,9 @@ def test_relation_corpus_benchmark_can_score_trained_floating_mode(
                     "source": "comphrdoc-p0002-l0001",
                     "target": "comphrdoc-p0002-l0002",
                     "relation_origin": "trained-floating-pair",
+                    "reliability_tier": "high-precision-review",
+                    "strict_gate_passed": True,
+                    "feature_outlier_count": 0,
                 }
             ],
             1,
@@ -266,8 +271,70 @@ def test_relation_corpus_benchmark_can_score_trained_floating_mode(
 
     trained = result.report["summary"]["native-plus-trained-floating"]
     assert trained["graphical"]["correct"] == 1
+    assert trained["strict_gate_graphical"]["correct"] == 1
+    assert trained["strict_gate_in_envelope_graphical"]["correct"] == 1
+    assert result.report["graphical_label_audit"]["strict_gate_conflict_prediction_count"] == 0
     assert result.report["floating_model_sha256"] == "floating"
     assert "trained_floating_f1_delta" in result.report
+
+
+def test_relation_corpus_benchmark_counts_strict_errors_on_conflicting_graphicals(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    archive = _annotation_archive()
+    monkeypatch.setattr(comphrdoc, "COMPHRDOC_ARCHIVE_SHA256", hashlib.sha256(archive).hexdigest())
+    corpus = fetch_comphrdoc_relation_corpus(
+        tmp_path / "relations",
+        sample_count=1,
+        downloader=lambda _: archive,
+    )
+    manifest = json.loads(corpus.manifest_path.read_text(encoding="utf-8"))
+    semantic_path = corpus.out_dir / manifest["samples"][0]["semantic_sidecar"]
+    semantic = json.loads(semantic_path.read_text(encoding="utf-8"))
+    semantic["ro_linkings"] = [list(reversed(semantic["ro_linkings"][0]))]
+    semantic_path.write_text(json.dumps(semantic), encoding="utf-8")
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: ({"estimator": _DownwardEstimator(), "threshold": 0.5}, {"model_sha256": "base"}),
+    )
+    monkeypatch.setattr(
+        floating_ranker,
+        "load_floating_relation_ranker",
+        lambda _: ({}, {"model_sha256": "floating"}),
+    )
+    monkeypatch.setattr(
+        floating_ranker,
+        "_predict_floating_relations",
+        lambda *args, **kwargs: floating_ranker.FloatingRankerPredictionResult(
+            [
+                {
+                    "source": "comphrdoc-p0002-l0001",
+                    "target": "comphrdoc-p0002-l0002",
+                    "relation_origin": "trained-floating-pair",
+                    "strict_gate_passed": True,
+                    "feature_outlier_count": 0,
+                }
+            ],
+            1,
+            1,
+            {},
+        ),
+    )
+
+    result = benchmark_comphrdoc_relation_corpus(
+        corpus.out_dir,
+        tmp_path / "base.joblib",
+        floating_model_path=tmp_path / "floating.joblib",
+    )
+
+    trained = result.report["summary"]["native-plus-trained-floating"]
+    assert trained["strict_gate_graphical"]["correct"] == 0
+    audit = result.report["graphical_label_audit"]
+    assert audit["conflicting_label_count"] == 1
+    assert audit["strict_gate_conflict_prediction_count"] == 1
+    assert audit["strict_gate_conflict_incorrect_count"] == 1
 
 
 class _DownwardEstimator:
