@@ -53,6 +53,7 @@ def benchmark_provider_anchors(
     semantic = json.loads(Path(semantic_sidecar_path).read_text(encoding="utf-8"))
     provider = json.loads(Path(provider_json_path).read_text(encoding="utf-8"))
     provider_name, anchors, explicit_relations = normalize_provider_anchors(provider)
+    provider_capabilities = _provider_capabilities(provider)
     oracle_nodes = [node for node in oracle.get("document", []) if isinstance(node, Mapping)]
     assignments = match_provider_anchors(oracle_nodes, anchors)
     image = oracle.get("img", {})
@@ -63,6 +64,7 @@ def benchmark_provider_anchors(
         anchors,
         width=width,
         height=height,
+        text_recognition_available=provider_capabilities["text_recognition"],
     )
     synthetic_reports: dict[str, dict[str, Any]] = {}
     synthetic_noise: dict[str, dict[str, int | float | str]] = {}
@@ -220,6 +222,7 @@ def benchmark_provider_anchors(
     report = {
         "schema": "scriptorium-provider-anchor-benchmark/v2",
         "provider": provider_name,
+        "provider_capabilities": provider_capabilities,
         "floating_model_sha256": floating_model_sha256,
         "oracle_sample": str(oracle.get("uid") or Path(oracle_structure_path).stem),
         "oracle_anchor_count": len(known_oracle_ids),
@@ -387,6 +390,7 @@ def benchmark_provider_anchor_suite(
         "corpus_manifest": str(manifest_path),
         "selection": manifest.get("selection"),
         "provider": cases[0]["provider"],
+        "provider_capabilities": cases[0].get("provider_capabilities"),
         "case_count": len(cases),
         "missing_provider_case_count": len(missing),
         "missing_provider_cases": missing,
@@ -425,6 +429,17 @@ def normalize_provider_anchors(
     if isinstance(payload.get("pages"), list):
         return _normalize_page_elements(payload)
     raise ValueError("unsupported provider anchor JSON schema")
+
+
+def _provider_capabilities(payload: Mapping[str, Any]) -> dict[str, bool]:
+    declared = payload.get("capabilities")
+    if not isinstance(declared, Mapping):
+        return {"layout": True, "reading_order": True, "text_recognition": True}
+    return {
+        "layout": bool(declared.get("layout", True)),
+        "reading_order": bool(declared.get("reading_order", True)),
+        "text_recognition": bool(declared.get("text_recognition", True)),
+    }
 
 
 def _normalize_paddle_vl(
@@ -695,6 +710,14 @@ def _normalize_page_elements(
             if not isinstance(box, (list, tuple)) or len(box) != 4:
                 continue
             anchor_id = str(item.get("id", f"page-{page_index}-anchor-{order}"))
+            if "provider_order" in item:
+                raw_order = item.get("provider_order")
+                try:
+                    provider_order = int(raw_order) if raw_order is not None else None
+                except (TypeError, ValueError, OverflowError):
+                    provider_order = None
+            else:
+                provider_order = order
             anchors.append(
                 ProviderAnchor(
                     anchor_id,
@@ -702,7 +725,7 @@ def _normalize_page_elements(
                     _kind_alias(str(item.get("block_label") or item.get("type") or "text")),
                     tuple(map(float, box)),
                     str(item.get("block_content") or item.get("text") or ""),
-                    order,
+                    provider_order,
                     str(item.get("block_id", item.get("group_id", anchor_id))),
                 )
             )
@@ -718,7 +741,10 @@ def _serialized_provider_edges(
     oracle_by_provider: dict[str, list[str]] = defaultdict(list)
     for oracle_id, match in assignments.items():
         oracle_by_provider[str(match["provider_id"])].append(oracle_id)
-    ordered = sorted((anchor for anchor in anchors if anchor.order is not None), key=lambda item: item.order)
+    ordered = sorted(
+        (anchor for anchor in anchors if anchor.order is not None),
+        key=lambda item: (item.page_index, item.order),
+    )
     flattened: list[str] = []
     for anchor in ordered:
         flattened.extend(

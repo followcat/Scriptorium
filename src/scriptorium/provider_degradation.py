@@ -57,6 +57,7 @@ def characterize_provider_degradation(
     width: float,
     height: float,
     minimum_score: float = 0.45,
+    text_recognition_available: bool = True,
 ) -> dict[str, Any]:
     """Describe provider layout/OCR degradation without reading relation labels."""
 
@@ -136,6 +137,11 @@ def characterize_provider_degradation(
         oracle_to_provider_groups,
         oracle_by_provider_group,
     )
+    text_fidelity["applicable"] = text_recognition_available
+    if not text_recognition_available:
+        text_fidelity["not_applicable_reason"] = (
+            "provider-declares-no-text-recognition-capability"
+        )
     unmatched_by_kind = {
         "oracle": _unmatched_by_kind(oracle, {anchor.id for anchor in unmatched_oracle}),
         "provider": _unmatched_by_kind(
@@ -220,6 +226,9 @@ def characterize_provider_degradation(
         "duplicates": duplicates,
         "nested_graphical_content": nested_graphical_content,
         "text_fidelity": text_fidelity,
+        "signature_feature_applicability": _signature_feature_applicability(
+            text_recognition_available=text_recognition_available
+        ),
     }
     report["signature"] = _degradation_signature(report)
     return report
@@ -231,6 +240,13 @@ def compare_with_synthetic_profiles(
 ) -> dict[str, Any]:
     """Compare normalized diagnostic signatures; this is not a fitted classifier."""
 
+    feature_names = [
+        key
+        for key in _SIGNATURE_KEYS
+        if bool(
+            real_report.get("signature_feature_applicability", {}).get(key, True)
+        )
+    ]
     real_signature = {
         key: float(real_report.get("signature", {}).get(key, 0.0))
         for key in _SIGNATURE_KEYS
@@ -242,7 +258,11 @@ def compare_with_synthetic_profiles(
             for key in _SIGNATURE_KEYS
         }
         profiles[name] = {
-            "distance": _signature_distance(real_signature, signature),
+            "distance": _signature_distance(
+                real_signature,
+                signature,
+                feature_names=feature_names,
+            ),
             "signature": signature,
         }
     nearest = min(profiles, key=lambda name: (profiles[name]["distance"], name)) if profiles else None
@@ -252,7 +272,7 @@ def compare_with_synthetic_profiles(
             "Descriptive proximity to deterministic source-neutral profiles; "
             "not a calibrated provider classifier or a runtime promotion gate."
         ),
-        "feature_names": list(_SIGNATURE_KEYS),
+        "feature_names": feature_names,
         "real_signature": real_signature,
         "nearest_profile": nearest,
         "profiles": profiles,
@@ -354,6 +374,15 @@ def aggregate_provider_degradation(
         reference["provider_anchor_count"],
     )
     text_fidelity = _aggregate_text_fidelity(reports)
+    text_recognition_available = all(
+        bool(report.get("text_fidelity", {}).get("applicable", True))
+        for report in reports
+    )
+    text_fidelity["applicable"] = text_recognition_available
+    if not text_recognition_available:
+        text_fidelity["not_applicable_reason"] = (
+            "one-or-more-providers-declare-no-text-recognition-capability"
+        )
     unmatched_by_kind = {
         side: _aggregate_unmatched_by_kind(reports, side)
         for side in ("oracle", "provider")
@@ -372,6 +401,9 @@ def aggregate_provider_degradation(
         "duplicates": duplicates,
         "nested_graphical_content": nested_graphical_content,
         "text_fidelity": text_fidelity,
+        "signature_feature_applicability": _signature_feature_applicability(
+            text_recognition_available=text_recognition_available
+        ),
     }
     aggregate["signature"] = _degradation_signature(aggregate)
     profile_names = sorted(
@@ -971,11 +1003,33 @@ def _degradation_signature(report: Mapping[str, Any]) -> dict[str, float]:
     return {key: round(min(1.0, max(0.0, float(value))), 8) for key, value in signature.items()}
 
 
+def _signature_feature_applicability(
+    *,
+    text_recognition_available: bool,
+) -> dict[str, bool]:
+    text_features = {
+        "character_error_mean",
+        "token_error_mean",
+        "caption_prefix_loss_rate",
+    }
+    return {
+        key: text_recognition_available if key in text_features else True
+        for key in _SIGNATURE_KEYS
+    }
+
+
 def _signature_distance(
     left: Mapping[str, float],
     right: Mapping[str, float],
+    *,
+    feature_names: Sequence[str] = _SIGNATURE_KEYS,
 ) -> float:
-    squared = [(float(left[key]) - float(right[key])) ** 2 for key in _SIGNATURE_KEYS]
+    squared = [
+        (float(left[key]) - float(right[key])) ** 2
+        for key in feature_names
+    ]
+    if not squared:
+        return 0.0
     return round(math.sqrt(sum(squared) / len(squared)), 8)
 
 

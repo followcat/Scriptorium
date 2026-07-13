@@ -38,6 +38,7 @@ from .ocr import (
     normalize_ocr_to_ir,
     write_ocr_json,
 )
+from .paddle_layout_provider import PaddleLayoutAdapter
 from .opendataloader_provider import OpenDataLoaderAdapter
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
@@ -797,6 +798,72 @@ def run_paddleocr_vl_command(
     typer.echo(f"Pages: {len(rendered.pages)}")
     typer.echo(f"Source type: {rendered.source_type}")
     typer.echo(f"Model: {payload.get('model')}")
+
+
+@app.command("run-paddle-layout")
+def run_paddle_layout_command(
+    source: Path = typer.Argument(..., exists=True, readable=True, help="Input PDF or image source."),
+    output: Path = typer.Option(
+        Path("outputs/pp-doclayoutv3.structure.json"),
+        "--output",
+        "-o",
+        help="Review-only PP-DocLayoutV3 blocks and reading-order evidence.",
+    ),
+    dpi: int = typer.Option(192, min=72, max=600, help="Render DPI for PDF source pages."),
+    input_kind: SourceKind = typer.Option("auto", help="Source type: auto, pdf, or image."),
+    image_dpi: int = typer.Option(
+        96,
+        min=1,
+        max=1200,
+        help="Pixel density used to map image pixels into PDF points for image sources.",
+    ),
+    max_pages: Optional[int] = typer.Option(None, min=1, help="Limit inference to the first N pages."),
+    page_ranges: Optional[str] = typer.Option(
+        None,
+        help="Explicit 1-based page ranges, for example 1-3,136. Cannot combine with --max-pages.",
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        help="Optional Paddle device, for example gpu:0 or cpu.",
+    ),
+    model_name: str = typer.Option(
+        "PP-DocLayoutV3",
+        help="Paddle layout model with native reading-order prediction.",
+    ),
+    model_dir: Optional[Path] = typer.Option(
+        None,
+        help="Optional local Paddle layout model directory.",
+    ),
+) -> None:
+    """Run fast layout and order inference without OCR or VLM recognition."""
+
+    try:
+        page_indices = page_indices_from_ranges(page_ranges, max_pages=max_pages)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--page-ranges") from exc
+    rendered = render_source(
+        source,
+        output.parent / f"{output.stem}.pages",
+        dpi=dpi,
+        max_pages=max_pages,
+        page_indices=page_indices,
+        input_kind=input_kind,
+        image_dpi=image_dpi,
+    )
+    options: dict[str, object] = {"model_name": model_name}
+    if device:
+        options["device"] = device
+    if model_dir is not None:
+        options["model_dir"] = model_dir
+    payload = PaddleLayoutAdapter(**options).analyze(
+        [page.background_image for page in rendered.pages],
+        page_indices=[page.page_index for page in rendered.pages],
+    )
+    output_path = write_ocr_json(payload, output)
+    typer.echo(f"PP-DocLayoutV3 JSON: {output_path}")
+    typer.echo(f"Pages: {len(rendered.pages)}")
+    typer.echo(f"Layout blocks: {sum(len(page['elements']) for page in payload['pages'])}")
+    typer.echo("Runtime reorder: disabled")
 
 
 @app.command("run-pp-structure")

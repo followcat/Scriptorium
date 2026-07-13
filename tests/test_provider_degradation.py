@@ -101,6 +101,34 @@ def test_profile_distance_is_descriptive_and_deterministic() -> None:
     assert comparison["profiles"]["stress"]["distance"] > 0
 
 
+def test_layout_only_provider_excludes_text_from_profile_distance() -> None:
+    oracle = [_oracle("a", "a", "text", [0, 0, 100, 10], "Recognized text")]
+    layout_only = characterize_provider_degradation(
+        oracle,
+        [_provider("a", "a", "text", [0, 0, 100, 10], "", 0)],
+        width=100,
+        height=100,
+        text_recognition_available=False,
+    )
+    synthetic = characterize_provider_degradation(
+        oracle,
+        [_provider("a", "a", "text", [0, 0, 100, 10], "Recognized text", 0)],
+        width=100,
+        height=100,
+    )
+
+    comparison = compare_with_synthetic_profiles(
+        layout_only,
+        {"clean": synthetic},
+    )
+
+    assert layout_only["text_fidelity"]["applicable"] is False
+    assert comparison["profiles"]["clean"]["distance"] == 0
+    assert "token_error_mean" not in comparison["feature_names"]
+    assert "character_error_mean" not in comparison["feature_names"]
+    assert "caption_prefix_loss_rate" not in comparison["feature_names"]
+
+
 def _oracle(
     anchor_id: str,
     block_id: str,
