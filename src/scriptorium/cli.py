@@ -21,6 +21,11 @@ from .chunkr_benchmark import (
     benchmark_chunkr_reading_order,
     fetch_chunkr_reading_order_annotations,
 )
+from .chunkr_order_ranker import (
+    benchmark_chunkr_order_ranker_roor,
+    predict_chunkr_block_order,
+    train_chunkr_order_ranker,
+)
 from .comphrdoc_benchmark import (
     benchmark_comphrdoc_relation_corpus,
     fetch_comphrdoc_benchmark_samples,
@@ -190,6 +195,151 @@ def benchmark_chunkr_reading_order_command(
         f"{stable['precision']}/{stable['recall']} vs "
         f"{all_channels['precision']}/{all_channels['recall']}"
     )
+    typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("train-chunkr-order-ranker")
+def train_chunkr_order_ranker_command(
+    annotations: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output: Path = typer.Option(
+        Path("outputs/models/chunkr-order-ranker.joblib"),
+        "--output",
+        "-o",
+    ),
+    cross_validation_folds: int = typer.Option(
+        5,
+        "--cross-validation-folds",
+        min=2,
+        help="Category/complexity-stratified answer-free page folds.",
+    ),
+    random_seed: int = typer.Option(17, "--random-seed"),
+) -> None:
+    """Train an isolated role-aware pairwise block-order candidate."""
+
+    try:
+        result = train_chunkr_order_ranker(
+            annotations,
+            output,
+            cross_validation_folds=cross_validation_folds,
+            random_seed=random_seed,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="annotations") from exc
+    learned = result.report["learned_oof_metrics"]["all"]
+    selected = result.report["baseline_metrics"]["selected-auto"]["all"]
+    visual = result.report["baseline_metrics"]["visual-yx"]["all"]
+    typer.echo(
+        "OOF exact (learned/selected/visual): "
+        f"{learned['exact_match']}/{selected['exact_match']}/"
+        f"{visual['exact_match']}"
+    )
+    typer.echo(
+        "OOF pairwise (learned/selected/visual): "
+        f"{learned['pairwise_accuracy']}/{selected['pairwise_accuracy']}/"
+        f"{visual['pairwise_accuracy']}"
+    )
+    typer.echo(
+        "OOF successor (learned/selected/visual): "
+        f"{learned['successor_accuracy']}/{selected['successor_accuracy']}/"
+        f"{visual['successor_accuracy']}"
+    )
+    typer.echo(f"Model: {result.model_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"OOF report: {result.report_path}")
+
+
+@app.command("predict-chunkr-order")
+def predict_chunkr_order_command(
+    model: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    input_json: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output: Path = typer.Option(
+        Path("outputs/chunkr-order.prediction.json"),
+        "--output",
+        "-o",
+    ),
+) -> None:
+    """Predict one review-only block order from answer-free layout JSON."""
+
+    try:
+        payload = json.loads(input_json.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("input JSON root must be an object")
+        result = predict_chunkr_block_order(payload, model)
+    except (json.JSONDecodeError, OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="input_json") from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(result.payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    typer.echo(f"Ordered elements: {len(result.ordered_ids)}")
+    typer.echo(f"Mean pair margin: {result.diagnostics['mean_pair_margin']}")
+    typer.echo(f"Prediction: {output}")
+
+
+@app.command("benchmark-chunkr-order-ranker-roor")
+def benchmark_chunkr_order_ranker_roor_command(
+    corpus_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+    ),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Replay one frozen Chunkr order model on answer-separated ROOR pages."""
+
+    try:
+        result = benchmark_chunkr_order_ranker_roor(
+            corpus_dir,
+            model,
+            output=output,
+        )
+    except (json.JSONDecodeError, OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    report = result.report
+    learned = report["candidate_metrics"]["learned"]
+    selected = report["candidate_metrics"]["selected-auto"]
+    visual = report["candidate_metrics"]["visual-yx"]
+    typer.echo(
+        "Direct recall (learned/selected/visual): "
+        f"{learned['direct_recall']}/{selected['direct_recall']}/"
+        f"{visual['direct_recall']}"
+    )
+    typer.echo(
+        "Precedence (learned/selected/visual): "
+        f"{learned['precedence_accuracy']}/"
+        f"{selected['precedence_accuracy']}/"
+        f"{visual['precedence_accuracy']}"
+    )
+    typer.echo(
+        "Page-profile in-envelope/outlier: "
+        f"{report['page_profile_in_envelope_count']}/"
+        f"{report['page_profile_outlier_page_count']}"
+    )
+    typer.echo(f"Decision: {report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
 
 
