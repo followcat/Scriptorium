@@ -767,3 +767,39 @@ token 与 sidebar secondary flow。Mixed island ordering 现在会把 island-own
 artifact/sidebar/footnote 分类之外，每个输入元素只得到一个 assignment；固定 16-box 回归覆盖
 该冲突。下一种 learned candidate 可以把 Chunkr 用于 development/cross-validation，但 runtime
 或 promotion 仍必须依赖答案隔离的外部语料。
+
+`chunkr_order_ranker.py` 实现了该 development candidate，但不进入 converter。训练从 9,267
+个 block 生成 223,634 个有向 pair。68 个特征包含 source/target 归一化 geometry、overlap 与
+方向、页面元素数、五种 answer-free geometry candidate 的 rank/direction/adjacency，以及
+source/target 分离的 role one-hot。`HistGradientBoostingClassifier` 对每个无序 pair 的两个方向
+分别打分，再将概率反对称化，通过 Borda score 生成 permutation；visual Y/X 只用于确定性的
+同分 tie-break。默认继续使用 uniform pair weight：测试过的 focal 版本约耗时 `333 s`，而
+uniform 约 `43 s`，且仍未恢复 selected-order successor accuracy。
+
+Cross-validation 按 category/complexity 分层，并在 page scope 使用 SHA-256 分配。Feature
+构造和 fold assignment 都不读取 annotation id；测试会反转答案 id，要求 feature/fold 完全
+相同而 label 改变。由于 Chunkr 没有 document identifier，报告明确声明 page OOF 和
+`test_split_claimed: false`。每个 fold 都同时保留 learned 与 baseline metrics，而不是只输出
+aggregate。
+
+训练会写入 model、相邻 manifest 与相邻 OOF report。加载默认 fail closed：schema、
+review-only 状态、isolation policy、model filename/hash、OOF filename/hash、feature/role 契约、
+report-to-model hash 必须全部一致，之后才反序列化 joblib；joblib artifact 仍只允许本地可信
+来源。Prediction 会递归拒绝 successor、precedence、stream、显式 order、semantic-order 等
+答案字段；id 和 role/bbox fingerprint 必须唯一，单页最多 256 个元素。输出始终是
+`runtime_reorder: false` 的 review-only successor evidence。
+
+Feature-level 1%/99% envelope 没有发现 ROOR transfer failure，模型即使高 confidence 也会
+出错。因此新增 page profile，记录 element count、bbox width/height/area quantile、aspect、
+role entropy/ratio，以及 selected/XY/relation candidate disagreement。诊断会输出每个 profile
+数值及其越过的 lower/upper bound。ROOR replay 还会把 manifest path 限制在 corpus 内，并
+严格分两阶段执行：先预测全部 structure 页面，再打开 semantic sidecar 评分。测试直接断言
+事件顺序并拒绝 path traversal。
+
+Chunkr OOF 的 exact/pairwise 从 selected `0.61255116/0.87452713` 提高到
+`0.70259209/0.93686112`，但 successor 从 `0.75041012` 降到 `0.74349660`。在 49 个 ROOR
+line-level 页面上，direct recall 只有 `0.19142420`，低于 selected `0.46592649`；precedence
+为 `0.77067381`，selected 为 `0.83192956`，且所有页面都在 coarse-block page profile 之外。
+这个 OOD rule 是观察该窗口后加入的，所以只是诊断，不是独立校准的 gate。架构结论是把
+coarse-block 与 text-line ordering 分成两个层级：先推断/接受 block membership，再排序 block；
+block 内的 line successor 保持原顺序或由独立 line-level 模型预测。

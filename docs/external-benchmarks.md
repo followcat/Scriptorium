@@ -1133,3 +1133,59 @@ points. It remains audit-only. The first run also exposed and fixed a generic
 ownership bug where grid-island elements classified as sidebars were emitted
 twice; the corrected order is now always a complete permutation on all 733
 pages.
+
+The isolated learned candidate uses 68 role, normalized-geometry, and candidate-
+rank features with a bidirectional pairwise classifier and Borda decoding. Five
+category/complexity-stratified SHA-256 folds keep whole pages together. The
+upstream corpus does not publish document ids, so this is page-level OOF
+development evidence, not document-level cross-validation and not a held-out
+test claim.
+
+```bash
+python -m pip install -r requirements-relation-ranker.txt
+
+scriptorium train-chunkr-order-ranker \
+  data/external/chunkr-reading-order/_annotations.coco.json \
+  --cross-validation-folds 5 \
+  --output outputs/models/chunkr-order-ranker.joblib
+
+scriptorium benchmark-chunkr-order-ranker-roor \
+  data/external/roor-validation-full-v1 \
+  --model outputs/models/chunkr-order-ranker.joblib \
+  --output outputs/chunkr-order-ranker-roor.json
+```
+
+| Chunkr OOF candidate | Exact match | Position accuracy | Pairwise accuracy | Successor accuracy |
+|---|---:|---:|---:|---:|
+| Learned pairwise ranker | 515/733 = 0.70259209 | 0.72170066 | 0.93686112 | 0.74349660 |
+| Selected `auto` | 449/733 = 0.61255116 | 0.67109097 | 0.87452713 | 0.75041012 |
+| Visual Y/X | 484/733 = 0.66030014 | 0.67400453 | 0.84918215 | 0.72099836 |
+
+The learned ranker improves whole-page exact, position, and long-range pairwise
+metrics in-domain, but loses 59 correct adjacent successors relative to selected
+`auto`. Against selected order it gains 87 exact pages and loses 21, while
+successor correctness is better on 142 pages and worse on 105. This is evidence
+for a global-ranking research candidate, not for replacing local reading
+streams.
+
+Unchanged replay on all 49 answer-separated ROOR validation pages reverses the
+result. The benchmark completes every prediction before opening any semantic
+sidecar; structure and label files are path-confined and independently hashed.
+
+| ROOR 49-page candidate | Direct relation recall | Precedence accuracy |
+|---|---:|---:|
+| Learned Chunkr ranker | 500/2612 = 0.19142420 | 2013/2612 = 0.77067381 |
+| Selected `auto` | 1217/2612 = 0.46592649 | 2173/2612 = 0.83192956 |
+| Visual Y/X | 1390/2612 = 0.53215926 | 2317/2612 = 0.88705972 |
+
+The learned candidate is worse than selected on 47/49 pages for direct
+relations and 35/49 for precedence. Chunkr contains coarse mixed-role blocks;
+ROOR exposes fine all-text lines. A page-profile envelope over element count,
+box-size quantiles, role mix, and candidate disagreement marks all 49 ROOR pages
+outside the Chunkr training envelope. That `49/49` rejection was added after
+this granularity failure was observed, so it is a diagnostic for the opened
+window, not independently validated OOD calibration. The model remains
+`runtime_reorder: false`, `candidate_consensus_policy: isolated`, with promotion
+rejected. The next experiment must freeze a hierarchical coarse-block-then-line
+contract and validate it on an unopened document family rather than tuning this
+flat ranker against ROOR.

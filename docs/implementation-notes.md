@@ -1258,3 +1258,50 @@ from artifact/sidebar/footnote classification, so every input element receives
 exactly one assignment. A fixed 16-box regression covers this conflict. The next
 learned candidate can use Chunkr only for development/cross-validation; runtime
 or promotion evidence still requires answer-separated external corpora.
+
+`chunkr_order_ranker.py` implements that development candidate without entering
+the converter. Training creates 223,634 directed pairs from 9,267 blocks. Its 68
+features contain normalized source/target geometry, overlap and direction,
+page element count, rank/direction/adjacency from five answer-free geometry
+candidates, and separate source/target role one-hot vectors. A
+`HistGradientBoostingClassifier` scores both directions of every unordered pair;
+the two probabilities are antisymmetrized, then a Borda score produces one
+permutation with visual Y/X only as a deterministic tie-break. Uniform pair
+weighting is retained: the tested focal variant cost roughly `333 s` instead of
+`43 s`, did not recover selected-order successor accuracy, and is not the
+default.
+
+Cross-validation is category/complexity-stratified and SHA-256 assigned at page
+scope. Feature construction and fold assignment do not read annotation ids;
+tests rebuild the same anchors with reversed answer ids and require identical
+features/folds but changed labels. Because Chunkr has no document identifiers,
+the report explicitly says page OOF and `test_split_claimed: false`. Every fold
+contains learned and baseline metrics rather than reporting only the aggregate.
+
+Training writes a model, adjacent manifest, and adjacent OOF report. Loading is
+fail-closed: schema, review-only status, isolation policy, model filename/hash,
+OOF filename/hash, feature/role contracts, and report-to-model hashes must all
+match before joblib deserialization. Joblib artifacts remain local-trust only.
+Prediction recursively rejects order-bearing fields including successor,
+precedence, stream, explicit order, and semantic-order values; ids and
+role/bbox fingerprints must be unique, and one page is capped at 256 elements.
+Output is always review-only successor evidence with `runtime_reorder: false`.
+
+The feature-level 1st/99th percentile envelope did not detect the ROOR transfer
+failure, despite confident wrong predictions. A separate page profile therefore
+records element count, bbox width/height/area quantiles, aspect, role entropy and
+ratios, and disagreement between selected/XY/relation candidates. Diagnostics
+include every profile value and each violated lower/upper bound. The ROOR replay
+also confines manifest paths to the corpus and executes in two phases: it
+predicts every structure page first, then opens semantic sidecars for scoring.
+Tests assert the event order and reject path traversal.
+
+Chunkr OOF improves exact/pairwise from selected `0.61255116/0.87452713` to
+`0.70259209/0.93686112`, but successor falls `0.75041012 -> 0.74349660`. On 49
+ROOR line-level pages, direct recall is only `0.19142420`, below selected
+`0.46592649`, and precedence is `0.77067381` versus `0.83192956`; all pages are
+outside the coarse-block page profile. The OOD rule was added after observing
+this window and is therefore diagnostic, not an independently calibrated gate.
+The architectural consequence is to keep coarse-block and text-line ordering as
+separate levels: infer/accept block membership first, order blocks second, and
+preserve or independently predict line successors only within each block.
