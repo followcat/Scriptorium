@@ -636,6 +636,14 @@ def _assign_memberships(
         )
         best_geometry_region_id = candidates[0][1] if candidates else None
         best_geometry_coverage = candidates[0][0] if candidates else 0.0
+        runner_up_geometry_coverage = (
+            candidates[1][0] if len(candidates) > 1 else 0.0
+        )
+        geometry_assignment_is_ambiguous = bool(
+            len(candidates) > 1
+            and best_geometry_coverage - runner_up_geometry_coverage
+            < min_geometry_margin
+        )
         best_geometry_region = next(
             (
                 region
@@ -651,6 +659,7 @@ def _assign_memberships(
         )
         if text_parent is not None and (
             best_geometry_coverage < min_geometry_coverage
+            or geometry_assignment_is_ambiguous
             or (
                 text_parent.region_id != best_geometry_region_id
                 and not geometry_text_agrees

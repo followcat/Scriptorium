@@ -311,6 +311,46 @@ def test_hierarchy_does_not_choose_between_ambiguous_text_parents() -> None:
     assert result.diagnostics["text_geometry_membership_count"] == 0
 
 
+def test_hierarchy_unique_text_parent_resolves_geometry_tie() -> None:
+    payload = {
+        "id": "text-resolves-geometry-tie",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {
+                "id": "line",
+                "box": [20, 20, 80, 30],
+                "role": "Text Block",
+                "text": "Unique paragraph line",
+            },
+        ],
+        "regions": [
+            {
+                "id": "correct",
+                "box": [10, 10, 90, 40],
+                "role": "Text Block",
+                "text": "Unique paragraph line followed by more text",
+            },
+            {
+                "id": "overlapping",
+                "box": [10, 10, 90, 40],
+                "role": "Figure",
+                "text": "Unrelated graphical content",
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    membership = result.payload["memberships"][0]
+    assert membership["region_id"] == "correct"
+    assert membership["method"] == "text-geometry-parent"
+    assert result.diagnostics["text_geometry_membership_count"] == 1
+    assert result.diagnostics["ambiguous_element_count"] == 0
+
+
 def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None:
     payload = _two_column_payload()
     payload["regions"].append(
