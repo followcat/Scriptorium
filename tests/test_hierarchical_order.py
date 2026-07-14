@@ -262,6 +262,9 @@ def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None
     assert result.diagnostics["eligible_cross_region_transition_count"] == 0
     assert result.diagnostics["empty_region_boundary_count"] == 2
     assert result.diagnostics["suppressed_cross_region_transition_count"] == 2
+    assert result.diagnostics[
+        "candidate_expansion_suppressed_incomplete_cross_region_chain"
+    ] is True
     tree_children = result.payload["pages"][0]["reading_order_tree"]["children"]
     assert [child["region_id"] for child in tree_children] == [
         "region-left",
@@ -324,6 +327,61 @@ def test_hierarchy_does_not_jump_across_unassigned_line(monkeypatch) -> None:
     assert result.payload["candidate_ordered_element_ids"] == [
         "top",
         "gap",
+        "bottom",
+    ]
+
+
+def test_hierarchy_does_not_expand_partial_cross_region_chain() -> None:
+    payload = {
+        "id": "partial-chain",
+        "width": 100,
+        "height": 120,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "top", "box": [10, 10, 90, 20], "role": "Text Block"},
+            {"id": "middle", "box": [10, 35, 90, 45], "role": "Text Block"},
+            {"id": "bottom", "box": [10, 90, 90, 100], "role": "Text Block"},
+        ],
+        "regions": [
+            {
+                "id": "region-top",
+                "box": [5, 5, 95, 25],
+                "role": "Text Block",
+                "member_ids": ["top"],
+            },
+            {
+                "id": "region-middle",
+                "box": [5, 30, 95, 50],
+                "role": "Text Block",
+                "member_ids": ["middle"],
+            },
+            {
+                "id": "region-figure",
+                "box": [5, 55, 95, 70],
+                "role": "Picture",
+            },
+            {
+                "id": "region-bottom",
+                "box": [5, 85, 95, 105],
+                "role": "Text Block",
+                "member_ids": ["bottom"],
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert result.diagnostics["unassigned_element_count"] == 0
+    assert result.diagnostics["potential_cross_region_transition_count"] == 3
+    assert result.diagnostics["emitted_cross_region_transition_count"] == 1
+    assert result.diagnostics["candidate_expansion_enabled"] is False
+    assert result.diagnostics[
+        "candidate_expansion_suppressed_incomplete_cross_region_chain"
+    ] is True
+    assert result.payload["candidate_ordered_element_ids"] == [
+        "top",
+        "middle",
         "bottom",
     ]
 

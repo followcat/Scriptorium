@@ -39,6 +39,7 @@ from .floating_ranker import predict_floating_relations, train_floating_relation
 from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .hierarchical_order import build_hierarchical_order_proposal
+from .hierarchical_order_adapter import build_hierarchy_input_from_document
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import (
@@ -365,6 +366,20 @@ def build_hierarchical_order_command(
         readable=True,
         help="Optional coarse-block ranker; OOD pages suppress cross-region transitions.",
     ),
+    structure_json: Path | None = typer.Option(
+        None,
+        "--structure-json",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Adapt a DocumentIR input with page-local provider block JSON.",
+    ),
+    page_index: int = typer.Option(
+        0,
+        "--page-index",
+        min=0,
+        help="Zero-based DocumentIR page index used with --structure-json.",
+    ),
     min_geometry_coverage: float = typer.Option(
         0.8,
         "--min-geometry-coverage",
@@ -384,6 +399,21 @@ def build_hierarchical_order_command(
         payload = json.loads(input_json.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("input JSON root must be an object")
+        adapter_result = None
+        if structure_json is not None:
+            if not _is_document_ir_payload(payload):
+                raise ValueError(
+                    "--structure-json requires input_json to be a DocumentIR"
+                )
+            document = DocumentIR.model_validate(payload)
+            adapter_result = build_hierarchy_input_from_document(
+                document,
+                load_structure_json(structure_json),
+                page_index=page_index,
+            )
+            payload = adapter_result.payload
+        elif _is_document_ir_payload(payload):
+            raise ValueError("DocumentIR input requires --structure-json")
         result = build_hierarchical_order_proposal(
             payload,
             chunkr_model=chunkr_model,
@@ -398,6 +428,13 @@ def build_hierarchical_order_command(
         encoding="utf-8",
     )
     diagnostics = result.diagnostics
+    if adapter_result is not None:
+        adapter_diagnostics = adapter_result.diagnostics
+        typer.echo(
+            "Adapter regions (selected/rejected): "
+            f"{adapter_diagnostics['selected_coarse_region_count']}/"
+            f"{adapter_diagnostics['rejected_region_count']}"
+        )
     typer.echo(
         "Membership (assigned/ambiguous/unassigned): "
         f"{diagnostics['assigned_element_count']}/"

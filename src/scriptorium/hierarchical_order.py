@@ -105,6 +105,9 @@ def build_hierarchical_order_proposal(
         label="region_granularity",
         expected="coarse",
     )
+    input_adapter = payload.get("input_adapter")
+    if input_adapter is not None and not isinstance(input_adapter, Mapping):
+        raise ValueError("hierarchy input_adapter must be an object")
 
     elements = _nodes_from_payload(
         payload.get("elements"),
@@ -212,7 +215,11 @@ def build_hierarchical_order_proposal(
         for element_id in base_ids
         if membership_by_element[element_id].region_id is None
     )
-    candidate_expansion_enabled = bool(cross_transitions) and not unassigned_ids
+    complete_cross_region_chain = (
+        potential_cross_transition_count > 0
+        and len(cross_transitions) == potential_cross_transition_count
+    )
+    candidate_expansion_enabled = complete_cross_region_chain and not unassigned_ids
     candidate_ids = _hierarchical_candidate_order(
         elements,
         base_ids=base_ids,
@@ -263,6 +270,14 @@ def build_hierarchical_order_proposal(
         "candidate_changed_position_count": changed_position_count,
         "candidate_pair_disagreement": pair_disagreement,
         "candidate_expansion_enabled": candidate_expansion_enabled,
+        "candidate_expansion_complete_cross_region_chain": (
+            complete_cross_region_chain
+        ),
+        "candidate_expansion_suppressed_incomplete_cross_region_chain": bool(
+            transitions_enabled
+            and potential_cross_transition_count
+            and not complete_cross_region_chain
+        ),
         "candidate_expansion_suppressed_incomplete_membership": bool(
             cross_transitions and unassigned_ids
         ),
@@ -347,6 +362,11 @@ def build_hierarchical_order_proposal(
         "source": HIERARCHICAL_ORDER_PROVIDER,
         "source_page_id": page_id,
         "source_input_sha256": _canonical_sha256(payload),
+        **(
+            {"input_adapter": dict(input_adapter)}
+            if isinstance(input_adapter, Mapping)
+            else {}
+        ),
         "hierarchy_policy": HIERARCHICAL_ORDER_POLICY,
         "element_granularity": element_granularity,
         "region_granularity": region_granularity,
