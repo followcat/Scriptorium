@@ -38,6 +38,7 @@ from .fixture import create_fixture
 from .floating_ranker import predict_floating_relations, train_floating_relation_ranker
 from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
+from .hierarchical_order import build_hierarchical_order_proposal
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import (
@@ -341,6 +342,75 @@ def benchmark_chunkr_order_ranker_roor_command(
     )
     typer.echo(f"Decision: {report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("build-hierarchical-order")
+def build_hierarchical_order_command(
+    input_json: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    output: Path = typer.Option(
+        Path("outputs/hierarchical-order.proposal.json"),
+        "--output",
+        "-o",
+    ),
+    chunkr_model: Path | None = typer.Option(
+        None,
+        "--chunkr-model",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional coarse-block ranker; OOD pages suppress cross-region transitions.",
+    ),
+    min_geometry_coverage: float = typer.Option(
+        0.8,
+        "--min-geometry-coverage",
+        min=0.000001,
+        max=1.0,
+    ),
+    min_geometry_margin: float = typer.Option(
+        0.1,
+        "--min-geometry-margin",
+        min=0.0,
+        max=1.0,
+    ),
+) -> None:
+    """Build an isolated coarse-region/line-order proposal."""
+
+    try:
+        payload = json.loads(input_json.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("input JSON root must be an object")
+        result = build_hierarchical_order_proposal(
+            payload,
+            chunkr_model=chunkr_model,
+            min_geometry_coverage=min_geometry_coverage,
+            min_geometry_margin=min_geometry_margin,
+        )
+    except (json.JSONDecodeError, OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="input_json") from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(result.payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    diagnostics = result.diagnostics
+    typer.echo(
+        "Membership (assigned/ambiguous/unassigned): "
+        f"{diagnostics['assigned_element_count']}/"
+        f"{diagnostics['ambiguous_element_count']}/"
+        f"{diagnostics['unassigned_element_count']}"
+    )
+    typer.echo(
+        "Transitions (emitted/suppressed): "
+        f"{diagnostics['emitted_cross_region_transition_count']}/"
+        f"{diagnostics['suppressed_cross_region_transition_count']}"
+    )
+    typer.echo(f"Decision: {diagnostics['promotion_decision']}")
+    typer.echo(f"Proposal: {output}")
 
 
 @app.command("fetch-comphrdoc")
