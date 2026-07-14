@@ -2262,6 +2262,8 @@ def _structure_duplicate_index(blocks: list[dict[str, Any]], block: dict[str, An
 
 
 def _structure_blocks_are_near_duplicates(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if _structure_block_granularity_class(left) != _structure_block_granularity_class(right):
+        return False
     left_text = _dedupe_text_key(_extract_text(left))
     right_text = _dedupe_text_key(_extract_text(right))
     if not left_text or left_text != right_text:
@@ -2282,6 +2284,31 @@ def _structure_blocks_are_near_duplicates(left: dict[str, Any], right: dict[str,
     min_coverage = intersection / min(left_area, right_area)
     area_ratio = min(left_area, right_area) / max(left_area, right_area)
     return min_coverage >= 0.9 and area_ratio >= 0.25
+
+
+def _structure_block_granularity_class(block: dict[str, Any]) -> str:
+    """Keep parent blocks and fine OCR/cell evidence as separate records."""
+
+    list_key = str(block.get("_scriptorium_structure_list_key") or "")
+    if "paddle_text_index" in block or list_key in {
+        "overall_ocr_res",
+        "seal_res_list",
+        "text_paragraphs_ocr_res",
+    }:
+        return "fine-ocr"
+    if list_key == "table_res_list.table_cells":
+        return "fine-table-cell"
+    if list_key == "formula_res_list":
+        return "specialized-formula"
+    if list_key in {
+        "parsing_res_list",
+        "blocks",
+        "elements",
+        "layout_det_res.boxes",
+        *_nested_block_keys(),
+    }:
+        return "provider-block"
+    return f"other:{list_key}"
 
 
 def _structure_block_dedupe_rank(block: dict[str, Any]) -> tuple[int, int, float, int, float]:
@@ -4197,18 +4224,37 @@ def _center_y(bbox: BBox) -> float:
 
 
 def _best_region_match(element: ElementIR, regions: list[StructureRegion]) -> tuple[StructureRegion, float, float] | None:
-    best: tuple[float, float, float, StructureRegion, float, float] | None = None
+    best: tuple[float, float, int, float, StructureRegion, float, float] | None = None
     for region in regions:
         coverage = _bbox_coverage(element.bbox_pdf, region.bbox_pdf)
         text_similarity = _text_similarity(element.source_text, region.text)
         score = coverage * 0.75 + text_similarity * 0.25
+        fine_granularity = int(
+            _structure_block_granularity_class(region.raw).startswith("fine-")
+        )
         specificity = -max(region.bbox_pdf.width * region.bbox_pdf.height, 1.0)
-        ranking = (score, text_similarity, specificity, region, coverage, text_similarity)
-        if best is None or ranking[:3] > best[:3]:
+        ranking = (
+            score,
+            text_similarity,
+            fine_granularity,
+            specificity,
+            region,
+            coverage,
+            text_similarity,
+        )
+        if best is None or ranking[:4] > best[:4]:
             best = ranking
     if best is None:
         return None
-    _score, _similarity_rank, _specificity, region, coverage, text_similarity = best
+    (
+        _score,
+        _similarity_rank,
+        _fine_granularity,
+        _specificity,
+        region,
+        coverage,
+        text_similarity,
+    ) = best
     return region, coverage, text_similarity
 
 
@@ -4233,7 +4279,10 @@ def _best_explicit_order_companion(
             continue
         if region.source != anchor_region.source:
             continue
-        if _normalize_structure_label(region.label) != anchor_label:
+        if not _order_companion_labels_are_compatible(
+            anchor_label,
+            _normalize_structure_label(region.label),
+        ):
             continue
         coverage = _bbox_coverage(element.bbox_pdf, region.bbox_pdf)
         text_similarity = _text_similarity(element.source_text, region.text)
@@ -4254,6 +4303,17 @@ def _best_explicit_order_companion(
     best = max(candidates, key=lambda candidate: candidate[:3])
     _score, _similarity_rank, _specificity, region, coverage, text_similarity = best
     return region, coverage, text_similarity
+
+
+def _order_companion_labels_are_compatible(
+    anchor_label: str,
+    parent_label: str,
+) -> bool:
+    if anchor_label == parent_label:
+        return True
+    return anchor_label in {"text", "text_block", "paragraph_text"} and (
+        parent_label in DERIVABLE_BLOCK_STREAM_LABELS
+    )
 
 
 def _bbox_coverage(inner: BBox, outer: BBox) -> float:

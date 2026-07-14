@@ -2015,6 +2015,50 @@ def test_pp_structure_ocr_result_regions_are_deduped() -> None:
     assert line.metadata["structure_evidence"]["confidence"] == 0.92
 
 
+def test_pp_structure_dedupe_preserves_coarse_parent_and_fine_ocr_line() -> None:
+    document = _document_with_text_boxes(
+        [
+            ("heading", "Abstract", BBox(x0=20, y0=20, x1=80, y1=32), 1),
+        ]
+    )
+    payload = {
+        "source": "pp-structurev3",
+        "res": {
+            "page_index": 0,
+            "parsing_res_list": [
+                {
+                    "block_id": "abstract-heading",
+                    "block_label": "paragraph_title",
+                    "block_bbox": [40, 40, 160, 64],
+                    "block_content": "Abstract",
+                    "block_order": 3,
+                    "confidence": 0.8,
+                }
+            ],
+            "overall_ocr_res": {
+                "rec_boxes": [[40, 40, 160, 64]],
+                "rec_texts": ["Abstract"],
+                "rec_scores": [0.99],
+            },
+        },
+    }
+
+    regions = normalize_structure_evidence(payload, document)
+    apply_structure_evidence(document, payload)
+
+    assert len(regions) == 2
+    assert [
+        (region.order, region.order_source, region.raw["_scriptorium_structure_list_key"])
+        for region in regions
+    ] == [
+        (3, "explicit", "parsing_res_list"),
+        (None, None, "overall_ocr_res"),
+    ]
+    evidence = document.pages[0].elements[0].metadata["structure_evidence"]
+    assert evidence["confidence"] == 0.99
+    assert evidence["ordered_companion"]["order"] == 3
+
+
 def test_structure_evidence_matches_sparse_source_page_index() -> None:
     document = _document_with_text_boxes(
         [
