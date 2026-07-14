@@ -253,6 +253,14 @@ class RelationGraphEdgeDiagnostics:
 
 
 @dataclass(frozen=True)
+class RelationGraphOrderEvidence:
+    """One relation-graph inference pass with its selected local edges."""
+
+    ordered_indices: tuple[int, ...]
+    selected_edge_diagnostics: tuple[RelationGraphEdgeDiagnostics, ...]
+
+
+@dataclass(frozen=True)
 class _RelationGraphSelection:
     edge: _RelationGraphEdge
     diagnostics: RelationGraphEdgeDiagnostics
@@ -474,7 +482,32 @@ def infer_relation_graph_order(
     the candidate should be trusted for a class of pages.
     """
 
-    return _infer_relation_graph_result(bboxes, page_width, page_height).ordered_indices
+    return list(
+        infer_relation_graph_order_evidence(
+            bboxes,
+            page_width,
+            page_height,
+        ).ordered_indices
+    )
+
+
+def infer_relation_graph_order_evidence(
+    bboxes: list[BBox],
+    page_width: float,
+    page_height: float,
+) -> RelationGraphOrderEvidence:
+    """Return the serialized candidate and selected-edge evidence together.
+
+    Consumers that need both views should use this API so the quadratic
+    candidate graph is built only once. The serialized order remains a
+    diagnostic fallback; selected edges are the independent relation evidence.
+    """
+
+    result = _infer_relation_graph_result(bboxes, page_width, page_height)
+    return RelationGraphOrderEvidence(
+        ordered_indices=tuple(result.ordered_indices),
+        selected_edge_diagnostics=result.selected_edge_diagnostics,
+    )
 
 
 def infer_relation_graph_selected_edges(
@@ -490,8 +523,15 @@ def infer_relation_graph_selected_edges(
     joined during serialization as a selected successor relation.
     """
 
-    result = _infer_relation_graph_result(bboxes, page_width, page_height)
-    return {(edge.source, edge.target): edge.score for edge in result.selected_edges}
+    evidence = infer_relation_graph_order_evidence(
+        bboxes,
+        page_width,
+        page_height,
+    )
+    return {
+        (diagnostic.source, diagnostic.target): diagnostic.score
+        for diagnostic in evidence.selected_edge_diagnostics
+    }
 
 
 def infer_relation_graph_selected_edge_diagnostics(
@@ -508,10 +548,14 @@ def infer_relation_graph_selected_edge_diagnostics(
     truth.
     """
 
-    result = _infer_relation_graph_result(bboxes, page_width, page_height)
+    evidence = infer_relation_graph_order_evidence(
+        bboxes,
+        page_width,
+        page_height,
+    )
     return {
         (diagnostic.source, diagnostic.target): diagnostic
-        for diagnostic in result.selected_edge_diagnostics
+        for diagnostic in evidence.selected_edge_diagnostics
     }
 
 

@@ -11,6 +11,7 @@ from scriptorium.reading_order import (
     infer_recursive_xy_cut_edges,
     infer_recursive_xy_cut_order,
     infer_relation_graph_order,
+    infer_relation_graph_order_evidence,
     infer_relation_graph_selected_edge_diagnostics,
     infer_relation_graph_selected_edges,
     infer_semantic_reading_order,
@@ -356,6 +357,35 @@ def test_relation_graph_selected_edge_diagnostics_keep_selection_time_alternativ
     assert uncontested.target_alternative_score is None
     assert uncontested.minimum_margin is None
     assert uncontested.has_tied_alternative is False
+
+
+def test_relation_graph_order_evidence_returns_order_and_edges_from_one_result() -> None:
+    bboxes = [
+        BBox(x0=60, y0=70, x1=240, y1=80),
+        BBox(x0=60, y0=88, x1=240, y1=98),
+        BBox(x0=320, y0=70, x1=500, y1=80),
+        BBox(x0=320, y0=88, x1=500, y1=98),
+    ]
+
+    evidence = infer_relation_graph_order_evidence(
+        bboxes,
+        page_width=612,
+        page_height=792,
+    )
+
+    assert list(evidence.ordered_indices) == infer_relation_graph_order(
+        bboxes,
+        page_width=612,
+        page_height=792,
+    )
+    assert {
+        (item.source, item.target): item.score
+        for item in evidence.selected_edge_diagnostics
+    } == infer_relation_graph_selected_edges(
+        bboxes,
+        page_width=612,
+        page_height=792,
+    )
 
 
 def test_relation_graph_selected_edge_diagnostics_mark_geometry_ties_ambiguous() -> None:
