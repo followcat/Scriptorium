@@ -492,6 +492,97 @@ def test_hierarchy_unique_text_parent_resolves_geometry_tie() -> None:
     assert result.diagnostics["ambiguous_element_count"] == 0
 
 
+def test_hierarchy_continuity_resolves_geometry_tie_between_same_region_neighbors() -> None:
+    payload = {
+        "id": "continuity-resolves-tie",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "top", "box": [10, 10, 90, 20], "role": "Text Block"},
+            {"id": "middle", "box": [10, 35, 90, 45], "role": "Text Block"},
+            {"id": "bottom", "box": [10, 60, 90, 70], "role": "Text Block"},
+        ],
+        "regions": [
+            {
+                "id": "correct",
+                "box": [5, 5, 95, 75],
+                "role": "Text Block",
+                "member_ids": ["top", "bottom"],
+            },
+            {
+                "id": "overlap",
+                "box": [5, 5, 95, 75],
+                "role": "Picture",
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    membership = next(
+        item
+        for item in result.payload["memberships"]
+        if item["element_id"] == "middle"
+    )
+    assert membership["region_id"] == "correct"
+    assert membership["method"] == "relation-base-continuity-parent"
+    assert membership["evidence"] == [
+        "geometry-tied-candidate",
+        "relation-graph-bidirectional-continuity",
+        "selected-order-bidirectional-continuity",
+    ]
+    assert result.diagnostics["relation_base_continuity_membership_count"] == 1
+    assert result.diagnostics["ambiguous_element_count"] == 0
+
+    reordered = copy.deepcopy(payload)
+    reordered["elements"].reverse()
+    reordered["regions"].reverse()
+    second = build_hierarchical_order_proposal(reordered)
+    assert second.payload["memberships"] == result.payload["memberships"]
+
+
+def test_hierarchy_continuity_does_not_choose_between_different_neighbor_regions() -> None:
+    payload = {
+        "id": "continuity-keeps-tie",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "top", "box": [10, 10, 90, 20], "role": "Text Block"},
+            {"id": "middle", "box": [10, 35, 90, 45], "role": "Text Block"},
+            {"id": "bottom", "box": [10, 60, 90, 70], "role": "Text Block"},
+        ],
+        "regions": [
+            {
+                "id": "top-region",
+                "box": [5, 5, 95, 50],
+                "role": "Text Block",
+                "member_ids": ["top"],
+            },
+            {
+                "id": "bottom-region",
+                "box": [5, 30, 95, 75],
+                "role": "Text Block",
+                "member_ids": ["bottom"],
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    membership = next(
+        item
+        for item in result.payload["memberships"]
+        if item["element_id"] == "middle"
+    )
+    assert membership["region_id"] is None
+    assert membership["reason"] == "ambiguous-region-overlap"
+    assert result.diagnostics["relation_base_continuity_membership_count"] == 0
+
+
 def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None:
     payload = _two_column_payload()
     payload["regions"].append(

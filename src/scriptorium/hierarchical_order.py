@@ -73,6 +73,7 @@ class _Membership:
     text_match_score: float | None = None
     spatial_gap_ratio: float | None = None
     evidence_confidence: float | None = None
+    evidence: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         payload = {
@@ -96,6 +97,8 @@ class _Membership:
             payload["evidence_confidence"] = _rounded_optional(
                 self.evidence_confidence
             )
+        if self.evidence:
+            payload["evidence"] = list(self.evidence)
         return payload
 
 
@@ -183,11 +186,25 @@ def build_hierarchical_order_proposal(
     base_order = _selected_order(elements, width=width, height=height)
     base_ids = tuple(elements[index].id for index in base_order)
     base_rank = {element_id: rank for rank, element_id in enumerate(base_ids)}
+    relation_order_evidence = infer_relation_graph_order_evidence(
+        [element.bbox for element in elements],
+        width,
+        height,
+    )
     memberships = _assign_memberships(
         elements,
         regions,
         width=width,
         height=height,
+        min_geometry_coverage=min_geometry_coverage,
+        min_geometry_margin=min_geometry_margin,
+    )
+    memberships = _refine_ambiguous_memberships_from_continuity(
+        elements,
+        regions,
+        memberships,
+        base_ids=base_ids,
+        relation_evidence=relation_order_evidence,
         min_geometry_coverage=min_geometry_coverage,
         min_geometry_margin=min_geometry_margin,
     )
@@ -208,13 +225,18 @@ def build_hierarchical_order_proposal(
         for region in regions
     }
 
-    coarse_order, coarse_diagnostics, fine_relation_evidence = _coarse_region_order(
+    (
+        coarse_order,
+        coarse_diagnostics,
+        transition_relation_evidence,
+    ) = _coarse_region_order(
         page_id=page_id,
         width=width,
         height=height,
         elements=elements,
         regions=regions,
         members_by_region=members_by_region,
+        relation_evidence=relation_order_evidence,
         chunkr_model=chunkr_model,
     )
     coarse_ids = tuple(regions[index].id for index in coarse_order)
@@ -257,13 +279,13 @@ def build_hierarchical_order_proposal(
     coarse_adjacent_region_pair_count = len(adjacent_region_pairs)
     relation_evidence_records: list[dict[str, Any]] = []
     relation_diagnostics: dict[str, Any] = {}
-    if transitions_enabled and fine_relation_evidence is not None:
+    if transitions_enabled and transition_relation_evidence is not None:
         (
             cross_transitions,
             relation_evidence_records,
             relation_diagnostics,
         ) = _relation_graph_cross_region_transitions(
-            fine_relation_evidence,
+            transition_relation_evidence,
             elements=elements,
             membership_by_element=membership_by_element,
             members_by_region=members_by_region,
@@ -330,6 +352,9 @@ def build_hierarchical_order_proposal(
         item.method == "text-geometry-parent" for item in memberships
     )
     geometry_count = sum(item.method == "geometry-coverage" for item in memberships)
+    continuity_count = sum(
+        item.method == "relation-base-continuity-parent" for item in memberships
+    )
     ambiguous_count = sum(
         item.reason == "ambiguous-region-overlap" for item in memberships
     )
@@ -338,11 +363,15 @@ def build_hierarchical_order_proposal(
         "region_count": len(regions),
         "nonempty_region_count": len(nonempty_region_ids),
         "assigned_element_count": (
-            explicit_count + text_geometry_count + geometry_count
+            explicit_count
+            + text_geometry_count
+            + geometry_count
+            + continuity_count
         ),
         "explicit_membership_count": explicit_count,
         "text_geometry_membership_count": text_geometry_count,
         "geometry_membership_count": geometry_count,
+        "relation_base_continuity_membership_count": continuity_count,
         "ambiguous_element_count": ambiguous_count,
         "unassigned_element_count": len(unassigned_ids),
         "within_region_successor_count": sum(
@@ -372,7 +401,7 @@ def build_hierarchical_order_proposal(
             cross_transitions and unassigned_ids
         ),
         "candidate_expansion_suppressed_missing_cross_region_evidence": bool(
-            fine_relation_evidence is not None
+            transition_relation_evidence is not None
             and len(nonempty_region_ids) > 1
             and not cross_transitions
         ),
@@ -417,7 +446,7 @@ def build_hierarchical_order_proposal(
         "coarse_order_status": "review-only" if transitions_enabled else "suppressed",
         "relation_model": (
             "fine-relation-graph-path-cover"
-            if fine_relation_evidence is not None
+            if transition_relation_evidence is not None
             else "coarse-adjacent-chain"
         ),
         "total_order_asserted": False,
@@ -779,6 +808,102 @@ def _assign_memberships(
     return tuple(memberships[element.id] for element in elements)
 
 
+def _refine_ambiguous_memberships_from_continuity(
+    elements: Sequence[_HierarchyNode],
+    regions: Sequence[_HierarchyNode],
+    memberships: Sequence[_Membership],
+    *,
+    base_ids: Sequence[str],
+    relation_evidence: RelationGraphOrderEvidence,
+    min_geometry_coverage: float,
+    min_geometry_margin: float,
+) -> tuple[_Membership, ...]:
+    membership_by_element = {
+        membership.element_id: membership for membership in memberships
+    }
+    element_ids = tuple(element.id for element in elements)
+    predecessor: dict[str, tuple[str, RelationGraphEdgeDiagnostics]] = {}
+    successor: dict[str, tuple[str, RelationGraphEdgeDiagnostics]] = {}
+    for diagnostic in relation_evidence.selected_edge_diagnostics:
+        if not (
+            0 <= diagnostic.source < len(elements)
+            and 0 <= diagnostic.target < len(elements)
+        ):
+            raise ValueError("fine relation graph returned an unknown element index")
+        source = element_ids[diagnostic.source]
+        target = element_ids[diagnostic.target]
+        successor[source] = (target, diagnostic)
+        predecessor[target] = (source, diagnostic)
+
+    base_rank = {element_id: rank for rank, element_id in enumerate(base_ids)}
+    region_by_id = {region.id: region for region in regions}
+    refined = dict(membership_by_element)
+    for element in elements:
+        membership = membership_by_element[element.id]
+        if membership.reason != "ambiguous-region-overlap":
+            continue
+        previous_relation = predecessor.get(element.id)
+        next_relation = successor.get(element.id)
+        if previous_relation is None or next_relation is None:
+            continue
+        relation_neighbors = (previous_relation, next_relation)
+        if any(
+            diagnostic.has_tied_alternative
+            for _neighbor_id, diagnostic in relation_neighbors
+        ):
+            continue
+        relation_regions = [
+            membership_by_element[neighbor_id].region_id
+            for neighbor_id, _diagnostic in relation_neighbors
+        ]
+        if relation_regions[0] is None or relation_regions[0] != relation_regions[1]:
+            continue
+
+        rank = base_rank[element.id]
+        if rank == 0 or rank + 1 >= len(base_ids):
+            continue
+        base_neighbor_ids = (base_ids[rank - 1], base_ids[rank + 1])
+        base_regions = [
+            membership_by_element[neighbor_id].region_id
+            for neighbor_id in base_neighbor_ids
+        ]
+        if (
+            base_regions[0] is None
+            or base_regions[0] != base_regions[1]
+            or base_regions[0] != relation_regions[0]
+        ):
+            continue
+
+        region_id = str(relation_regions[0])
+        region = region_by_id[region_id]
+        coverage = _bbox_coverage(element.bbox, region.bbox)
+        best_coverage = float(membership.coverage or 0.0)
+        if (
+            coverage < min_geometry_coverage
+            or best_coverage - coverage >= min_geometry_margin
+        ):
+            continue
+        relation_confidence = min(
+            diagnostic.score for _neighbor_id, diagnostic in relation_neighbors
+        )
+        refined[element.id] = _Membership(
+            element_id=element.id,
+            region_id=region_id,
+            method="relation-base-continuity-parent",
+            coverage=coverage,
+            runner_up_coverage=membership.runner_up_coverage,
+            margin=membership.margin,
+            reason=None,
+            evidence_confidence=min(relation_confidence, 0.76),
+            evidence=(
+                "geometry-tied-candidate",
+                "relation-graph-bidirectional-continuity",
+                "selected-order-bidirectional-continuity",
+            ),
+        )
+    return tuple(refined[element.id] for element in elements)
+
+
 def _text_parent_candidate(
     element: _HierarchyNode,
     regions: Sequence[_HierarchyNode],
@@ -904,6 +1029,7 @@ def _coarse_region_order(
     elements: Sequence[_HierarchyNode],
     regions: Sequence[_HierarchyNode],
     members_by_region: Mapping[str, Sequence[str]],
+    relation_evidence: RelationGraphOrderEvidence,
     chunkr_model: str | Path | None,
 ) -> tuple[
     tuple[int, ...],
@@ -912,11 +1038,6 @@ def _coarse_region_order(
 ]:
     region_index = {region.id: index for index, region in enumerate(regions)}
     if chunkr_model is None:
-        relation_evidence = infer_relation_graph_order_evidence(
-            [element.bbox for element in elements],
-            width,
-            height,
-        )
         order = _member_completion_region_order(
             elements,
             regions,

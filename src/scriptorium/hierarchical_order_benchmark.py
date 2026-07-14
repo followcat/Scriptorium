@@ -17,6 +17,7 @@ HIERARCHY_INPUT_SCHEMA = "scriptorium-hierarchical-order-benchmark-input/v1"
 HIERARCHY_LABEL_SCHEMA = "scriptorium-hierarchical-order-benchmark-labels/v1"
 HIERARCHY_BENCHMARK_SCHEMA = "scriptorium-hierarchical-order-benchmark-report/v1"
 RELATION_DIAGNOSTIC_COUNTERS = (
+    "relation_base_continuity_membership_count",
     "fine_relation_selected_edge_count",
     "fine_relation_cross_region_edge_count",
     "fine_relation_boundary_aligned_edge_count",
@@ -337,7 +338,7 @@ def benchmark_hierarchical_order_corpus(
         "corpus_manifest_sha256": _file_sha256(manifest_path),
         "sample_count": len(page_results),
         "prediction_policy": (
-            "hierarchical-review-only-with-complete-chain-expansion-gate"
+            "hierarchical-review-only-relation-dag-with-continuity-membership-v2"
         ),
         "coarse_order_model": (
             "chunkr-pairwise-ranker"
