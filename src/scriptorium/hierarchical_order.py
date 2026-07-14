@@ -14,7 +14,12 @@ from .chunkr_order_ranker import (
     predict_chunkr_block_order,
 )
 from .models import BBox
-from .reading_order import infer_semantic_reading_order
+from .reading_order import (
+    RelationGraphEdgeDiagnostics,
+    RelationGraphOrderEvidence,
+    infer_relation_graph_order_evidence,
+    infer_semantic_reading_order,
+)
 from .reading_order_sidecar import (
     SIDECAR_PROPOSAL_STATUS,
     SIDECAR_SCHEMA_NAME,
@@ -25,7 +30,7 @@ from .relation_order import relation_edge_candidate_path_cover
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "coarse-region-then-base-local-lines-v1"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v2"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
 DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
@@ -101,6 +106,20 @@ class _TextParentCandidate:
     text_match_score: float
     coverage: float
     spatial_gap_ratio: float
+
+
+@dataclass(frozen=True)
+class _CrossRegionRelationCandidate:
+    source: str
+    target: str
+    source_region: str
+    target_region: str
+    diagnostic: RelationGraphEdgeDiagnostics
+    boundary_aligned: bool
+
+    @property
+    def edge_key(self) -> tuple[str, str]:
+        return self.source, self.target
 
 
 def build_hierarchical_order_proposal(
@@ -189,11 +208,13 @@ def build_hierarchical_order_proposal(
         for region in regions
     }
 
-    coarse_order, coarse_diagnostics = _coarse_region_order(
+    coarse_order, coarse_diagnostics, fine_relation_evidence = _coarse_region_order(
         page_id=page_id,
         width=width,
         height=height,
+        elements=elements,
         regions=regions,
+        members_by_region=members_by_region,
         chunkr_model=chunkr_model,
     )
     coarse_ids = tuple(regions[index].id for index in coarse_order)
@@ -233,27 +254,57 @@ def build_hierarchical_order_proposal(
             },
         )
     )
-    potential_cross_transition_count = len(adjacent_region_pairs)
-    cross_transitions = (
-        _cross_region_transitions(
-            eligible_region_pairs,
+    coarse_adjacent_region_pair_count = len(adjacent_region_pairs)
+    relation_evidence_records: list[dict[str, Any]] = []
+    relation_diagnostics: dict[str, Any] = {}
+    if transitions_enabled and fine_relation_evidence is not None:
+        (
+            cross_transitions,
+            relation_evidence_records,
+            relation_diagnostics,
+        ) = _relation_graph_cross_region_transitions(
+            fine_relation_evidence,
+            elements=elements,
+            membership_by_element=membership_by_element,
             members_by_region=members_by_region,
             transition_policy=transition_policy,
-            transition_confidence=float(
-                coarse_diagnostics["cross_region_transition_confidence"]
-            ),
         )
-        if transitions_enabled
-        else []
-    )
+        potential_cross_transition_count = len(relation_evidence_records)
+        eligible_cross_transition_count = int(
+            relation_diagnostics["fine_relation_boundary_aligned_edge_count"]
+        )
+        empty_region_boundary_count = 0
+        unassigned_gap_boundary_count = 0
+    else:
+        potential_cross_transition_count = coarse_adjacent_region_pair_count
+        eligible_cross_transition_count = len(eligible_region_pairs)
+        empty_region_boundary_count = (
+            potential_cross_transition_count - len(membership_resolved_pairs)
+        )
+        unassigned_gap_boundary_count = (
+            len(membership_resolved_pairs) - len(eligible_region_pairs)
+        )
+        cross_transitions = (
+            _cross_region_transitions(
+                eligible_region_pairs,
+                members_by_region=members_by_region,
+                transition_policy=transition_policy,
+                transition_confidence=float(
+                    coarse_diagnostics["cross_region_transition_confidence"]
+                ),
+            )
+            if transitions_enabled
+            else []
+        )
     unassigned_ids = tuple(
         element_id
         for element_id in base_ids
         if membership_by_element[element_id].region_id is None
     )
-    complete_cross_region_chain = (
-        potential_cross_transition_count > 0
-        and len(cross_transitions) == potential_cross_transition_count
+    complete_cross_region_chain = _is_complete_cross_region_chain(
+        coarse_ids,
+        members_by_region=members_by_region,
+        cross_transitions=cross_transitions,
     )
     candidate_expansion_enabled = complete_cross_region_chain and not unassigned_ids
     candidate_ids = _hierarchical_candidate_order(
@@ -297,14 +348,11 @@ def build_hierarchical_order_proposal(
         "within_region_successor_count": sum(
             len(stream["review_successor_edges"]) for stream in streams
         ),
+        "coarse_adjacent_region_pair_count": coarse_adjacent_region_pair_count,
         "potential_cross_region_transition_count": potential_cross_transition_count,
-        "eligible_cross_region_transition_count": len(eligible_region_pairs),
-        "empty_region_boundary_count": (
-            potential_cross_transition_count - len(membership_resolved_pairs)
-        ),
-        "unassigned_gap_boundary_count": (
-            len(membership_resolved_pairs) - len(eligible_region_pairs)
-        ),
+        "eligible_cross_region_transition_count": eligible_cross_transition_count,
+        "empty_region_boundary_count": empty_region_boundary_count,
+        "unassigned_gap_boundary_count": unassigned_gap_boundary_count,
         "emitted_cross_region_transition_count": len(cross_transitions),
         "suppressed_cross_region_transition_count": (
             potential_cross_transition_count - len(cross_transitions)
@@ -323,6 +371,11 @@ def build_hierarchical_order_proposal(
         "candidate_expansion_suppressed_incomplete_membership": bool(
             cross_transitions and unassigned_ids
         ),
+        "candidate_expansion_suppressed_missing_cross_region_evidence": bool(
+            fine_relation_evidence is not None
+            and len(nonempty_region_ids) > 1
+            and not cross_transitions
+        ),
         "element_granularity": element_granularity,
         "region_granularity": region_granularity,
         "coarse_order_suppressed": not transitions_enabled,
@@ -330,6 +383,7 @@ def build_hierarchical_order_proposal(
         "min_geometry_margin": round(min_geometry_margin, 8),
         "min_text_parent_score": DEFAULT_MIN_TEXT_PARENT_SCORE,
         "min_text_parent_margin": DEFAULT_MIN_TEXT_PARENT_MARGIN,
+        **relation_diagnostics,
         **coarse_diagnostics,
     }
     region_by_id = {region.id: region for region in regions}
@@ -361,6 +415,12 @@ def build_hierarchical_order_proposal(
     reading_order_tree = {
         "type": "ordered-group" if transitions_enabled else "unordered-group",
         "coarse_order_status": "review-only" if transitions_enabled else "suppressed",
+        "relation_model": (
+            "fine-relation-graph-path-cover"
+            if fine_relation_evidence is not None
+            else "coarse-adjacent-chain"
+        ),
+        "total_order_asserted": False,
         "children": [
             {
                 "type": (
@@ -425,8 +485,8 @@ def build_hierarchical_order_proposal(
             "within_region_relations": "review_only",
             "cross_region_relations": "review_only",
             "description": (
-                "Coarse regions never overwrite local line order. Review region "
-                "membership and cross-region transitions before acceptance."
+                "Local streams remain authoritative. Cross-region relations are "
+                "a partial review graph and never assert a page-wide total order."
             ),
         },
         "summary": sidecar_summary,
@@ -449,6 +509,7 @@ def build_hierarchical_order_proposal(
                 "reading_order_tree": reading_order_tree,
                 "reading_streams": streams,
                 "review_transitions": cross_transitions,
+                "cross_region_relation_evidence": relation_evidence_records,
             }
         ],
         "diagnostics": diagnostics,
@@ -840,23 +901,44 @@ def _coarse_region_order(
     page_id: str,
     width: float,
     height: float,
+    elements: Sequence[_HierarchyNode],
     regions: Sequence[_HierarchyNode],
+    members_by_region: Mapping[str, Sequence[str]],
     chunkr_model: str | Path | None,
-) -> tuple[tuple[int, ...], dict[str, Any]]:
+) -> tuple[
+    tuple[int, ...],
+    dict[str, Any],
+    RelationGraphOrderEvidence | None,
+]:
     region_index = {region.id: index for index, region in enumerate(regions)}
     if chunkr_model is None:
-        order = _selected_order(regions, width=width, height=height)
+        relation_evidence = infer_relation_graph_order_evidence(
+            [element.bbox for element in elements],
+            width,
+            height,
+        )
+        order = _member_completion_region_order(
+            elements,
+            regions,
+            members_by_region=members_by_region,
+            relation_order=relation_evidence.ordered_indices,
+            width=width,
+            height=height,
+        )
         return order, {
-            "coarse_order_source": "selected-auto",
+            "coarse_order_source": "fine-relation-member-completion",
             "coarse_model_provider": None,
             "coarse_model_sha256": None,
             "coarse_model_page_profile_in_envelope": None,
             "coarse_model_page_profile_outlier_names": [],
             "transitions_enabled": True,
-            "transition_policy": "geometry-control-review-only",
-            "cross_region_transition_confidence": 0.5,
-            "promotion_decision": "review-only-geometry-control",
-        }
+            "transition_policy": "fine-relation-graph-review-only",
+            "cross_region_transition_confidence": None,
+            "cross_region_transition_confidence_policy": (
+                "selected-edge-score-capped-at-review-confidence"
+            ),
+            "promotion_decision": "review-only-fine-relation-graph",
+        }, relation_evidence
 
     prediction = predict_chunkr_block_order(
         {
@@ -916,8 +998,53 @@ def _coarse_region_order(
             ),
             8,
         ),
+        "cross_region_transition_confidence_policy": (
+            "chunkr-mean-adjacent-precedence-capped-at-review-confidence"
+        ),
         "promotion_decision": decision,
+    }, None
+
+
+def _member_completion_region_order(
+    elements: Sequence[_HierarchyNode],
+    regions: Sequence[_HierarchyNode],
+    *,
+    members_by_region: Mapping[str, Sequence[str]],
+    relation_order: Sequence[int],
+    width: float,
+    height: float,
+) -> tuple[int, ...]:
+    if len(relation_order) != len(elements) or set(relation_order) != set(
+        range(len(elements))
+    ):
+        raise ValueError("fine relation graph did not return a complete order")
+    relation_rank = {
+        elements[element_index].id: rank
+        for rank, element_index in enumerate(relation_order)
     }
+    geometry_order = _selected_order(regions, width=width, height=height)
+    geometry_rank = {
+        regions[region_index].id: rank
+        for rank, region_index in enumerate(geometry_order)
+    }
+
+    def completion_key(region_index: int) -> tuple[int, int, int, str]:
+        region = regions[region_index]
+        member_ranks = [
+            relation_rank[member_id]
+            for member_id in members_by_region[region.id]
+            if member_id in relation_rank
+        ]
+        if not member_ranks:
+            return (1, len(elements), geometry_rank[region.id], region.id)
+        return (
+            0,
+            max(member_ranks),
+            geometry_rank[region.id],
+            region.id,
+        )
+
+    return tuple(sorted(range(len(regions)), key=completion_key))
 
 
 def _region_streams(
@@ -979,6 +1106,225 @@ def _region_streams(
             }
         )
     return streams
+
+
+def _relation_graph_cross_region_transitions(
+    relation_evidence: RelationGraphOrderEvidence,
+    *,
+    elements: Sequence[_HierarchyNode],
+    membership_by_element: Mapping[str, _Membership],
+    members_by_region: Mapping[str, Sequence[str]],
+    transition_policy: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    candidates: list[_CrossRegionRelationCandidate] = []
+    for diagnostic in relation_evidence.selected_edge_diagnostics:
+        if not (
+            0 <= diagnostic.source < len(elements)
+            and 0 <= diagnostic.target < len(elements)
+        ):
+            raise ValueError("fine relation graph returned an unknown element index")
+        source = elements[diagnostic.source].id
+        target = elements[diagnostic.target].id
+        source_region = membership_by_element[source].region_id
+        target_region = membership_by_element[target].region_id
+        if (
+            source_region is None
+            or target_region is None
+            or source_region == target_region
+        ):
+            continue
+        source_members = members_by_region[source_region]
+        target_members = members_by_region[target_region]
+        boundary_aligned = bool(
+            source_members
+            and target_members
+            and source_members[-1] == source
+            and target_members[0] == target
+        )
+        candidates.append(
+            _CrossRegionRelationCandidate(
+                source=source,
+                target=target,
+                source_region=source_region,
+                target_region=target_region,
+                diagnostic=diagnostic,
+                boundary_aligned=boundary_aligned,
+            )
+        )
+
+    boundary_candidates = sorted(
+        (candidate for candidate in candidates if candidate.boundary_aligned),
+        key=lambda candidate: (
+            candidate.diagnostic.has_tied_alternative,
+            -candidate.diagnostic.selection_regret,
+            -candidate.diagnostic.score,
+            candidate.diagnostic.selection_step,
+            candidate.source_region,
+            candidate.target_region,
+        ),
+    )
+    successor_by_region: dict[str, str] = {}
+    predecessor_by_region: dict[str, str] = {}
+    selected_keys: set[tuple[str, str]] = set()
+    suppression_reasons: dict[tuple[str, str], str] = {}
+    for candidate in boundary_candidates:
+        if candidate.source_region in successor_by_region:
+            suppression_reasons[candidate.edge_key] = "region-outgoing-conflict"
+            continue
+        if candidate.target_region in predecessor_by_region:
+            suppression_reasons[candidate.edge_key] = "region-incoming-conflict"
+            continue
+        if _region_successor_would_cycle(
+            candidate.source_region,
+            candidate.target_region,
+            successor_by_region,
+        ):
+            suppression_reasons[candidate.edge_key] = "region-cycle"
+            continue
+        successor_by_region[candidate.source_region] = candidate.target_region
+        predecessor_by_region[candidate.target_region] = candidate.source_region
+        selected_keys.add(candidate.edge_key)
+
+    transitions: list[dict[str, Any]] = []
+    evidence_records: list[dict[str, Any]] = []
+    for candidate in sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.diagnostic.selection_step,
+            candidate.source,
+            candidate.target,
+        ),
+    ):
+        relation_payload = candidate.diagnostic.as_payload()
+        confidence = round(
+            min(max(candidate.diagnostic.score, 0.0), 0.76),
+            8,
+        )
+        suppression_reason = suppression_reasons.get(candidate.edge_key)
+        if not candidate.boundary_aligned:
+            suppression_reason = "not-local-stream-boundary"
+        selected = candidate.edge_key in selected_keys
+        evidence_record = {
+            "source": candidate.source,
+            "target": candidate.target,
+            "source_region_id": candidate.source_region,
+            "target_region_id": candidate.target_region,
+            "boundary_aligned": candidate.boundary_aligned,
+            "transition_status": "selected" if selected else "evidence-only",
+            "suppression_reason": suppression_reason,
+            "confidence": confidence,
+            "relation_graph": relation_payload,
+        }
+        evidence_records.append(evidence_record)
+        if not selected:
+            continue
+        transition_evidence = [
+            "fine-relation-graph-selected-edge",
+            "local-stream-boundary",
+        ]
+        if candidate.diagnostic.has_tied_alternative:
+            transition_evidence.append("tied-alternative-review-only")
+        transitions.append(
+            {
+                "source_region_id": candidate.source_region,
+                "target_region_id": candidate.target_region,
+                "source": candidate.source,
+                "target": candidate.target,
+                "source_stream_id": (
+                    f"hierarchy-region-{candidate.source_region}"
+                ),
+                "target_stream_id": (
+                    f"hierarchy-region-{candidate.target_region}"
+                ),
+                "reason": "fine-relation-graph-stream-boundary",
+                "boundary_aligned": True,
+                "confidence": confidence,
+                "review_required": True,
+                "evidence": transition_evidence,
+                "relation_graph": relation_payload,
+                "provenance": {
+                    "kind": "hierarchical-cross-region-relation-v2",
+                    "source_region_id": candidate.source_region,
+                    "target_region_id": candidate.target_region,
+                    "transition_policy": transition_policy,
+                    "provider": HIERARCHICAL_ORDER_PROVIDER,
+                },
+            }
+        )
+
+    tied_count = sum(
+        candidate.diagnostic.has_tied_alternative for candidate in candidates
+    )
+    return transitions, evidence_records, {
+        "fine_relation_selected_edge_count": len(
+            relation_evidence.selected_edge_diagnostics
+        ),
+        "fine_relation_cross_region_edge_count": len(candidates),
+        "fine_relation_boundary_aligned_edge_count": len(boundary_candidates),
+        "fine_relation_nonboundary_evidence_count": (
+            len(candidates) - len(boundary_candidates)
+        ),
+        "fine_relation_tied_cross_region_edge_count": tied_count,
+        "fine_relation_region_cycle_suppressed_count": sum(
+            reason == "region-cycle" for reason in suppression_reasons.values()
+        ),
+        "fine_relation_region_degree_suppressed_count": sum(
+            reason in {"region-outgoing-conflict", "region-incoming-conflict"}
+            for reason in suppression_reasons.values()
+        ),
+    }
+
+
+def _region_successor_would_cycle(
+    source_region: str,
+    target_region: str,
+    successor_by_region: Mapping[str, str],
+) -> bool:
+    cursor = target_region
+    visited: set[str] = set()
+    while cursor in successor_by_region and cursor not in visited:
+        if cursor == source_region:
+            return True
+        visited.add(cursor)
+        cursor = successor_by_region[cursor]
+    return cursor == source_region
+
+
+def _is_complete_cross_region_chain(
+    coarse_ids: Sequence[str],
+    *,
+    members_by_region: Mapping[str, Sequence[str]],
+    cross_transitions: Sequence[Mapping[str, Any]],
+) -> bool:
+    if len(coarse_ids) < 2 or any(
+        not members_by_region[region_id] for region_id in coarse_ids
+    ):
+        return False
+    expected_pairs = list(zip(coarse_ids, coarse_ids[1:], strict=False))
+    if len(cross_transitions) != len(expected_pairs):
+        return False
+    actual_pairs = [
+        (
+            str(transition.get("source_region_id") or ""),
+            str(transition.get("target_region_id") or ""),
+        )
+        for transition in cross_transitions
+    ]
+    if set(actual_pairs) != set(expected_pairs):
+        return False
+    return all(
+        str(transition.get("source") or "")
+        == members_by_region[source_region][-1]
+        and str(transition.get("target") or "")
+        == members_by_region[target_region][0]
+        for transition in cross_transitions
+        for source_region, target_region in [
+            (
+                str(transition.get("source_region_id") or ""),
+                str(transition.get("target_region_id") or ""),
+            )
+        ]
+    )
 
 
 def _cross_region_transitions(

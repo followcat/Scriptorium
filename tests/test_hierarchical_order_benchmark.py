@@ -64,9 +64,20 @@ def test_materialized_hierarchy_corpus_is_answer_separated_and_scoreable(
     assert result.report["schema"] == HIERARCHY_BENCHMARK_SCHEMA
     assert result.report["runtime_reorder"] is False
     assert result.report["labels_opened_after_all_predictions"] is True
+    assert result.report["coarse_order_model"] == (
+        "fine-relation-graph-boundary"
+    )
+    assert result.report["transition_representation"] == (
+        "partial-dag-boundary-aligned-review-relations"
+    )
     assert result.report["summary"]["membership"]["recall"] == 1.0
     assert result.report["summary"]["hierarchy_within"]["f1"] == 1.0
-    assert result.report["summary"]["hierarchy_region_cross"]["f1"] == 1.0
+    # Two lines per column are intentionally insufficient for a graph handoff.
+    assert result.report["summary"]["hierarchy_region_cross"]["f1"] == 0.0
+    assert result.report["summary"]["flat_region_cross"]["f1"] == 1.0
+    assert result.report["diagnostic_totals"][
+        "missing_cross_region_evidence_page_count"
+    ] == 1
     assert result.report["promotion_decision"] == (
         "development-benchmark-only-review-only"
     )

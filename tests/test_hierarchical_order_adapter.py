@@ -61,7 +61,14 @@ def test_adapter_keeps_provider_blocks_and_rejects_ocr_lines() -> None:
     assert proposal.diagnostics["explicit_membership_count"] == 4
     assert proposal.diagnostics["unassigned_element_count"] == 0
     assert proposal.diagnostics["within_region_successor_count"] == 2
-    assert proposal.diagnostics["emitted_cross_region_transition_count"] == 1
+    assert proposal.diagnostics["emitted_cross_region_transition_count"] == 0
+    assert proposal.diagnostics["fine_relation_cross_region_edge_count"] == 0
+    assert (
+        proposal.diagnostics[
+            "candidate_expansion_suppressed_missing_cross_region_evidence"
+        ]
+        is True
+    )
 
 
 def test_adapter_does_not_consume_provider_sequence_or_relation_fields() -> None:

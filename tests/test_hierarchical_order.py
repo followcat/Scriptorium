@@ -10,6 +10,10 @@ import scriptorium.cli as cli
 import scriptorium.hierarchical_order as hierarchical_order
 from scriptorium.chunkr_order_ranker import ChunkrOrderPredictionResult
 from scriptorium.hierarchical_order import build_hierarchical_order_proposal
+from scriptorium.reading_order import (
+    RelationGraphEdgeDiagnostics,
+    RelationGraphOrderEvidence,
+)
 from scriptorium.reading_order_sidecar import (
     is_unaccepted_reading_order_sidecar,
     reading_order_sidecar_summary,
@@ -32,8 +36,12 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
         result.payload["candidate_ordered_element_ids"]
         == result.payload["base_ordered_element_ids"]
     )
+    assert result.diagnostics["fine_relation_cross_region_edge_count"] == 0
+    assert result.payload["pages"][0]["review_transitions"] == []
     assert (
-        result.diagnostics["candidate_expansion_suppressed_incomplete_membership"]
+        result.diagnostics[
+            "candidate_expansion_suppressed_missing_cross_region_evidence"
+        ]
         is True
     )
     assert is_unaccepted_reading_order_sidecar(result.payload) is True
@@ -42,9 +50,9 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
         "member_count": 4,
         "successor_edge_count": 0,
         "review_successor_edge_count": 2,
-        "review_transition_count": 1,
+        "review_transition_count": 0,
         "strict_block_transition_count": 0,
-        "review_block_transition_count": 1,
+        "review_block_transition_count": 0,
         "stream_type_counts": {"body": 2},
         "stream_origin_counts": {"hierarchical-region-membership": 2},
     }
@@ -66,7 +74,9 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
         "right-bottom",
         "footer",
     }
-    assert result.diagnostics["promotion_decision"] == "review-only-geometry-control"
+    assert result.diagnostics["promotion_decision"] == (
+        "review-only-fine-relation-graph"
+    )
     assert result.payload["pages"][0]["reading_order_tree"]["type"] == ("ordered-group")
 
     reordered = copy.deepcopy(payload)
@@ -91,6 +101,137 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
         second.payload["candidate_ordered_element_ids"]
         == result.payload["candidate_ordered_element_ids"]
     )
+
+
+def test_hierarchy_emits_relation_graph_transition_at_stream_boundary() -> None:
+    elements = []
+    regions = []
+    for side, x0 in (("left", 10), ("right", 110)):
+        member_ids = []
+        for line_index in range(3):
+            element_id = f"{side}-{line_index}"
+            member_ids.append(element_id)
+            elements.append(
+                {
+                    "id": element_id,
+                    "box": [x0, 10 + line_index * 20, x0 + 70, 20 + line_index * 20],
+                    "role": "Text Block",
+                }
+            )
+        regions.append(
+            {
+                "id": f"region-{side}",
+                "box": [x0 - 5, 5, x0 + 80, 65],
+                "role": "Text Block",
+                "member_ids": member_ids,
+            }
+        )
+    payload = {
+        "id": "relation-boundary",
+        "width": 200,
+        "height": 200,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": elements,
+        "regions": regions,
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert result.payload["coarse_ordered_region_ids"] == [
+        "region-left",
+        "region-right",
+    ]
+    transition = result.payload["pages"][0]["review_transitions"][0]
+    assert transition["source"] == "left-2"
+    assert transition["target"] == "right-0"
+    assert transition["boundary_aligned"] is True
+    assert transition["reason"] == "fine-relation-graph-stream-boundary"
+    assert transition["relation_graph"]["score"] >= 0.5
+    assert result.diagnostics["fine_relation_cross_region_edge_count"] == 1
+    assert result.diagnostics["candidate_expansion_complete_cross_region_chain"] is True
+    assert result.diagnostics["candidate_expansion_enabled"] is True
+
+    reordered = copy.deepcopy(payload)
+    reordered["elements"].reverse()
+    reordered["regions"].reverse()
+    for region in reordered["regions"]:
+        region["member_ids"].reverse()
+    second = build_hierarchical_order_proposal(reordered)
+    assert second.payload["coarse_ordered_region_ids"] == (
+        result.payload["coarse_ordered_region_ids"]
+    )
+    assert second.payload["pages"][0]["review_transitions"] == (
+        result.payload["pages"][0]["review_transitions"]
+    )
+    assert second.payload["pages"][0]["cross_region_relation_evidence"] == (
+        result.payload["pages"][0]["cross_region_relation_evidence"]
+    )
+
+
+def test_hierarchy_suppresses_region_cycles_from_fine_relation_edges(
+    monkeypatch,
+) -> None:
+    payload = {
+        "id": "region-cycle",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "one", "box": [10, 10, 40, 20], "role": "Text Block"},
+            {"id": "two", "box": [10, 35, 40, 45], "role": "Text Block"},
+            {"id": "three", "box": [10, 60, 40, 70], "role": "Text Block"},
+        ],
+        "regions": [
+            {
+                "id": f"region-{element_id}",
+                "box": box,
+                "role": "Text Block",
+                "member_ids": [element_id],
+            }
+            for element_id, box in (
+                ("one", [5, 5, 45, 25]),
+                ("two", [5, 30, 45, 50]),
+                ("three", [5, 55, 45, 75]),
+            )
+        ],
+    }
+
+    diagnostics = tuple(
+        RelationGraphEdgeDiagnostics(
+            source=source,
+            target=target,
+            score=score,
+            source_candidate_count=1,
+            target_candidate_count=1,
+            source_alternative_score=None,
+            target_alternative_score=None,
+            source_margin=None,
+            target_margin=None,
+            source_regret=score,
+            target_regret=score,
+            selection_regret=score * 2,
+            selection_step=step,
+        )
+        for step, (source, target, score) in enumerate(
+            ((0, 1, 0.9), (1, 2, 0.8), (2, 0, 0.7)),
+            start=1,
+        )
+    )
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence((0, 1, 2), diagnostics),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert result.diagnostics["fine_relation_boundary_aligned_edge_count"] == 3
+    assert result.diagnostics["fine_relation_region_cycle_suppressed_count"] == 1
+    assert result.diagnostics["emitted_cross_region_transition_count"] == 2
+    evidence = result.payload["pages"][0]["cross_region_relation_evidence"]
+    assert sum(item["suppression_reason"] == "region-cycle" for item in evidence) == 1
 
 
 def test_hierarchy_model_reorders_regions_but_preserves_local_lines(
@@ -498,8 +639,9 @@ def test_hierarchy_does_not_expand_partial_cross_region_chain() -> None:
     result = build_hierarchical_order_proposal(payload)
 
     assert result.diagnostics["unassigned_element_count"] == 0
-    assert result.diagnostics["potential_cross_region_transition_count"] == 3
-    assert result.diagnostics["emitted_cross_region_transition_count"] == 1
+    assert result.diagnostics["coarse_adjacent_region_pair_count"] == 3
+    assert result.diagnostics["potential_cross_region_transition_count"] == 2
+    assert result.diagnostics["emitted_cross_region_transition_count"] == 2
     assert result.diagnostics["candidate_expansion_enabled"] is False
     assert result.diagnostics[
         "candidate_expansion_suppressed_incomplete_cross_region_chain"

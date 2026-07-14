@@ -16,6 +16,16 @@ HIERARCHY_CORPUS_SCHEMA = "scriptorium-hierarchical-order-corpus/v1"
 HIERARCHY_INPUT_SCHEMA = "scriptorium-hierarchical-order-benchmark-input/v1"
 HIERARCHY_LABEL_SCHEMA = "scriptorium-hierarchical-order-benchmark-labels/v1"
 HIERARCHY_BENCHMARK_SCHEMA = "scriptorium-hierarchical-order-benchmark-report/v1"
+RELATION_DIAGNOSTIC_COUNTERS = (
+    "fine_relation_selected_edge_count",
+    "fine_relation_cross_region_edge_count",
+    "fine_relation_boundary_aligned_edge_count",
+    "fine_relation_nonboundary_evidence_count",
+    "fine_relation_tied_cross_region_edge_count",
+    "fine_relation_region_cycle_suppressed_count",
+    "fine_relation_region_degree_suppressed_count",
+    "emitted_cross_region_transition_count",
+)
 SUPPORTED_COMPHRDOC_SOURCE_SCHEMAS = frozenset(
     {
         "scriptorium-comphrdoc-provider-calibration/v1",
@@ -330,7 +340,12 @@ def benchmark_hierarchical_order_corpus(
             "hierarchical-review-only-with-complete-chain-expansion-gate"
         ),
         "coarse_order_model": (
-            "chunkr-pairwise-ranker" if chunkr_model is not None else "selected-auto"
+            "chunkr-pairwise-ranker"
+            if chunkr_model is not None
+            else "fine-relation-graph-boundary"
+        ),
+        "transition_representation": (
+            "partial-dag-boundary-aligned-review-relations"
         ),
         "runtime_reorder": False,
         "labels_opened_after_all_predictions": True,
@@ -351,12 +366,34 @@ def benchmark_hierarchical_order_corpus(
             }
             for group_name, values in grouped.items()
         },
+        "diagnostic_totals": _aggregate_relation_diagnostics(page_results),
         "promotion_decision": "development-benchmark-only-review-only",
         "pages": page_results,
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(report_path, report)
     return HierarchicalOrderBenchmarkResult(report_path, proposal_root, report)
+
+
+def _aggregate_relation_diagnostics(
+    page_results: Sequence[Mapping[str, Any]],
+) -> dict[str, int]:
+    totals = {
+        name: sum(
+            int(page.get("diagnostics", {}).get(name) or 0)
+            for page in page_results
+        )
+        for name in RELATION_DIAGNOSTIC_COUNTERS
+    }
+    totals["missing_cross_region_evidence_page_count"] = sum(
+        bool(
+            page.get("diagnostics", {}).get(
+                "candidate_expansion_suppressed_missing_cross_region_evidence"
+            )
+        )
+        for page in page_results
+    )
+    return totals
 
 
 def _hierarchy_input_from_comphrdoc_structure(
