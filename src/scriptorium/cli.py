@@ -40,6 +40,10 @@ from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .hierarchical_order import build_hierarchical_order_proposal
 from .hierarchical_order_adapter import build_hierarchy_input_from_document
+from .hierarchical_order_benchmark import (
+    benchmark_hierarchical_order_corpus,
+    materialize_comphrdoc_hierarchy_corpus,
+)
 from .models import DisplayMode, DocumentIR, RevisionIR
 from .native_pdf import FontProfile, OcrFallback, RasterPolicy, extract_native_pdf_to_ir
 from .ocr import (
@@ -448,6 +452,91 @@ def build_hierarchical_order_command(
     )
     typer.echo(f"Decision: {diagnostics['promotion_decision']}")
     typer.echo(f"Proposal: {output}")
+
+
+@app.command("materialize-comphrdoc-hierarchy")
+def materialize_comphrdoc_hierarchy_command(
+    source_corpus: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Answer-separated Comp-HRDoc provider calibration/test corpus.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/comphrdoc-hierarchy-corpus"),
+        "--output",
+        "-o",
+    ),
+) -> None:
+    """Materialize oracle regions with membership/order labels kept separate."""
+
+    try:
+        result = materialize_comphrdoc_hierarchy_corpus(source_corpus, output)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="source_corpus") from exc
+    typer.echo(f"Hierarchy samples: {result.manifest['sample_count']}")
+    typer.echo(f"Partitions: {result.manifest['partition_counts']}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
+@app.command("benchmark-hierarchical-order-corpus")
+def benchmark_hierarchical_order_corpus_command(
+    corpus_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+    ),
+    output: Path = typer.Option(
+        Path("outputs/hierarchical-order-benchmark.json"),
+        "--output",
+        "-o",
+    ),
+    proposals_dir: Path | None = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Optional directory for per-page review-only proposals.",
+    ),
+    chunkr_model: Path | None = typer.Option(
+        None,
+        "--chunkr-model",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional coarse-block ranker; OOD pages suppress transitions.",
+    ),
+) -> None:
+    """Score hierarchy membership and within/cross-region relations."""
+
+    try:
+        result = benchmark_hierarchical_order_corpus(
+            corpus_dir,
+            output=output,
+            proposals_dir=proposals_dir,
+            chunkr_model=chunkr_model,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    summary = result.report["summary"]
+    membership = summary["membership"]
+    within = summary["hierarchy_within"]
+    cross = summary["hierarchy_region_cross"]
+    typer.echo(
+        "Membership (accuracy/coverage): "
+        f"{membership['recall']}/{membership['coverage']}"
+    )
+    typer.echo(
+        "Within-region successor (precision/recall/F1): "
+        f"{within['precision']}/{within['recall']}/{within['f1']}"
+    )
+    typer.echo(
+        "Region transition (precision/recall/F1): "
+        f"{cross['precision']}/{cross['recall']}/{cross['f1']}"
+    )
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
 
 
 @app.command("fetch-comphrdoc")
