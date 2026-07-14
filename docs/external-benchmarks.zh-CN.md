@@ -1087,3 +1087,32 @@ bbox size quantile、role mix 和 candidate disagreement 的 page-profile envelo
 `runtime_reorder: false`、`candidate_consensus_policy: isolated`，并明确拒绝 promotion。
 下一次实验应先冻结 hierarchical coarse-block-then-line 契约，再去未打开的文档家族验证，
 不能继续对 ROOR 调整 flat ranker。
+
+### 分层 Proposal Coverage 审计
+
+冻结的 hierarchy 契约现已实现为隔离 proposal 路径。它可以直接读取一页 `DocumentIR` 和
+provider structure JSON，不会把 provider sequence 或 relation answer 复制进 ordering
+candidate：
+
+```bash
+scriptorium build-hierarchical-order \
+  outputs/research/attention-pp-structure-block-transitions-v3/native-only/cases/attention-is-all-you-need/document.ir.json \
+  --structure-json outputs/research/pp-structure-attention-page-1/page_0001_res.json \
+  --page-index 0 \
+  --output /tmp/attention-hierarchy.proposal.json
+```
+
+PP parent block 与 OCR line 会按不同粒度类归一化。Adapter 只保留真正的 coarse provider
+block，再比较原 geometry-only membership 与“精确/包含文本 + 局部空间”证据：
+
+| 页面/provider | Fine elements | Normalized / selected regions | Assigned | Unassigned | Non-empty regions | Eligible cross transitions |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention 第 1 页 / PP-Structure | 56 | 61 / 9 | 47 -> 52 | 9 -> 4 | 6 -> 9 | 1 -> 6 |
+| 比亚迪年报第 136 页 / PP-Structure | 34 | 61 / 17 | 29 -> 33 | 5 -> 1 | 11 -> 15 | 7 -> 13 |
+| JD image source / Docling | 64 | 93 / 93 | 49 -> 53 | 15 -> 11 | 31 -> 37 | 16 -> 20 |
+
+这是 **coverage audit**，不是有标签的 reading-order benchmark。它证明 adapter 无需降低全局
+geometry threshold，就能在论文、中文财报和 image-source 门户三类页面中恢复更多合理的
+region membership；它不能证明新增的 within-region 或 cross-region edge 正确。所有 edge 仍为
+review-only，不完整 region chain 会抑制 candidate expansion。任何 promotion 前都必须用独立
+标签分别评分 within-region successor 与 cross-region transition。

@@ -1189,3 +1189,37 @@ window, not independently validated OOD calibration. The model remains
 rejected. The next experiment must freeze a hierarchical coarse-block-then-line
 contract and validate it on an unopened document family rather than tuning this
 flat ranker against ROOR.
+
+### Hierarchical Proposal Coverage Audit
+
+The frozen hierarchy contract is now implemented as an isolated proposal path.
+It can be replayed directly from one `DocumentIR` page and provider structure
+JSON without copying provider sequence or relation answers into the ordering
+candidate:
+
+```bash
+scriptorium build-hierarchical-order \
+  outputs/research/attention-pp-structure-block-transitions-v3/native-only/cases/attention-is-all-you-need/document.ir.json \
+  --structure-json outputs/research/pp-structure-attention-page-1/page_0001_res.json \
+  --page-index 0 \
+  --output /tmp/attention-hierarchy.proposal.json
+```
+
+PP parent blocks and OCR lines are normalized as separate granularity classes.
+The adapter keeps only true coarse provider blocks, then compares the original
+geometry-only membership with exact/contained-text plus local-spatial evidence:
+
+| Page/provider | Fine elements | Normalized / selected regions | Assigned | Unassigned | Non-empty regions | Eligible cross transitions |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention p. 1 / PP-Structure | 56 | 61 / 9 | 47 -> 52 | 9 -> 4 | 6 -> 9 | 1 -> 6 |
+| BYD annual report p. 136 / PP-Structure | 34 | 61 / 17 | 29 -> 33 | 5 -> 1 | 11 -> 15 | 7 -> 13 |
+| JD image source / Docling | 64 | 93 / 93 | 49 -> 53 | 15 -> 11 | 31 -> 37 | 16 -> 20 |
+
+This is a **coverage audit**, not a labelled reading-order benchmark. It proves
+that the adapter can recover more plausible region membership across a paper,
+a Chinese financial report, and an image-source portal without lowering the
+global geometry threshold. It does not prove that the additional within-region
+or cross-region edges are correct. All emitted edges remain review-only, and
+incomplete region chains suppress candidate expansion. Independent labels must
+score within-region successors and cross-region transitions separately before
+any promotion decision.

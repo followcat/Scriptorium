@@ -1305,3 +1305,80 @@ this window and is therefore diagnostic, not an independently calibrated gate.
 The architectural consequence is to keep coarse-block and text-line ordering as
 separate levels: infer/accept block membership first, order blocks second, and
 preserve or independently predict line successors only within each block.
+
+## Hierarchical Block/Line Proposals
+
+`hierarchical_order_adapter.py` connects the hierarchy prototype to real
+`DocumentIR` and normalized PP-Structure, PaddleOCR-VL, OpenDataLoader, Surya,
+or Docling structure JSON:
+
+```bash
+scriptorium build-hierarchical-order path/to/document.ir.json \
+  --structure-json path/to/provider.json \
+  --page-index 0 \
+  --output outputs/hierarchical-order.proposal.json
+```
+
+The adapter declares `element_granularity: fine` and
+`region_granularity: coarse`. Its fine layer contains visible, non-empty text
+elements from either PDF or image-source IR; source visual layers and empty
+shape/image anchors are excluded. The coarse filter accepts provider block
+lists, layout-detector blocks, and Docling body/furniture leaves. Paddle OCR
+lines, table cells, generic `document` references, and reading-order sidecars
+are rejected with reason counts. Provider sequence values are stripped and
+provider relation arrays are ignored before the hierarchy proposal is built.
+Changing `block_order` or review successor edges therefore cannot change the
+adapted element/region geometry.
+
+Structure deduplication is granularity-aware. A coarse `parsing_res_list` block
+and a fine OCR line with the same text and geometry remain separate evidence;
+only duplicates inside the same granularity class compete. This preserves the
+precise OCR anchor for structure application and the parent block for hierarchy
+membership.
+
+Membership is fail-closed and ordered by evidence strength:
+
+1. Compatible explicit provider parent references require at least `0.5`
+   element coverage.
+2. Exact or contained alphanumeric text may repair local coordinate drift when
+   axis alignment, bounded line-relative gap, score `>= 0.74`, and competitor
+   margin `>= 0.08` all pass. It also overrides a geometry parent whose text
+   conflicts with the element.
+3. Remaining elements use geometry coverage `>= 0.8` and runner-up margin
+   `>= 0.1`; ties stay unassigned.
+
+Within-region order always preserves the answer-free selected local line order.
+The coarse layer uses selected geometry or the optional Chunkr block model only
+at matching granularity. OOD model pages suppress all cross-region transitions.
+Empty regions and unassigned boundary gaps break the coarse chain, and a full
+candidate expansion is emitted only when every cross-region boundary is
+resolved and every fine element is assigned. All local edges and transitions
+remain review-only in an unaccepted `ScriptoriumReadingOrderSidecar` proposal;
+`runtime_reorder` stays `false`.
+
+The first real, unlabelled geometry-only versus text-plus-geometry audit is:
+
+| Page/provider | Fine elements | Coarse regions | Assigned | Unassigned | Non-empty regions | Eligible cross-region transitions |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention p. 1 / PP-Structure | 56 | 9 | 47 -> 52 | 9 -> 4 | 6 -> 9 | 1 -> 6 |
+| BYD annual report p. 136 / PP-Structure | 34 | 17 | 29 -> 33 | 5 -> 1 | 11 -> 15 | 7 -> 13 |
+| JD image source / Docling | 64 | 93 | 49 -> 53 | 15 -> 11 | 31 -> 37 | 16 -> 20 |
+
+These numbers measure membership coverage, not semantic accuracy. The JD
+Paddle replay resolves `64/64` text anchors through explicit ids, but 54 empty
+region boundaries still suppress a page permutation. Attention with
+OpenDataLoader resolves `56/56` and forms a complete 21-transition review chain;
+that is also not promotion evidence without independent labels. The next gate
+must score within-region successors and cross-region transitions separately on
+an unopened annual-report, portal, or line-level family.
+
+The architecture follows PAGE's region/line nesting and ordered/unordered group
+model, and the Detect-Order-Construct coarse-to-fine separation. It also follows
+relation-based reading-order work that represents complex layouts as local DAG
+relations rather than forcing one global permutation:
+
+- PAGE `TextRegion` / `TextLine`: https://ocr-d.de/en/gt-guidelines/pagexml/pagecontent_xsd_Complex_Type_pc_TextRegionType.html
+- OCR-D PAGE reading order: https://ocr-d.de/en/gt-guidelines/trans/lyLeserichtung.html
+- Detect-Order-Construct: https://arxiv.org/abs/2401.11874
+- DLAFormer coarse-to-fine layout analysis: https://arxiv.org/abs/2405.11757
+- Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/

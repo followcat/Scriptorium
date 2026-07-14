@@ -803,3 +803,65 @@ line-level 页面上，direct recall 只有 `0.19142420`，低于 selected `0.46
 这个 OOD rule 是观察该窗口后加入的，所以只是诊断，不是独立校准的 gate。架构结论是把
 coarse-block 与 text-line ordering 分成两个层级：先推断/接受 block membership，再排序 block；
 block 内的 line successor 保持原顺序或由独立 line-level 模型预测。
+
+## 分层 Block/Line Proposal
+
+`hierarchical_order_adapter.py` 已把分层原型接到真实 `DocumentIR`，并可读取归一化后的
+PP-Structure、PaddleOCR-VL、OpenDataLoader、Surya 或 Docling 结构 JSON：
+
+```bash
+scriptorium build-hierarchical-order path/to/document.ir.json \
+  --structure-json path/to/provider.json \
+  --page-index 0 \
+  --output outputs/hierarchical-order.proposal.json
+```
+
+Adapter 会显式声明 `element_granularity: fine` 与 `region_granularity: coarse`。Fine 层只接受
+PDF 或 image-source IR 中可见且有文本的 element；源视觉层及空 shape/image anchor 会被排除。
+Coarse filter 接受 provider block list、layout detector block，以及 Docling body/furniture leaf；
+Paddle OCR 行、table cell、通用 `document` reference 和 reading-order sidecar 都会被拒绝并记录
+原因。Provider sequence 数值会在构建 proposal 前删除，provider relation 数组完全不参与
+adapter。改变 `block_order` 或 review successor edge 不会改变适配后的 element/region geometry。
+
+结构去重现在区分粒度。同文本、同几何的 coarse `parsing_res_list` block 与 fine OCR line 会作为
+两份证据保留；只有同一粒度类内部才会竞争去重。这样结构应用仍可使用精确 OCR anchor，而
+hierarchy membership 不会丢失 parent block。
+
+Membership 按证据强度 fail closed：
+
+1. 兼容的显式 provider parent reference 至少需要 `0.5` element coverage。
+2. 精确或包含式的字母数字文本只在轴向对齐、line-relative gap 有界、score `>= 0.74` 且
+   competitor margin `>= 0.08` 时修复局部坐标漂移；当纯几何 parent 的文本与 element 冲突时，
+   该证据也可以纠正归属。
+3. 其余 element 使用 geometry coverage `>= 0.8` 和 runner-up margin `>= 0.1`；平局继续保持
+   unassigned。
+
+Block 内始终保留 answer-free selected local line order。Coarse 层只使用 selected geometry，或
+可选的同粒度 Chunkr block model；模型页落在 OOD 时会抑制全部跨区域 transition。空 region 与
+unassigned boundary gap 会断开 coarse chain，只有所有跨区域边界都已解决且所有 fine element
+都已分配时才展开完整 candidate。所有局部边和 transition 仍只进入未接受的
+`ScriptoriumReadingOrderSidecar` proposal，`runtime_reorder` 保持 `false`。
+
+首轮真实页面 geometry-only 与 text-plus-geometry 无标签审计如下：
+
+| 页面/provider | Fine elements | Coarse regions | Assigned | Unassigned | Non-empty regions | Eligible cross-region transitions |
+|---|---:|---:|---:|---:|---:|---:|
+| Attention 第 1 页 / PP-Structure | 56 | 9 | 47 -> 52 | 9 -> 4 | 6 -> 9 | 1 -> 6 |
+| 比亚迪年报第 136 页 / PP-Structure | 34 | 17 | 29 -> 33 | 5 -> 1 | 11 -> 15 | 7 -> 13 |
+| JD image source / Docling | 64 | 93 | 49 -> 53 | 15 -> 11 | 31 -> 37 | 16 -> 20 |
+
+这些数字只衡量 membership coverage，不是 semantic accuracy。JD Paddle replay 通过显式 id
+解析了 `64/64` 个文本 anchor，但 54 个空 region boundary 仍会阻止页面 permutation。Attention
+的 OpenDataLoader 路径解析 `56/56`，形成完整 21-transition review chain；没有独立标签时它也
+不是 promotion 证据。下一道 gate 必须在未打开的年报、门户或 line-level 文档家族中，分别给
+within-region successor 与 cross-region transition 评分。
+
+该架构遵循 PAGE 的 region/line 嵌套和 ordered/unordered group 模型，也遵循
+Detect-Order-Construct 的 coarse-to-fine 分解。复杂布局继续表示为局部 DAG relation，不强制成
+一个全局 permutation：
+
+- PAGE `TextRegion` / `TextLine`：https://ocr-d.de/en/gt-guidelines/pagexml/pagecontent_xsd_Complex_Type_pc_TextRegionType.html
+- OCR-D PAGE reading order：https://ocr-d.de/en/gt-guidelines/trans/lyLeserichtung.html
+- Detect-Order-Construct：https://arxiv.org/abs/2401.11874
+- DLAFormer coarse-to-fine layout analysis：https://arxiv.org/abs/2405.11757
+- Visually-rich document ordering relations：https://aclanthology.org/2024.emnlp-main.540/
