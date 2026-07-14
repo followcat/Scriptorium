@@ -289,6 +289,7 @@ def build_hierarchy_input_from_document(
                 "id": selected.id,
                 "box": selected.region.bbox_pdf.as_list(),
                 "role": selected.region.label,
+                "text": selected.region.text,
                 **(
                     {"member_ids": sorted(explicit_members[selected.id])}
                     if explicit_members[selected.id]

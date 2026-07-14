@@ -28,6 +28,14 @@ HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
 HIERARCHICAL_ORDER_POLICY = "coarse-region-then-base-local-lines-v1"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
+DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
+DEFAULT_MIN_TEXT_PARENT_MARGIN = 0.08
+MIN_EXACT_TEXT_PARENT_CHARACTERS = 4
+MIN_CONTAINED_TEXT_PARENT_CHARACTERS = 8
+MIN_TEXT_PARENT_AXIS_ALIGNMENT = 0.25
+TEXT_PARENT_VERTICAL_GAP_LINE_FACTOR = 4.0
+TEXT_PARENT_HORIZONTAL_GAP_WIDTH_FACTOR = 0.75
+TEXT_PARENT_PAGE_GAP_RATIO = 0.015
 MAX_HIERARCHY_ELEMENTS = 512
 MAX_HIERARCHY_REGIONS = 128
 
@@ -56,9 +64,13 @@ class _Membership:
     runner_up_coverage: float | None
     margin: float | None
     reason: str | None
+    text_parent_score: float | None = None
+    text_match_score: float | None = None
+    spatial_gap_ratio: float | None = None
+    evidence_confidence: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "element_id": self.element_id,
             "region_id": self.region_id,
             "method": self.method,
@@ -67,6 +79,28 @@ class _Membership:
             "margin": _rounded_optional(self.margin),
             "reason": self.reason,
         }
+        if self.text_parent_score is not None:
+            payload["text_parent_score"] = _rounded_optional(
+                self.text_parent_score
+            )
+        if self.text_match_score is not None:
+            payload["text_match_score"] = _rounded_optional(self.text_match_score)
+        if self.spatial_gap_ratio is not None:
+            payload["spatial_gap_ratio"] = _rounded_optional(self.spatial_gap_ratio)
+        if self.evidence_confidence is not None:
+            payload["evidence_confidence"] = _rounded_optional(
+                self.evidence_confidence
+            )
+        return payload
+
+
+@dataclass(frozen=True)
+class _TextParentCandidate:
+    region_id: str
+    score: float
+    text_match_score: float
+    coverage: float
+    spatial_gap_ratio: float
 
 
 def build_hierarchical_order_proposal(
@@ -133,6 +167,8 @@ def build_hierarchical_order_proposal(
     memberships = _assign_memberships(
         elements,
         regions,
+        width=width,
+        height=height,
         min_geometry_coverage=min_geometry_coverage,
         min_geometry_margin=min_geometry_margin,
     )
@@ -239,6 +275,9 @@ def build_hierarchical_order_proposal(
     pair_disagreement = _pair_disagreement(base_ids, candidate_ids)
 
     explicit_count = sum(item.method == "explicit-parent" for item in memberships)
+    text_geometry_count = sum(
+        item.method == "text-geometry-parent" for item in memberships
+    )
     geometry_count = sum(item.method == "geometry-coverage" for item in memberships)
     ambiguous_count = sum(
         item.reason == "ambiguous-region-overlap" for item in memberships
@@ -247,8 +286,11 @@ def build_hierarchical_order_proposal(
         "element_count": len(elements),
         "region_count": len(regions),
         "nonempty_region_count": len(nonempty_region_ids),
-        "assigned_element_count": explicit_count + geometry_count,
+        "assigned_element_count": (
+            explicit_count + text_geometry_count + geometry_count
+        ),
         "explicit_membership_count": explicit_count,
+        "text_geometry_membership_count": text_geometry_count,
         "geometry_membership_count": geometry_count,
         "ambiguous_element_count": ambiguous_count,
         "unassigned_element_count": len(unassigned_ids),
@@ -286,6 +328,8 @@ def build_hierarchical_order_proposal(
         "coarse_order_suppressed": not transitions_enabled,
         "min_geometry_coverage": round(min_geometry_coverage, 8),
         "min_geometry_margin": round(min_geometry_margin, 8),
+        "min_text_parent_score": DEFAULT_MIN_TEXT_PARENT_SCORE,
+        "min_text_parent_margin": DEFAULT_MIN_TEXT_PARENT_MARGIN,
         **coarse_diagnostics,
     }
     region_by_id = {region.id: region for region in regions}
@@ -539,6 +583,8 @@ def _assign_memberships(
     elements: Sequence[_HierarchyNode],
     regions: Sequence[_HierarchyNode],
     *,
+    width: float,
+    height: float,
     min_geometry_coverage: float,
     min_geometry_margin: float,
 ) -> tuple[_Membership, ...]:
@@ -580,6 +626,50 @@ def _assign_memberships(
             ),
             key=lambda item: (-item[0], item[1]),
         )
+        text_parent = _text_parent_candidate(
+            element,
+            regions,
+            width=width,
+            height=height,
+            min_score=DEFAULT_MIN_TEXT_PARENT_SCORE,
+            min_margin=DEFAULT_MIN_TEXT_PARENT_MARGIN,
+        )
+        best_geometry_region_id = candidates[0][1] if candidates else None
+        best_geometry_coverage = candidates[0][0] if candidates else 0.0
+        best_geometry_region = next(
+            (
+                region
+                for region in regions
+                if region.id == best_geometry_region_id
+            ),
+            None,
+        )
+        geometry_text_agrees = bool(
+            best_geometry_region
+            and _parent_text_match_score(element.text, best_geometry_region.text)
+            is not None
+        )
+        if text_parent is not None and (
+            best_geometry_coverage < min_geometry_coverage
+            or (
+                text_parent.region_id != best_geometry_region_id
+                and not geometry_text_agrees
+            )
+        ):
+            memberships[element.id] = _Membership(
+                element.id,
+                text_parent.region_id,
+                "text-geometry-parent",
+                text_parent.coverage,
+                None,
+                None,
+                None,
+                text_parent_score=text_parent.score,
+                text_match_score=text_parent.text_match_score,
+                spatial_gap_ratio=text_parent.spatial_gap_ratio,
+                evidence_confidence=min(text_parent.score, 0.76),
+            )
+            continue
         qualified = [item for item in candidates if item[0] >= min_geometry_coverage]
         if not qualified:
             runner_up = candidates[1][0] if len(candidates) > 1 else None
@@ -617,6 +707,123 @@ def _assign_memberships(
             None,
         )
     return tuple(memberships[element.id] for element in elements)
+
+
+def _text_parent_candidate(
+    element: _HierarchyNode,
+    regions: Sequence[_HierarchyNode],
+    *,
+    width: float,
+    height: float,
+    min_score: float,
+    min_margin: float,
+) -> _TextParentCandidate | None:
+    candidates: list[_TextParentCandidate] = []
+    for region in regions:
+        text_match_score = _parent_text_match_score(element.text, region.text)
+        if text_match_score is None:
+            continue
+        spatial_gap_ratio = _text_parent_spatial_gap_ratio(
+            element.bbox,
+            region.bbox,
+            width=width,
+            height=height,
+        )
+        if spatial_gap_ratio is None:
+            continue
+        coverage = _bbox_coverage(element.bbox, region.bbox)
+        score = (
+            text_match_score * 0.7
+            + (1.0 - spatial_gap_ratio) * 0.2
+            + coverage * 0.1
+        )
+        candidates.append(
+            _TextParentCandidate(
+                region_id=region.id,
+                score=score,
+                text_match_score=text_match_score,
+                coverage=coverage,
+                spatial_gap_ratio=spatial_gap_ratio,
+            )
+        )
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (-item.score, item.region_id))
+    best = candidates[0]
+    if best.score < min_score:
+        return None
+    if len(candidates) > 1 and best.score - candidates[1].score < min_margin:
+        return None
+    return best
+
+
+def _parent_text_match_score(element_text: str, region_text: str) -> float | None:
+    element = _compact_semantic_text(element_text)
+    region = _compact_semantic_text(region_text)
+    if not element or not region:
+        return None
+    if element == region and len(element) >= MIN_EXACT_TEXT_PARENT_CHARACTERS:
+        return 1.0
+    if (
+        len(element) < MIN_CONTAINED_TEXT_PARENT_CHARACTERS
+        or element not in region
+    ):
+        return None
+    return min(0.99, 0.9 + 0.1 * len(element) / len(region))
+
+
+def _compact_semantic_text(value: str) -> str:
+    return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _text_parent_spatial_gap_ratio(
+    element: BBox,
+    region: BBox,
+    *,
+    width: float,
+    height: float,
+) -> float | None:
+    horizontal_overlap = _axis_overlap(element.x0, element.x1, region.x0, region.x1)
+    vertical_overlap = _axis_overlap(element.y0, element.y1, region.y0, region.y1)
+    horizontal_alignment = horizontal_overlap / max(
+        min(element.width, region.width),
+        1.0,
+    )
+    vertical_alignment = vertical_overlap / max(
+        min(element.height, region.height),
+        1.0,
+    )
+    ratios: list[float] = []
+    if horizontal_alignment >= MIN_TEXT_PARENT_AXIS_ALIGNMENT:
+        vertical_limit = max(
+            element.height * TEXT_PARENT_VERTICAL_GAP_LINE_FACTOR,
+            height * TEXT_PARENT_PAGE_GAP_RATIO,
+        )
+        ratios.append(
+            _axis_gap(element.y0, element.y1, region.y0, region.y1)
+            / vertical_limit
+        )
+    if vertical_alignment >= MIN_TEXT_PARENT_AXIS_ALIGNMENT:
+        horizontal_limit = max(
+            element.width * TEXT_PARENT_HORIZONTAL_GAP_WIDTH_FACTOR,
+            width * TEXT_PARENT_PAGE_GAP_RATIO,
+        )
+        ratios.append(
+            _axis_gap(element.x0, element.x1, region.x0, region.x1)
+            / horizontal_limit
+        )
+    if not ratios:
+        return None
+    ratio = min(ratios)
+    return min(max(ratio, 0.0), 1.0) if ratio <= 1.0 else None
+
+
+def _axis_overlap(left0: float, left1: float, right0: float, right1: float) -> float:
+    return max(0.0, min(left1, right1) - max(left0, right0))
+
+
+def _axis_gap(left0: float, left1: float, right0: float, right1: float) -> float:
+    return max(0.0, max(left0, right0) - min(left1, right1))
 
 
 def _coarse_region_order(
@@ -718,7 +925,11 @@ def _region_streams(
         if not members:
             continue
         membership_confidences = [
-            float(membership_by_element[member_id].coverage or 0.0)
+            float(
+                membership_by_element[member_id].evidence_confidence
+                if membership_by_element[member_id].evidence_confidence is not None
+                else membership_by_element[member_id].coverage or 0.0
+            )
             for member_id in members
         ]
         stream_confidence = min(min(membership_confidences), 0.76)

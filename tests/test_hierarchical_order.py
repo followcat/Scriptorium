@@ -226,6 +226,91 @@ def test_hierarchy_margin_compares_near_threshold_runner_up() -> None:
     assert membership["reason"] == "ambiguous-region-overlap"
 
 
+def test_hierarchy_uses_text_and_local_gap_to_correct_geometry_parent() -> None:
+    payload = {
+        "id": "text-parent",
+        "width": 100,
+        "height": 120,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {
+                "id": "footer-line",
+                "box": [10, 70, 90, 80],
+                "role": "Footer",
+                "text": "Conference proceedings 2026",
+            },
+        ],
+        "regions": [
+            {
+                "id": "footnote-region",
+                "box": [5, 65, 95, 82],
+                "role": "Footnote",
+                "text": "Author contribution details",
+            },
+            {
+                "id": "footer-region",
+                "box": [5, 90, 95, 105],
+                "role": "Footer",
+                "text": "Conference proceedings 2026",
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    membership = result.payload["memberships"][0]
+    assert membership["region_id"] == "footer-region"
+    assert membership["method"] == "text-geometry-parent"
+    assert membership["coverage"] == 0.0
+    assert membership["text_parent_score"] > 0.8
+    assert membership["text_match_score"] == 1.0
+    assert membership["spatial_gap_ratio"] == 0.25
+    assert membership["evidence_confidence"] == 0.76
+    assert result.diagnostics["text_geometry_membership_count"] == 1
+    assert result.diagnostics["geometry_membership_count"] == 0
+
+
+def test_hierarchy_does_not_choose_between_ambiguous_text_parents() -> None:
+    payload = {
+        "id": "ambiguous-text-parent",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {
+                "id": "repeated-line",
+                "box": [20, 20, 80, 30],
+                "role": "Text Block",
+                "text": "Repeated section title",
+            },
+        ],
+        "regions": [
+            {
+                "id": "first",
+                "box": [10, 10, 90, 40],
+                "role": "Section Header",
+                "text": "Repeated section title",
+            },
+            {
+                "id": "second",
+                "box": [10, 10, 90, 40],
+                "role": "Section Header",
+                "text": "Repeated section title",
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert result.payload["memberships"][0]["region_id"] is None
+    assert result.payload["memberships"][0]["reason"] == (
+        "ambiguous-region-overlap"
+    )
+    assert result.diagnostics["text_geometry_membership_count"] == 0
+
+
 def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None:
     payload = _two_column_payload()
     payload["regions"].append(
