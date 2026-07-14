@@ -1348,13 +1348,23 @@ Membership is fail-closed and ordered by evidence strength:
    `>= 0.1`; ties stay unassigned.
 
 Within-region order always preserves the answer-free selected local line order.
-The coarse layer uses selected geometry or the optional Chunkr block model only
-at matching granularity. OOD model pages suppress all cross-region transitions.
-Empty regions and unassigned boundary gaps break the coarse chain, and a full
-candidate expansion is emitted only when every cross-region boundary is
-resolved and every fine element is assigned. All local edges and transitions
-remain review-only in an unaccepted `ScriptoriumReadingOrderSidecar` proposal;
-`runtime_reorder` stays `false`.
+The default cross-region layer no longer forces selected coarse geometry into
+one adjacency chain. One fine relation-graph pass returns both its serialized
+diagnostic order and its actually selected edge diagnostics. Coarse regions are
+listed by the completion rank of their members only for inspection. Every
+selected edge crossing two assigned regions is retained as evidence; only a
+source-stream-tail to target-stream-head edge can become a review transition.
+Region-level degree-one checks and cycle suppression keep those transitions a
+partial DAG. Non-boundary and suppressed edges remain in
+`cross_region_relation_evidence` with an explicit reason.
+
+The optional Chunkr block model remains an explicit same-granularity A/B path.
+OOD model pages still suppress all model transitions. Candidate expansion is
+allowed only when the selected relation edges happen to form the exact complete
+coarse chain and every fine element is assigned. All local edges and
+transitions remain review-only in an unaccepted
+`ScriptoriumReadingOrderSidecar` proposal; `total_order_asserted` and
+`runtime_reorder` stay `false`.
 
 The first real, unlabelled geometry-only versus text-plus-geometry audit is:
 
@@ -1382,3 +1392,45 @@ relations rather than forcing one global permutation:
 - Detect-Order-Construct: https://arxiv.org/abs/2401.11874
 - DLAFormer coarse-to-fine layout analysis: https://arxiv.org/abs/2405.11757
 - Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/
+
+### Hierarchy Relation-DAG Contract
+
+`infer_relation_graph_order_evidence()` exposes one immutable
+`RelationGraphOrderEvidence` containing the serialized candidate indices and
+selection-time diagnostics for every edge that entered the max-regret path
+cover. This avoids rebuilding the quadratic candidate graph when hierarchy
+needs both views. Existing order-only and selected-edge APIs delegate to the
+same primitive.
+
+`hierarchical_order.py` maps each selected fine edge through predicted
+membership. Cross-region candidates carry score, alternatives, margins,
+selection regret, selection step, and tie status. Boundary candidates are
+ranked by untied status, regret, score, and stable ids. The selector enforces a
+single outgoing/incoming edge per region and rejects any edge that would close
+a region cycle. Selected records enter `review_transitions`; every rejected or
+non-boundary record remains in `cross_region_relation_evidence` with
+`not-local-stream-boundary`, degree-conflict, or cycle provenance. This makes
+abstention inspectable instead of silently serializing path heads.
+
+The answer-separated Comp-HRDoc hierarchy corpus has independent hashed
+`inputs/` and `labels/`. Materialization reads every structure page before any
+semantic sidecar. Evaluation predicts every input before resolving any label
+path. Tests mutate relation labels without changing inputs, reverse source
+input order, track the two read phases, reject path traversal and hash
+tampering, and force a three-region cycle to verify suppression.
+
+On 64 train-only pages, membership remains `5223/5257 = 0.99353243` with zero
+wrong assignments. Within-region F1 remains `0.98901099`. Line cross-region F1
+improves `0.76518219 -> 0.92624585`, and region-transition F1 improves
+`0.72936660 -> 0.89761751`. The report separately aggregates 959 cross-region
+evidence edges, 893 boundary candidates, 66 non-boundary records, 9 tied edges,
+3 cycle suppressions, and 890 emitted transitions. Fit/calibration are reported
+separately, and no new official test window was opened. The full repository
+suite passes 376 tests for this revision.
+
+For translation, each accepted coarse membership still defines a bounded local
+stream. The partial DAG can later order handoffs between those streams without
+requiring one page permutation. Non-boundary relation evidence cannot drive
+replacement or reflow; it remains review material until a structure provider,
+semantic model, or human confirms the boundary. This preserves stable
+translation fitting units while avoiding false global order.

@@ -1223,3 +1223,83 @@ or cross-region edges are correct. All emitted edges remain review-only, and
 incomplete region chains suppress candidate expansion. Independent labels must
 score within-region successors and cross-region transitions separately before
 any promotion decision.
+
+### Answer-Separated Hierarchical Relation Benchmark
+
+The labelled hierarchy benchmark now materializes 64 official Comp-HRDoc
+**train** pages from 32 documents: 50 fit pages, 14 calibration pages, 32
+graphical multi-column pages, 30 multi-column pages, and 2 graphical pages.
+Document-hash partitioning prevents pages from one paper crossing fit and
+calibration. `block_id` is used only while materializing oracle coarse-region
+geometry and membership labels; member ids, `ro_linkings`, provider sequence
+values, and relation values never enter inference input. The evaluator predicts
+every page before resolving or opening any label path, verifies both input and
+label SHA-256 values, and keeps proposals review-only:
+
+```bash
+scriptorium materialize-comphrdoc-hierarchy \
+  /tmp/scriptorium-comphrdoc-provider-calibration-64-v1 \
+  --output /tmp/scriptorium-hierarchy-train64-v1
+scriptorium benchmark-hierarchical-order-corpus \
+  /tmp/scriptorium-hierarchy-train64-v1 \
+  --output /tmp/scriptorium-hierarchy-train64-relation-report-v3.json
+```
+
+The previous control forced one adjacency chain over coarse regions. The new
+default keeps selected fine relation-graph edges as a partial DAG. It retains
+all cross-region edges as evidence, emits a transition only when the edge joins
+the source local-stream tail to the target local-stream head, enforces one
+region predecessor/successor, and removes the lowest-regret edge that would
+close a region cycle. A member-completion region sequence remains diagnostic;
+`total_order_asserted` is false and `runtime_reorder` remains false.
+
+| Metric | Former coarse chain | Relation boundary DAG | Flat selected baseline | DAG delta vs former |
+|---|---:|---:|---:|---:|
+| Membership recall / coverage | 0.99353243 | 0.99353243 | n/a | 0.00000000 |
+| Within-region successor F1 | 0.98901099 | 0.98901099 | 0.98359865 | 0.00000000 |
+| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.92146597 | +0.16106366 |
+| Region transition F1 | 0.72936660 | 0.89761751 | 0.86111111 | +0.16825091 |
+
+The fit/calibration line-transition F1 values are `0.93265993/0.90220820`;
+region-transition F1 values are `0.90301548/0.87730061`. Graphical
+multi-column line/region F1 improves from `0.71021776/0.65137615` to
+`0.90066225/0.84472050`; plain multi-column improves from
+`0.80278422/0.78822197` to `0.94760820/0.94224236`. Within-region quality does
+not move, so the gain is isolated to the failing cross-region layer rather than
+traded against local continuity.
+
+The report aggregates 5,150 selected fine edges, 959 cross-region evidence
+edges, 893 boundary-aligned candidates, 66 non-boundary evidence edges, 9 tied
+cross-region edges, and 3 region-cycle suppressions. It emits 890 acyclic
+review transitions. The frozen Chunkr ranker is retained as an explicit A/B
+control; on this corpus its OOD suppression leaves region-transition F1 at
+`0.15531915`, confirming that the coarse external model is not a replacement
+for line-level relation evidence.
+
+The frozen implementation was then replayed, without tuning, on the same real
+provider inputs used by the earlier coverage audit:
+
+| Page/provider | Assigned | Former chain transitions | Cross evidence / boundary / emitted | Non-boundary / tied |
+|---|---:|---:|---:|---:|
+| Attention p. 1 / PP-Structure | 52 | 6 | 9 / 3 / 3 | 6 / 0 |
+| BYD annual report p. 136 / PP-Structure | 33 | 13 | 14 / 9 / 9 | 5 / 0 |
+| JD image source / Docling | 108 | 20 | 27 / 11 / 11 | 16 / 1 |
+| PUMA annual report p. 5 / PP-Structure | 23 | 7 | 6 / 6 / 6 | 0 / 0 |
+
+These four rows are structural diagnostics, not accuracy: JD, PUMA, and BYD do
+not provide complete human relation labels for this replay. They show that the
+new path abstains from unsupported page-wide adjacency and preserves rejected
+non-boundary evidence for review. No new Comp-HRDoc test window was opened and
+the promotion decision remains `development-benchmark-only-review-only`.
+
+The representation follows the EMNLP 2024 ordering-relations result and the
+official ROOR implementation, which model complex layouts as immediate
+successor relations rather than one permutation. Docling's current rule-based
+predictor likewise builds directional maps over page elements; its open
+discussion about many small orphan clusters reinforces the need for explicit
+granularity and abstention.
+
+- Ordering relations paper: https://aclanthology.org/2024.emnlp-main.540/
+- Official ROOR implementation: https://github.com/chongzhangFDU/ROOR
+- Docling reading-order implementation: https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
+- Relation-graph/max-regret path-cover analysis: https://arxiv.org/html/2607.01018

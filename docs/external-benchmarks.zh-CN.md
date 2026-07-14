@@ -1116,3 +1116,70 @@ geometry threshold，就能在论文、中文财报和 image-source 门户三类
 region membership；它不能证明新增的 within-region 或 cross-region edge 正确。所有 edge 仍为
 review-only，不完整 region chain 会抑制 candidate expansion。任何 promotion 前都必须用独立
 标签分别评分 within-region successor 与 cross-region transition。
+
+### 答案隔离的分层 Relation Benchmark
+
+有标签的 hierarchy benchmark 现从官方 Comp-HRDoc **train** split 物化 32 篇文档、
+64 页：50 个 fit 页、14 个 calibration 页、32 个 graphical-multicolumn 页、30 个
+multicolumn 页和 2 个 graphical 页。Document-hash partition 保证同一论文不会跨越 fit 与
+calibration。`block_id` 只在物化阶段构造 oracle coarse-region geometry 和 membership label；
+member id、`ro_linkings`、provider sequence 与 relation value 都不会进入 inference input。
+Evaluator 会先预测所有页面，再解析或打开任何 label path，同时验证 input/label SHA-256；
+proposal 始终保持 review-only：
+
+```bash
+scriptorium materialize-comphrdoc-hierarchy \
+  /tmp/scriptorium-comphrdoc-provider-calibration-64-v1 \
+  --output /tmp/scriptorium-hierarchy-train64-v1
+scriptorium benchmark-hierarchical-order-corpus \
+  /tmp/scriptorium-hierarchy-train64-v1 \
+  --output /tmp/scriptorium-hierarchy-train64-relation-report-v3.json
+```
+
+旧 control 会把 coarse region 强制串成一条 adjacency chain。新默认路径把 fine relation graph
+真正选中的 edge 保留成 partial DAG：所有跨区域 edge 都进入 evidence；只有从 source local
+stream 尾部连到 target local stream 头部的 edge 才能成为 transition；region 级 predecessor /
+successor 必须保持 degree-one；会闭合 region cycle 的最低 regret edge 会被抑制。基于 member
+completion 的 region sequence 只作诊断，`total_order_asserted` 与 `runtime_reorder` 都为 false。
+
+| 指标 | 旧 coarse chain | Relation boundary DAG | Flat selected baseline | DAG 相对旧值 |
+|---|---:|---:|---:|---:|
+| Membership recall / coverage | 0.99353243 | 0.99353243 | n/a | 0.00000000 |
+| Within-region successor F1 | 0.98901099 | 0.98901099 | 0.98359865 | 0.00000000 |
+| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.92146597 | +0.16106366 |
+| Region transition F1 | 0.72936660 | 0.89761751 | 0.86111111 | +0.16825091 |
+
+Fit/calibration 的 line-transition F1 为 `0.93265993/0.90220820`，region-transition F1 为
+`0.90301548/0.87730061`。Graphical-multicolumn 的 line/region F1 从
+`0.71021776/0.65137615` 提高到 `0.90066225/0.84472050`；普通 multicolumn 从
+`0.80278422/0.78822197` 提高到 `0.94760820/0.94224236`。Within-region 指标没有变化，
+说明提升发生在原本失败的 cross-region 层，没有用局部连续性换总分。
+
+报告汇总 5,150 条 fine selected edge、959 条 cross-region evidence、893 条 boundary-aligned
+candidate、66 条 non-boundary evidence、9 条同分跨区 edge 和 3 次 region-cycle suppression，
+最终输出 890 条无环 review transition。冻结的 Chunkr ranker 继续作为显式 A/B control；它在
+该语料上的 OOD suppression 使 region-transition F1 只有 `0.15531915`，说明 coarse 外部模型
+不能替代 line-level relation evidence。
+
+算法冻结后，又在旧 coverage audit 使用的同一批真实 provider input 上直接重放，没有继续调参：
+
+| 页面/provider | Assigned | 旧 chain transition | Cross evidence / boundary / emitted | Non-boundary / tied |
+|---|---:|---:|---:|---:|
+| Attention 第 1 页 / PP-Structure | 52 | 6 | 9 / 3 / 3 | 6 / 0 |
+| 比亚迪年报第 136 页 / PP-Structure | 33 | 13 | 14 / 9 / 9 | 5 / 0 |
+| JD image source / Docling | 108 | 20 | 27 / 11 / 11 | 16 / 1 |
+| PUMA 年报第 5 页 / PP-Structure | 23 | 7 | 6 / 6 / 6 | 0 / 0 |
+
+这四行是结构诊断，不是准确率：JD、PUMA 和比亚迪此次重放没有完整 human relation label。
+它们说明新路径会拒绝没有依据的 page-wide adjacency，同时把未对齐边界的 evidence 留给 review。
+本轮没有打开新的 Comp-HRDoc test window，promotion 继续保持
+`development-benchmark-only-review-only`。
+
+该表示与 EMNLP 2024 ordering-relations 和官方 ROOR 实现一致：复杂布局应表达为即时 successor
+relation，而不是一个 permutation。Docling 当前 rule-based predictor 同样在页面元素上构造方向
+映射；其关于大量 small orphan cluster 的公开讨论进一步说明必须显式处理 granularity 与 abstention。
+
+- Ordering relations 论文：https://aclanthology.org/2024.emnlp-main.540/
+- 官方 ROOR 实现：https://github.com/chongzhangFDU/ROOR
+- Docling reading-order 实现：https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
+- Relation graph / max-regret path-cover 分析：https://arxiv.org/html/2607.01018
