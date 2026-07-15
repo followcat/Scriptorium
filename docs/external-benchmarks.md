@@ -1349,3 +1349,38 @@ is research direction rather than an available dependency.
 - Relation-graph/max-regret path-cover analysis: https://arxiv.org/html/2607.01018
 - XY-Cut++ hierarchical/cross-modal ordering: https://arxiv.org/abs/2504.10258
 - GraphDoc relation-graph project: https://github.com/yufanchen96/GraphDoc
+
+### Cached Semantic Successor Screening
+
+The July 2026 max-regret study uses per-target-token conditional likelihood from
+`EleutherAI/pythia-410M` plus BERT NSP `log p(IsNext)`, with fixed weights
+`1.0/0.2`. It reports that sentence embeddings do not help and that dense
+semantic scoring costs a mean `93.5 s/page` on an A40. Scriptorium therefore
+first screened the Apache-2.0, 4.4M-parameter Google BERT-Tiny NSP checkpoint on
+the existing answer-separated ROOR train partition. Its revision is pinned to
+`30b0a37ccaaa32f332884b96992754e246e48c5f`; 402,395 unique directed text pairs
+were cached, so repeated model training does not rerun the transformer.
+
+On the 27 internal calibration documents, pure NSP is weak but non-random:
+positive-pair mean probability is `0.73074756`, negative-pair mean is
+`0.68807782`, top-1 source accuracy is `0.03766334`, and MRR is `0.11700226`.
+Directly appending the score to the existing pair classifier is harmful:
+
+| ROOR train internal calibration | Precision | Recall | F1 | Correct / predicted |
+|---|---:|---:|---:|---:|
+| Geometry/text-shape v2 top edge | 0.66132556 | 0.64857143 | 0.65488640 | 908 / 1,373 |
+| Geometry/text-shape v2 + branch | 0.65991620 | 0.67500000 | 0.66737288 | 945 / 1,432 |
+| Direct feature-26 Tiny NSP top edge | 0.65175953 | 0.63500000 | 0.64327062 | 889 / 1,364 |
+| Direct feature-26 Tiny NSP + branch | 0.65618299 | 0.65571429 | 0.65594855 | 918 / 1,399 |
+
+The direct fusion is rejected. A fit-only screen then fixed a two-stage design:
+score only the geometry ranker's top five targets, combine base probability,
+rank/margins, NSP relative scores, and the original pair features, and select a
+threshold from five document-hash OOF folds. Replaying that frozen prototype on
+the already-opened development calibration gives precision `0.70720372`, recall
+`0.65214286`, and F1 `0.67855816` (913 / 1,291). This is a useful architecture
+candidate, not independent promotion evidence: the calibration partition had
+already been observed when the direct design was rejected. The next step is to
+implement the reranker, freeze it, and evaluate an unopened document-level
+partition plus the hierarchy gate. BERT-Base and Pythia remain deferred until a
+candidate-gated path justifies their CPU cost.

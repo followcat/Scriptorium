@@ -454,6 +454,19 @@ anchor、年报和门户截图共享一条推理路径，而不是只支持 ROOR
 ratio。这些是域漂移诊断，不是正确率估计；模型在域外页面也可能保持很高 confidence。
 它们用于未来 runtime rejection，并帮助优先补独立标注。
 
+`requirements-semantic-order.txt` 新增隔离的语义研究路径。当前 preset 固定
+Apache-2.0 的 Google BERT-Tiny checkpoint 与 revision，使用预训练 NSP head 计算
+`log p(IsNext)`，并把分数写入内容寻址的 SQLite cache。模型 identity、revision、许可、
+截断方式和评分公式都属于 feature contract；本地 snapshot 只改变获取方式，不能改变模型
+身份。语义 bundle 在推理时必须提供同一个 scorer；v2 geometry bundle 会拒绝额外特征，
+不会静默接受错误的 feature shape。
+
+第一轮直接特征实验明确不晋升。在与 v2 相同的 ROOR train 122/27 fit/calibration 文档、
+138,513 个样本和随机种子下，把 Tiny NSP 作为第 26 个特征后，top-edge F1 从
+`0.65488640` 降至 `0.64327062`，branch F1 从 `0.66737288` 降至 `0.65594855`。
+该可选路径用于让语义 A/B 可复现，不代表新的默认能力；输出仍为 review-only，runtime
+reorder 继续关闭。
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` 固定 MIT Comp-HRDoc 仓库 revision，并通过 SHA-256 校验

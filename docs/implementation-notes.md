@@ -844,6 +844,22 @@ diagnostics, not correctness estimates: a model can remain highly confident on
 out-of-domain pages. They are intended as a future runtime rejection signal and
 as a way to prioritize independent labels.
 
+`requirements-semantic-order.txt` adds an isolated semantic-research path. The
+current preset pins the Apache-2.0 Google BERT-Tiny checkpoint and revision,
+uses the pretrained NSP head to compute `log p(IsNext)`, and stores scores in a
+content-addressed SQLite cache. Model identity, revision, license, truncation,
+and score formula are part of the feature contract; a local snapshot may be
+used for acquisition, but cannot change that identity. Semantic bundles require
+the same scorer at inference, while v2 geometry bundles reject the extra feature
+instead of silently accepting a different input shape.
+
+The first direct-feature experiment is deliberately not promoted. With the same
+122/27 ROOR train fit/calibration documents, 138,513 examples, and seed as v2,
+adding Tiny NSP as feature 26 reduced top-edge F1 from `0.65488640` to
+`0.64327062` and branch F1 from `0.66737288` to `0.65594855`. The optional path
+exists to make semantic A/B reproducible, not to claim a new default; all output
+remains review-only and runtime reorder stays disabled.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the

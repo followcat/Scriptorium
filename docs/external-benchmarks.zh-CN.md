@@ -1217,3 +1217,32 @@ XY-Cut++ 也独立支持 multi-granularity segmentation 与轻量 semantic/geome
 - Relation graph / max-regret path-cover 分析：https://arxiv.org/html/2607.01018
 - XY-Cut++ hierarchical/cross-modal ordering：https://arxiv.org/abs/2504.10258
 - GraphDoc relation-graph 项目：https://github.com/yufanchen96/GraphDoc
+
+### 可缓存的 Semantic Successor 筛选
+
+2026 年 7 月的 max-regret 研究使用 `EleutherAI/pythia-410M` 的逐 target token 条件似然，
+再加 BERT NSP 的 `log p(IsNext)`，固定权重为 `1.0/0.2`。论文同时报告 sentence embedding
+没有增益，稠密语义评分在 A40 上平均需要 `93.5 s/page`。因此 Scriptorium 先在已有的答案
+隔离 ROOR train partition 上筛选 Apache-2.0、4.4M 参数的 Google BERT-Tiny NSP；revision
+固定为 `30b0a37ccaaa32f332884b96992754e246e48c5f`。本轮缓存了 402,395 个唯一有向文本
+pair，重复训练不再运行 transformer。
+
+在 27 个内部 calibration 文档上，纯 NSP 很弱但不是随机信号：正 pair 平均概率
+`0.73074756`，负 pair `0.68807782`，source top-1 accuracy `0.03766334`，MRR
+`0.11700226`。但直接把该分数拼入现有 pair classifier 会退化：
+
+| ROOR train 内部 calibration | Precision | Recall | F1 | Correct / predicted |
+|---|---:|---:|---:|---:|
+| Geometry/text-shape v2 top edge | 0.66132556 | 0.64857143 | 0.65488640 | 908 / 1,373 |
+| Geometry/text-shape v2 + branch | 0.65991620 | 0.67500000 | 0.66737288 | 945 / 1,432 |
+| 直接添加第 26 个 Tiny NSP 特征，top edge | 0.65175953 | 0.63500000 | 0.64327062 | 889 / 1,364 |
+| 直接添加第 26 个 Tiny NSP 特征 + branch | 0.65618299 | 0.65571429 | 0.65594855 | 918 / 1,399 |
+
+直接融合已被否决。随后只读取 fit label 筛选并冻结了二阶段设计：只给 geometry ranker 的
+top-5 target 计算 NSP，再组合 base probability、rank/margin、NSP 相对分数与原 pair feature，
+阈值来自 5 个 document-hash OOF fold。该冻结 prototype 在已经打开过的 development
+calibration 上重放后，precision 为 `0.70720372`、recall 为 `0.65214286`、F1 为
+`0.67855816`（913 / 1,291）。这是值得实现的架构候选，不是独立 promotion 证据：直接设计
+被否决时已经观察过这个 calibration partition。下一步应实现 reranker，冻结后在未打开的
+document-level partition 和 hierarchy gate 上验证。只有 candidate-gated 路径证明值得增加
+成本后，才考虑 BERT-Base 与 Pythia。
