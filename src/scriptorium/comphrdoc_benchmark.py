@@ -86,6 +86,18 @@ class _CompHrDocProviderMaterialization:
     manifest_documents: tuple[dict[str, Any], ...]
 
 
+class _SourcePageAlignmentError(ValueError):
+    def __init__(self, message: str, *, diagnostics: Mapping[str, Any]) -> None:
+        super().__init__(message)
+        self.diagnostics = dict(diagnostics)
+
+
+class _CompHrDocDocumentAlignmentError(ValueError):
+    def __init__(self, audit_record: Mapping[str, Any]) -> None:
+        super().__init__(str(audit_record["message"]))
+        self.audit_record = dict(audit_record)
+
+
 @dataclass(frozen=True)
 class CompHrDocRelationCorpusResult:
     out_dir: Path
@@ -224,6 +236,7 @@ def fetch_comphrdoc_provider_calibration_corpus(
     calibration_fraction: float = 0.2,
     arxiv_version: str | None = None,
     annotation_archive: str | Path | None = None,
+    skip_unaligned_documents: bool = False,
     refresh: bool = False,
     downloader: CompHrDocDownloader | None = None,
 ) -> CompHrDocProviderCalibrationFetchResult:
@@ -246,31 +259,52 @@ def fetch_comphrdoc_provider_calibration_corpus(
         member=COMPHRDOC_TRAIN_ANNOTATION_MEMBER,
     )
     document_pages = _provider_calibration_document_pages(annotations)
-    selected_documents = _select_provider_calibration_documents(
-        document_pages,
-        document_count=document_count,
-        calibration_fraction=calibration_fraction,
-    )
-    page_quotas = _balanced_quotas(sample_count, len(selected_documents))
-
-    selected_documents = [
-        {
-            **document,
-            "pages": _select_provider_calibration_pages(
-                document["pages"],
-                quota=page_quotas[document_position],
-            ),
-        }
-        for document_position, document in enumerate(selected_documents)
-    ]
     target = Path(out_dir)
-    materialized = _materialize_comphrdoc_provider_corpus(
-        target,
-        selected_documents,
-        arxiv_version=normalized_arxiv_version,
-        refresh=refresh,
-        downloader=download,
-    )
+    excluded_document_ids: set[str] = set()
+    skipped_documents: list[dict[str, Any]] = []
+    while True:
+        selected_documents = _select_provider_calibration_documents(
+            document_pages,
+            document_count=document_count,
+            calibration_fraction=calibration_fraction,
+            excluded_document_ids=excluded_document_ids,
+        )
+        page_quotas = _balanced_quotas(sample_count, len(selected_documents))
+        selected_documents = [
+            {
+                **document,
+                "pages": _select_provider_calibration_pages(
+                    document["pages"],
+                    quota=page_quotas[document_position],
+                ),
+            }
+            for document_position, document in enumerate(selected_documents)
+        ]
+        try:
+            materialized = _materialize_comphrdoc_provider_corpus(
+                target,
+                selected_documents,
+                arxiv_version=normalized_arxiv_version,
+                refresh=refresh and not skipped_documents,
+                downloader=download,
+            )
+        except _CompHrDocDocumentAlignmentError as exc:
+            if not skip_unaligned_documents:
+                raise
+            document_id = str(exc.audit_record["id"])
+            if document_id in excluded_document_ids:
+                raise RuntimeError(
+                    f"Comp-HRDoc document {document_id} failed alignment twice"
+                ) from exc
+            excluded_document_ids.add(document_id)
+            skipped_documents.append(
+                {
+                    **exc.audit_record,
+                    "selection_attempt": len(skipped_documents) + 1,
+                }
+            )
+            continue
+        break
 
     manifest_path = target / "comphrdoc_benchmark_manifest.json"
     manifest_path.write_text(
@@ -293,6 +327,14 @@ def fetch_comphrdoc_provider_calibration_corpus(
                 "selection": (
                     "document-hash-partition-layout-stratified-documents-and-pages-v1"
                 ),
+                "source_alignment_failure_policy": (
+                    "skip-whole-document-and-replenish-same-partition"
+                    if skip_unaligned_documents
+                    else "fail-closed"
+                ),
+                "skip_unaligned_documents": skip_unaligned_documents,
+                "skipped_document_count": len(skipped_documents),
+                "skipped_documents": skipped_documents,
                 "selection_uses_relation_labels": False,
                 "selection_uses_oracle_layout": True,
                 "selection_allowed_annotation_fields": [
@@ -499,20 +541,43 @@ def _materialize_comphrdoc_provider_corpus(
         else:
             pdf_bytes = downloader(pdf_url)
             source_pdf_path.write_bytes(pdf_bytes)
-        source_pdf_paths.append(source_pdf_path)
         with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
             if not selected_pages:
                 raise ValueError(f"Comp-HRDoc document {document_id} selected no pages")
-            source_page_remap_count = 0
+            aligned_pages: list[tuple[dict[str, Any], int, dict[str, Any]]] = []
             for page_record in selected_pages:
+                page_index = int(page_record["page_index"])
+                try:
+                    source_page_index, source_page_alignment = _align_source_page(
+                        pdf,
+                        annotation_page_index=page_index,
+                        annotations=page_record["annotations"],
+                    )
+                except _SourcePageAlignmentError as exc:
+                    raise _CompHrDocDocumentAlignmentError(
+                        {
+                            "id": document_id,
+                            "partition": partition,
+                            "reason": exc.diagnostics["reason"],
+                            "message": str(exc),
+                            "annotation_page_index": page_index,
+                            "source_pdf": str(source_pdf_path.relative_to(target)),
+                            "source_pdf_url": pdf_url,
+                            "source_pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                            "source_pdf_page_count": len(pdf),
+                            "alignment": exc.diagnostics,
+                        }
+                    ) from exc
+                aligned_pages.append(
+                    (page_record, source_page_index, source_page_alignment)
+                )
+
+            source_pdf_paths.append(source_pdf_path)
+            source_page_remap_count = 0
+            for page_record, source_page_index, source_page_alignment in aligned_pages:
                 image_record = page_record["image"]
                 page_annotations = page_record["annotations"]
                 page_index = int(page_record["page_index"])
-                source_page_index, source_page_alignment = _align_source_page(
-                    pdf,
-                    annotation_page_index=page_index,
-                    annotations=page_annotations,
-                )
                 source_page_remap_count += int(source_page_index != page_index)
                 sample_id = f"{document_id}_{page_index}"
                 image_path = images_dir / f"{sample_id}.png"
@@ -674,7 +739,9 @@ def _select_provider_calibration_documents(
     *,
     document_count: int,
     calibration_fraction: float,
+    excluded_document_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    excluded = excluded_document_ids or set()
     calibration_count = min(
         document_count - 1,
         max(1, math.ceil(document_count * calibration_fraction)),
@@ -688,7 +755,7 @@ def _select_provider_calibration_documents(
         "calibration": [],
     }
     for document_id, pages in document_pages.items():
-        if not pages:
+        if not pages or document_id in excluded:
             continue
         partition = _provider_calibration_partition(
             document_id,
@@ -984,8 +1051,28 @@ def _align_source_page(
     )
     if same_index is None:
         if not best_has_evidence:
-            raise ValueError(
-                "annotation page is outside the source PDF and text alignment is ambiguous"
+            raise _SourcePageAlignmentError(
+                "annotation page is outside the source PDF and text alignment is ambiguous",
+                diagnostics={
+                    "reason": "annotation-page-outside-source-pdf-ambiguous-text-alignment",
+                    "annotation_page_index": annotation_page_index,
+                    "source_pdf_page_count": len(pdf),
+                    "candidate_page_count": len(candidates),
+                    "best_candidate_source_page_index": int(best["source_page_index"]),
+                    "best_candidate_alignment": best["alignment"],
+                    "second_best_f1": round(second_best_f1, 8),
+                    "best_margin": round(best_margin, 8),
+                    "required_min_annotation_tokens": (
+                        SOURCE_PAGE_ALIGNMENT_MIN_ANNOTATION_TOKENS
+                    ),
+                    "required_min_overlap_tokens": (
+                        SOURCE_PAGE_ALIGNMENT_MIN_OVERLAP_TOKENS
+                    ),
+                    "required_min_f1": SOURCE_PAGE_ALIGNMENT_MIN_F1,
+                    "required_min_margin": SOURCE_PAGE_ALIGNMENT_MIN_MARGIN,
+                    "selection_uses_relation_labels": False,
+                    "alignment_field": "textline_contents",
+                },
             )
         selected = best
         policy = "remapped-out-of-range-by-text-alignment"

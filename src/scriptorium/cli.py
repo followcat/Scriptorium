@@ -897,6 +897,14 @@ def fetch_comphrdoc_provider_calibration_command(
         readable=True,
         help="Optional local Comp-HRDoc.zip; its pinned SHA-256 is still verified.",
     ),
+    skip_unaligned_documents: bool = typer.Option(
+        False,
+        "--skip-unaligned-documents",
+        help=(
+            "Skip an entire source document after an audited page-alignment "
+            "failure and replenish it from the same hash partition."
+        ),
+    ),
     refresh: bool = typer.Option(False, help="Redownload PDFs and rewrite derived files."),
 ) -> None:
     """Rebuild a train-only real-provider calibration corpus from arXiv PDFs."""
@@ -909,6 +917,7 @@ def fetch_comphrdoc_provider_calibration_command(
             calibration_fraction=calibration_fraction,
             arxiv_version=arxiv_version,
             annotation_archive=annotation_archive,
+            skip_unaligned_documents=skip_unaligned_documents,
             refresh=refresh,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -920,6 +929,7 @@ def fetch_comphrdoc_provider_calibration_command(
         partitions[partition] = partitions.get(partition, 0) + 1
     typer.echo(f"Comp-HRDoc train samples: {len(result.samples)}")
     typer.echo(f"Documents: {len(result.source_pdf_paths)}")
+    typer.echo(f"Skipped unaligned documents: {manifest['skipped_document_count']}")
     typer.echo(f"Partitions: {json.dumps(partitions, sort_keys=True)}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")

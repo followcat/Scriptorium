@@ -119,6 +119,10 @@ def test_fetch_provider_calibration_reconstructs_train_without_selection_labels(
     assert all(document["source_pdf_url"].endswith("v1") for document in manifest["documents"])
     assert manifest["selection_uses_relation_labels"] is False
     assert manifest["selection_uses_oracle_layout"] is True
+    assert manifest["source_alignment_failure_policy"] == "fail-closed"
+    assert manifest["skip_unaligned_documents"] is False
+    assert manifest["skipped_document_count"] == 0
+    assert manifest["skipped_documents"] == []
     assert manifest["selection_excluded_annotation_fields"] == [
         "reading_order_id",
         "reading_order_label",
@@ -201,6 +205,101 @@ def test_provider_calibration_rejects_unpinned_arxiv_version_syntax(tmp_path) ->
             document_count=2,
             arxiv_version="1",
         )
+
+
+def test_provider_calibration_skips_whole_unaligned_document_and_replenishes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    document_ids = [f"2401.{index:05d}" for index in range(40)]
+    annotation_archive = _provider_alignment_archive(document_ids)
+    monkeypatch.setattr(
+        comphrdoc,
+        "COMPHRDOC_ARCHIVE_SHA256",
+        hashlib.sha256(annotation_archive).hexdigest(),
+    )
+    with ZipFile(BytesIO(annotation_archive)) as archive:
+        payload = json.loads(archive.read(COMPHRDOC_TRAIN_ANNOTATION_MEMBER))
+    document_pages = comphrdoc._provider_calibration_document_pages(payload)
+    initial = comphrdoc._select_provider_calibration_documents(
+        document_pages,
+        document_count=2,
+        calibration_fraction=0.2,
+    )
+    failed_document = initial[0]
+    replacement = comphrdoc._select_provider_calibration_documents(
+        document_pages,
+        document_count=2,
+        calibration_fraction=0.2,
+        excluded_document_ids={failed_document["document_id"]},
+    )
+    expected_document_ids = {document["document_id"] for document in replacement}
+    one_page_pdf = _pdf_bytes(page_count=1)
+    two_page_pdf = _pdf_bytes(page_count=2)
+
+    def download(url: str) -> bytes:
+        document_id = url.rsplit("/", 1)[-1].removesuffix("v1")
+        return (
+            one_page_pdf
+            if document_id == failed_document["document_id"]
+            else two_page_pdf
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="annotation page is outside the source PDF",
+    ):
+        fetch_comphrdoc_provider_calibration_corpus(
+            tmp_path / "fail-closed",
+            sample_count=2,
+            document_count=2,
+            arxiv_version="v1",
+            annotation_archive=_write_archive(tmp_path, annotation_archive),
+            downloader=download,
+        )
+
+    result = fetch_comphrdoc_provider_calibration_corpus(
+        tmp_path / "skip",
+        sample_count=2,
+        document_count=2,
+        arxiv_version="v1",
+        annotation_archive=_write_archive(tmp_path, annotation_archive),
+        skip_unaligned_documents=True,
+        downloader=download,
+    )
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    skipped = manifest["skipped_documents"]
+    assert manifest["source_alignment_failure_policy"] == (
+        "skip-whole-document-and-replenish-same-partition"
+    )
+    assert manifest["skip_unaligned_documents"] is True
+    assert manifest["skipped_document_count"] == 1
+    assert skipped[0]["id"] == failed_document["document_id"]
+    assert skipped[0]["partition"] == failed_document["partition"]
+    assert skipped[0]["reason"] == (
+        "annotation-page-outside-source-pdf-ambiguous-text-alignment"
+    )
+    assert skipped[0]["annotation_page_index"] == 1
+    assert skipped[0]["selection_attempt"] == 1
+    assert skipped[0]["alignment"]["selection_uses_relation_labels"] is False
+    assert {document["id"] for document in manifest["documents"]} == (
+        expected_document_ids
+    )
+    assert failed_document["document_id"] not in {
+        sample["document_id"] for sample in manifest["samples"]
+    }
+    assert not list(
+        (result.out_dir / "images").glob(f"{failed_document['document_id']}_*")
+    )
+    assert not list(
+        (result.out_dir / "structure").glob(f"{failed_document['document_id']}_*")
+    )
+    assert not list(
+        (result.out_dir / "semantic").glob(f"{failed_document['document_id']}_*")
+    )
+    assert len(result.samples) == 2
+    assert len(result.source_pdf_paths) == 2
 
 
 def test_fetch_provider_test_uses_official_split_and_local_verified_archive(
@@ -791,10 +890,46 @@ def _provider_calibration_archive() -> bytes:
     return buffer.getvalue()
 
 
-def _pdf_bytes() -> bytes:
+def _provider_alignment_archive(document_ids: list[str]) -> bytes:
+    payload = {
+        "images": [
+            {
+                "id": index,
+                "file_name": f"{document_id}_1.png",
+                "width": 100,
+                "height": 100,
+            }
+            for index, document_id in enumerate(document_ids, start=1)
+        ],
+        "annotations": [
+            {
+                "image_id": index,
+                "reading_order_id": 1,
+                "reading_order_label": 0,
+                "in_page_id": 0,
+                "category_id": 3,
+                "textline_contents": ["Sparse page"],
+                "textline_polys": [[10, 10, 90, 10, 90, 20, 10, 20]],
+            }
+            for index in range(1, len(document_ids) + 1)
+        ],
+    }
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr(COMPHRDOC_TRAIN_ANNOTATION_MEMBER, json.dumps(payload))
+    return buffer.getvalue()
+
+
+def _write_archive(tmp_path: Path, payload: bytes) -> Path:
+    path = tmp_path / "CompHRDoc.zip"
+    path.write_bytes(payload)
+    return path
+
+
+def _pdf_bytes(*, page_count: int = 2) -> bytes:
     pdf = fitz.open()
-    pdf.new_page(width=100, height=100)
-    pdf.new_page(width=100, height=100)
+    for _ in range(page_count):
+        pdf.new_page(width=100, height=100)
     payload = pdf.tobytes()
     pdf.close()
     return payload
