@@ -56,6 +56,7 @@ from .ocr import (
 )
 from .opendataloader_provider import OpenDataLoaderAdapter
 from .paddle_layout_provider import PaddleLayoutAdapter, run_paddle_layout_corpus
+from .paragraph_graph_benchmark import benchmark_paragraph_graph
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -833,6 +834,77 @@ def benchmark_provider_hierarchy_command(
         f"{stream_segmentation['f1']}"
     )
     typer.echo(f"Assignment coverage: {assignment['coverage']}")
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
+
+
+@app.command("benchmark-paragraph-graph")
+def benchmark_paragraph_graph_command(
+    train_corpus: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Provider hierarchy corpus with document-disjoint fit/calibration labels.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/paragraph-graph-benchmark.json"),
+        "--output",
+        "-o",
+    ),
+    test_corpus: Optional[Path] = typer.Option(
+        None,
+        "--test-corpus",
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Optional independent provider hierarchy test corpus.",
+    ),
+    proposals_dir: Optional[Path] = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Directory for review-only line paragraph streams.",
+    ),
+    cross_validation_folds: int = typer.Option(
+        5,
+        "--cross-validation-folds",
+        min=2,
+    ),
+    minimum_edge_precision: float = typer.Option(
+        0.97,
+        "--minimum-edge-precision",
+        min=0.5,
+        max=1.0,
+    ),
+    minimum_selected_edges: int = typer.Option(
+        100,
+        "--minimum-selected-edges",
+        min=1,
+    ),
+) -> None:
+    """Evaluate a source-neutral fine-line paragraph graph without runtime reorder."""
+
+    try:
+        result = benchmark_paragraph_graph(
+            train_corpus,
+            output=output,
+            proposals_dir=proposals_dir,
+            test_corpus_dir=test_corpus,
+            cross_validation_folds=cross_validation_folds,
+            minimum_edge_precision=minimum_edge_precision,
+            minimum_selected_edges=minimum_selected_edges,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="train_corpus") from exc
+    typer.echo(f"Frozen threshold: {result.report['frozen_threshold']}")
+    for split, summary in result.report["summary"].items():
+        edge = summary["selected_edge"]
+        pair = summary["segmentation_pairwise"]
+        typer.echo(
+            f"{split} edge precision / pair F1: "
+            f"{edge['precision']} / {pair['f1']}"
+        )
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
     typer.echo(f"Proposals: {result.proposals_dir}")
