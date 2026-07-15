@@ -11,10 +11,16 @@ from typing import Any
 
 from .bipartite_matching import maximum_weight_bipartite_matching
 from .models import DocumentIR
+from .semantic_successor import SemanticPairScorer, semantic_scorer_identity
 
 
 RELATION_RANKER_SCHEMA = "scriptorium-relation-ranker/v1"
 RELATION_FEATURE_VERSION = "roor-pair-geometry-text-branch-v2"
+SEMANTIC_RELATION_FEATURE_VERSION = "roor-pair-geometry-text-nsp-branch-v3"
+SUPPORTED_RELATION_FEATURE_VERSIONS = {
+    RELATION_FEATURE_VERSION,
+    SEMANTIC_RELATION_FEATURE_VERSION,
+}
 RELATION_PROVIDER_SOURCE = "scriptorium-trained-relation-ranker"
 RELATION_DATASET_LICENSE = "CC-BY-4.0"
 DEFAULT_NEGATIVE_CANDIDATES = 20
@@ -44,6 +50,7 @@ def train_relation_ranker(
     calibration_fraction: float = 0.2,
     random_seed: int = 17,
     negative_candidates: int = DEFAULT_NEGATIVE_CANDIDATES,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> RelationRankerTrainingResult:
     """Train a local successor ranker from the official ROOR train split only."""
 
@@ -67,20 +74,29 @@ def train_relation_ranker(
     x_train, y_train = _training_examples(
         fit_documents,
         negative_candidates=negative_candidates,
+        semantic_scorer=semantic_scorer,
     )
+    feature_version = _feature_version_for_scorer(semantic_scorer)
+    semantic_descriptor = _semantic_descriptor(semantic_scorer)
     feature_envelope = _feature_envelope(x_train)
     estimator, sklearn_version = _fit_estimator(x_train, y_train, random_seed=random_seed)
-    threshold, calibration = _calibrate_top_successor_threshold(estimator, calibration_documents)
+    threshold, calibration = _calibrate_top_successor_threshold(
+        estimator,
+        calibration_documents,
+        semantic_scorer=semantic_scorer,
+    )
     branch_estimator = _fit_branch_estimator(
         estimator,
         fit_documents,
         random_seed=random_seed + 6,
+        semantic_scorer=semantic_scorer,
     )
     branch_threshold, branch_calibration = _calibrate_branch_threshold(
         estimator,
         branch_estimator,
         calibration_documents,
         top_threshold=threshold,
+        semantic_scorer=semantic_scorer,
     )
 
     output_path = Path(output)
@@ -88,19 +104,20 @@ def train_relation_ranker(
     manifest_path = output_path.with_suffix(f"{output_path.suffix}.manifest.json")
     bundle = {
         "schema": RELATION_RANKER_SCHEMA,
-        "feature_version": RELATION_FEATURE_VERSION,
+        "feature_version": feature_version,
         "threshold": threshold,
         "estimator": estimator,
         "branch_estimator": branch_estimator,
         "branch_threshold": branch_threshold,
         "feature_envelope": feature_envelope,
+        "semantic_scorer": semantic_descriptor,
     }
     joblib = _joblib_module()
     joblib.dump(bundle, output_path)
     model_sha256 = hashlib.sha256(output_path.read_bytes()).hexdigest()
     manifest = {
         "schema": RELATION_RANKER_SCHEMA,
-        "feature_version": RELATION_FEATURE_VERSION,
+        "feature_version": feature_version,
         "provider": RELATION_PROVIDER_SOURCE,
         "dataset": "ROOR",
         "dataset_repository": "https://github.com/chongzhangFDU/ROOR-Datasets",
@@ -112,6 +129,7 @@ def train_relation_ranker(
         "training_example_count": len(y_train),
         "training_positive_count": int(sum(y_train)),
         "feature_count": len(feature_envelope["lower"]),
+        "semantic_scorer": semantic_descriptor,
         "feature_envelope_quantiles": [0.01, 0.99],
         "negative_candidates_per_source": negative_candidates,
         "calibration_fraction": calibration_fraction,
@@ -134,6 +152,7 @@ def predict_structure_relations(
     model_path: str | Path,
     *,
     structure_role_fusion: bool = True,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> RelationRankerPredictionResult:
     """Predict isolated review-only successors for one ROOR-style structure page."""
 
@@ -145,6 +164,7 @@ def predict_structure_relations(
         bundle=bundle,
         manifest=manifest,
         structure_role_fusion=structure_role_fusion,
+        semantic_scorer=semantic_scorer,
     )
 
 
@@ -153,6 +173,7 @@ def predict_document_relations(
     model_path: str | Path,
     *,
     structure_role_fusion: bool = True,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> RelationRankerPredictionResult:
     """Predict source-neutral review relations for every text-bearing IR page."""
 
@@ -183,6 +204,7 @@ def predict_document_relations(
             bundle=bundle,
             manifest=manifest,
             structure_role_fusion=structure_role_fusion,
+            semantic_scorer=semantic_scorer,
         )
         predicted_edges = prediction.structure_payload["successor_edges"]
         pages.append(
@@ -214,7 +236,7 @@ def predict_document_relations(
     return RelationRankerPredictionResult(
         {
             "source": RELATION_PROVIDER_SOURCE,
-            "model": RELATION_FEATURE_VERSION,
+            "model": str(bundle.get("feature_version") or RELATION_FEATURE_VERSION),
             "provider_version": str(manifest.get("model_sha256") or "unknown")[:16],
             "provider_code_license": "project-license",
             "training_dataset": "ROOR official train split",
@@ -228,7 +250,9 @@ def predict_document_relations(
             "input_document_id": document.id,
             "pages": pages,
             "relation_ranker": {
-                "feature_version": RELATION_FEATURE_VERSION,
+                "feature_version": str(
+                    bundle.get("feature_version") or RELATION_FEATURE_VERSION
+                ),
                 "threshold": float(bundle["threshold"]),
                 "branch_threshold": float(bundle.get("branch_threshold", 1.1)),
                 "source_count": source_count,
@@ -236,6 +260,7 @@ def predict_document_relations(
                 "predicted_branch_edge_count": branch_edge_count,
                 "model_sha256": manifest.get("model_sha256"),
                 "structure_role_fusion": structure_role_fusion,
+                "semantic_scorer": bundle.get("semantic_scorer"),
             },
         },
         edge_count,
@@ -250,6 +275,7 @@ def _predict_roor_page_relations(
     bundle: Mapping[str, Any],
     manifest: Mapping[str, Any],
     structure_role_fusion: bool = True,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> RelationRankerPredictionResult:
     document = payload.get("document")
     image = payload.get("img")
@@ -259,6 +285,7 @@ def _predict_roor_page_relations(
     width = _positive_float(image.get("width"), "img.width")
     height = _positive_float(image.get("height"), "img.height")
     estimator = bundle["estimator"]
+    feature_version = _validate_semantic_feature_contract(bundle, semantic_scorer)
     threshold = float(bundle["threshold"])
     branch_estimator = bundle.get("branch_estimator")
     branch_threshold = float(bundle.get("branch_threshold", 1.1))
@@ -268,6 +295,17 @@ def _predict_roor_page_relations(
         else {}
     )
     protected_sources = set(structure_role_edges)
+    rankable_sources = [
+        segment
+        for segment in segments
+        if segment["id"] not in protected_sources
+        and _segment_kind(segment) not in {"figure", "table"}
+    ]
+    semantic_scores = _document_semantic_score_lookup(
+        rankable_sources,
+        segments,
+        semantic_scorer,
+    )
 
     successor_edges: list[dict[str, Any]] = []
     selected_features: list[list[float]] = []
@@ -282,7 +320,14 @@ def _predict_roor_page_relations(
         targets = [target for target in segments if target["id"] != source_segment["id"]]
         if not targets:
             continue
-        features = [_pair_features(source_segment, target, width=width, height=height) for target in targets]
+        features = _pair_feature_rows(
+            source_segment,
+            targets,
+            width=width,
+            height=height,
+            semantic_scorer=semantic_scorer,
+            semantic_scores=semantic_scores,
+        )
         probabilities = estimator.predict_proba(features)
         scores = [float(row[1]) for row in probabilities]
         ranked_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
@@ -354,7 +399,7 @@ def _predict_roor_page_relations(
     normalized.update(
         {
             "source": RELATION_PROVIDER_SOURCE,
-            "model": RELATION_FEATURE_VERSION,
+            "model": feature_version,
             "provider_version": str(manifest.get("model_sha256") or "unknown")[:16],
             "provider_code_license": "project-license",
             "training_dataset": "ROOR official train split",
@@ -366,7 +411,7 @@ def _predict_roor_page_relations(
             "runtime_reorder": False,
             "successor_edges": successor_edges,
             "relation_ranker": {
-                "feature_version": RELATION_FEATURE_VERSION,
+                "feature_version": feature_version,
                 "threshold": threshold,
                 "branch_threshold": branch_threshold,
                 "source_count": len(segments),
@@ -374,6 +419,7 @@ def _predict_roor_page_relations(
                 "predicted_branch_edge_count": branch_edge_count,
                 "structure_role_edge_count": len(structure_role_edges),
                 "structure_role_fusion": structure_role_fusion,
+                "semantic_scorer": bundle.get("semantic_scorer"),
                 **_prediction_reliability(
                     selected_features,
                     selected_confidences,
@@ -536,8 +582,13 @@ def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[s
     bundle = _joblib_module().load(path)
     if not isinstance(bundle, dict) or bundle.get("schema") != RELATION_RANKER_SCHEMA:
         raise ValueError("unsupported relation ranker model schema")
-    if bundle.get("feature_version") != RELATION_FEATURE_VERSION:
+    feature_version = bundle.get("feature_version")
+    if feature_version not in SUPPORTED_RELATION_FEATURE_VERSIONS:
         raise ValueError("unsupported relation ranker feature version")
+    if manifest.get("feature_version") != feature_version:
+        raise ValueError("relation ranker manifest feature version does not match model")
+    if manifest.get("semantic_scorer") != bundle.get("semantic_scorer"):
+        raise ValueError("relation ranker semantic scorer manifest does not match model")
     return bundle, manifest
 
 
@@ -572,6 +623,7 @@ def _training_examples(
     documents: Sequence[dict[str, Any]],
     *,
     negative_candidates: int,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> tuple[list[list[float]], list[int]]:
     features: list[list[float]] = []
     labels: list[int] = []
@@ -581,6 +633,11 @@ def _training_examples(
         width = _positive_float(image["width"], "img.width")
         height = _positive_float(image["height"], "img.height")
         relations = {tuple(edge) for edge in payload["ro_linkings"]}
+        semantic_scores = _document_semantic_score_lookup(
+            segments,
+            segments,
+            semantic_scorer,
+        )
         for source in segments:
             candidates: list[tuple[bool, float, dict[str, Any]]] = []
             for target in segments:
@@ -589,13 +646,26 @@ def _training_examples(
                 is_positive = (source["id"], target["id"]) in relations
                 candidates.append((is_positive, _normalized_center_distance(source, target, width, height), target))
             negatives_added = 0
+            selected_targets: list[dict[str, Any]] = []
+            selected_labels: list[int] = []
             for is_positive, _, target in sorted(candidates, key=lambda item: (not item[0], item[1])):
                 if not is_positive and negatives_added >= negative_candidates:
                     continue
-                features.append(_pair_features(source, target, width=width, height=height))
-                labels.append(int(is_positive))
+                selected_targets.append(target)
+                selected_labels.append(int(is_positive))
                 if not is_positive:
                     negatives_added += 1
+            features.extend(
+                _pair_feature_rows(
+                    source,
+                    selected_targets,
+                    width=width,
+                    height=height,
+                    semantic_scorer=semantic_scorer,
+                    semantic_scores=semantic_scores,
+                )
+            )
+            labels.extend(selected_labels)
     return features, labels
 
 
@@ -681,6 +751,7 @@ def _fit_branch_estimator(
     documents: Sequence[dict[str, Any]],
     *,
     random_seed: int,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> Any:
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -692,7 +763,11 @@ def _fit_branch_estimator(
         outgoing: dict[Any, set[Any]] = defaultdict(set)
         for source_ref, target_ref in payload["ro_linkings"]:
             outgoing[source_ref].add(target_ref)
-        for source, ranked in _ranked_document_targets(pair_estimator, payload):
+        for source, ranked in _ranked_document_targets(
+            pair_estimator,
+            payload,
+            semantic_scorer=semantic_scorer,
+        ):
             if len(ranked) < 2:
                 continue
             features.append(_branch_features(payload, source, ranked))
@@ -712,6 +787,8 @@ def _fit_branch_estimator(
 def _calibrate_top_successor_threshold(
     estimator: Any,
     documents: Sequence[dict[str, Any]],
+    *,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> tuple[float, dict[str, Any]]:
     ranked: list[tuple[float, bool]] = []
     total_relation_count = 0
@@ -725,12 +802,24 @@ def _calibrate_top_successor_threshold(
         outgoing: dict[Any, set[Any]] = defaultdict(set)
         for source_ref, target_ref in relations:
             outgoing[source_ref].add(target_ref)
+        semantic_scores = _document_semantic_score_lookup(
+            segments,
+            segments,
+            semantic_scorer,
+        )
         for source in segments:
             targets = [target for target in segments if target["id"] != source["id"]]
             if not targets:
                 continue
             probabilities = estimator.predict_proba(
-                [_pair_features(source, target, width=width, height=height) for target in targets]
+                _pair_feature_rows(
+                    source,
+                    targets,
+                    width=width,
+                    height=height,
+                    semantic_scorer=semantic_scorer,
+                    semantic_scores=semantic_scores,
+                )
             )
             scores = [float(row[1]) for row in probabilities]
             best_index = max(range(len(scores)), key=scores.__getitem__)
@@ -767,13 +856,18 @@ def _calibrate_branch_threshold(
     documents: Sequence[dict[str, Any]],
     *,
     top_threshold: float,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> tuple[float, dict[str, Any]]:
     records: list[tuple[float, bool, bool]] = []
     relation_count = 0
     for payload in documents:
         relations = {tuple(edge) for edge in payload["ro_linkings"]}
         relation_count += len(relations)
-        for source, ranked in _ranked_document_targets(pair_estimator, payload):
+        for source, ranked in _ranked_document_targets(
+            pair_estimator,
+            payload,
+            semantic_scorer=semantic_scorer,
+        ):
             if not ranked or ranked[0][0] < top_threshold:
                 continue
             first_edge = (source["id"], ranked[0][1]["id"])
@@ -816,18 +910,32 @@ def _calibrate_branch_threshold(
 def _ranked_document_targets(
     estimator: Any,
     payload: Mapping[str, Any],
+    *,
+    semantic_scorer: SemanticPairScorer | None = None,
 ) -> list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]]:
     segments = [_validated_segment(segment) for segment in payload["document"]]
     image = payload["img"]
     width = _positive_float(image["width"], "img.width")
     height = _positive_float(image["height"], "img.height")
+    semantic_scores = _document_semantic_score_lookup(
+        segments,
+        segments,
+        semantic_scorer,
+    )
     ranked_sources: list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]] = []
     for source in segments:
         targets = [target for target in segments if target["id"] != source["id"]]
         if not targets:
             ranked_sources.append((source, []))
             continue
-        features = [_pair_features(source, target, width=width, height=height) for target in targets]
+        features = _pair_feature_rows(
+            source,
+            targets,
+            width=width,
+            height=height,
+            semantic_scorer=semantic_scorer,
+            semantic_scores=semantic_scores,
+        )
         probabilities = estimator.predict_proba(features)
         ranked = sorted(
             (
@@ -868,6 +976,60 @@ def _branch_features(
         *first[2][8:20],
         *second[2][8:20],
     ]
+
+
+def _pair_feature_rows(
+    source: Mapping[str, Any],
+    targets: Sequence[Mapping[str, Any]],
+    *,
+    width: float,
+    height: float,
+    semantic_scorer: SemanticPairScorer | None = None,
+    semantic_scores: Mapping[tuple[str, str], float] | None = None,
+) -> list[list[float]]:
+    rows = [_pair_features(source, target, width=width, height=height) for target in targets]
+    if semantic_scorer is None or not rows:
+        return rows
+    source_text = str(source.get("text") or "").strip()
+    pairs = [
+        (source_text, str(target.get("text") or "").strip())
+        for target in targets
+    ]
+    pair_scores = (
+        [semantic_scores[pair] for pair in pairs]
+        if semantic_scores is not None
+        else semantic_scorer.score_pairs(pairs)
+    )
+    if len(pair_scores) != len(rows):
+        raise RuntimeError("semantic scorer returned an unexpected score count")
+    for row, score in zip(rows, pair_scores, strict=True):
+        value = float(score)
+        if not math.isfinite(value):
+            raise RuntimeError("semantic scorer returned a non-finite score")
+        row.append(value)
+    return rows
+
+
+def _document_semantic_score_lookup(
+    sources: Sequence[Mapping[str, Any]],
+    targets: Sequence[Mapping[str, Any]],
+    semantic_scorer: SemanticPairScorer | None,
+) -> dict[tuple[str, str], float] | None:
+    if semantic_scorer is None:
+        return None
+    pairs = [
+        (
+            str(source.get("text") or "").strip(),
+            str(target.get("text") or "").strip(),
+        )
+        for source in sources
+        for target in targets
+        if source["id"] != target["id"]
+    ]
+    scores = semantic_scorer.score_pairs(pairs)
+    if len(scores) != len(pairs):
+        raise RuntimeError("semantic scorer returned an unexpected score count")
+    return dict(zip(pairs, scores, strict=True))
 
 
 def _pair_features(
@@ -914,6 +1076,59 @@ def _pair_features(
         float(bool(target_text) and target_text[0].islower()),
         float(bool(target_text) and target_text[0].isdigit()),
     ]
+
+
+def _feature_version_for_scorer(
+    semantic_scorer: SemanticPairScorer | None,
+) -> str:
+    return (
+        SEMANTIC_RELATION_FEATURE_VERSION
+        if semantic_scorer is not None
+        else RELATION_FEATURE_VERSION
+    )
+
+
+def _semantic_descriptor(
+    semantic_scorer: SemanticPairScorer | None,
+) -> dict[str, Any] | None:
+    if semantic_scorer is None:
+        return None
+    descriptor = dict(semantic_scorer.descriptor)
+    required = {
+        "schema",
+        "kind",
+        "model",
+        "revision",
+        "model_license",
+        "score_formula",
+    }
+    if not required.issubset(descriptor):
+        missing = ", ".join(sorted(required - descriptor.keys()))
+        raise ValueError(f"semantic scorer descriptor is missing: {missing}")
+    descriptor["identity_sha256"] = semantic_scorer_identity(descriptor)
+    return descriptor
+
+
+def _validate_semantic_feature_contract(
+    bundle: Mapping[str, Any],
+    semantic_scorer: SemanticPairScorer | None,
+) -> str:
+    feature_version = str(bundle.get("feature_version") or RELATION_FEATURE_VERSION)
+    if feature_version == RELATION_FEATURE_VERSION:
+        if semantic_scorer is not None:
+            raise ValueError("base relation ranker does not accept a semantic scorer")
+        return feature_version
+    if feature_version != SEMANTIC_RELATION_FEATURE_VERSION:
+        raise ValueError("unsupported relation ranker feature version")
+    if semantic_scorer is None:
+        raise ValueError("semantic relation ranker requires its semantic scorer")
+    expected = bundle.get("semantic_scorer")
+    if not isinstance(expected, Mapping):
+        raise ValueError("semantic relation ranker is missing scorer metadata")
+    actual = _semantic_descriptor(semantic_scorer)
+    if actual != dict(expected):
+        raise ValueError("semantic scorer identity does not match relation ranker model")
+    return feature_version
 
 
 def _normalized_center_distance(

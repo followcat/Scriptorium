@@ -78,6 +78,7 @@ from .relation_ranker import (
     train_relation_ranker,
 )
 from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
+from .semantic_successor import BERT_TINY_NSP_PRESET, create_semantic_pair_scorer
 from .structure_evidence import apply_structure_evidence, load_structure_json
 from .web_fixture import create_web_fixture
 from .xml_edit import apply_xml_edits, export_document_xml, set_xml_element_text
@@ -91,6 +92,28 @@ def _is_document_ir_payload(payload: object) -> bool:
         and isinstance(payload.get("pages"), list)
         and "page_count" in payload
         and "render_dpi" in payload
+    )
+
+
+def _semantic_scorer_from_options(
+    preset: str | None,
+    *,
+    model_path: Path | None,
+    cache_path: Path,
+    batch_size: int,
+    device: str,
+):
+    if preset is None:
+        if model_path is not None:
+            raise ValueError("--semantic-model-path requires --semantic-scorer")
+        return None
+    return create_semantic_pair_scorer(
+        preset,
+        load_from=model_path,
+        cache_path=cache_path,
+        batch_size=batch_size,
+        device=device,
+        local_files_only=model_path is not None,
     )
 
 
@@ -1908,16 +1931,52 @@ def train_relation_ranker_command(
         help="Nearest negative targets retained per source during training.",
     ),
     seed: int = typer.Option(17, help="Deterministic estimator seed."),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Optional semantic pair scorer preset ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+        help="Optional local snapshot for the pinned semantic model.",
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+        help="Content-addressed semantic pair score cache.",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+        help="Semantic model inference batch size.",
+    ),
+    semantic_device: str = typer.Option(
+        "cpu",
+        "--semantic-device",
+        help="Torch device used only by the optional semantic scorer.",
+    ),
 ) -> None:
     """Train a review-only successor ranker without reading validation labels."""
 
     try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
         result = train_relation_ranker(
             dataset_dir,
             output,
             calibration_fraction=calibration_fraction,
             random_seed=seed,
             negative_candidates=negative_candidates,
+            semantic_scorer=scorer,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="dataset_dir") from exc
@@ -1929,6 +1988,7 @@ def train_relation_ranker_command(
     typer.echo(f"Successor threshold: {result.manifest['successor_threshold']}")
     typer.echo(f"Branch calibration F1: {result.manifest['branch_calibration']['f1']}")
     typer.echo(f"Branch threshold: {result.manifest['branch_threshold']}")
+    typer.echo(f"Semantic scorer: {semantic_scorer or 'disabled'}")
 
 
 @app.command("train-floating-ranker")
@@ -2036,16 +2096,52 @@ def run_relation_ranker_command(
         "--structure-role-fusion/--no-structure-role-fusion",
         help="Fuse explicit figure/table roles with local caption geometry.",
     ),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Semantic scorer required by semantic ranker models ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+        help="Optional local snapshot for the pinned semantic model.",
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+        help="Content-addressed semantic pair score cache.",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+        help="Semantic model inference batch size.",
+    ),
+    semantic_device: str = typer.Option(
+        "cpu",
+        "--semantic-device",
+        help="Torch device used only by the optional semantic scorer.",
+    ),
 ) -> None:
     """Predict review-only relations from answer-free structure anchors."""
 
     try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
         raw_payload = json.loads(structure_json.read_text(encoding="utf-8"))
         if _is_document_ir_payload(raw_payload):
             result = predict_document_relations(
                 DocumentIR.model_validate(raw_payload),
                 model,
                 structure_role_fusion=structure_role_fusion,
+                semantic_scorer=scorer,
             )
         else:
             payload = load_structure_json(structure_json)
@@ -2053,6 +2149,7 @@ def run_relation_ranker_command(
                 payload,
                 model,
                 structure_role_fusion=structure_role_fusion,
+                semantic_scorer=scorer,
             )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="structure_json") from exc
@@ -2061,6 +2158,7 @@ def run_relation_ranker_command(
     typer.echo(f"Source segments: {result.source_count}")
     typer.echo(f"Predicted successor edges: {result.predicted_edge_count}")
     typer.echo(f"Predicted branch edges: {result.predicted_branch_edge_count}")
+    typer.echo(f"Semantic scorer: {semantic_scorer or 'disabled'}")
     typer.echo("Runtime reorder: disabled")
 
 

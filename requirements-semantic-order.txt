@@ -1,0 +1,5 @@
+-r requirements-relation-ranker.txt
+
+# Optional cached BERT NSP successor feature. Core conversion does not import it.
+torch>=2.2.0
+transformers==5.13.0

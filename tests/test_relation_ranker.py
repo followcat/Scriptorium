@@ -40,6 +40,27 @@ class _FakeBranchEstimator:
         return [[0.1, 0.9] for _ in features]
 
 
+class _FakeSemanticEstimator:
+    def predict_proba(self, features: list[list[float]]) -> list[list[float]]:
+        assert all(len(row) == 26 for row in features)
+        scores = [0.9 if row[-1] > -0.5 else 0.1 for row in features]
+        return [[1 - score, score] for score in scores]
+
+
+class _FakeSemanticScorer:
+    descriptor = {
+        "schema": "scriptorium-semantic-successor/v1",
+        "kind": "fake-next-sentence-prediction",
+        "model": "fake/nsp",
+        "revision": "abc123",
+        "model_license": "test-only",
+        "score_formula": "test-score",
+    }
+
+    def score_pairs(self, pairs):  # type: ignore[no-untyped-def]
+        return [-0.1 if target.startswith("Second") else -1.0 for _, target in pairs]
+
+
 def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         relation_ranker,
@@ -112,6 +133,64 @@ def test_prediction_can_emit_calibrated_second_successors(monkeypatch: pytest.Mo
     assert result.predicted_branch_edge_count == 2
     assert len(branch_edges) == 2
     assert all(edge["branch_confidence"] == 0.9 for edge in branch_edges)
+
+
+def test_semantic_ranker_requires_matching_scorer_and_appends_nsp_feature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scorer = _FakeSemanticScorer()
+    semantic_descriptor = relation_ranker._semantic_descriptor(scorer)
+    bundle = {
+        "feature_version": relation_ranker.SEMANTIC_RELATION_FEATURE_VERSION,
+        "semantic_scorer": semantic_descriptor,
+        "estimator": _FakeSemanticEstimator(),
+        "threshold": 0.5,
+    }
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: (bundle, {"model_sha256": "abc123"}),
+    )
+
+    result = predict_structure_relations(
+        _answer_free_payload(),
+        "model.joblib",
+        semantic_scorer=scorer,
+    )
+
+    assert result.structure_payload["relation_ranker"]["feature_version"] == (
+        relation_ranker.SEMANTIC_RELATION_FEATURE_VERSION
+    )
+    assert [(edge["source"], edge["target"]) for edge in result.structure_payload["successor_edges"]] == [
+        (10, 20),
+        (30, 20),
+    ]
+    with pytest.raises(ValueError, match="requires its semantic scorer"):
+        predict_structure_relations(_answer_free_payload(), "model.joblib")
+
+
+def test_base_ranker_rejects_semantic_feature_shape_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: (
+            {
+                "feature_version": relation_ranker.RELATION_FEATURE_VERSION,
+                "estimator": _FakeEstimator(),
+                "threshold": 0.5,
+            },
+            {"model_sha256": "abc123"},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="does not accept a semantic scorer"):
+        predict_structure_relations(
+            _answer_free_payload(),
+            "model.joblib",
+            semantic_scorer=_FakeSemanticScorer(),
+        )
 
 
 def test_prediction_prefers_explicit_figure_caption_relation(
