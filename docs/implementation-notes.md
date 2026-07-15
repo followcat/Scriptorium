@@ -884,6 +884,22 @@ every mode prediction before resolving or opening any semantic sidecar. Reports
 declare `labels_opened_after_all_predictions: true`; optional semantic rankers
 must receive the same pinned scorer/cache through the benchmark CLI.
 
+`benchmark-relation-rankers-roor` applies the same two-phase contract to a
+fetched ROOR corpus and compares top, branch, and degree-one path-cover edges.
+On all 49 official validation pages, v4 improves branch F1 from `0.69167292` to
+`0.73061145` and path-cover F1 from `0.68729852` to `0.71334792`.
+
+The hierarchy benchmark can receive v4 through `--relation-model` plus the same
+semantic scorer options. Native geometry remains authoritative for membership,
+within-region streams, and existing region transitions. A semantic edge cannot
+fill an empty region slot: it may replace exactly one conflicting native region
+edge only when both are boundary-aligned, the semantic confidence is at least
+`0.10` higher, and replacement stays acyclic. This preserves transition count
+and local metrics. The 64-page development corpus performs four replacements;
+its calibration line/region F1 reaches `0.93209877/0.90690691`. A separate
+32-page official-test window performs two replacements and improves line/region
+F1 to `0.94255569/0.91990847`, with membership and within-region F1 unchanged.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the

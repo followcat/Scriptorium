@@ -1398,8 +1398,37 @@ sidecar is opened. The v4 scorer improves every tracked body/path-cover metric:
 | Plus structure-role path cover | 0.88501708 | 0.92115119 | +0.03613411 |
 
 The report declares both answer-free inference input and
-`labels_opened_after_all_predictions: true`. This supports retaining v4 as a
-review-only research provider, but not runtime promotion: hierarchy line/region
-gates and a previously unopened document-level relation partition still need to
-pass. BERT-Base and Pythia remain deferred until the candidate-gated Tiny path
-shows that their extra CPU cost is necessary.
+`labels_opened_after_all_predictions: true`. A second strict two-phase A/B then
+used all 49 official ROOR validation pages, which are outside the train split:
+
+| ROOR validation 49 pages | v2 F1 | v4 semantic F1 | Delta |
+|---|---:|---:|---:|
+| Top edge | 0.67510713 | 0.71032949 | +0.03522236 |
+| Branch edges | 0.69167292 | 0.73061145 | +0.03893853 |
+| Degree-one path cover | 0.68729852 | 0.71334792 | +0.02604940 |
+
+### Hierarchy Semantic Conflict Arbitration
+
+Naively appending semantic boundary edges is too permissive. Of 181 novel path
+edges on the 64-page hierarchy corpus, 62 were boundary-aligned and 9 initially
+filled empty region slots. Those additions gained one correct region relation
+but no exact line edge, lowering calibration line F1. The retained algorithm was
+selected on fit only: a semantic edge must conflict with exactly one selected
+native region edge, exceed its confidence by at least `0.10`, and preserve the
+region DAG. It replaces that edge one-for-one; it never adds transition count or
+changes membership/within-region streams.
+
+| Comp-HRDoc hierarchy | Native line / region F1 | Semantic arbitration | Replacements |
+|---|---:|---:|---:|
+| 50-page fit | 0.93802345 / 0.90835361 | 0.93969849 / 0.90997567 | 2 |
+| 14-page calibration | 0.92260062 / 0.89759036 | 0.93209877 / 0.90690691 | 2 |
+| 32-page official-test window | 0.94021102 / 0.91762014 | 0.94255569 / 0.91990847 | 2 |
+
+On calibration, semantic line F1 now exceeds the flat control `0.92879257` and
+region F1 remains above `0.88563050`. The separate test window confirms positive
+line and region deltas with prediction count, membership, and within-region F1
+unchanged. Its semantic line F1 still trails the test-window flat control
+`0.94712644` by `0.00457075`, so runtime reorder remains disabled. v4 is retained
+as review-only external relation evidence. BERT-Base and Pythia remain deferred
+until residual errors show that Tiny model capacity, rather than hierarchy
+endpoint structure, is the limiting factor.

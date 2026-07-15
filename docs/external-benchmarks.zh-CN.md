@@ -1260,7 +1260,33 @@ prediction 完成后，才打开任何 semantic sidecar。v4 在全部 body/path
 | Plus structure-role path cover | 0.88501708 | 0.92115119 | +0.03613411 |
 
 报告同时声明 inference input 不含答案，并写入
-`labels_opened_after_all_predictions: true`。这些结果支持保留 v4 作为 review-only 研究
-provider，但还不支持 runtime promotion：hierarchy line/region gate 和此前未打开的
-document-level relation partition 仍需通过。只有 candidate-gated Tiny 路径证明额外成本确有
-必要后，才考虑 BERT-Base 与 Pythia。
+`labels_opened_after_all_predictions: true`。第二个严格两阶段 A/B 使用了 train split 外的
+官方 ROOR validation 全部 49 页：
+
+| ROOR validation 49 页 | v2 F1 | v4 semantic F1 | Delta |
+|---|---:|---:|---:|
+| Top edge | 0.67510713 | 0.71032949 | +0.03522236 |
+| Branch edge | 0.69167292 | 0.73061145 | +0.03893853 |
+| Degree-one path cover | 0.68729852 | 0.71334792 | +0.02604940 |
+
+### Hierarchy Semantic 冲突仲裁
+
+直接追加 semantic boundary edge 仍然太宽。64 页 hierarchy corpus 中有 181 条 novel path
+edge，其中 62 条 boundary-aligned，最初有 9 条会填补空 region slot；这些新增边只增加 1 条
+正确 region relation，没有增加 exact line edge，反而降低 calibration line F1。最终算法只用
+fit 选择：semantic edge 必须与恰好一条已选 native region edge 冲突，置信度至少高 `0.10`，
+且替换后仍保持 region DAG；只允许一换一，不增加 transition 总数，也不改变 membership/
+within-region stream。
+
+| Comp-HRDoc hierarchy | Native line / region F1 | Semantic arbitration | 替换数 |
+|---|---:|---:|---:|
+| 50 页 fit | 0.93802345 / 0.90835361 | 0.93969849 / 0.90997567 | 2 |
+| 14 页 calibration | 0.92260062 / 0.89759036 | 0.93209877 / 0.90690691 | 2 |
+| 32 页官方 test window | 0.94021102 / 0.91762014 | 0.94255569 / 0.91990847 | 2 |
+
+在 calibration 上，semantic line F1 已超过 flat control `0.92879257`，region F1 也继续高于
+`0.88563050`。独立 test window 同时确认 line/region 正增益，而且 prediction 总数、membership
+与 within-region F1 不变；但其 semantic line F1 仍比该窗口 flat control `0.94712644` 低
+`0.00457075`，所以 runtime reorder 继续关闭。v4 保留为 review-only external relation
+evidence。只有残余错误证明瓶颈来自 Tiny 模型容量、而不是 hierarchy endpoint 结构时，才考虑
+BERT-Base 与 Pythia。

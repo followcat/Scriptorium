@@ -488,6 +488,19 @@ Comp-HRDoc relation evaluator 也改为严格两阶段：先完成所有 mode pr
 任何 semantic sidecar。报告明确写入 `labels_opened_after_all_predictions: true`；benchmark
 CLI 运行可选语义 ranker 时，必须提供同一个固定 scorer/cache。
 
+`benchmark-relation-rankers-roor` 对已获取的 ROOR corpus 使用相同的两阶段 contract，
+分别比较 top、branch 与 degree-one path-cover edge。在官方 validation 全部 49 页上，v4
+把 branch F1 从 `0.69167292` 提高到 `0.73061145`，path-cover F1 从 `0.68729852`
+提高到 `0.71334792`。
+
+Hierarchy benchmark 可通过 `--relation-model` 和相同 semantic scorer 参数接入 v4。
+Native geometry 继续主导 membership、within-region stream 和已有 region transition；semantic
+edge 不能填补空 region slot，只有在它与恰好一条 boundary-aligned native region edge 冲突、
+置信度至少高 `0.10` 且替换不产生环时，才允许一换一。这样 transition 总量和局部指标都不变。
+64 页 development corpus 发生 4 次替换，calibration line/region F1 达到
+`0.93209877/0.90690691`。独立的官方 test 32 页窗口发生 2 次替换，line/region F1
+提高到 `0.94255569/0.91990847`，membership 与 within-region F1 不变。
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` 固定 MIT Comp-HRDoc 仓库 revision，并通过 SHA-256 校验
