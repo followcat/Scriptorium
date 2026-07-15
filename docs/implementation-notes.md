@@ -1008,6 +1008,36 @@ unassigned fallback transitions `10 -> 18`. These are unlabelled diagnostics,
 not accuracy claims. All four base/candidate orders are identical and runtime
 reorder remains false.
 
+Policy v7 exposes the relation graph's sparse pre-selection candidates through
+`RelationGraphOrderEvidence.candidate_edges`. `_infer_relation_graph_result()`
+already builds this graph, so hierarchy receives it from the same pass rather
+than recomputing columns and all pair scores. Candidate records contain only
+source index, target index, and geometry score; answer fields never enter the
+contract. Existing callers constructing two-field evidence remain compatible
+because the candidate tuple defaults empty.
+
+Provider adjacency rescue examines only consecutive selected-native ids that
+belong to distinct `text` regions and are not already linked. The raw relation
+candidate score must be `>= 0.95`, normalized vertical gap must stay in the v6
+range, and horizontal overlap must be `>= 0.5`. Element and region source/
+target degree slots must both be free, and neither graph may become cyclic.
+External semantic edges remain separate. Emitted edges use reason
+`provider-native-adjacency-relation-rescue`, confidence capped at `0.76`, and
+retain raw candidate score, thresholds, geometry, stream ids, and review-only
+provenance. Rejected supported candidates remain evidence with a degree/cycle
+reason.
+
+The broader geometry-only control was rejected after independent precision
+fell to `1/3`. The strict score bucket is supported by `460/469` fit,
+`94/96` calibration, and `318/321` independent-test selected-native
+adjacencies. Actual rescue emission is `3/3`, `5/5`, and `1/1`, respectively.
+Fit/calibration/test F1 reaches
+`0.97728460/0.97588777/0.97547684`. Diagnostics report considered,
+score-supported, geometry-supported, candidate, emitted, element-degree,
+region-degree, and cycle counts. Oracle metrics remain unchanged; four real
+complex-page replays emit no rescue. Calibration remains `0.00105873` below
+flat, so v7 stays review-only.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the
@@ -1558,17 +1588,19 @@ relations rather than forcing one global permutation:
 - Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/
 - PRImA correspondence-aware reading-order evaluation: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 - Sparse graph segmentation and cluster-and-sort reading order: https://arxiv.org/abs/2305.02577
+- Multi-modal relation prediction with degree/cycle constraints: https://doi.org/10.1016/j.patcog.2024.110314
+- Unified line/paragraph graph clustering: https://arxiv.org/abs/2203.09638
 - XY-Cut++ multi-granularity/cross-modal ordering: https://arxiv.org/abs/2504.10258
 - GraphDoc relation graph (MIT; release TODOs remain): https://github.com/yufanchen96/GraphDoc
 
 ### Hierarchy Relation-DAG Contract
 
 `infer_relation_graph_order_evidence()` exposes one immutable
-`RelationGraphOrderEvidence` containing the serialized candidate indices and
-selection-time diagnostics for every edge that entered the max-regret path
-cover. This avoids rebuilding the quadratic candidate graph when hierarchy
-needs both views. Existing order-only and selected-edge APIs delegate to the
-same primitive.
+`RelationGraphOrderEvidence` containing the serialized candidate indices, the
+sparse pre-selection candidate edges, and selection-time diagnostics for every
+edge that entered the max-regret path cover. This avoids rebuilding the
+quadratic candidate graph when hierarchy needs any of the three views.
+Existing order-only and selected-edge APIs delegate to the same primitive.
 
 `hierarchical_order.py` maps each selected fine edge through predicted
 membership. Cross-region candidates carry score, alternatives, margins,

@@ -1410,3 +1410,41 @@ JD 展示了预期行为：8 条不连续 provider chain 被拆成独立 transla
 支持的远跳选择 abstain；新增 fallback transition 只恢复至少一个 endpoint 未分配的 native
 adjacency。四个页面的 base/candidate order 在 v5/v6 间完全一致。Calibration 仍比 flat 低
 `0.00330854`，因此 provider grouping 与不读取答案的 hierarchy/flat selector 仍是下一步。
+
+### Graph-Supported Native Adjacency v7
+
+Calibration 剩余差距以 recall 为主，但仍不能重新打开通用 assigned-to-assigned flat fallback。
+一个 geometry-only rescue control 在 fit 选择 5 条 edge、正确 `4/5`，在 calibration 为 `7/8`，
+但独立窗口只有 `1/3`，因此被明确否决。
+
+Relation graph 在 max-regret path cover 前已经计算 sparse top-k candidate graph。v7 会从同一次
+推理直接暴露这些 candidate（每个 source 最多 6 个 target），不重复构造二次复杂度 graph。
+在不同 text region 之间全部可评分 selected-native adjacency 上，冻结的 `score >= 0.95` bucket
+correctness 为：
+
+| Raw relation-supported adjacency | Correct / scorable | Precision |
+|---|---:|---:|
+| 50 页 fit | 460 / 469 | 0.98081023 |
+| 14 页 calibration | 94 / 96 | 0.97916667 |
+| 32 页官方 test window | 318 / 321 | 0.99065421 |
+
+Rescue 还必须同时满足 selected-native adjacency、不同 provider text region、v6 纵向连续性、
+水平 overlap `>= 0.5`、element 与 region degree slot 空闲，以及 element/region graph 均不成环。
+通过的 edge 只成为带 candidate score 和 geometry provenance 的 review transition；它不改变
+membership，也不会启用 runtime reorder。
+
+| Provider hierarchy | Continuity v6 F1 | Adjacency v7 precision / recall / F1 | Rescue correctness | Flat F1 |
+|---|---:|---:|---:|---:|
+| 50 页 fit | 0.97688390 | 0.97907403 / 0.97550169 / 0.97728460 | 3 / 3 | 0.94768195 |
+| 14 页 calibration | 0.97363796 | 0.97975352 / 0.97205240 / 0.97588777 | 5 / 5 | 0.97694650 |
+| 32 页官方 test window | 0.97527740 | 0.97967162 / 0.97131783 / 0.97547684 | 1 / 1 | 0.96606248 |
+
+Calibration 相对 v6 提高 `+0.00224981`，现在只比 flat 低 `0.00105873`；独立 test 提高
+`+0.00019944`，并继续比 flat 高 `0.00941436`。Oracle 32 页 line/region control 逐项保持
+`0.95571096/0.93055556`。Attention、比亚迪、JD、PUMA 真实页均未发出新 rescue edge，
+base/candidate order 不变。这是无标签复杂页上预期的 abstention，但 emitted sample 仍少且
+calibration 仍有差距，因此 `runtime_reorder: false` 保持不变。
+
+该设计遵循 relation prediction 中以全局 degree/cycle constraint 约束局部分数的方法
+（[Qiao 等，Pattern Recognition 2024](https://doi.org/10.1016/j.patcog.2024.110314)）。下一步
+应直接改善 provider split/merge grouping；继续增加 flat rescue edge 已不是最高价值方向。

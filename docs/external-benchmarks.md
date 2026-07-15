@@ -1580,3 +1580,48 @@ new fallback transitions only restore native adjacencies touching unassigned
 elements. Base and candidate orders remain identical between v5 and v6 on all
 four pages. Calibration still trails flat by `0.00330854`, so provider grouping
 and an answer-independent hierarchy/flat selector remain open work.
+
+### Graph-Supported Native Adjacency v7
+
+The remaining calibration deficit is recall-heavy, but reopening generic
+assigned-to-assigned flat fallback is still invalid. A geometry-only rescue
+control selected 5 fit edges with `4/5` correctness and 8 calibration edges
+with `7/8`, then failed the independent window at `1/3`; it was rejected.
+
+The relation graph already computes a sparse top-k candidate graph before its
+max-regret path cover. v7 exposes those candidates from the same inference pass
+(at most six targets per source) instead of rebuilding the quadratic graph.
+Across all scorable selected-native adjacencies between distinct text regions,
+the frozen `score >= 0.95` bucket has correctness:
+
+| Raw relation-supported adjacency | Correct / scorable | Precision |
+|---|---:|---:|
+| 50-page fit | 460 / 469 | 0.98081023 |
+| 14-page calibration | 94 / 96 | 0.97916667 |
+| 32-page official-test window | 318 / 321 | 0.99065421 |
+
+The rescue still requires selected-native adjacency, distinct provider text
+regions, v6 vertical continuity, horizontal overlap `>= 0.5`, free element and
+region degree slots, and an acyclic element/region graph. A supported edge is a
+review transition with candidate-score and geometry provenance; it never
+changes membership or enables runtime reorder.
+
+| Provider hierarchy | Continuity v6 F1 | Adjacency v7 precision / recall / F1 | Rescue correctness | Flat F1 |
+|---|---:|---:|---:|---:|
+| 50-page fit | 0.97688390 | 0.97907403 / 0.97550169 / 0.97728460 | 3 / 3 | 0.94768195 |
+| 14-page calibration | 0.97363796 | 0.97975352 / 0.97205240 / 0.97588777 | 5 / 5 | 0.97694650 |
+| 32-page official-test window | 0.97527740 | 0.97967162 / 0.97131783 / 0.97547684 | 1 / 1 | 0.96606248 |
+
+Calibration gains `+0.00224981` over v6 and now trails flat by only
+`0.00105873`; independent test gains `+0.00019944` and remains above flat by
+`0.00941436`. The oracle 32-page line/region control stays exactly
+`0.95571096/0.93055556`. Attention, BYD, JD, and PUMA real-page replays emit no
+new rescue edge, and their base/candidate order remains unchanged. This is the
+desired abstention behavior on unlabelled complex pages, but the small emitted
+sample and remaining calibration gap keep `runtime_reorder: false`.
+
+The design follows relation-prediction work that applies degree and cycle
+constraints globally rather than trusting one local score
+([Qiao et al., Pattern Recognition 2024](https://doi.org/10.1016/j.patcog.2024.110314)).
+The next improvement should target provider split/merge grouping itself; adding
+more flat rescue edges is no longer the highest-value path.
