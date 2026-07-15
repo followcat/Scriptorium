@@ -1180,6 +1180,14 @@ within F1 从 `0.99097698` 降到 `0.98873592`，并产生 1 个环。把 non-bo
 adjacency 合并会使 endpoint-aware partial line F1 达到 `0.93891213`，但 29 条新增边中有 22 条
 无法评分，region F1 反而从 `0.90301548` 降到 `0.89402390`。两者都没有进入实现。
 
+冻结后的当前 prediction 还漏掉 55 条 fit truth edge：30 条在 relation/base 中都不存在，12 条是
+exact non-boundary relation，9 条涉及未分配 member，4 条只有 base。Calibration 剩余 15 条：
+8 条两边都不存在、5 条只有 base、2 条涉及未分配 member；没有 calibration truth 可以通过放宽
+non-boundary gate 恢复。只读取 fit label 的审计还检查了全部 74 条“base boundary 但 selected
+relation evidence 不存在”的候选，其中只有 3 条 exact truth。即使 visual Y/X、box-flow 与
+recursive XY-Cut 三路同时支持，4 个候选仍是 0 命中。因此继续叠加 geometry vote 被否决；下一类
+有效证据必须来自显式 provider relation/stream，或经过独立训练的 semantic successor scorer。
+
 算法冻结后，又在旧 coverage audit 使用的同一批真实 provider input 上直接重放，没有继续调参：
 
 | 页面/provider | Assigned | 旧 chain transition | Cross evidence / boundary / emitted | Non-boundary / tied |

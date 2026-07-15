@@ -1301,6 +1301,18 @@ relation edges with flat adjacency raises endpoint-aware partial line F1 to
 `0.93891213`, but 22 of 29 additions are unscored and region F1 falls
 `0.90301548 -> 0.89402390`. Neither experiment is implemented.
 
+The frozen current predictions leave 55 fit truth edges: 30 are absent from
+both relation and base order, 12 are exact non-boundary relation edges, 9 touch
+an unassigned member, and 4 are base-only. Calibration leaves 15: 8 absent
+from both sources, 5 base-only, and 2 membership-unassigned; no calibration
+truth edge is recoverable by relaxing the non-boundary gate. A fit-only audit
+of all 74 base-boundary candidates absent from selected relation evidence finds
+only 3 exact truth edges. Even the four candidates supported simultaneously by
+visual Y/X, box-flow, and recursive XY-Cut contain zero truth edges. More
+geometry voting is therefore rejected; the next useful evidence must be an
+explicit provider relation/stream or an independently trained semantic
+successor scorer.
+
 The frozen implementation was then replayed, without tuning, on the same real
 provider inputs used by the earlier coverage audit:
 
