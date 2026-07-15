@@ -1242,7 +1242,7 @@ scriptorium materialize-comphrdoc-hierarchy \
   --output /tmp/scriptorium-hierarchy-train64-v1
 scriptorium benchmark-hierarchical-order-corpus \
   /tmp/scriptorium-hierarchy-train64-v1 \
-  --output /tmp/scriptorium-hierarchy-train64-relation-report-v3.json
+  --output /tmp/scriptorium-hierarchy-train64-boundary-text-report-v1.json
 ```
 
 The previous control forced one adjacency chain over coarse regions. The new
@@ -1258,31 +1258,48 @@ both untied relation-graph neighbors and both selected-order neighbors already
 belong to the same tied candidate region. It repairs 5 fit and 3 calibration
 memberships without using the newly assigned members for further propagation.
 
-| Metric | Former coarse chain | Relation DAG + continuity | Flat selected baseline | Current delta vs former |
+A second non-iterative rule handles the complementary boundary split. Untied
+relation and selected-order neighbors must both form the same `A -> element ->
+B` region pattern. The element must contain at least four normalized
+alphanumeric characters, and exactly one region inside the original geometry
+tie must contain that text. The unique text parent must be either `A` or `B`.
+This resolves 6 fit and 7 calibration memberships, all correctly; neither these
+members nor the earlier continuity repairs can propagate another assignment.
+
+| Metric | Former coarse chain | Relation DAG + continuity | Boundary-text current | Flat selected baseline |
 |---|---:|---:|---:|---:|
-| Membership recall / coverage | 0.99353243 | 0.99505421 | n/a | +0.00152178 |
-| Within-region successor F1 | 0.98901099 | 0.99188544 | 0.98359865 | +0.00287445 |
-| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.92146597 | +0.16106366 |
-| Region transition F1 | 0.72936660 | 0.89761751 | 0.86111111 | +0.16825091 |
+| Membership recall / coverage | 0.99353243 | 0.99505421 | 0.99752711 | n/a |
+| Within-region successor F1 | 0.98901099 | 0.99188544 | 0.99297033 | 0.98359865 |
+| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.93473962 | 0.92146597 |
+| Region transition F1 | 0.72936660 | 0.89761751 | 0.90607029 | 0.86111111 |
 
-The fit/calibration line-transition F1 values are `0.93265993/0.90220820`;
-region-transition F1 values are `0.90301548/0.87730061`. Graphical
-multi-column line/region F1 improves from `0.71021776/0.65137615` to
-`0.90066225/0.84472050`; plain multi-column improves from
-`0.80278422/0.78822197` to `0.94760820/0.94224236`. Fit/calibration
-within-region F1 also improves to `0.99097698/0.99487705`; membership remains
-zero-wrong with unassigned elements reduced from 34 to 26. Cross-region metrics
-do not change during continuity refinement, so local recovery is not masking a
-transition regression.
+The current fit/calibration line-transition F1 values are
+`0.93802345/0.92260062`; region-transition F1 values are
+`0.90835361/0.89759036`. Calibration region F1 now exceeds its flat control
+`0.88563050`, while calibration line F1 remains `0.00619195` below the flat
+`0.92879257`; runtime promotion therefore remains disabled. Graphical
+multi-column line/region F1 reaches `0.90609555/0.85007728`, equal to the flat
+line control and above its `0.81049563` region control. Plain multi-column
+reaches `0.95828636/0.95291480`. Fit/calibration within-region F1 reaches
+`0.99191794/0.99642675`; membership remains zero-wrong with unassigned elements
+reduced from 34 to 13.
 
-The report aggregates 8 continuity membership repairs, 5,150 selected fine
-edges, 959 cross-region evidence
-edges, 893 boundary-aligned candidates, 66 non-boundary evidence edges, 9 tied
-cross-region edges, and 3 region-cycle suppressions. It emits 890 acyclic
-review transitions. The frozen Chunkr ranker is retained as an explicit A/B
-control; on this corpus its OOD suppression leaves region-transition F1 at
-`0.15531915`, confirming that the coarse external model is not a replacement
-for line-level relation evidence.
+The report aggregates 8 interior continuity and 13 boundary-text membership
+repairs, 5,150 selected fine edges, 972 cross-region evidence edges, 905
+boundary-aligned candidates, 67 non-boundary evidence edges, 9 tied
+cross-region edges, and 3 region-cycle suppressions. It emits 902 acyclic
+review transitions. The changed cross-region evidence count is an expected
+consequence of resolving membership before classifying selected fine edges.
+The frozen Chunkr ranker remains an explicit A/B control; its OOD suppression
+leaves region-transition F1 at `0.15531915` on the earlier identical corpus.
+
+Two broader experiments were rejected. Splitting every region stream around
+all non-boundary relation edges raises fit line F1 `0.93265993 -> 0.94176373`,
+but removes 25 correct within-region edges, lowers within F1
+`0.99097698 -> 0.98873592`, and creates one cycle. Combining non-boundary
+relation edges with flat adjacency raises endpoint-aware partial line F1 to
+`0.93891213`, but 22 of 29 additions are unscored and region F1 falls
+`0.90301548 -> 0.89402390`. Neither experiment is implemented.
 
 The frozen implementation was then replayed, without tuning, on the same real
 provider inputs used by the earlier coverage audit:
@@ -1297,9 +1314,9 @@ provider inputs used by the earlier coverage audit:
 These four rows are structural diagnostics, not accuracy: JD, PUMA, and BYD do
 not provide complete human relation labels for this replay. They show that the
 new path abstains from unsupported page-wide adjacency and preserves rejected
-non-boundary evidence for review. No new Comp-HRDoc test window was opened and
 non-boundary evidence for review. Continuity repair triggers zero times on all
-four replays, so their memberships and transitions do not expand. No new
+four replays. The new boundary-text rule also triggers zero times on the four
+current provider replays, so it does not expand those unlabelled pages. No new
 Comp-HRDoc test window was opened and the promotion decision remains
 `development-benchmark-only-review-only`.
 
@@ -1308,9 +1325,15 @@ official ROOR implementation, which model complex layouts as immediate
 successor relations rather than one permutation. Docling's current rule-based
 predictor likewise builds directional maps over page elements; its open
 discussion about many small orphan clusters reinforces the need for explicit
-granularity and abstention.
+granularity and abstention. XY-Cut++ independently supports multi-granularity
+segmentation plus lightweight semantic/geometric matching. GraphDoc supports a
+joint graph representation for order, hierarchy, and reference relations, but
+its MIT repository still lists dataset, model, and code releases as TODO, so it
+is research direction rather than an available dependency.
 
 - Ordering relations paper: https://aclanthology.org/2024.emnlp-main.540/
 - Official ROOR implementation: https://github.com/chongzhangFDU/ROOR
 - Docling reading-order implementation: https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
 - Relation-graph/max-regret path-cover analysis: https://arxiv.org/html/2607.01018
+- XY-Cut++ hierarchical/cross-modal ordering: https://arxiv.org/abs/2504.10258
+- GraphDoc relation-graph project: https://github.com/yufanchen96/GraphDoc

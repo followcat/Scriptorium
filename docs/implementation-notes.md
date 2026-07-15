@@ -1392,6 +1392,8 @@ relations rather than forcing one global permutation:
 - Detect-Order-Construct: https://arxiv.org/abs/2401.11874
 - DLAFormer coarse-to-fine layout analysis: https://arxiv.org/abs/2405.11757
 - Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/
+- XY-Cut++ multi-granularity/cross-modal ordering: https://arxiv.org/abs/2504.10258
+- GraphDoc relation graph (MIT; release TODOs remain): https://github.com/yufanchen96/GraphDoc
 
 ### Hierarchy Relation-DAG Contract
 
@@ -1427,16 +1429,35 @@ repairs. This `relation-base-continuity-parent` rule resolves 8 memberships (5
 fit and 3 calibration), all correctly, and triggers zero times on the four real
 provider replays.
 
-On 64 train-only pages, membership reaches `5231/5257 = 0.99505421` with zero
-wrong assignments and 26 unassigned elements. Within-region F1 reaches
-`0.99188544`; fit/calibration values are `0.99097698/0.99487705`. Line
-cross-region F1 improves `0.76518219 -> 0.92624585`, and region-transition F1
-improves `0.72936660 -> 0.89761751`; continuity refinement does not alter either
-cross-region metric. The report separately aggregates 959 cross-region evidence
-edges, 893 boundary candidates, 66 non-boundary records, 9 tied edges, 3 cycle
-suppressions, and 890 emitted transitions. Fit/calibration are reported
-separately, and no new official test window was opened. The full repository
-suite passes 378 tests for this revision.
+The same pass has a separate boundary branch. Relation and selected-order
+neighbors must agree positionally on two distinct regions, forming the same
+`A -> element -> B` pattern. The compact element text must contain at least
+`MIN_EXACT_TEXT_PARENT_CHARACTERS` characters, exactly one geometry-tied region
+must contain it, and that region must be `A` or `B`. The method is
+`relation-base-boundary-text-parent`; its evidence records the relation/base
+split and unique tied-region text containment. It resolves 13 more memberships
+(6 fit and 7 calibration), all correctly. The branch reads the original
+membership map, so neither boundary nor interior repairs can propagate.
+
+On 64 train-only pages, membership reaches `5244/5257 = 0.99752711` with zero
+wrong assignments and 13 unassigned elements. Within-region F1 reaches
+`0.99297033`; fit/calibration values are `0.99191794/0.99642675`. Line
+cross-region F1 reaches `0.93473962`, and region-transition F1 reaches
+`0.90607029`. Calibration line/region F1 is `0.92260062/0.89759036`: region now
+exceeds its flat control `0.88563050`, but line remains below `0.92879257`, so
+runtime remains disabled. The report aggregates 972 cross-region evidence
+edges, 905 boundary candidates, 67 non-boundary records, 9 tied edges, 3 cycle
+suppressions, and 902 emitted transitions. Both refinement methods trigger zero
+times on the four current real-provider replays. No new official test window
+was opened. The full repository suite passes 379 tests for this revision.
+
+Two rejected controls define the boundary of this design. Cutting every local
+stream around non-boundary relation edges improves fit line F1 to `0.94176373`
+but lowers within F1 to `0.98873592`, removes 25 correct local edges, and creates
+one cycle. Adding non-boundary relation edges only when flat order agrees raises
+partial line F1 to `0.93891213`, but region F1 falls to `0.89402390`; partial
+line labels leave 22 of 29 additions unscored. Non-boundary records therefore
+remain evidence, not translation handoffs.
 
 For translation, each accepted coarse membership still defines a bounded local
 stream. The partial DAG can later order handoffs between those streams without

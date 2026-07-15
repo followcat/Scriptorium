@@ -1133,7 +1133,7 @@ scriptorium materialize-comphrdoc-hierarchy \
   --output /tmp/scriptorium-hierarchy-train64-v1
 scriptorium benchmark-hierarchical-order-corpus \
   /tmp/scriptorium-hierarchy-train64-v1 \
-  --output /tmp/scriptorium-hierarchy-train64-relation-report-v3.json
+  --output /tmp/scriptorium-hierarchy-train64-boundary-text-report-v1.json
 ```
 
 旧 control 会把 coarse region 强制串成一条 adjacency chain。新默认路径把 fine relation graph
@@ -1146,27 +1146,39 @@ completion 的 region sequence 只作诊断，`total_order_asserted` 与 `runtim
 selected-order 前后邻居，都已经属于同一个 geometry-tied candidate region 时，才解除完整重叠
 tie。它修复 5 个 fit 和 3 个 calibration membership，新分配结果不会继续传播。
 
-| 指标 | 旧 coarse chain | Relation DAG + continuity | Flat selected baseline | 当前值相对旧值 |
+第二条非迭代规则处理互补的 boundary split。无 tie 的 relation 邻居与 selected-order 邻居必须
+同时形成相同的 `A -> element -> B` region 模式；element 归一化后至少包含 4 个字母或数字，且
+原 geometry tie 内必须只有一个 region 包含该文本，这个唯一文本 parent 还必须是 `A` 或 `B`。
+它解除 6 个 fit 与 7 个 calibration membership，全部正确；这些结果和上一轮 continuity repair
+都不会继续传播。
+
+| 指标 | 旧 coarse chain | Relation DAG + continuity | 当前 boundary-text | Flat selected baseline |
 |---|---:|---:|---:|---:|
-| Membership recall / coverage | 0.99353243 | 0.99505421 | n/a | +0.00152178 |
-| Within-region successor F1 | 0.98901099 | 0.99188544 | 0.98359865 | +0.00287445 |
-| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.92146597 | +0.16106366 |
-| Region transition F1 | 0.72936660 | 0.89761751 | 0.86111111 | +0.16825091 |
+| Membership recall / coverage | 0.99353243 | 0.99505421 | 0.99752711 | n/a |
+| Within-region successor F1 | 0.98901099 | 0.99188544 | 0.99297033 | 0.98359865 |
+| Line cross-region F1 | 0.76518219 | 0.92624585 | 0.93473962 | 0.92146597 |
+| Region transition F1 | 0.72936660 | 0.89761751 | 0.90607029 | 0.86111111 |
 
-Fit/calibration 的 line-transition F1 为 `0.93265993/0.90220820`，region-transition F1 为
-`0.90301548/0.87730061`。Graphical-multicolumn 的 line/region F1 从
-`0.71021776/0.65137615` 提高到 `0.90066225/0.84472050`；普通 multicolumn 从
-`0.80278422/0.78822197` 提高到 `0.94760820/0.94224236`。Fit/calibration 的
-within-region F1 还提高到 `0.99097698/0.99487705`；membership 继续保持 0 错分配，
-unassigned 从 34 降到 26。Continuity refinement 没有改变 cross-region 指标，因此局部恢复
-没有掩盖 transition 回退。
+当前 fit/calibration 的 line-transition F1 为 `0.93802345/0.92260062`，region-transition F1
+为 `0.90835361/0.89759036`。Calibration region F1 已超过 flat control `0.88563050`；但
+calibration line F1 仍比 flat `0.92879257` 低 `0.00619195`，所以 runtime promotion 继续关闭。
+Graphical-multicolumn 的 line/region F1 达到 `0.90609555/0.85007728`：line 与 flat control
+持平，region 高于其 `0.81049563`。普通 multicolumn 达到 `0.95828636/0.95291480`。
+Fit/calibration 的 within-region F1 达到 `0.99191794/0.99642675`；membership 保持 0 错分配，
+unassigned 从 34 降到 13。
 
-报告汇总 8 次 continuity membership repair、5,150 条 fine selected edge、959 条
-cross-region evidence、893 条 boundary-aligned
-candidate、66 条 non-boundary evidence、9 条同分跨区 edge 和 3 次 region-cycle suppression，
-最终输出 890 条无环 review transition。冻结的 Chunkr ranker 继续作为显式 A/B control；它在
-该语料上的 OOD suppression 使 region-transition F1 只有 `0.15531915`，说明 coarse 外部模型
-不能替代 line-level relation evidence。
+报告汇总 8 次内部 continuity repair、13 次 boundary-text membership repair、5,150 条 fine
+selected edge、972 条 cross-region evidence、905 条 boundary-aligned candidate、67 条
+non-boundary evidence、9 条同分跨区 edge 和 3 次 region-cycle suppression，最终输出 902 条
+无环 review transition。Cross-region evidence 数量变化来自 membership 先被解除，再对 selected
+fine edge 分类，属于预期结果。冻结的 Chunkr ranker 仍是显式 A/B control；它在此前相同语料上
+经过 OOD suppression 后的 region-transition F1 只有 `0.15531915`。
+
+另有两个更激进的实验被否决。按所有 non-boundary relation edge 切分 region stream 会把 fit
+line F1 从 `0.93265993` 提高到 `0.94176373`，但会删除 25 条正确 within-region edge，使
+within F1 从 `0.99097698` 降到 `0.98873592`，并产生 1 个环。把 non-boundary relation 与 flat
+adjacency 合并会使 endpoint-aware partial line F1 达到 `0.93891213`，但 29 条新增边中有 22 条
+无法评分，region F1 反而从 `0.90301548` 降到 `0.89402390`。两者都没有进入实现。
 
 算法冻结后，又在旧 coverage audit 使用的同一批真实 provider input 上直接重放，没有继续调参：
 
@@ -1179,15 +1191,21 @@ candidate、66 条 non-boundary evidence、9 条同分跨区 edge 和 3 次 regi
 
 这四行是结构诊断，不是准确率：JD、PUMA 和比亚迪此次重放没有完整 human relation label。
 它们说明新路径会拒绝没有依据的 page-wide adjacency，同时把未对齐边界的 evidence 留给 review。
-Continuity repair 在四次重放中触发数都为 0，因此没有扩张 membership 或 transition。本轮没有
-打开新的 Comp-HRDoc test window，promotion 继续保持
+Continuity repair 在四次重放中触发数都为 0；新 boundary-text 规则在当前四个 provider replay
+中也全部触发 0 次，因此没有扩张这些无标签页面。本轮没有打开新的 Comp-HRDoc test window，
+promotion 继续保持
 `development-benchmark-only-review-only`。
 
 该表示与 EMNLP 2024 ordering-relations 和官方 ROOR 实现一致：复杂布局应表达为即时 successor
 relation，而不是一个 permutation。Docling 当前 rule-based predictor 同样在页面元素上构造方向
 映射；其关于大量 small orphan cluster 的公开讨论进一步说明必须显式处理 granularity 与 abstention。
+XY-Cut++ 也独立支持 multi-granularity segmentation 与轻量 semantic/geometry matching。GraphDoc
+支持把 order、hierarchy 和 reference relation 放进同一张图，但其 MIT 仓库仍把 dataset、model
+和 code release 标为 TODO，因此目前只能作为研究方向，不能作为可接入依赖。
 
 - Ordering relations 论文：https://aclanthology.org/2024.emnlp-main.540/
 - 官方 ROOR 实现：https://github.com/chongzhangFDU/ROOR
 - Docling reading-order 实现：https://github.com/docling-project/docling-ibm-models/blob/73cf24d321f74f77de5f974e6c048da0e1512a3d/docling_ibm_models/reading_order/reading_order_rb.py
 - Relation graph / max-regret path-cover 分析：https://arxiv.org/html/2607.01018
+- XY-Cut++ hierarchical/cross-modal ordering：https://arxiv.org/abs/2504.10258
+- GraphDoc relation-graph 项目：https://github.com/yufanchen96/GraphDoc
