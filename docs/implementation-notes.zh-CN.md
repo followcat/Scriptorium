@@ -467,6 +467,27 @@ Apache-2.0 的 Google BERT-Tiny checkpoint 与 revision，使用预训练 NSP he
 该可选路径用于让语义 A/B 可复现，不代表新的默认能力；输出仍为 review-only，runtime
 reorder 继续关闭。
 
+v4 语义路径改用二阶段 contract。保持不变的 v2 pair estimator 先为每个 source 选择最多
+5 个 target，只有这些 candidate 才计算 NSP。31 维 reranker 组合 base score/rank/margin、
+NSP 原始/相对分数和原有 25 个 pair feature；阈值来自 fit 文档上的 5 个 document-hash
+OOF fold，不读取 27 文档 calibration partition。最终 fit candidate recall 为
+`0.94110838`；ROOR 只需缓存 35,751 个 unique pair，而 direct 路径需要 402,395 个。
+冻结后的 calibration top/branch F1 为 `0.67855816/0.69343066`。
+
+```bash
+pip install -r requirements-semantic-order.txt
+scriptorium train-relation-ranker path/to/ROOR-Datasets/data \
+  --semantic-scorer bert-tiny-uncased-nsp \
+  --semantic-fusion top-k-rerank \
+  --semantic-top-k 5 \
+  --semantic-cache outputs/cache/semantic-successor.sqlite3 \
+  -o outputs/models/semantic-relation-ranker.joblib
+```
+
+Comp-HRDoc relation evaluator 也改为严格两阶段：先完成所有 mode prediction，再解析或打开
+任何 semantic sidecar。报告明确写入 `labels_opened_after_all_predictions: true`；benchmark
+CLI 运行可选语义 ranker 时，必须提供同一个固定 scorer/cache。
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` 固定 MIT Comp-HRDoc 仓库 revision，并通过 SHA-256 校验

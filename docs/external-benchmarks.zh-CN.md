@@ -1238,11 +1238,29 @@ pair，重复训练不再运行 transformer。
 | 直接添加第 26 个 Tiny NSP 特征，top edge | 0.65175953 | 0.63500000 | 0.64327062 | 889 / 1,364 |
 | 直接添加第 26 个 Tiny NSP 特征 + branch | 0.65618299 | 0.65571429 | 0.65594855 | 918 / 1,399 |
 
-直接融合已被否决。随后只读取 fit label 筛选并冻结了二阶段设计：只给 geometry ranker 的
-top-5 target 计算 NSP，再组合 base probability、rank/margin、NSP 相对分数与原 pair feature，
-阈值来自 5 个 document-hash OOF fold。该冻结 prototype 在已经打开过的 development
-calibration 上重放后，precision 为 `0.70720372`、recall 为 `0.65214286`、F1 为
-`0.67855816`（913 / 1,291）。这是值得实现的架构候选，不是独立 promotion 证据：直接设计
-被否决时已经观察过这个 calibration partition。下一步应实现 reranker，冻结后在未打开的
-document-level partition 和 hierarchy gate 上验证。只有 candidate-gated 路径证明值得增加
-成本后，才考虑 BERT-Base 与 Pythia。
+直接融合已被否决。随后只读取 fit label 筛选、冻结并实现了二阶段设计：只给 geometry ranker
+的 top-5 target 计算 NSP，再组合 base probability、rank/margin、NSP 相对分数与原 pair
+feature，阈值来自 5 个 document-hash OOF fold。Fit candidate recall 为 `0.94110838`，
+冻结阈值 `0.59` 下的 OOF F1 为 `0.74600465`。在 semantic ranking 上重新训练已有 branch
+gate 后，development calibration 继续提升：
+
+| ROOR train 内部 calibration | Precision | Recall | F1 | Correct / predicted |
+|---|---:|---:|---:|---:|
+| 冻结 v4 semantic top edge | 0.70720372 | 0.65214286 | 0.67855816 | 913 / 1,291 |
+| 冻结 v4 semantic + branch | 0.70895522 | 0.67857143 | 0.69343066 | 950 / 1,340 |
+
+随后使用更严格的两阶段 evaluator 重放 250 页 Comp-HRDoc 跨域 corpus：全部 500 次 mode
+prediction 完成后，才打开任何 semantic sidecar。v4 在全部 body/path-cover 指标上提升：
+
+| Comp-HRDoc 250 页 | v2 F1 | v4 semantic F1 | Delta |
+|---|---:|---:|---:|
+| Native ranker edge | 0.84129386 | 0.87467713 | +0.03338327 |
+| Native ranker path cover | 0.86904643 | 0.90414107 | +0.03509464 |
+| Plus structure-role edge | 0.85716953 | 0.89082846 | +0.03365893 |
+| Plus structure-role path cover | 0.88501708 | 0.92115119 | +0.03613411 |
+
+报告同时声明 inference input 不含答案，并写入
+`labels_opened_after_all_predictions: true`。这些结果支持保留 v4 作为 review-only 研究
+provider，但还不支持 runtime promotion：hierarchy line/region gate 和此前未打开的
+document-level relation partition 仍需通过。只有 candidate-gated Tiny 路径证明额外成本确有
+必要后，才考虑 BERT-Base 与 Pythia。

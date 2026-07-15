@@ -860,6 +860,30 @@ adding Tiny NSP as feature 26 reduced top-edge F1 from `0.65488640` to
 exists to make semantic A/B reproducible, not to claim a new default; all output
 remains review-only and runtime reorder stays disabled.
 
+The v4 semantic path uses a two-stage contract instead. The unchanged v2 pair
+estimator first selects at most five targets per source; only those candidates
+receive NSP scores. A 31-feature reranker combines base score/rank/margins, raw
+and relative NSP scores, and the original 25 pair features. Its threshold comes
+from five document-hash OOF folds over fit documents, not the 27-document
+calibration partition. The final fit candidate recall is `0.94110838`; only
+35,751 unique ROOR pairs are cached instead of the direct path's 402,395. The
+frozen calibration top/branch F1 values are `0.67855816/0.69343066`.
+
+```bash
+pip install -r requirements-semantic-order.txt
+scriptorium train-relation-ranker path/to/ROOR-Datasets/data \
+  --semantic-scorer bert-tiny-uncased-nsp \
+  --semantic-fusion top-k-rerank \
+  --semantic-top-k 5 \
+  --semantic-cache outputs/cache/semantic-successor.sqlite3 \
+  -o outputs/models/semantic-relation-ranker.joblib
+```
+
+The Comp-HRDoc relation evaluator also runs in two strict phases: it finishes
+every mode prediction before resolving or opening any semantic sidecar. Reports
+declare `labels_opened_after_all_predictions: true`; optional semantic rankers
+must receive the same pinned scorer/cache through the benchmark CLI.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the

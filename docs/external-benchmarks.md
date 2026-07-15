@@ -1373,14 +1373,33 @@ Directly appending the score to the existing pair classifier is harmful:
 | Direct feature-26 Tiny NSP top edge | 0.65175953 | 0.63500000 | 0.64327062 | 889 / 1,364 |
 | Direct feature-26 Tiny NSP + branch | 0.65618299 | 0.65571429 | 0.65594855 | 918 / 1,399 |
 
-The direct fusion is rejected. A fit-only screen then fixed a two-stage design:
-score only the geometry ranker's top five targets, combine base probability,
-rank/margins, NSP relative scores, and the original pair features, and select a
-threshold from five document-hash OOF folds. Replaying that frozen prototype on
-the already-opened development calibration gives precision `0.70720372`, recall
-`0.65214286`, and F1 `0.67855816` (913 / 1,291). This is a useful architecture
-candidate, not independent promotion evidence: the calibration partition had
-already been observed when the direct design was rejected. The next step is to
-implement the reranker, freeze it, and evaluate an unopened document-level
-partition plus the hierarchy gate. BERT-Base and Pythia remain deferred until a
-candidate-gated path justifies their CPU cost.
+The direct fusion is rejected. A fit-only screen then fixed and implemented a
+two-stage design: score only the geometry ranker's top five targets, combine
+base probability, rank/margins, NSP relative scores, and the original pair
+features, and select a threshold from five document-hash OOF folds. Fit
+candidate recall is `0.94110838`; OOF F1 is `0.74600465` at the frozen `0.59`
+threshold. The development calibration result improves further when the
+existing branch gate is retrained over semantic rankings:
+
+| ROOR train internal calibration | Precision | Recall | F1 | Correct / predicted |
+|---|---:|---:|---:|---:|
+| Frozen v4 semantic top edge | 0.70720372 | 0.65214286 | 0.67855816 | 913 / 1,291 |
+| Frozen v4 semantic + branch | 0.70895522 | 0.67857143 | 0.69343066 | 950 / 1,340 |
+
+The 250-page Comp-HRDoc cross-domain corpus was then replayed under a stricter
+two-phase evaluator: all 500 mode predictions complete before any semantic
+sidecar is opened. The v4 scorer improves every tracked body/path-cover metric:
+
+| Comp-HRDoc 250 pages | v2 F1 | v4 semantic F1 | Delta |
+|---|---:|---:|---:|
+| Native ranker edges | 0.84129386 | 0.87467713 | +0.03338327 |
+| Native ranker path cover | 0.86904643 | 0.90414107 | +0.03509464 |
+| Plus structure-role edges | 0.85716953 | 0.89082846 | +0.03365893 |
+| Plus structure-role path cover | 0.88501708 | 0.92115119 | +0.03613411 |
+
+The report declares both answer-free inference input and
+`labels_opened_after_all_predictions: true`. This supports retaining v4 as a
+review-only research provider, but not runtime promotion: hierarchy line/region
+gates and a previously unopened document-level relation partition still need to
+pass. BERT-Base and Pythia remain deferred until the candidate-gated Tiny path
+shows that their extra CPU cost is necessary.
