@@ -1419,14 +1419,24 @@ path. Tests mutate relation labels without changing inputs, reverse source
 input order, track the two read phases, reject path traversal and hash
 tampering, and force a three-region cycle to verify suppression.
 
-On 64 train-only pages, membership remains `5223/5257 = 0.99353243` with zero
-wrong assignments. Within-region F1 remains `0.98901099`. Line cross-region F1
-improves `0.76518219 -> 0.92624585`, and region-transition F1 improves
-`0.72936660 -> 0.89761751`. The report separately aggregates 959 cross-region
-evidence edges, 893 boundary candidates, 66 non-boundary records, 9 tied edges,
-3 cycle suppressions, and 890 emitted transitions. Fit/calibration are reported
+One non-iterative membership refinement handles `ambiguous-region-overlap`
+only. The untied relation predecessor/successor and the selected-order
+predecessor/successor must all agree on one region, and that region must remain
+inside the original geometry tie. Repaired members never propagate further
+repairs. This `relation-base-continuity-parent` rule resolves 8 memberships (5
+fit and 3 calibration), all correctly, and triggers zero times on the four real
+provider replays.
+
+On 64 train-only pages, membership reaches `5231/5257 = 0.99505421` with zero
+wrong assignments and 26 unassigned elements. Within-region F1 reaches
+`0.99188544`; fit/calibration values are `0.99097698/0.99487705`. Line
+cross-region F1 improves `0.76518219 -> 0.92624585`, and region-transition F1
+improves `0.72936660 -> 0.89761751`; continuity refinement does not alter either
+cross-region metric. The report separately aggregates 959 cross-region evidence
+edges, 893 boundary candidates, 66 non-boundary records, 9 tied edges, 3 cycle
+suppressions, and 890 emitted transitions. Fit/calibration are reported
 separately, and no new official test window was opened. The full repository
-suite passes 376 tests for this revision.
+suite passes 378 tests for this revision.
 
 For translation, each accepted coarse membership still defines a bounded local
 stream. The partial DAG can later order handoffs between those streams without

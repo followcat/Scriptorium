@@ -895,12 +895,20 @@ Materialization 会先读取全部 structure 页，再打开任何 semantic side
 input order、追踪两个读取阶段、拒绝 path traversal/hash tampering，并强制构造三 region cycle
 验证 suppression。
 
-在 64 个 train-only 页面上，membership 保持 `5223/5257 = 0.99353243`，错误分配为 0；
-within-region F1 保持 `0.98901099`。Line cross-region F1 从 `0.76518219` 提高到
-`0.92624585`，region-transition F1 从 `0.72936660` 提高到 `0.89761751`。报告会分别汇总
-959 条 cross-region evidence、893 条 boundary candidate、66 条 non-boundary record、9 条
-tied edge、3 次 cycle suppression 和 890 条 emitted transition。Fit/calibration 会分开报告，
-且没有打开新的官方 test window。该 revision 的全仓测试为 376 项全部通过。
+另有一次非迭代 membership refinement，它只处理 `ambiguous-region-overlap`：无同分替代的
+relation 前后邻居与 selected-order 前后邻居必须同时指向同一个 region，而且该 region 必须仍在
+原始 geometry tie 内。修复后的 member 不会继续传播。本轮
+`relation-base-continuity-parent` 共解除 8 个 membership（5 个 fit、3 个 calibration），全部
+正确；在 4 个真实 provider replay 中触发数均为 0。
+
+在 64 个 train-only 页面上，membership 达到 `5231/5257 = 0.99505421`，错误分配为 0，
+unassigned 为 26；within-region F1 达到 `0.99188544`，fit/calibration 分别为
+`0.99097698/0.99487705`。Line cross-region F1 从 `0.76518219` 提高到 `0.92624585`，
+region-transition F1 从 `0.72936660` 提高到 `0.89761751`；continuity refinement 没有改变
+这两项跨区域指标。报告会分别汇总 959 条 cross-region evidence、893 条 boundary candidate、
+66 条 non-boundary record、9 条 tied edge、3 次 cycle suppression 和 890 条 emitted
+transition。Fit/calibration 会分开报告，且没有打开新的官方 test window。该 revision 的全仓
+测试为 378 项全部通过。
 
 对翻译而言，每个已接受 coarse membership 仍定义一个有界 local stream。Partial DAG 以后可以
 在这些 stream 之间表达 handoff，而不要求一个 page permutation。Non-boundary relation evidence

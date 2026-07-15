@@ -1253,10 +1253,15 @@ region predecessor/successor, and removes the lowest-regret edge that would
 close a region cycle. A member-completion region sequence remains diagnostic;
 `total_order_asserted` is false and `runtime_reorder` remains false.
 
-| Metric | Former coarse chain | Relation boundary DAG | Flat selected baseline | DAG delta vs former |
+One non-iterative membership refinement handles exact geometry ties only when
+both untied relation-graph neighbors and both selected-order neighbors already
+belong to the same tied candidate region. It repairs 5 fit and 3 calibration
+memberships without using the newly assigned members for further propagation.
+
+| Metric | Former coarse chain | Relation DAG + continuity | Flat selected baseline | Current delta vs former |
 |---|---:|---:|---:|---:|
-| Membership recall / coverage | 0.99353243 | 0.99353243 | n/a | 0.00000000 |
-| Within-region successor F1 | 0.98901099 | 0.98901099 | 0.98359865 | 0.00000000 |
+| Membership recall / coverage | 0.99353243 | 0.99505421 | n/a | +0.00152178 |
+| Within-region successor F1 | 0.98901099 | 0.99188544 | 0.98359865 | +0.00287445 |
 | Line cross-region F1 | 0.76518219 | 0.92624585 | 0.92146597 | +0.16106366 |
 | Region transition F1 | 0.72936660 | 0.89761751 | 0.86111111 | +0.16825091 |
 
@@ -1264,11 +1269,14 @@ The fit/calibration line-transition F1 values are `0.93265993/0.90220820`;
 region-transition F1 values are `0.90301548/0.87730061`. Graphical
 multi-column line/region F1 improves from `0.71021776/0.65137615` to
 `0.90066225/0.84472050`; plain multi-column improves from
-`0.80278422/0.78822197` to `0.94760820/0.94224236`. Within-region quality does
-not move, so the gain is isolated to the failing cross-region layer rather than
-traded against local continuity.
+`0.80278422/0.78822197` to `0.94760820/0.94224236`. Fit/calibration
+within-region F1 also improves to `0.99097698/0.99487705`; membership remains
+zero-wrong with unassigned elements reduced from 34 to 26. Cross-region metrics
+do not change during continuity refinement, so local recovery is not masking a
+transition regression.
 
-The report aggregates 5,150 selected fine edges, 959 cross-region evidence
+The report aggregates 8 continuity membership repairs, 5,150 selected fine
+edges, 959 cross-region evidence
 edges, 893 boundary-aligned candidates, 66 non-boundary evidence edges, 9 tied
 cross-region edges, and 3 region-cycle suppressions. It emits 890 acyclic
 review transitions. The frozen Chunkr ranker is retained as an explicit A/B
@@ -1290,7 +1298,10 @@ These four rows are structural diagnostics, not accuracy: JD, PUMA, and BYD do
 not provide complete human relation labels for this replay. They show that the
 new path abstains from unsupported page-wide adjacency and preserves rejected
 non-boundary evidence for review. No new Comp-HRDoc test window was opened and
-the promotion decision remains `development-benchmark-only-review-only`.
+non-boundary evidence for review. Continuity repair triggers zero times on all
+four replays, so their memberships and transitions do not expand. No new
+Comp-HRDoc test window was opened and the promotion decision remains
+`development-benchmark-only-review-only`.
 
 The representation follows the EMNLP 2024 ordering-relations result and the
 official ROOR implementation, which model complex layouts as immediate
