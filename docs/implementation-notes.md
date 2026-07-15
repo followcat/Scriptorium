@@ -920,6 +920,56 @@ within-region F1 are unchanged. The benchmark still emits a review-only partial
 DAG with `runtime_reorder: false`; oracle-region success is not end-to-end
 provider-region promotion evidence.
 
+Policy `local-streams-with-relation-graph-transitions-v5` preserves abstained
+fine elements without flattening assigned provider regions. Consecutive
+unassigned ids in selected-native order form `unassigned-fallback` streams.
+Their internal adjacency and stream-boundary transitions remain review-only at
+confidence `0.5`. A boundary candidate is eligible only when at least one
+endpoint is unassigned, the source has no successor, the target has no
+predecessor, and adding it does not close a cycle. Diagnostics report stream,
+member, internal-edge, candidate, emitted, degree-suppressed, and
+cycle-suppressed counts. The candidate element permutation is computed before
+this layer and remains unchanged.
+
+### Provider-Derived Hierarchy Benchmark
+
+`materialize-provider-hierarchy` joins answer-free fine hierarchy inputs to one
+normalized provider block file per sample. It deliberately completes and
+writes all adapted inputs before resolving any source label path. Provider
+sequence and relation fields are discarded by the normalizer; input invariance
+tests mutate those fields and hierarchy labels independently. When a Paddle
+corpus-run manifest is present, its upstream corpus SHA and complete generated
+plus skipped sample-id set must match the hierarchy source manifest.
+
+`benchmark-provider-hierarchy` likewise predicts every selected input before
+opening labels. `--partition` enforces fit/calibration isolation, and every
+input, label, proposal, provider output, corpus manifest, optional provider-run
+manifest, and optional relation model is hash-bound. The frozen PP-DocLayout
+membership settings are coverage `0.10` and margin `0.10`; the oracle default
+`0.80` is intentionally not reused for padded detector boxes.
+
+Provider and oracle segmentations do not share region ids. The primary metric
+therefore unions local-stream and transition edges and scores line successor
+relations. Precision excludes predictions whose endpoints have no published
+relation label but reports them as `unscored`; assignment coverage, pairwise
+co-membership F1, and recovery of oracle-within versus oracle-cross relations
+remain separate diagnostics. This is a correspondence-aware evaluation rather
+than an exact-region replay, following the mismatch treatment in the PRImA
+reading-order metric:
+https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
+
+On 50 fit pages, provider hierarchy at the frozen coverage threshold scores
+`0.94842599`; v5 fallback raises it to `0.97433893`, versus flat
+`0.94768195`. On 14 calibration pages, the same values are
+`0.93254330 -> 0.96754386`, versus flat `0.97694650`. The independent 32-page
+provider test reaches precision/recall/F1
+`0.96979086/0.97054264/0.97016660`, above flat `0.96606248`, with assignment
+coverage `0.97687225` and segmentation pair F1 `0.80643143`. Semantic and
+native v5 are identical on that test. Because calibration still trails flat and
+segmentation remains imperfect, the report decision is
+`provider-derived-development-benchmark-review-only` and runtime reorder stays
+disabled.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the
@@ -1468,6 +1518,7 @@ relations rather than forcing one global permutation:
 - Detect-Order-Construct: https://arxiv.org/abs/2401.11874
 - DLAFormer coarse-to-fine layout analysis: https://arxiv.org/abs/2405.11757
 - Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/
+- PRImA correspondence-aware reading-order evaluation: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 - XY-Cut++ multi-granularity/cross-modal ordering: https://arxiv.org/abs/2504.10258
 - GraphDoc relation graph (MIT; release TODOs remain): https://github.com/yufanchen96/GraphDoc
 

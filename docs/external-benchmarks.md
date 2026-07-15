@@ -1468,3 +1468,63 @@ benchmark, not end-to-end proof over OCR-derived regions, and its output is a
 partial DAG rather than a page permutation. The next promotion evidence must
 show that the same branch contract survives provider-derived hierarchy on a
 broader independent document family. BERT-Base and Pythia remain deferred.
+
+### Provider-Derived Hierarchy and Unassigned Fallback
+
+The end-to-end hierarchy benchmark now replaces oracle coarse regions with
+PP-DocLayout provider blocks while retaining answer-free fine lines. The
+materializer strips provider order and relation fields, writes every inference
+input before opening any hierarchy label, and requires the provider-run corpus
+manifest hash to match the upstream hierarchy corpus. Benchmark partitions can
+be selected independently with `--partition` so fit, calibration, and test
+predictions cannot share an evaluation pass:
+
+```bash
+scriptorium materialize-provider-hierarchy \
+  /tmp/scriptorium-hierarchy-train64-v1 \
+  /tmp/scriptorium-ppdoclayout-train64 \
+  --output /tmp/scriptorium-provider-hierarchy-train64
+scriptorium benchmark-provider-hierarchy \
+  /tmp/scriptorium-provider-hierarchy-train64 \
+  --partition calibration \
+  --output /tmp/scriptorium-provider-hierarchy-calibration.json
+```
+
+Provider detectors require a lower membership coverage threshold than oracle
+regions because their boxes frequently contain padding or split text. The
+threshold was frozen at `0.10` with margin `0.10` from fit evidence. Policy v5
+then restores only selected-native adjacencies for which at least one endpoint
+has no provider membership. Consecutive unassigned elements become explicit
+`unassigned-fallback` review streams. Boundary edges are emitted only into free
+source/target degree slots and only when they preserve an acyclic graph.
+Assigned-to-assigned flat fallback was rejected: its fit precision was only
+`0.11515152`, versus `0.94339623` for the guarded unassigned adjacency family.
+
+The provider metric is segmentation-invariant: it unions local-stream and
+cross-stream successor edges and compares line-level relations, while reporting
+assignment coverage and pairwise co-membership separately. Results below use
+the same frozen detector and fallback policy on every partition:
+
+| Provider hierarchy | Without fallback F1 | v5 fallback F1 | Flat F1 | Assignment coverage | Segmentation pair F1 |
+|---|---:|---:|---:|---:|---:|
+| 50-page fit | 0.94842599 | 0.97433893 | 0.94768195 | 0.96362287 | 0.67995655 |
+| 14-page calibration | 0.93254330 | 0.96754386 | 0.97694650 | 0.95065789 | 0.65042468 |
+| 32-page official-test window | n/a | 0.97016660 | 0.96606248 | 0.97687225 | 0.80643143 |
+
+The independent test relation precision/recall is
+`0.96979086/0.97054264`. The semantic ranker produces the same test result as
+native v5 and only changes calibration F1 from `0.93254330` to `0.93345488`
+before fallback, so the gain comes from explicit membership abstention rather
+than language-model tuning. On the parallel oracle-region test, the same v5
+rule raises line F1 `0.94811321 -> 0.95571096` and correct line edges
+`402 -> 410`, while membership, region relations, and within-region metrics do
+not change.
+
+This is meaningful end-to-end provider evidence, but not a runtime promotion:
+calibration remains below its flat control, pairwise provider segmentation is
+still weak, and the output is a review-only partial relation graph. The next
+work must improve provider region grouping or select between hierarchy and flat
+relations using evidence independent of evaluation labels. The evaluation
+design follows PRImA's correspondence-aware reading-order principle: score
+relations after accounting for segmentation mismatch rather than requiring
+identical region ids ([Clausner et al., ICDAR 2013](https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf)).
