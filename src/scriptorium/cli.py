@@ -77,6 +77,7 @@ from .relation_ranker import (
     predict_structure_relations,
     train_relation_ranker,
 )
+from .relation_ranker_benchmark import benchmark_relation_rankers_roor
 from .roor_benchmark import RoorSplit, fetch_roor_benchmark_samples
 from .semantic_successor import BERT_TINY_NSP_PRESET, create_semantic_pair_scorer
 from .structure_evidence import apply_structure_evidence, load_structure_json
@@ -155,6 +156,81 @@ def fetch_roor_command(
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"Images: {result.out_dir / 'images'}")
     typer.echo(f"Structure anchors: {result.out_dir / 'structure'}")
+
+
+@app.command("benchmark-relation-rankers-roor")
+def benchmark_relation_rankers_roor_command(
+    corpus_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+    ),
+    control_model: Path = typer.Option(
+        ...,
+        "--control-model",
+        exists=True,
+        readable=True,
+    ),
+    candidate_model: Path = typer.Option(
+        ...,
+        "--candidate-model",
+        exists=True,
+        readable=True,
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Semantic scorer required by the candidate model ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+    ),
+    semantic_device: str = typer.Option("cpu", "--semantic-device"),
+) -> None:
+    """Strict two-phase A/B for local rankers on a fetched ROOR corpus."""
+
+    try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
+        result = benchmark_relation_rankers_roor(
+            corpus_dir,
+            control_model,
+            candidate_model,
+            candidate_semantic_scorer=scorer,
+            output=output,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    control = result.report["summary"]["control"]
+    candidate = result.report["summary"]["candidate"]
+    typer.echo(
+        "Branch F1 (control/candidate): "
+        f"{control['branch']['f1']}/{candidate['branch']['f1']}"
+    )
+    typer.echo(
+        "Path-cover F1 (control/candidate): "
+        f"{control['path_cover']['f1']}/{candidate['path_cover']['f1']}"
+    )
+    typer.echo(f"Report: {result.report_path}")
 
 
 @app.command("fetch-chunkr-reading-order")
@@ -529,15 +605,52 @@ def benchmark_hierarchical_order_corpus_command(
         readable=True,
         help="Optional coarse-block ranker; OOD pages suppress transitions.",
     ),
+    relation_model: Path | None = typer.Option(
+        None,
+        "--relation-model",
+        exists=True,
+        readable=True,
+        help="Optional fine successor ranker used only as review evidence.",
+    ),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Semantic scorer required by semantic relation models ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+    ),
+    semantic_device: str = typer.Option("cpu", "--semantic-device"),
 ) -> None:
     """Score hierarchy membership and within/cross-region relations."""
 
     try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
         result = benchmark_hierarchical_order_corpus(
             corpus_dir,
             output=output,
             proposals_dir=proposals_dir,
             chunkr_model=chunkr_model,
+            relation_model_path=relation_model,
+            semantic_scorer=scorer,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc

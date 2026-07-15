@@ -26,6 +26,14 @@ RELATION_DIAGNOSTIC_COUNTERS = (
     "fine_relation_tied_cross_region_edge_count",
     "fine_relation_region_cycle_suppressed_count",
     "fine_relation_region_degree_suppressed_count",
+    "external_relation_input_edge_count",
+    "external_relation_path_selected_edge_count",
+    "external_relation_novel_selected_edge_count",
+    "external_relation_selected_edge_count",
+    "external_relation_cross_region_edge_count",
+    "external_relation_boundary_aligned_edge_count",
+    "external_relation_emitted_transition_count",
+    "external_relation_replacement_count",
     "emitted_cross_region_transition_count",
 )
 SUPPORTED_COMPHRDOC_SOURCE_SCHEMAS = frozenset(
@@ -229,6 +237,8 @@ def benchmark_hierarchical_order_corpus(
     output: str | Path | None = None,
     proposals_dir: str | Path | None = None,
     chunkr_model: str | Path | None = None,
+    relation_model_path: str | Path | None = None,
+    semantic_scorer: Any | None = None,
 ) -> HierarchicalOrderBenchmarkResult:
     """Score hierarchy membership and local/cross relations in two phases."""
 
@@ -254,6 +264,14 @@ def benchmark_hierarchical_order_corpus(
         else report_path.parent / f"{report_path.stem}.proposals"
     )
     proposal_root.mkdir(parents=True, exist_ok=True)
+    relation_bundle = None
+    relation_manifest = None
+    if relation_model_path is not None:
+        from . import relation_ranker
+
+        relation_bundle, relation_manifest = relation_ranker.load_relation_ranker(
+            relation_model_path
+        )
 
     predictions: list[tuple[Mapping[str, Any], dict[str, Any], Path]] = []
     seen_ids: set[str] = set()
@@ -278,9 +296,20 @@ def benchmark_hierarchical_order_corpus(
         input_payload = _json_object(input_path, label=f"sample {sample_id} input")
         if input_payload.get("schema") != HIERARCHY_INPUT_SCHEMA:
             raise ValueError(f"sample {sample_id} has an unsupported input schema")
+        external_successor_edges = None
+        if relation_bundle is not None and relation_manifest is not None:
+            relation_input = _relation_ranker_input_from_hierarchy(input_payload)
+            external_successor_edges = relation_ranker._predict_roor_page_relations(
+                relation_input,
+                bundle=relation_bundle,
+                manifest=relation_manifest,
+                structure_role_fusion=False,
+                semantic_scorer=semantic_scorer,
+            ).structure_payload["successor_edges"]
         prediction = build_hierarchical_order_proposal(
             input_payload,
             chunkr_model=chunkr_model,
+            external_successor_edges=external_successor_edges,
         ).payload
         proposal_path = proposal_root / f"{_safe_filename(sample_id)}.proposal.json"
         _write_json(proposal_path, prediction)
@@ -346,6 +375,21 @@ def benchmark_hierarchical_order_corpus(
             if chunkr_model is not None
             else "fine-relation-graph-boundary"
         ),
+        "external_relation_model_sha256": (
+            relation_manifest.get("model_sha256")
+            if relation_manifest is not None
+            else None
+        ),
+        "external_relation_feature_version": (
+            relation_manifest.get("feature_version")
+            if relation_manifest is not None
+            else None
+        ),
+        "external_relation_semantic_scorer": (
+            relation_manifest.get("semantic_scorer")
+            if relation_manifest is not None
+            else None
+        ),
         "transition_representation": (
             "partial-dag-boundary-aligned-review-relations"
         ),
@@ -396,6 +440,36 @@ def _aggregate_relation_diagnostics(
         for page in page_results
     )
     return totals
+
+
+def _relation_ranker_input_from_hierarchy(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_elements = payload.get("elements")
+    if not isinstance(raw_elements, list) or not raw_elements:
+        raise ValueError("hierarchy relation input requires elements")
+    document: list[dict[str, Any]] = []
+    for element in raw_elements:
+        if not isinstance(element, Mapping):
+            raise ValueError("hierarchy relation elements must be objects")
+        document.append(
+            {
+                "id": element.get("id"),
+                "box": element.get("box"),
+                "text": str(element.get("text") or ""),
+                "type": str(element.get("role") or "text"),
+            }
+        )
+    return {
+        "schema": "scriptorium-hierarchy-relation-input/v1",
+        "uid": str(payload.get("id") or "hierarchy-page"),
+        "img": {
+            "width": payload.get("width"),
+            "height": payload.get("height"),
+        },
+        "document": document,
+        "relations_removed": True,
+    }
 
 
 def _hierarchy_input_from_comphrdoc_structure(

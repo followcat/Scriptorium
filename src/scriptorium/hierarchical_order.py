@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -25,7 +26,10 @@ from .reading_order_sidecar import (
     SIDECAR_SCHEMA_NAME,
     SIDECAR_SCHEMA_VERSION,
 )
-from .relation_order import relation_edge_candidate_path_cover
+from .relation_order import (
+    merge_relation_edge_path_cover,
+    relation_edge_candidate_path_cover,
+)
 
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
@@ -43,6 +47,7 @@ TEXT_PARENT_HORIZONTAL_GAP_WIDTH_FACTOR = 0.75
 TEXT_PARENT_PAGE_GAP_RATIO = 0.015
 MAX_HIERARCHY_ELEMENTS = 512
 MAX_HIERARCHY_REGIONS = 128
+EXTERNAL_RELATION_REPLACEMENT_MARGIN = 0.1
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,7 @@ def build_hierarchical_order_proposal(
     payload: Mapping[str, Any],
     *,
     chunkr_model: str | Path | None = None,
+    external_successor_edges: Sequence[Mapping[str, Any]] | None = None,
     min_geometry_coverage: float = DEFAULT_MIN_GEOMETRY_COVERAGE,
     min_geometry_margin: float = DEFAULT_MIN_GEOMETRY_MARGIN,
 ) -> HierarchicalOrderProposalResult:
@@ -190,6 +196,15 @@ def build_hierarchical_order_proposal(
         [element.bbox for element in elements],
         width,
         height,
+    )
+    external_relation_evidence = (
+        _relation_evidence_from_external_successors(
+            elements,
+            base_order=base_order,
+            successor_edges=external_successor_edges,
+        )
+        if external_successor_edges is not None
+        else None
     )
     memberships = _assign_memberships(
         elements,
@@ -279,6 +294,29 @@ def build_hierarchical_order_proposal(
     coarse_adjacent_region_pair_count = len(adjacent_region_pairs)
     relation_evidence_records: list[dict[str, Any]] = []
     relation_diagnostics: dict[str, Any] = {}
+    native_transition_edge_keys: set[tuple[int, int]] = set()
+    external_transition_edge_keys: set[tuple[int, int]] = set()
+    if transition_relation_evidence is not None and external_relation_evidence is not None:
+        native_transition_edge_keys = {
+            (edge.source, edge.target)
+            for edge in transition_relation_evidence.selected_edge_diagnostics
+        }
+        external_transition_edge_keys = {
+            (edge.source, edge.target)
+            for edge in external_relation_evidence.selected_edge_diagnostics
+            if (edge.source, edge.target) not in native_transition_edge_keys
+        }
+        transition_relation_evidence = RelationGraphOrderEvidence(
+            ordered_indices=transition_relation_evidence.ordered_indices,
+            selected_edge_diagnostics=(
+                *transition_relation_evidence.selected_edge_diagnostics,
+                *(
+                    edge
+                    for edge in external_relation_evidence.selected_edge_diagnostics
+                    if (edge.source, edge.target) in external_transition_edge_keys
+                ),
+            ),
+        )
     if transitions_enabled and transition_relation_evidence is not None:
         (
             cross_transitions,
@@ -290,6 +328,8 @@ def build_hierarchical_order_proposal(
             membership_by_element=membership_by_element,
             members_by_region=members_by_region,
             transition_policy=transition_policy,
+            protected_edge_keys=native_transition_edge_keys,
+            external_edge_keys=external_transition_edge_keys,
         )
         potential_cross_transition_count = len(relation_evidence_records)
         eligible_cross_transition_count = int(
@@ -378,6 +418,19 @@ def build_hierarchical_order_proposal(
         "geometry_membership_count": geometry_count,
         "relation_base_continuity_membership_count": continuity_count,
         "relation_base_boundary_text_membership_count": boundary_text_count,
+        "external_relation_input_edge_count": (
+            len(external_successor_edges)
+            if external_successor_edges is not None
+            else 0
+        ),
+        "external_relation_path_selected_edge_count": (
+            len(external_relation_evidence.selected_edge_diagnostics)
+            if external_relation_evidence is not None
+            else 0
+        ),
+        "external_relation_novel_selected_edge_count": len(
+            external_transition_edge_keys
+        ),
         "ambiguous_element_count": ambiguous_count,
         "unassigned_element_count": len(unassigned_ids),
         "within_region_successor_count": sum(
@@ -1066,6 +1119,110 @@ def _axis_gap(left0: float, left1: float, right0: float, right1: float) -> float
     return max(0.0, max(left0, right0) - min(left1, right1))
 
 
+def _relation_evidence_from_external_successors(
+    elements: Sequence[_HierarchyNode],
+    *,
+    base_order: Sequence[int],
+    successor_edges: Sequence[Mapping[str, Any]],
+) -> RelationGraphOrderEvidence:
+    element_index = {element.id: index for index, element in enumerate(elements)}
+    candidates_by_edge: dict[tuple[int, int], tuple[float, int]] = {}
+    for raw_edge in successor_edges:
+        if not isinstance(raw_edge, Mapping):
+            raise ValueError("external successor edges must be objects")
+        source_id = str(raw_edge.get("source") or "").strip()
+        target_id = str(raw_edge.get("target") or "").strip()
+        if source_id not in element_index or target_id not in element_index:
+            raise ValueError("external successor edge references an unknown element")
+        source = element_index[source_id]
+        target = element_index[target_id]
+        if source == target:
+            continue
+        try:
+            confidence = float(raw_edge.get("confidence"))
+            rank = int(raw_edge.get("rank") or 1)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("external successor edge confidence/rank is invalid") from exc
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            raise ValueError("external successor edge confidence must be in [0, 1]")
+        edge_key = (source, target)
+        current = candidates_by_edge.get(edge_key)
+        if current is None or (confidence, -rank) > (current[0], -current[1]):
+            candidates_by_edge[edge_key] = (confidence, rank)
+
+    ordered_candidates = sorted(
+        candidates_by_edge,
+        key=lambda edge: (
+            -candidates_by_edge[edge][0],
+            candidates_by_edge[edge][1],
+            edge[0],
+            edge[1],
+        ),
+    )
+    merged = merge_relation_edge_path_cover(ordered_candidates)
+    selected_edges = list(merged.selected_edges)
+    outgoing: dict[int, list[tuple[int, float]]] = {}
+    incoming: dict[int, list[tuple[int, float]]] = {}
+    for source, target in ordered_candidates:
+        score = candidates_by_edge[(source, target)][0]
+        outgoing.setdefault(source, []).append((target, score))
+        incoming.setdefault(target, []).append((source, score))
+    diagnostics: list[RelationGraphEdgeDiagnostics] = []
+    for selection_step, (source, target) in enumerate(selected_edges):
+        score = candidates_by_edge[(source, target)][0]
+        source_alternatives = sorted(
+            (
+                alternative_score
+                for alternative_target, alternative_score in outgoing[source]
+                if alternative_target != target
+            ),
+            reverse=True,
+        )
+        target_alternatives = sorted(
+            (
+                alternative_score
+                for alternative_source, alternative_score in incoming[target]
+                if alternative_source != source
+            ),
+            reverse=True,
+        )
+        source_alternative = source_alternatives[0] if source_alternatives else None
+        target_alternative = target_alternatives[0] if target_alternatives else None
+        source_margin = score - source_alternative if source_alternative is not None else None
+        target_margin = score - target_alternative if target_alternative is not None else None
+        source_regret = source_margin if source_margin is not None else score
+        target_regret = target_margin if target_margin is not None else score
+        diagnostics.append(
+            RelationGraphEdgeDiagnostics(
+                source=source,
+                target=target,
+                score=score,
+                source_candidate_count=len(outgoing[source]),
+                target_candidate_count=len(incoming[target]),
+                source_alternative_score=source_alternative,
+                target_alternative_score=target_alternative,
+                source_margin=source_margin,
+                target_margin=target_margin,
+                source_regret=source_regret,
+                target_regret=target_regret,
+                selection_regret=source_regret + target_regret,
+                selection_step=selection_step,
+            )
+        )
+    ordered_indices, _ = relation_edge_candidate_path_cover(
+        item_count=len(elements),
+        successor_edges=selected_edges,
+        precedence_edges=[],
+        base_order=list(base_order),
+    )
+    if len(ordered_indices) != len(elements):
+        ordered_indices = list(base_order)
+    return RelationGraphOrderEvidence(
+        ordered_indices=tuple(ordered_indices),
+        selected_edge_diagnostics=tuple(diagnostics),
+    )
+
+
 def _coarse_region_order(
     *,
     page_id: str,
@@ -1281,7 +1438,11 @@ def _relation_graph_cross_region_transitions(
     membership_by_element: Mapping[str, _Membership],
     members_by_region: Mapping[str, Sequence[str]],
     transition_policy: str,
+    protected_edge_keys: set[tuple[int, int]] | None = None,
+    external_edge_keys: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    protected = protected_edge_keys or set()
+    external = external_edge_keys or set()
     candidates: list[_CrossRegionRelationCandidate] = []
     for diagnostic in relation_evidence.selected_edge_diagnostics:
         if not (
@@ -1318,8 +1479,16 @@ def _relation_graph_cross_region_transitions(
             )
         )
 
-    boundary_candidates = sorted(
-        (candidate for candidate in candidates if candidate.boundary_aligned),
+    boundary_candidates = [
+        candidate for candidate in candidates if candidate.boundary_aligned
+    ]
+    native_boundary_candidates = sorted(
+        (
+            candidate
+            for candidate in boundary_candidates
+            if (candidate.diagnostic.source, candidate.diagnostic.target)
+            not in external
+        ),
         key=lambda candidate: (
             candidate.diagnostic.has_tied_alternative,
             -candidate.diagnostic.selection_regret,
@@ -1329,11 +1498,27 @@ def _relation_graph_cross_region_transitions(
             candidate.target_region,
         ),
     )
+    external_boundary_candidates = sorted(
+        (
+            candidate
+            for candidate in boundary_candidates
+            if (candidate.diagnostic.source, candidate.diagnostic.target)
+            in external
+        ),
+        key=lambda candidate: (
+            -candidate.diagnostic.score,
+            -candidate.diagnostic.selection_regret,
+            candidate.diagnostic.selection_step,
+            candidate.source_region,
+            candidate.target_region,
+        ),
+    )
     successor_by_region: dict[str, str] = {}
     predecessor_by_region: dict[str, str] = {}
     selected_keys: set[tuple[str, str]] = set()
     suppression_reasons: dict[tuple[str, str], str] = {}
-    for candidate in boundary_candidates:
+    candidate_by_key = {candidate.edge_key: candidate for candidate in boundary_candidates}
+    for candidate in native_boundary_candidates:
         if candidate.source_region in successor_by_region:
             suppression_reasons[candidate.edge_key] = "region-outgoing-conflict"
             continue
@@ -1351,6 +1536,56 @@ def _relation_graph_cross_region_transitions(
         predecessor_by_region[candidate.target_region] = candidate.source_region
         selected_keys.add(candidate.edge_key)
 
+    external_replacement_count = 0
+    for candidate in external_boundary_candidates:
+        conflicting = [
+            candidate_by_key[edge_key]
+            for edge_key in selected_keys
+            if candidate_by_key[edge_key].source_region == candidate.source_region
+            or candidate_by_key[edge_key].target_region == candidate.target_region
+        ]
+        if len(conflicting) != 1:
+            suppression_reasons[candidate.edge_key] = (
+                "semantic-requires-single-native-region-conflict"
+            )
+            continue
+        replaced = conflicting[0]
+        replaced_index_key = (
+            replaced.diagnostic.source,
+            replaced.diagnostic.target,
+        )
+        if replaced_index_key not in protected:
+            suppression_reasons[candidate.edge_key] = (
+                "semantic-conflict-is-not-native-relation"
+            )
+            continue
+        score_margin = candidate.diagnostic.score - replaced.diagnostic.score
+        if score_margin < EXTERNAL_RELATION_REPLACEMENT_MARGIN:
+            suppression_reasons[candidate.edge_key] = (
+                "semantic-native-confidence-margin-too-small"
+            )
+            continue
+        selected_keys.remove(replaced.edge_key)
+        del successor_by_region[replaced.source_region]
+        del predecessor_by_region[replaced.target_region]
+        if _region_successor_would_cycle(
+            candidate.source_region,
+            candidate.target_region,
+            successor_by_region,
+        ):
+            successor_by_region[replaced.source_region] = replaced.target_region
+            predecessor_by_region[replaced.target_region] = replaced.source_region
+            selected_keys.add(replaced.edge_key)
+            suppression_reasons[candidate.edge_key] = "region-cycle"
+            continue
+        suppression_reasons[replaced.edge_key] = (
+            "replaced-by-semantic-confidence-margin"
+        )
+        successor_by_region[candidate.source_region] = candidate.target_region
+        predecessor_by_region[candidate.target_region] = candidate.source_region
+        selected_keys.add(candidate.edge_key)
+        external_replacement_count += 1
+
     transitions: list[dict[str, Any]] = []
     evidence_records: list[dict[str, Any]] = []
     for candidate in sorted(
@@ -1362,6 +1597,15 @@ def _relation_graph_cross_region_transitions(
         ),
     ):
         relation_payload = candidate.diagnostic.as_payload()
+        relation_edge_key = (
+            candidate.diagnostic.source,
+            candidate.diagnostic.target,
+        )
+        relation_source = (
+            "semantic-successor-ranker"
+            if relation_edge_key in external
+            else "native-relation-graph"
+        )
         confidence = round(
             min(max(candidate.diagnostic.score, 0.0), 0.76),
             8,
@@ -1379,6 +1623,7 @@ def _relation_graph_cross_region_transitions(
             "transition_status": "selected" if selected else "evidence-only",
             "suppression_reason": suppression_reason,
             "confidence": confidence,
+            "relation_source": relation_source,
             "relation_graph": relation_payload,
         }
         evidence_records.append(evidence_record)
@@ -1388,6 +1633,8 @@ def _relation_graph_cross_region_transitions(
             "fine-relation-graph-selected-edge",
             "local-stream-boundary",
         ]
+        if relation_edge_key in external:
+            transition_evidence.append("semantic-successor-ranker")
         if candidate.diagnostic.has_tied_alternative:
             transition_evidence.append("tied-alternative-review-only")
         transitions.append(
@@ -1414,6 +1661,7 @@ def _relation_graph_cross_region_transitions(
                     "target_region_id": candidate.target_region,
                     "transition_policy": transition_policy,
                     "provider": HIERARCHICAL_ORDER_PROVIDER,
+                    "relation_source": relation_source,
                 },
             }
         )
@@ -1431,6 +1679,22 @@ def _relation_graph_cross_region_transitions(
             len(candidates) - len(boundary_candidates)
         ),
         "fine_relation_tied_cross_region_edge_count": tied_count,
+        "external_relation_selected_edge_count": len(external),
+        "external_relation_cross_region_edge_count": sum(
+            (candidate.diagnostic.source, candidate.diagnostic.target) in external
+            for candidate in candidates
+        ),
+        "external_relation_boundary_aligned_edge_count": sum(
+            candidate.boundary_aligned
+            and (candidate.diagnostic.source, candidate.diagnostic.target) in external
+            for candidate in candidates
+        ),
+        "external_relation_emitted_transition_count": sum(
+            transition.get("provenance", {}).get("relation_source")
+            == "semantic-successor-ranker"
+            for transition in transitions
+        ),
+        "external_relation_replacement_count": external_replacement_count,
         "fine_relation_region_cycle_suppressed_count": sum(
             reason == "region-cycle" for reason in suppression_reasons.values()
         ),

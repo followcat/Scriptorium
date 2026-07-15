@@ -169,6 +169,112 @@ def test_hierarchy_emits_relation_graph_transition_at_stream_boundary() -> None:
     )
 
 
+def test_hierarchy_replaces_one_lower_confidence_native_region_edge(
+    monkeypatch,
+) -> None:
+    payload = {
+        "id": "semantic-replacement",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "one", "box": [10, 10, 40, 20], "role": "Text Block"},
+            {"id": "two", "box": [10, 35, 40, 45], "role": "Text Block"},
+            {"id": "three", "box": [10, 60, 40, 70], "role": "Text Block"},
+        ],
+        "regions": [
+            {
+                "id": f"region-{element_id}",
+                "box": box,
+                "role": "Text Block",
+                "member_ids": [element_id],
+            }
+            for element_id, box in (
+                ("one", [5, 5, 45, 25]),
+                ("two", [5, 30, 45, 50]),
+                ("three", [5, 55, 45, 75]),
+            )
+        ],
+    }
+    native_diagnostic = RelationGraphEdgeDiagnostics(
+        source=0,
+        target=1,
+        score=0.6,
+        source_candidate_count=1,
+        target_candidate_count=1,
+        source_alternative_score=None,
+        target_alternative_score=None,
+        source_margin=None,
+        target_margin=None,
+        source_regret=0.6,
+        target_regret=0.6,
+        selection_regret=1.2,
+        selection_step=0,
+    )
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            (0, 1, 2),
+            (native_diagnostic,),
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(
+        payload,
+        external_successor_edges=[
+            {
+                "source": "one",
+                "target": "three",
+                "confidence": 0.91,
+                "rank": 1,
+            }
+        ],
+    )
+
+    transitions = result.payload["pages"][0]["review_transitions"]
+    assert [(edge["source"], edge["target"]) for edge in transitions] == [
+        ("one", "three")
+    ]
+    assert transitions[0]["provenance"]["relation_source"] == (
+        "semantic-successor-ranker"
+    )
+    assert "semantic-successor-ranker" in transitions[0]["evidence"]
+    assert result.diagnostics["external_relation_input_edge_count"] == 1
+    assert result.diagnostics["external_relation_path_selected_edge_count"] == 1
+    assert result.diagnostics["external_relation_novel_selected_edge_count"] == 1
+    assert result.diagnostics["external_relation_emitted_transition_count"] == 1
+    assert result.diagnostics["external_relation_replacement_count"] == 1
+    assert "successor_edges" not in payload
+
+
+def test_hierarchy_does_not_fill_empty_region_slot_from_semantics_alone() -> None:
+    payload = _two_column_payload()
+
+    result = build_hierarchical_order_proposal(
+        payload,
+        external_successor_edges=[
+            {
+                "source": "left-bottom",
+                "target": "right-top",
+                "confidence": 0.99,
+                "rank": 1,
+            }
+        ],
+    )
+
+    assert result.payload["pages"][0]["review_transitions"] == []
+    evidence = result.payload["pages"][0]["cross_region_relation_evidence"]
+    external = [
+        edge for edge in evidence if edge["relation_source"] == "semantic-successor-ranker"
+    ]
+    assert external[0]["suppression_reason"] == (
+        "semantic-requires-single-native-region-conflict"
+    )
+    assert result.diagnostics["external_relation_replacement_count"] == 0
+
+
 def test_hierarchy_suppresses_region_cycles_from_fine_relation_edges(
     monkeypatch,
 ) -> None:
