@@ -2787,9 +2787,22 @@ def _spatial_graph_order(
         return None
 
     chain_groups: dict[int, list[int]] = {}
+    predecessor_cycles: set[frozenset[int]] = set()
     for item_index in non_full_indices:
         root = item_index
-        while predecessor_by_item.get(root) is not None and predecessor_by_item[root] not in full_width_indices:
+        path: list[int] = []
+        path_position: dict[int, int] = {}
+        while (
+            predecessor_by_item.get(root) is not None
+            and predecessor_by_item[root] not in full_width_indices
+        ):
+            if root in path_position:
+                cycle = path[path_position[root] :]
+                predecessor_cycles.add(frozenset(cycle))
+                root = min(cycle, key=lambda index: reading_order_key(bboxes[index]))
+                break
+            path_position[root] = len(path)
+            path.append(root)
             root = predecessor_by_item[root]
         chain_groups.setdefault(root, []).append(item_index)
 
@@ -2836,7 +2849,16 @@ def _spatial_graph_order(
         ordered_indices.extend(sorted(remaining_indices, key=lambda index: reading_order_key(bboxes[index])))
 
     confidence = _bounded_confidence(0.76 + 0.08 * min(coverage, 1.0) + 0.06 * min(len(significant_chains) / 3, 1.0))
-    evidence = ("spatial-graph", "horizontal-overlap-chain", "multi-head-flow")
+    evidence = (
+        "spatial-graph",
+        "horizontal-overlap-chain",
+        "multi-head-flow",
+        *(
+            ("predecessor-cycle-normalized",)
+            if predecessor_cycles
+            else ()
+        ),
+    )
     return _SpatialGraphResult(
         ordered_indices=ordered_indices,
         columns=significant_chains,

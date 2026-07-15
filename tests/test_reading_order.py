@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import scriptorium.reading_order as reading_order
 from scriptorium.annotations import annotate_document
 from scriptorium.benchmark_fixtures import create_benchmark_fixtures
 from scriptorium.html_export import export_html
@@ -230,6 +231,31 @@ def test_spatial_graph_orders_overlapping_weak_columns() -> None:
     assert {by_item[index].column_index for index in right_indices} == {1}
     assert all("spatial-graph" in by_item[index].evidence for index in left_indices + right_indices)
     assert all("horizontal-overlap-chain" in by_item[index].evidence for index in left_indices + right_indices)
+
+
+def test_spatial_graph_normalizes_overlapping_short_box_predecessor_cycle() -> None:
+    bboxes = [
+        BBox(x0=x0, y0=y0, x1=x0 + 180, y1=y0 + 20)
+        for x0 in (50, 350)
+        for y0 in (50, 80, 110)
+    ]
+    bboxes.extend(
+        [
+            BBox(x0=50, y0=160, x1=230, y1=164),
+            BBox(x0=50, y0=160, x1=230, y1=164),
+        ]
+    )
+
+    result = reading_order._spatial_graph_order(
+        bboxes,
+        page_width=600,
+        page_height=800,
+        indices=list(range(len(bboxes))),
+    )
+
+    assert result is not None
+    assert result.ordered_indices == [0, 1, 2, 3, 4, 5, 6, 7]
+    assert "predecessor-cycle-normalized" in result.evidence
 
 
 def test_box_flow_candidate_exposes_horizontal_vs_vertical_ordering() -> None:
