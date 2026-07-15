@@ -34,7 +34,7 @@ from .relation_order import (
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v3"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v4"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
 DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
@@ -327,6 +327,7 @@ def build_hierarchical_order_proposal(
             elements=elements,
             membership_by_element=membership_by_element,
             members_by_region=members_by_region,
+            region_role_by_id={region.id: region.role for region in regions},
             transition_policy=transition_policy,
             protected_edge_keys=native_transition_edge_keys,
             external_edge_keys=external_transition_edge_keys,
@@ -1437,6 +1438,7 @@ def _relation_graph_cross_region_transitions(
     elements: Sequence[_HierarchyNode],
     membership_by_element: Mapping[str, _Membership],
     members_by_region: Mapping[str, Sequence[str]],
+    region_role_by_id: Mapping[str, str],
     transition_policy: str,
     protected_edge_keys: set[tuple[int, int]] | None = None,
     external_edge_keys: set[tuple[int, int]] | None = None,
@@ -1519,6 +1521,13 @@ def _relation_graph_cross_region_transitions(
     suppression_reasons: dict[tuple[str, str], str] = {}
     candidate_by_key = {candidate.edge_key: candidate for candidate in boundary_candidates}
     for candidate in native_boundary_candidates:
+        object_branch_reason = _object_branch_endpoint_suppression_reason(
+            candidate,
+            region_role_by_id=region_role_by_id,
+        )
+        if object_branch_reason is not None:
+            suppression_reasons[candidate.edge_key] = object_branch_reason
+            continue
         if candidate.source_region in successor_by_region:
             suppression_reasons[candidate.edge_key] = "region-outgoing-conflict"
             continue
@@ -1538,6 +1547,13 @@ def _relation_graph_cross_region_transitions(
 
     external_replacement_count = 0
     for candidate in external_boundary_candidates:
+        object_branch_reason = _object_branch_endpoint_suppression_reason(
+            candidate,
+            region_role_by_id=region_role_by_id,
+        )
+        if object_branch_reason is not None:
+            suppression_reasons[candidate.edge_key] = object_branch_reason
+            continue
         conflicting = [
             candidate_by_key[edge_key]
             for edge_key in selected_keys
@@ -1702,7 +1718,39 @@ def _relation_graph_cross_region_transitions(
             reason in {"region-outgoing-conflict", "region-incoming-conflict"}
             for reason in suppression_reasons.values()
         ),
+        "fine_relation_object_branch_suppressed_count": sum(
+            reason
+            in {
+                "table-region-terminal-branch",
+                "figure-region-root-branch",
+            }
+            for reason in suppression_reasons.values()
+        ),
+        "fine_relation_table_source_suppressed_count": sum(
+            reason == "table-region-terminal-branch"
+            for reason in suppression_reasons.values()
+        ),
+        "fine_relation_figure_target_suppressed_count": sum(
+            reason == "figure-region-root-branch"
+            for reason in suppression_reasons.values()
+        ),
     }
+
+
+def _object_branch_endpoint_suppression_reason(
+    candidate: _CrossRegionRelationCandidate,
+    *,
+    region_role_by_id: Mapping[str, str],
+) -> str | None:
+    """Keep graphical object/caption relations as branches, not through-paths."""
+
+    source_role = str(region_role_by_id.get(candidate.source_region) or "").strip().lower()
+    target_role = str(region_role_by_id.get(candidate.target_region) or "").strip().lower()
+    if source_role == "table":
+        return "table-region-terminal-branch"
+    if target_role == "figure":
+        return "figure-region-root-branch"
+    return None
 
 
 def _region_successor_would_cycle(

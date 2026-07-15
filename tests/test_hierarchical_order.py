@@ -340,6 +340,113 @@ def test_hierarchy_suppresses_region_cycles_from_fine_relation_edges(
     assert sum(item["suppression_reason"] == "region-cycle" for item in evidence) == 1
 
 
+def test_hierarchy_keeps_figure_and_table_relations_as_object_branches(
+    monkeypatch,
+) -> None:
+    roles = ("Text", "Figure", "Text", "Text", "Table", "Text")
+    element_ids = (
+        "body-before-figure",
+        "figure-object",
+        "figure-caption",
+        "table-caption",
+        "table-object",
+        "body-after-table",
+    )
+    elements = [
+        {
+            "id": element_id,
+            "box": [10, 10 + index * 15, 90, 20 + index * 15],
+            "role": "Text",
+        }
+        for index, element_id in enumerate(element_ids)
+    ]
+    payload = {
+        "id": "object-branch-endpoints",
+        "width": 100,
+        "height": 120,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": elements,
+        "regions": [
+            {
+                "id": f"region-{element_id}",
+                "box": element["box"],
+                "role": role,
+                "member_ids": [element_id],
+            }
+            for element_id, element, role in zip(
+                element_ids,
+                elements,
+                roles,
+                strict=True,
+            )
+        ],
+    }
+    stable_elements = hierarchical_order._nodes_from_payload(
+        payload["elements"],
+        kind="element",
+        width=100,
+        height=120,
+        maximum=hierarchical_order.MAX_HIERARCHY_ELEMENTS,
+    )
+    index_by_id = {
+        element.id: index for index, element in enumerate(stable_elements)
+    }
+    edge_specs = (
+        ("body-before-figure", "figure-object", 0.99),
+        ("figure-object", "figure-caption", 0.98),
+        ("table-caption", "table-object", 0.97),
+        ("table-object", "body-after-table", 0.96),
+    )
+    diagnostics = tuple(
+        RelationGraphEdgeDiagnostics(
+            source=index_by_id[source],
+            target=index_by_id[target],
+            score=score,
+            source_candidate_count=1,
+            target_candidate_count=1,
+            source_alternative_score=None,
+            target_alternative_score=None,
+            source_margin=None,
+            target_margin=None,
+            source_regret=score,
+            target_regret=score,
+            selection_regret=score * 2,
+            selection_step=step,
+        )
+        for step, (source, target, score) in enumerate(edge_specs)
+    )
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            tuple(range(len(element_ids))),
+            diagnostics,
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    transitions = result.payload["pages"][0]["review_transitions"]
+    assert {(edge["source"], edge["target"]) for edge in transitions} == {
+        ("figure-object", "figure-caption"),
+        ("table-caption", "table-object"),
+    }
+    evidence = {
+        (edge["source"], edge["target"]): edge
+        for edge in result.payload["pages"][0]["cross_region_relation_evidence"]
+    }
+    assert evidence[("body-before-figure", "figure-object")][
+        "suppression_reason"
+    ] == "figure-region-root-branch"
+    assert evidence[("table-object", "body-after-table")][
+        "suppression_reason"
+    ] == "table-region-terminal-branch"
+    assert result.diagnostics["fine_relation_object_branch_suppressed_count"] == 2
+    assert result.diagnostics["fine_relation_figure_target_suppressed_count"] == 1
+    assert result.diagnostics["fine_relation_table_source_suppressed_count"] == 1
+
+
 def test_hierarchy_model_reorders_regions_but_preserves_local_lines(
     monkeypatch,
 ) -> None:

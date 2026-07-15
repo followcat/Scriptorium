@@ -26,6 +26,9 @@ RELATION_DIAGNOSTIC_COUNTERS = (
     "fine_relation_tied_cross_region_edge_count",
     "fine_relation_region_cycle_suppressed_count",
     "fine_relation_region_degree_suppressed_count",
+    "fine_relation_object_branch_suppressed_count",
+    "fine_relation_table_source_suppressed_count",
+    "fine_relation_figure_target_suppressed_count",
     "external_relation_input_edge_count",
     "external_relation_path_selected_edge_count",
     "external_relation_novel_selected_edge_count",
@@ -368,7 +371,7 @@ def benchmark_hierarchical_order_corpus(
         "corpus_manifest_sha256": _file_sha256(manifest_path),
         "sample_count": len(page_results),
         "prediction_policy": (
-            "hierarchical-review-only-relation-dag-with-boundary-text-membership-v3"
+            "hierarchical-review-only-relation-dag-with-object-branches-v4"
         ),
         "coarse_order_model": (
             "chunkr-pairwise-ranker"
