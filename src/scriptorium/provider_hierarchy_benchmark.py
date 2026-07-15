@@ -11,7 +11,11 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
-from .hierarchical_order import MAX_HIERARCHY_REGIONS, build_hierarchical_order_proposal
+from .hierarchical_order import (
+    MAX_HIERARCHY_REGIONS,
+    PROVIDER_COARSE_REGION_SOURCE,
+    build_hierarchical_order_proposal,
+)
 from .hierarchical_order_benchmark import (
     HIERARCHY_CORPUS_SCHEMA,
     HIERARCHY_INPUT_SCHEMA,
@@ -413,7 +417,7 @@ def benchmark_provider_hierarchy_corpus(
         "partition_filter": normalized_partition,
         "min_geometry_coverage": round(min_geometry_coverage, 8),
         "min_geometry_margin": round(min_geometry_margin, 8),
-        "prediction_policy": "provider-block-hierarchy-object-branches-v1",
+        "prediction_policy": "provider-block-hierarchy-continuity-segments-v2",
         "relation_metric_policy": (
             "segmentation-invariant union of local-stream and transition edges; "
             "partial-label endpoint-aware precision"
@@ -535,6 +539,7 @@ def _provider_hierarchy_input(
         "regions": regions,
         "input_adapter": {
             "schema": PROVIDER_HIERARCHY_ADAPTER_SCHEMA,
+            "coarse_region_source": PROVIDER_COARSE_REGION_SOURCE,
             "source_hierarchy_input_sha256": source_input_sha256,
             "source_provider_output_sha256": provider_sha256,
             "source_provider_manifest_sha256": provider_manifest_sha256,

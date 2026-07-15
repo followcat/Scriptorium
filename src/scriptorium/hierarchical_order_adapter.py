@@ -8,7 +8,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .hierarchical_order import MAX_HIERARCHY_ELEMENTS, MAX_HIERARCHY_REGIONS
+from .hierarchical_order import (
+    MAX_HIERARCHY_ELEMENTS,
+    MAX_HIERARCHY_REGIONS,
+    PROVIDER_COARSE_REGION_SOURCE,
+)
 from .models import BBox, DocumentIR, ElementIR
 from .reading_order_sidecar import SIDECAR_SCHEMA_NAME
 from .structure_evidence import StructureRegion, normalize_structure_evidence
@@ -254,6 +258,7 @@ def build_hierarchy_input_from_document(
     }
     adapter_metadata = {
         "schema": HIERARCHY_INPUT_ADAPTER_SCHEMA,
+        "coarse_region_source": PROVIDER_COARSE_REGION_SOURCE,
         "fine_element_policy": FINE_ELEMENT_SELECTION_POLICY,
         "coarse_region_policy": COARSE_REGION_SELECTION_POLICY,
         "provider_sequence_policy": "stripped-before-hierarchy-proposal",

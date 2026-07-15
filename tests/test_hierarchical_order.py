@@ -1097,6 +1097,205 @@ def test_hierarchy_unassigned_fallback_preserves_existing_relation_degree(
     assert result.diagnostics["unassigned_fallback_transition_emitted_count"] == 0
 
 
+def test_provider_hierarchy_splits_discontinuous_members_into_local_segments(
+    monkeypatch,
+) -> None:
+    payload = {
+        "id": "provider-local-discontinuity",
+        "width": 200,
+        "height": 140,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "region-a-top", "box": [10, 10, 80, 20], "role": "Text"},
+            {"id": "between", "box": [110, 45, 180, 55], "role": "Text"},
+            {"id": "region-a-bottom", "box": [10, 90, 80, 100], "role": "Text"},
+        ],
+        "regions": [
+            {
+                "id": "region-a",
+                "box": [5, 5, 85, 105],
+                "role": "Text",
+                "member_ids": ["region-a-top", "region-a-bottom"],
+            },
+            {
+                "id": "region-between",
+                "box": [105, 40, 185, 60],
+                "role": "Text",
+                "member_ids": ["between"],
+            },
+        ],
+        "input_adapter": {
+            "coarse_region_source": (
+                hierarchical_order.PROVIDER_COARSE_REGION_SOURCE
+            )
+        },
+    }
+
+    def selected_order(nodes, **_kwargs):
+        desired = (
+            ["region-a-top", "between", "region-a-bottom"]
+            if len(nodes) == 3
+            else ["region-a", "region-between"]
+        )
+        index_by_id = {node.id: index for index, node in enumerate(nodes)}
+        return tuple(index_by_id[node_id] for node_id in desired)
+
+    monkeypatch.setattr(hierarchical_order, "_selected_order", selected_order)
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda boxes, *_args: RelationGraphOrderEvidence(
+            tuple(range(len(boxes))),
+            (),
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    region_streams = [
+        stream
+        for stream in result.payload["pages"][0]["reading_streams"]
+        if stream.get("region_id") == "region-a"
+    ]
+    assert [stream["members"] for stream in region_streams] == [
+        ["region-a-top"],
+        ["region-a-bottom"],
+    ]
+    assert all(stream["review_successor_edges"] == [] for stream in region_streams)
+    assert result.diagnostics["provider_local_stream_split_count"] == 1
+    assert result.diagnostics["provider_local_stream_gap_discontinuity_count"] == 1
+    assert result.diagnostics["provider_local_stream_backward_discontinuity_count"] == 0
+
+
+def test_provider_local_stream_keeps_nearby_vertical_continuity() -> None:
+    element_by_id = {
+        "source": hierarchical_order._HierarchyNode(
+            "source",
+            hierarchical_order.BBox(x0=10, y0=10, x1=80, y1=20),
+            "Text",
+        ),
+        "target": hierarchical_order._HierarchyNode(
+            "target",
+            hierarchical_order.BBox(x0=10, y0=22, x1=80, y1=32),
+            "Text",
+        ),
+    }
+
+    segments, reasons = hierarchical_order._provider_local_stream_segments(
+        ("source", "target"),
+        element_by_id=element_by_id,
+        base_rank={"source": 0, "target": 2},
+    )
+
+    assert segments == (("source", "target"),)
+    assert reasons == ()
+
+
+def test_provider_hierarchy_keeps_nonlocal_native_relation_as_evidence(
+    monkeypatch,
+) -> None:
+    element_ids = ["source", "one", "two", "three", "four", "target"]
+    payload = {
+        "id": "provider-nonlocal-relation",
+        "width": 200,
+        "height": 180,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {
+                "id": element_id,
+                "box": [10, 10 + index * 25, 90, 20 + index * 25],
+                "role": "Text",
+            }
+            for index, element_id in enumerate(element_ids)
+        ],
+        "regions": [
+            {
+                "id": f"region-{element_id}",
+                "box": [5, 5 + index * 25, 95, 25 + index * 25],
+                "role": "Text",
+                "member_ids": [element_id],
+            }
+            for index, element_id in enumerate(element_ids)
+        ],
+        "input_adapter": {
+            "coarse_region_source": (
+                hierarchical_order.PROVIDER_COARSE_REGION_SOURCE
+            )
+        },
+    }
+    stable_elements = hierarchical_order._nodes_from_payload(
+        payload["elements"],
+        kind="element",
+        width=200,
+        height=180,
+        maximum=hierarchical_order.MAX_HIERARCHY_ELEMENTS,
+    )
+    index_by_id = {
+        element.id: index for index, element in enumerate(stable_elements)
+    }
+    diagnostic = RelationGraphEdgeDiagnostics(
+        source=index_by_id["source"],
+        target=index_by_id["target"],
+        score=0.95,
+        source_candidate_count=1,
+        target_candidate_count=1,
+        source_alternative_score=None,
+        target_alternative_score=None,
+        source_margin=None,
+        target_margin=None,
+        source_regret=0.95,
+        target_regret=0.95,
+        selection_regret=1.9,
+        selection_step=0,
+    )
+
+    def selected_order(nodes, **_kwargs):
+        desired = (
+            element_ids
+            if len(nodes) == len(element_ids)
+            and all(node.id in element_ids for node in nodes)
+            else [f"region-{element_id}" for element_id in element_ids]
+        )
+        node_index = {node.id: index for index, node in enumerate(nodes)}
+        return tuple(node_index[node_id] for node_id in desired)
+
+    monkeypatch.setattr(hierarchical_order, "_selected_order", selected_order)
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            tuple(range(len(stable_elements))),
+            (diagnostic,),
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert result.payload["pages"][0]["review_transitions"] == []
+    evidence = result.payload["pages"][0]["cross_region_relation_evidence"]
+    assert [
+        (
+            edge["source"],
+            edge["target"],
+            edge["suppression_reason"],
+            edge["selected_base_rank_displacement"],
+        )
+        for edge in evidence
+    ] == [
+        (
+            "source",
+            "target",
+            "provider-nonlocal-selected-rank-gap",
+            5,
+        )
+    ]
+    assert result.diagnostics[
+        "fine_relation_provider_nonlocal_suppressed_count"
+    ] == 1
+
+
 def test_hierarchy_does_not_expand_partial_cross_region_chain() -> None:
     payload = {
         "id": "partial-chain",

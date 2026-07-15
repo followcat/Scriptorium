@@ -34,7 +34,8 @@ from .relation_order import (
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v5"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-provider-continuity-v6"
+PROVIDER_COARSE_REGION_SOURCE = "normalized-provider-structure"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
 DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
@@ -49,6 +50,9 @@ MAX_HIERARCHY_ELEMENTS = 512
 MAX_HIERARCHY_REGIONS = 128
 EXTERNAL_RELATION_REPLACEMENT_MARGIN = 0.1
 UNASSIGNED_FALLBACK_CONFIDENCE = 0.5
+PROVIDER_LOCAL_STREAM_MIN_LINE_GAP = -0.25
+PROVIDER_LOCAL_STREAM_MAX_LINE_GAP = 1.25
+PROVIDER_CROSS_TRANSITION_MAX_BASE_RANK_DISPLACEMENT = 4
 
 
 @dataclass(frozen=True)
@@ -262,12 +266,25 @@ def build_hierarchical_order_proposal(
     transitions_enabled = bool(coarse_diagnostics["transitions_enabled"])
     sidecar_region_ids = coarse_ids if transitions_enabled else base_coarse_ids
 
-    streams = _region_streams(
+    provider_derived_regions = bool(
+        isinstance(input_adapter, Mapping)
+        and input_adapter.get("coarse_region_source")
+        == PROVIDER_COARSE_REGION_SOURCE
+    )
+    streams, provider_stream_diagnostics = _region_streams(
         sidecar_region_ids,
+        elements=elements,
         regions=regions,
         members_by_region=members_by_region,
         membership_by_element=membership_by_element,
+        base_rank=base_rank,
+        segment_provider_discontinuities=provider_derived_regions,
     )
+    stream_id_by_element = {
+        str(element_id): str(stream["id"])
+        for stream in streams
+        for element_id in stream["members"]
+    }
     unassigned_ids = tuple(
         element_id
         for element_id in base_ids
@@ -333,8 +350,11 @@ def build_hierarchical_order_proposal(
             elements=elements,
             membership_by_element=membership_by_element,
             members_by_region=members_by_region,
+            base_rank=base_rank,
+            stream_id_by_element=stream_id_by_element,
             region_role_by_id={region.id: region.role for region in regions},
             transition_policy=transition_policy,
+            provider_nonlocal_guard_enabled=provider_derived_regions,
             protected_edge_keys=native_transition_edge_keys,
             external_edge_keys=external_transition_edge_keys,
         )
@@ -357,6 +377,7 @@ def build_hierarchical_order_proposal(
             _cross_region_transitions(
                 eligible_region_pairs,
                 members_by_region=members_by_region,
+                stream_id_by_element=stream_id_by_element,
                 transition_policy=transition_policy,
                 transition_confidence=float(
                     coarse_diagnostics["cross_region_transition_confidence"]
@@ -492,6 +513,23 @@ def build_hierarchical_order_proposal(
         "min_geometry_margin": round(min_geometry_margin, 8),
         "min_text_parent_score": DEFAULT_MIN_TEXT_PARENT_SCORE,
         "min_text_parent_margin": DEFAULT_MIN_TEXT_PARENT_MARGIN,
+        "provider_derived_coarse_regions": provider_derived_regions,
+        "provider_local_stream_min_line_gap": (
+            PROVIDER_LOCAL_STREAM_MIN_LINE_GAP
+            if provider_derived_regions
+            else None
+        ),
+        "provider_local_stream_max_line_gap": (
+            PROVIDER_LOCAL_STREAM_MAX_LINE_GAP
+            if provider_derived_regions
+            else None
+        ),
+        "provider_cross_transition_max_base_rank_displacement": (
+            PROVIDER_CROSS_TRANSITION_MAX_BASE_RANK_DISPLACEMENT
+            if provider_derived_regions
+            else None
+        ),
+        **provider_stream_diagnostics,
         **fallback_diagnostics,
         **relation_diagnostics,
         **coarse_diagnostics,
@@ -509,6 +547,14 @@ def build_hierarchical_order_proposal(
     ]
     stream_type_counts = Counter(str(stream["type"]) for stream in streams)
     fallback_stream_count = len(fallback_streams)
+    stream_ids_by_region = {
+        region_id: [
+            str(stream["id"])
+            for stream in streams
+            if stream.get("region_id") == region_id
+        ]
+        for region_id in sidecar_region_ids
+    }
     sidecar_summary = {
         "page_count": 1,
         "stream_count": len(streams),
@@ -541,14 +587,19 @@ def build_hierarchical_order_proposal(
             {
                 "type": (
                     "ordered-group"
-                    if members_by_region[region_id]
-                    else "unordered-group"
+                    if len(stream_ids_by_region[region_id]) == 1
+                    else (
+                        "ordered-segments"
+                        if stream_ids_by_region[region_id]
+                        else "unordered-group"
+                    )
                 ),
                 "region_id": region_id,
                 "membership_status": (
                     "resolved" if members_by_region[region_id] else "empty"
                 ),
                 "members": list(members_by_region[region_id]),
+                "stream_ids": stream_ids_by_region[region_id],
             }
             for region_id in sidecar_region_ids
         ],
@@ -1402,62 +1453,159 @@ def _member_completion_region_order(
 def _region_streams(
     coarse_ids: Sequence[str],
     *,
+    elements: Sequence[_HierarchyNode],
     regions: Sequence[_HierarchyNode],
     members_by_region: Mapping[str, Sequence[str]],
     membership_by_element: Mapping[str, _Membership],
-) -> list[dict[str, Any]]:
+    base_rank: Mapping[str, int],
+    segment_provider_discontinuities: bool,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    element_by_id = {element.id: element for element in elements}
     role_by_region = {region.id: region.role for region in regions}
     streams: list[dict[str, Any]] = []
+    split_count = 0
+    discontinuity_count = 0
+    backward_discontinuity_count = 0
+    gap_discontinuity_count = 0
     for region_id in coarse_ids:
         members = tuple(members_by_region[region_id])
         if not members:
             continue
-        membership_confidences = [
-            float(
-                membership_by_element[member_id].evidence_confidence
-                if membership_by_element[member_id].evidence_confidence is not None
-                else membership_by_element[member_id].coverage or 0.0
+        if segment_provider_discontinuities:
+            segments, reasons = _provider_local_stream_segments(
+                members,
+                element_by_id=element_by_id,
+                base_rank=base_rank,
             )
-            for member_id in members
-        ]
-        stream_confidence = min(min(membership_confidences), 0.76)
-        streams.append(
-            {
-                "id": f"hierarchy-region-{region_id}",
-                "type": _stream_type(role_by_region[region_id]),
-                "region_id": region_id,
-                "order_policy": "preserve-selected-auto-relative-order",
-                "members": list(members),
-                "successor_edges": [],
-                "review_successor_edges": [
-                    {
-                        "source": source,
-                        "target": target,
-                        "confidence": round(stream_confidence, 8),
-                        "review_required": True,
-                        "evidence": [
-                            "hierarchical-region-membership",
-                            "preserve-selected-auto-relative-order",
-                        ],
-                        "provenance": {
-                            "kind": "hierarchical-within-region-successor-v1",
-                            "region_id": region_id,
-                            "provider": HIERARCHICAL_ORDER_PROVIDER,
-                        },
-                    }
-                    for source, target in zip(members, members[1:], strict=False)
-                ],
-                "proposal": {
-                    "origin": "hierarchical-region-membership",
-                    "confidence": round(stream_confidence, 8),
-                    "evidence": [
-                        "coarse-region-membership",
-                        "base-local-line-order",
-                    ],
-                },
-            }
+        else:
+            segments, reasons = (members,), ()
+        split_count += len(segments) - 1
+        discontinuity_count += len(reasons)
+        backward_discontinuity_count += sum(
+            reason == "provider-local-stream-backward-discontinuity"
+            for reason in reasons
         )
-    return streams
+        gap_discontinuity_count += sum(
+            reason == "provider-local-stream-gap-discontinuity"
+            for reason in reasons
+        )
+        for segment_index, segment in enumerate(segments, start=1):
+            membership_confidences = [
+                float(
+                    membership_by_element[member_id].evidence_confidence
+                    if membership_by_element[member_id].evidence_confidence
+                    is not None
+                    else membership_by_element[member_id].coverage or 0.0
+                )
+                for member_id in segment
+            ]
+            stream_confidence = min(min(membership_confidences), 0.76)
+            stream_id = f"hierarchy-region-{region_id}"
+            if len(segments) > 1:
+                stream_id += f"-segment-{segment_index:03d}"
+            streams.append(
+                {
+                    "id": stream_id,
+                    "type": _stream_type(role_by_region[region_id]),
+                    "region_id": region_id,
+                    "order_policy": "preserve-selected-auto-relative-order",
+                    "members": list(segment),
+                    "successor_edges": [],
+                    "review_successor_edges": [
+                        {
+                            "source": source,
+                            "target": target,
+                            "confidence": round(stream_confidence, 8),
+                            "review_required": True,
+                            "evidence": [
+                                "hierarchical-region-membership",
+                                "preserve-selected-auto-relative-order",
+                            ],
+                            "provenance": {
+                                "kind": "hierarchical-within-region-successor-v2",
+                                "region_id": region_id,
+                                "stream_id": stream_id,
+                                "provider": HIERARCHICAL_ORDER_PROVIDER,
+                            },
+                        }
+                        for source, target in zip(
+                            segment,
+                            segment[1:],
+                            strict=False,
+                        )
+                    ],
+                    "proposal": {
+                        "origin": "hierarchical-region-membership",
+                        "confidence": round(stream_confidence, 8),
+                        "evidence": [
+                            "coarse-region-membership",
+                            "base-local-line-order",
+                            *(
+                                ["provider-local-continuity-segment"]
+                                if len(segments) > 1
+                                else []
+                            ),
+                        ],
+                    },
+                    **(
+                        {
+                            "region_segment_index": segment_index,
+                            "region_segment_count": len(segments),
+                        }
+                        if len(segments) > 1
+                        else {}
+                    ),
+                }
+            )
+    return streams, {
+        "provider_local_stream_split_count": split_count,
+        "provider_local_stream_discontinuity_count": discontinuity_count,
+        "provider_local_stream_backward_discontinuity_count": (
+            backward_discontinuity_count
+        ),
+        "provider_local_stream_gap_discontinuity_count": gap_discontinuity_count,
+    }
+
+
+def _provider_local_stream_segments(
+    members: Sequence[str],
+    *,
+    element_by_id: Mapping[str, _HierarchyNode],
+    base_rank: Mapping[str, int],
+) -> tuple[tuple[tuple[str, ...], ...], tuple[str, ...]]:
+    """Split provider regions where selected-order skips lack line continuity."""
+
+    if not members:
+        return (), ()
+    segments: list[list[str]] = [[str(members[0])]]
+    reasons: list[str] = []
+    for source, target in zip(members, members[1:], strict=False):
+        source_id = str(source)
+        target_id = str(target)
+        if base_rank[target_id] == base_rank[source_id] + 1:
+            segments[-1].append(target_id)
+            continue
+        source_box = element_by_id[source_id].bbox
+        target_box = element_by_id[target_id].bbox
+        mean_height = max((source_box.height + target_box.height) / 2.0, 1e-9)
+        normalized_gap = (target_box.y0 - source_box.y1) / mean_height
+        if (
+            PROVIDER_LOCAL_STREAM_MIN_LINE_GAP
+            <= normalized_gap
+            <= PROVIDER_LOCAL_STREAM_MAX_LINE_GAP
+        ):
+            segments[-1].append(target_id)
+            continue
+        reasons.append(
+            "provider-local-stream-backward-discontinuity"
+            if normalized_gap < PROVIDER_LOCAL_STREAM_MIN_LINE_GAP
+            else "provider-local-stream-gap-discontinuity"
+        )
+        segments.append([target_id])
+    return (
+        tuple(tuple(segment) for segment in segments),
+        tuple(reasons),
+    )
 
 
 def _unassigned_fallback_relations(
@@ -1638,8 +1786,11 @@ def _relation_graph_cross_region_transitions(
     elements: Sequence[_HierarchyNode],
     membership_by_element: Mapping[str, _Membership],
     members_by_region: Mapping[str, Sequence[str]],
+    base_rank: Mapping[str, int],
+    stream_id_by_element: Mapping[str, str],
     region_role_by_id: Mapping[str, str],
     transition_policy: str,
+    provider_nonlocal_guard_enabled: bool,
     protected_edge_keys: set[tuple[int, int]] | None = None,
     external_edge_keys: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
@@ -1721,6 +1872,15 @@ def _relation_graph_cross_region_transitions(
     suppression_reasons: dict[tuple[str, str], str] = {}
     candidate_by_key = {candidate.edge_key: candidate for candidate in boundary_candidates}
     for candidate in native_boundary_candidates:
+        if (
+            provider_nonlocal_guard_enabled
+            and abs(base_rank[candidate.target] - base_rank[candidate.source])
+            > PROVIDER_CROSS_TRANSITION_MAX_BASE_RANK_DISPLACEMENT
+        ):
+            suppression_reasons[candidate.edge_key] = (
+                "provider-nonlocal-selected-rank-gap"
+            )
+            continue
         object_branch_reason = _object_branch_endpoint_suppression_reason(
             candidate,
             region_role_by_id=region_role_by_id,
@@ -1840,6 +2000,9 @@ def _relation_graph_cross_region_transitions(
             "suppression_reason": suppression_reason,
             "confidence": confidence,
             "relation_source": relation_source,
+            "selected_base_rank_displacement": abs(
+                base_rank[candidate.target] - base_rank[candidate.source]
+            ),
             "relation_graph": relation_payload,
         }
         evidence_records.append(evidence_record)
@@ -1860,10 +2023,10 @@ def _relation_graph_cross_region_transitions(
                 "source": candidate.source,
                 "target": candidate.target,
                 "source_stream_id": (
-                    f"hierarchy-region-{candidate.source_region}"
+                    stream_id_by_element[candidate.source]
                 ),
                 "target_stream_id": (
-                    f"hierarchy-region-{candidate.target_region}"
+                    stream_id_by_element[candidate.target]
                 ),
                 "reason": "fine-relation-graph-stream-boundary",
                 "boundary_aligned": True,
@@ -1932,6 +2095,10 @@ def _relation_graph_cross_region_transitions(
         ),
         "fine_relation_figure_target_suppressed_count": sum(
             reason == "figure-region-root-branch"
+            for reason in suppression_reasons.values()
+        ),
+        "fine_relation_provider_nonlocal_suppressed_count": sum(
+            reason == "provider-nonlocal-selected-rank-gap"
             for reason in suppression_reasons.values()
         ),
     }
@@ -2009,6 +2176,7 @@ def _cross_region_transitions(
     region_pairs: Sequence[tuple[str, str]],
     *,
     members_by_region: Mapping[str, Sequence[str]],
+    stream_id_by_element: Mapping[str, str],
     transition_policy: str,
     transition_confidence: float,
 ) -> list[dict[str, Any]]:
@@ -2018,8 +2186,12 @@ def _cross_region_transitions(
             "target_region_id": target_region,
             "source": members_by_region[source_region][-1],
             "target": members_by_region[target_region][0],
-            "source_stream_id": f"hierarchy-region-{source_region}",
-            "target_stream_id": f"hierarchy-region-{target_region}",
+            "source_stream_id": stream_id_by_element[
+                members_by_region[source_region][-1]
+            ],
+            "target_stream_id": stream_id_by_element[
+                members_by_region[target_region][0]
+            ],
             "reason": "hierarchical-coarse-region-order",
             "confidence": round(min(max(transition_confidence, 0.0), 0.76), 8),
             "review_required": True,

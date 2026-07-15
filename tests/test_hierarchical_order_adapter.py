@@ -7,7 +7,10 @@ import pytest
 from typer.testing import CliRunner
 
 import scriptorium.cli as cli
-from scriptorium.hierarchical_order import build_hierarchical_order_proposal
+from scriptorium.hierarchical_order import (
+    PROVIDER_COARSE_REGION_SOURCE,
+    build_hierarchical_order_proposal,
+)
 from scriptorium.hierarchical_order_adapter import (
     HIERARCHY_INPUT_ADAPTER_SCHEMA,
     build_hierarchy_input_from_document,
@@ -57,6 +60,9 @@ def test_adapter_keeps_provider_blocks_and_rejects_ocr_lines() -> None:
     assert proposal.payload["runtime_reorder"] is False
     assert proposal.payload["input_adapter"]["schema"] == (
         HIERARCHY_INPUT_ADAPTER_SCHEMA
+    )
+    assert proposal.payload["input_adapter"]["coarse_region_source"] == (
+        PROVIDER_COARSE_REGION_SOURCE
     )
     assert proposal.diagnostics["explicit_membership_count"] == 4
     assert proposal.diagnostics["unassigned_element_count"] == 0
@@ -218,6 +224,9 @@ def test_build_hierarchical_order_cli_adapts_document_ir(tmp_path) -> None:
     assert "Membership (assigned/ambiguous/unassigned): 4/0/0" in result.output
     output = json.loads(output_path.read_text(encoding="utf-8"))
     assert output["input_adapter"]["schema"] == HIERARCHY_INPUT_ADAPTER_SCHEMA
+    assert output["input_adapter"]["coarse_region_source"] == (
+        PROVIDER_COARSE_REGION_SOURCE
+    )
     assert output["runtime_reorder"] is False
 
 

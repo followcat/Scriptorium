@@ -14,6 +14,7 @@ from scriptorium.hierarchical_order_benchmark import (
     HIERARCHY_INPUT_SCHEMA,
     HIERARCHY_LABEL_SCHEMA,
 )
+from scriptorium.hierarchical_order import PROVIDER_COARSE_REGION_SOURCE
 from scriptorium.provider_hierarchy_benchmark import (
     PROVIDER_HIERARCHY_BENCHMARK_SCHEMA,
     PROVIDER_HIERARCHY_CORPUS_SCHEMA,
@@ -67,6 +68,9 @@ def test_provider_hierarchy_materialization_is_answer_separated_and_invariant(
     input_payload = _read_json(result.out_dir / sample["input"])
     labels = _read_json(result.out_dir / sample["labels"])
     assert input_payload["schema"] == HIERARCHY_INPUT_SCHEMA
+    assert input_payload["input_adapter"]["coarse_region_source"] == (
+        PROVIDER_COARSE_REGION_SOURCE
+    )
     assert len(input_payload["elements"]) == 6
     assert len(input_payload["regions"]) == 2
     assert {region["role"] for region in input_payload["regions"]} == {"text"}
