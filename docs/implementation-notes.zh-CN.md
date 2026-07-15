@@ -540,9 +540,12 @@ membership 参数为 coverage `0.10`、margin `0.10`；带 padding 的 detector 
 
 Provider 与 oracle segmentation 不共享 region id，因此主指标会合并 local-stream 和 transition
 edge，统一评分 line successor relation。Precision 会排除 endpoint 没有 published relation label
-的 prediction，但将其报告为 `unscored`；assignment coverage、pairwise co-membership F1，以及
-oracle-within/oracle-cross relation recovery 继续单独报告。这是 correspondence-aware evaluation，
-不是 exact-region replay；segmentation mismatch 处理参考 PRImA reading-order metric：
+的 prediction，但将其报告为 `unscored`；assignment coverage、provider-region pairwise
+co-membership F1、assigned-stream co-membership F1，以及 oracle-within/oracle-cross relation
+recovery 继续单独报告。Assigned-stream 指标排除 `unassigned-fallback`：它验证 provider 派生
+stream 是否真正改善 grouping，避免无标签兜底流制造虚假的正确 pair。这是
+correspondence-aware evaluation，不是 exact-region replay；segmentation mismatch 处理参考
+PRImA reading-order metric：
 https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 
 50 页 fit 上，冻结 coverage threshold 的 provider hierarchy F1 为 `0.94842599`；v5 fallback
@@ -602,6 +605,12 @@ score、threshold、geometry、stream id 与 review-only provenance。被拒的 
 geometry-supported、candidate、emitted、element-degree、region-degree 和 cycle count。Oracle
 指标保持不变，四个真实复杂页均未发出 rescue。Calibration 仍比 flat 低 `0.00105873`，因此
 v7 继续保持 review-only。
+
+Assigned-stream 诊断在 fit/calibration/test 上分别为
+`0.67895654/0.65148234/0.80042627`，provider-region co-membership 对照为
+`0.67995655/0.65042468/0.80643143`。拆分不连续 provider chain 只在 calibration 上有极小提升，
+却使 fit 和独立 test 下降。因此该指标用于防止 grouping 退化，不作为继续扩大 stream split 或
+runtime promotion 的证据。
 
 ## Comp-HRDoc Relation Benchmark
 

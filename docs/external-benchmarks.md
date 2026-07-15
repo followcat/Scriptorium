@@ -1625,3 +1625,24 @@ constraints globally rather than trusting one local score
 ([Qiao et al., Pattern Recognition 2024](https://doi.org/10.1016/j.patcog.2024.110314)).
 The next improvement should target provider split/merge grouping itself; adding
 more flat rescue edges is no longer the highest-value path.
+
+### Assigned-Stream Grouping Diagnostic
+
+Provider-region co-membership alone cannot show whether v6's discontinuity
+splits improve the actual streams exposed to editors and translators. The
+benchmark now also computes oracle co-membership pair F1 over provider-derived
+reading streams. Streams with `region_id: null`, including
+`unassigned-fallback`, are excluded so the fallback cannot create artificial
+same-group pairs.
+
+| Partition | Provider-region pair F1 | Assigned-stream pair F1 | Delta |
+|---|---:|---:|---:|
+| 50-page fit | 0.67995655 | 0.67895654 | -0.00100001 |
+| 14-page calibration | 0.65042468 | 0.65148234 | +0.00105766 |
+| 32-page official-test window | 0.80643143 | 0.80042627 | -0.00600516 |
+
+The split streams do not improve grouping consistently: the small calibration
+gain does not generalize to fit or independent test. This metric is retained as
+a regression gate, and broader splitting remains rejected. Future grouping
+work must improve this diagnostic and relation quality together on held-out
+documents.

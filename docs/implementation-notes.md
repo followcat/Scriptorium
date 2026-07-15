@@ -951,11 +951,14 @@ membership settings are coverage `0.10` and margin `0.10`; the oracle default
 Provider and oracle segmentations do not share region ids. The primary metric
 therefore unions local-stream and transition edges and scores line successor
 relations. Precision excludes predictions whose endpoints have no published
-relation label but reports them as `unscored`; assignment coverage, pairwise
-co-membership F1, and recovery of oracle-within versus oracle-cross relations
-remain separate diagnostics. This is a correspondence-aware evaluation rather
-than an exact-region replay, following the mismatch treatment in the PRImA
-reading-order metric:
+relation label but reports them as `unscored`; assignment coverage,
+provider-region co-membership F1, assigned-stream co-membership F1, and recovery
+of oracle-within versus oracle-cross relations remain separate diagnostics.
+The assigned-stream metric excludes `unassigned-fallback`: it measures whether
+provider-derived streams improve grouping without letting an unlabeled catch-all
+stream create artificial true-positive pairs. This is a correspondence-aware
+evaluation rather than an exact-region replay, following the mismatch treatment
+in the PRImA reading-order metric:
 https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
 
 On 50 fit pages, provider hierarchy at the frozen coverage threshold scores
@@ -1037,6 +1040,13 @@ score-supported, geometry-supported, candidate, emitted, element-degree,
 region-degree, and cycle counts. Oracle metrics remain unchanged; four real
 complex-page replays emit no rescue. Calibration remains `0.00105873` below
 flat, so v7 stays review-only.
+
+The assigned-stream diagnostic scores fit/calibration/test at
+`0.67895654/0.65148234/0.80042627`, versus provider-region co-membership
+`0.67995655/0.65042468/0.80643143`. Splitting discontinuous provider chains
+helps calibration only marginally and regresses fit and independent test. It is
+therefore retained as a grouping regression metric, not evidence for broader
+stream splitting or runtime promotion.
 
 ## Comp-HRDoc Relation Benchmark
 

@@ -1448,3 +1448,20 @@ calibration 仍有差距，因此 `runtime_reorder: false` 保持不变。
 该设计遵循 relation prediction 中以全局 degree/cycle constraint 约束局部分数的方法
 （[Qiao 等，Pattern Recognition 2024](https://doi.org/10.1016/j.patcog.2024.110314)）。下一步
 应直接改善 provider split/merge grouping；继续增加 flat rescue edge 已不是最高价值方向。
+
+### Assigned-Stream Grouping 诊断
+
+Provider-region co-membership 本身不能说明 v6 的 discontinuity split 是否改善了真正提供给编辑器
+和翻译流程的 stream。Benchmark 现在还会在 provider 派生 reading stream 上计算 oracle
+co-membership pair F1。`region_id: null` 的 stream（包括 `unassigned-fallback`）会被排除，避免
+fallback 人为制造同组 pair。
+
+| Partition | Provider-region pair F1 | Assigned-stream pair F1 | 差值 |
+|---|---:|---:|---:|
+| 50 页 fit | 0.67995655 | 0.67895654 | -0.00100001 |
+| 14 页 calibration | 0.65042468 | 0.65148234 | +0.00105766 |
+| 32 页官方 test window | 0.80643143 | 0.80042627 | -0.00600516 |
+
+Stream split 没有稳定改善 grouping：calibration 的微小增益没有泛化到 fit 和独立 test。因此该
+指标保留为 regression gate，更广泛的 split 继续被否决。后续 grouping 方案必须在 held-out
+文档上同时改善该诊断和 relation quality。
