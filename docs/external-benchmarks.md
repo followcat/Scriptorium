@@ -1424,11 +1424,47 @@ changes membership/within-region streams.
 | 14-page calibration | 0.92260062 / 0.89759036 | 0.93209877 / 0.90690691 | 2 |
 | 32-page official-test window | 0.94021102 / 0.91762014 | 0.94255569 / 0.91990847 | 2 |
 
-On calibration, semantic line F1 now exceeds the flat control `0.92879257` and
+On calibration, semantic line F1 exceeds the flat control `0.92879257` and
 region F1 remains above `0.88563050`. The separate test window confirms positive
 line and region deltas with prediction count, membership, and within-region F1
-unchanged. Its semantic line F1 still trails the test-window flat control
-`0.94712644` by `0.00457075`, so runtime reorder remains disabled. v4 is retained
-as review-only external relation evidence. BERT-Base and Pythia remain deferred
-until residual errors show that Tiny model capacity, rather than hierarchy
-endpoint structure, is the limiting factor.
+unchanged. At this stage its line F1 still trailed the test-window flat control
+`0.94712644` by `0.00457075`; that isolated the next problem as hierarchy
+endpoint structure rather than Tiny model capacity.
+
+### Graphical Object Branch Endpoints
+
+A fit-only residual audit found that graphical objects were being serialized as
+through-path nodes. Among scorable fit transitions, every selected edge leaving
+a `table` region (`7/7`) and every selected edge entering a `figure` region
+(`5/5`) was wrong; none was correct. The corpus relations consistently express
+the useful local branch in the other direction: figure object to caption, and
+caption or body text to table object. This also matches the translation model:
+an object and its caption are a bounded unit, not a bridge between unrelated
+body streams.
+
+Policy v4 therefore keeps `table` regions as terminal branch endpoints and
+`figure` regions as root branch endpoints. A table-source or figure-target
+candidate remains in `cross_region_relation_evidence` with an explicit
+suppression reason, but cannot consume a region predecessor/successor slot.
+The rule was frozen on fit, then replayed unchanged on calibration and the
+previously separate official-test window:
+
+| Comp-HRDoc hierarchy | Semantic line / region F1 | Object-branch v4 | Flat line / region control |
+|---|---:|---:|---:|
+| 50-page fit | 0.93969849 / 0.90997567 | 0.94843618 / 0.92727273 | 0.91950207 / 0.85475285 |
+| 14-page calibration | 0.93209877 / 0.90690691 | 0.94968553 / 0.92638037 | 0.92879257 / 0.88563050 |
+| 32-page official-test window | 0.94255569 / 0.91990847 | 0.94811321 / 0.93055556 | 0.94712644 / 0.90064795 |
+
+The new line gate exceeds the independent flat control by `0.00098677`; the
+region gate exceeds it by `0.02990761`. Correct transition counts remain
+`561/151/402` on fit, calibration, and test. Membership and within-region
+metrics are bit-for-bit unchanged. The three partitions suppress 28, 10, and 24
+object-branch candidates respectively, while preserving each rejected edge for
+review. This clears the previously recorded hierarchy accuracy gate without
+adding a larger language model.
+
+`runtime_reorder` remains false because this is an oracle-region relation
+benchmark, not end-to-end proof over OCR-derived regions, and its output is a
+partial DAG rather than a page permutation. The next promotion evidence must
+show that the same branch contract survives provider-derived hierarchy on a
+broader independent document family. BERT-Base and Pythia remain deferred.

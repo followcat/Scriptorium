@@ -900,6 +900,26 @@ its calibration line/region F1 reaches `0.93209877/0.90690691`. A separate
 32-page official-test window performs two replacements and improves line/region
 F1 to `0.94255569/0.91990847`, with membership and within-region F1 unchanged.
 
+Hierarchy policy `local-streams-with-relation-graph-transitions-v4` adds an
+object-branch endpoint contract before region degree/cycle selection. A
+boundary edge whose source region role is `table` is retained as
+`table-region-terminal-branch` evidence only; an edge whose target region role
+is `figure` is retained as `figure-region-root-branch` evidence only. This
+preserves the useful caption directions (figure to caption, caption to table)
+without serializing a graphical object as a bridge between body streams.
+Diagnostics expose aggregate, table-source, and figure-target suppression
+counts. The rule is case-insensitive and applies equally to native and semantic
+inferred edges.
+
+On the 64-page development corpus it suppresses 38 candidates and raises
+aggregate line/region F1 to `0.94870087/0.92708333`. Calibration reaches
+`0.94968553/0.92638037`. Frozen replay on the separate 32-page official-test
+window suppresses 24 candidates and reaches `0.94811321/0.93055556`, above the
+flat controls `0.94712644/0.90064795`. Correct-edge recall, membership, and
+within-region F1 are unchanged. The benchmark still emits a review-only partial
+DAG with `runtime_reorder: false`; oracle-region success is not end-to-end
+provider-region promotion evidence.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the
@@ -1495,17 +1515,18 @@ split and unique tied-region text containment. It resolves 13 more memberships
 (6 fit and 7 calibration), all correctly. The branch reads the original
 membership map, so neither boundary nor interior repairs can propagate.
 
-On 64 train-only pages, membership reaches `5244/5257 = 0.99752711` with zero
-wrong assignments and 13 unassigned elements. Within-region F1 reaches
-`0.99297033`; fit/calibration values are `0.99191794/0.99642675`. Line
-cross-region F1 reaches `0.93473962`, and region-transition F1 reaches
-`0.90607029`. Calibration line/region F1 is `0.92260062/0.89759036`: region now
-exceeds its flat control `0.88563050`, but line remains below `0.92879257`, so
-runtime remains disabled. The report aggregates 972 cross-region evidence
-edges, 905 boundary candidates, 67 non-boundary records, 9 tied edges, 3 cycle
-suppressions, and 902 emitted transitions. Both refinement methods trigger zero
-times on the four current real-provider replays. No new official test window
-was opened. The full repository suite passes 379 tests for this revision.
+Before semantic arbitration and the v4 object-branch contract, the 64-page
+train-only v3 control reached membership `5244/5257 = 0.99752711` with zero
+wrong assignments and 13 unassigned elements. Within-region F1 was
+`0.99297033`; fit/calibration values were `0.99191794/0.99642675`. Line
+cross-region F1 was `0.93473962`, and region-transition F1 was `0.90607029`.
+Calibration line/region F1 was `0.92260062/0.89759036`, with line still below
+the flat `0.92879257`. The v3 report aggregated 972 cross-region evidence edges,
+905 boundary candidates, 67 non-boundary records, 9 tied edges, 3 cycle
+suppressions, and 902 emitted transitions. Both refinement methods triggered
+zero times on the four current real-provider replays. These values remain the
+explicit pre-semantic/pre-object-branch control; the current v4 results are
+recorded in the semantic hierarchy section above.
 
 Two rejected controls define the boundary of this design. Cutting every local
 stream around non-boundary relation edges improves fit line F1 to `0.94176373`

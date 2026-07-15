@@ -1286,7 +1286,35 @@ within-region stream。
 
 在 calibration 上，semantic line F1 已超过 flat control `0.92879257`，region F1 也继续高于
 `0.88563050`。独立 test window 同时确认 line/region 正增益，而且 prediction 总数、membership
-与 within-region F1 不变；但其 semantic line F1 仍比该窗口 flat control `0.94712644` 低
-`0.00457075`，所以 runtime reorder 继续关闭。v4 保留为 review-only external relation
-evidence。只有残余错误证明瓶颈来自 Tiny 模型容量、而不是 hierarchy endpoint 结构时，才考虑
-BERT-Base 与 Pythia。
+与 within-region F1 不变；这一阶段的 line F1 仍比 test-window flat control `0.94712644` 低
+`0.00457075`，因此下一处问题被隔离为 hierarchy endpoint 结构，而不是 Tiny 模型容量。
+
+### 图表对象的 Branch Endpoint
+
+只读取 fit label 的残余错误审计发现，图表对象被错误地串成了 through-path node。在可评分的 fit
+transition 中，从 `table` region 出发的已选 edge 全部错误（`7/7`），进入 `figure` region 的
+已选 edge 也全部错误（`5/5`），正确数均为 0。Corpus relation 始终用相反方向表达有用的局部
+branch：figure object 指向 caption，caption 或 body text 指向 table object。这也符合翻译架构：
+对象及 caption 应构成有界单元，不能成为两个无关 body stream 之间的桥。
+
+因此 policy v4 把 `table` region 保持为 terminal branch endpoint，把 `figure` region 保持为
+root branch endpoint。Table-source 或 figure-target candidate 仍会留在
+`cross_region_relation_evidence` 并记录明确 suppression reason，但不能占用 region 的
+predecessor/successor slot。规则只在 fit 上冻结，随后不改动地重放 calibration 与此前隔离的
+官方 test window：
+
+| Comp-HRDoc hierarchy | Semantic line / region F1 | Object-branch v4 | Flat line / region control |
+|---|---:|---:|---:|
+| 50 页 fit | 0.93969849 / 0.90997567 | 0.94843618 / 0.92727273 | 0.91950207 / 0.85475285 |
+| 14 页 calibration | 0.93209877 / 0.90690691 | 0.94968553 / 0.92638037 | 0.92879257 / 0.88563050 |
+| 32 页官方 test window | 0.94255569 / 0.91990847 | 0.94811321 / 0.93055556 | 0.94712644 / 0.90064795 |
+
+新的 line gate 比独立 flat control 高 `0.00098677`，region gate 高 `0.02990761`。Fit、
+calibration、test 的正确 transition 数分别保持 `561/151/402`，membership 与 within-region
+指标逐项不变。三个 partition 分别抑制 28、10、24 个 object-branch candidate，同时把每条被拒
+edge 留作 review。此前记录的 hierarchy accuracy gate 已经通过，且不需要更大的语言模型。
+
+`runtime_reorder` 继续保持 false，因为这是 oracle-region relation benchmark，不是 OCR-derived
+region 的端到端证明，而且输出仍是 partial DAG，不是页面 permutation。下一项 promotion evidence
+必须证明同一 branch contract 能在更广泛的独立文档家族上适用于 provider-derived hierarchy。
+BERT-Base 与 Pythia 继续延后。
