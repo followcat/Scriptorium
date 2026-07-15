@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .bipartite_matching import maximum_weight_bipartite_matching
 from .models import DocumentIR
@@ -17,13 +17,19 @@ from .semantic_successor import SemanticPairScorer, semantic_scorer_identity
 RELATION_RANKER_SCHEMA = "scriptorium-relation-ranker/v1"
 RELATION_FEATURE_VERSION = "roor-pair-geometry-text-branch-v2"
 SEMANTIC_RELATION_FEATURE_VERSION = "roor-pair-geometry-text-nsp-branch-v3"
+SEMANTIC_RERANK_RELATION_FEATURE_VERSION = (
+    "roor-pair-geometry-text-nsp-rerank-branch-v4"
+)
 SUPPORTED_RELATION_FEATURE_VERSIONS = {
     RELATION_FEATURE_VERSION,
     SEMANTIC_RELATION_FEATURE_VERSION,
+    SEMANTIC_RERANK_RELATION_FEATURE_VERSION,
 }
 RELATION_PROVIDER_SOURCE = "scriptorium-trained-relation-ranker"
 RELATION_DATASET_LICENSE = "CC-BY-4.0"
 DEFAULT_NEGATIVE_CANDIDATES = 20
+DEFAULT_SEMANTIC_RERANK_TOP_K = 5
+SEMANTIC_RERANK_OOF_FOLDS = 5
 STRUCTURE_ROLE_MAX_VERTICAL_GAP_RATIO = 0.12
 STRUCTURE_ROLE_MAX_HORIZONTAL_CENTER_DISTANCE_RATIO = 0.35
 
@@ -43,6 +49,25 @@ class RelationRankerPredictionResult:
     predicted_branch_edge_count: int = 0
 
 
+SemanticFusion = Literal["direct", "top-k-rerank"]
+
+
+@dataclass(frozen=True)
+class _RankedTarget:
+    score: float
+    target: dict[str, Any]
+    pair_features: list[float]
+    reliability_features: list[float]
+
+
+@dataclass(frozen=True)
+class _SemanticRerankRecord:
+    uid: str
+    source_key: str
+    features: list[float]
+    label: int
+
+
 def train_relation_ranker(
     dataset_dir: str | Path,
     output: str | Path,
@@ -51,6 +76,8 @@ def train_relation_ranker(
     random_seed: int = 17,
     negative_candidates: int = DEFAULT_NEGATIVE_CANDIDATES,
     semantic_scorer: SemanticPairScorer | None = None,
+    semantic_fusion: SemanticFusion = "top-k-rerank",
+    semantic_top_k: int = DEFAULT_SEMANTIC_RERANK_TOP_K,
 ) -> RelationRankerTrainingResult:
     """Train a local successor ranker from the official ROOR train split only."""
 
@@ -58,6 +85,10 @@ def train_relation_ranker(
         raise ValueError("calibration_fraction must be between 0.05 and 0.5")
     if negative_candidates < 1:
         raise ValueError("negative_candidates must be at least 1")
+    if semantic_fusion not in {"direct", "top-k-rerank"}:
+        raise ValueError("semantic_fusion must be 'direct' or 'top-k-rerank'")
+    if semantic_top_k < 2:
+        raise ValueError("semantic_top_k must be at least 2")
     data_dir = Path(dataset_dir)
     train_index = data_dir / "data.train.txt"
     json_dir = data_dir / "jsons"
@@ -71,32 +102,71 @@ def train_relation_ranker(
         documents,
         calibration_fraction=calibration_fraction,
     )
+    direct_semantic_scorer = (
+        semantic_scorer if semantic_fusion == "direct" else None
+    )
     x_train, y_train = _training_examples(
         fit_documents,
         negative_candidates=negative_candidates,
-        semantic_scorer=semantic_scorer,
+        semantic_scorer=direct_semantic_scorer,
     )
-    feature_version = _feature_version_for_scorer(semantic_scorer)
+    feature_version = _feature_version_for_scorer(
+        semantic_scorer,
+        semantic_fusion=semantic_fusion,
+    )
     semantic_descriptor = _semantic_descriptor(semantic_scorer)
     feature_envelope = _feature_envelope(x_train)
     estimator, sklearn_version = _fit_estimator(x_train, y_train, random_seed=random_seed)
-    threshold, calibration = _calibrate_top_successor_threshold(
-        estimator,
-        calibration_documents,
-        semantic_scorer=semantic_scorer,
-    )
+    semantic_reranker = None
+    semantic_reranker_training = None
+    if semantic_scorer is not None and semantic_fusion == "top-k-rerank":
+        (
+            semantic_reranker,
+            threshold,
+            semantic_reranker_training,
+            semantic_training_features,
+        ) = _fit_semantic_reranker(
+            estimator,
+            fit_documents,
+            semantic_scorer=semantic_scorer,
+            top_k=semantic_top_k,
+            random_seed=random_seed + 24,
+        )
+        feature_envelope = _feature_envelope(semantic_training_features)
+        calibration = _calibrate_top_successor_threshold(
+            estimator,
+            calibration_documents,
+            semantic_scorer=semantic_scorer,
+            semantic_reranker=semantic_reranker,
+            semantic_top_k=semantic_top_k,
+            fixed_threshold=threshold,
+        )[1]
+    else:
+        threshold, calibration = _calibrate_top_successor_threshold(
+            estimator,
+            calibration_documents,
+            semantic_scorer=direct_semantic_scorer,
+        )
     branch_estimator = _fit_branch_estimator(
         estimator,
         fit_documents,
         random_seed=random_seed + 6,
-        semantic_scorer=semantic_scorer,
+        semantic_scorer=(
+            semantic_scorer if semantic_reranker is not None else direct_semantic_scorer
+        ),
+        semantic_reranker=semantic_reranker,
+        semantic_top_k=semantic_top_k,
     )
     branch_threshold, branch_calibration = _calibrate_branch_threshold(
         estimator,
         branch_estimator,
         calibration_documents,
         top_threshold=threshold,
-        semantic_scorer=semantic_scorer,
+        semantic_scorer=(
+            semantic_scorer if semantic_reranker is not None else direct_semantic_scorer
+        ),
+        semantic_reranker=semantic_reranker,
+        semantic_top_k=semantic_top_k,
     )
 
     output_path = Path(output)
@@ -111,6 +181,9 @@ def train_relation_ranker(
         "branch_threshold": branch_threshold,
         "feature_envelope": feature_envelope,
         "semantic_scorer": semantic_descriptor,
+        "semantic_fusion": semantic_fusion if semantic_scorer is not None else None,
+        "semantic_reranker": semantic_reranker,
+        "semantic_top_k": semantic_top_k if semantic_reranker is not None else None,
     }
     joblib = _joblib_module()
     joblib.dump(bundle, output_path)
@@ -130,6 +203,9 @@ def train_relation_ranker(
         "training_positive_count": int(sum(y_train)),
         "feature_count": len(feature_envelope["lower"]),
         "semantic_scorer": semantic_descriptor,
+        "semantic_fusion": semantic_fusion if semantic_scorer is not None else None,
+        "semantic_top_k": semantic_top_k if semantic_reranker is not None else None,
+        "semantic_reranker_training": semantic_reranker_training,
         "feature_envelope_quantiles": [0.01, 0.99],
         "negative_candidates_per_source": negative_candidates,
         "calibration_fraction": calibration_fraction,
@@ -261,6 +337,8 @@ def predict_document_relations(
                 "model_sha256": manifest.get("model_sha256"),
                 "structure_role_fusion": structure_role_fusion,
                 "semantic_scorer": bundle.get("semantic_scorer"),
+                "semantic_fusion": bundle.get("semantic_fusion"),
+                "semantic_top_k": bundle.get("semantic_top_k"),
             },
         },
         edge_count,
@@ -295,50 +373,36 @@ def _predict_roor_page_relations(
         else {}
     )
     protected_sources = set(structure_role_edges)
-    rankable_sources = [
-        segment
-        for segment in segments
-        if segment["id"] not in protected_sources
-        and _segment_kind(segment) not in {"figure", "table"}
-    ]
-    semantic_scores = _document_semantic_score_lookup(
-        rankable_sources,
-        segments,
-        semantic_scorer,
+    ranked_sources = _ranked_document_targets(
+        estimator,
+        payload,
+        semantic_scorer=semantic_scorer,
+        semantic_reranker=bundle.get("semantic_reranker"),
+        semantic_top_k=int(
+            bundle.get("semantic_top_k") or DEFAULT_SEMANTIC_RERANK_TOP_K
+        ),
     )
 
     successor_edges: list[dict[str, Any]] = []
     selected_features: list[list[float]] = []
     selected_confidences: list[float] = []
     branch_edge_count = 0
-    for source_segment in segments:
+    for source_segment, ranked in ranked_sources:
         if source_segment["id"] in protected_sources or _segment_kind(source_segment) in {
             "figure",
             "table",
         }:
             continue
-        targets = [target for target in segments if target["id"] != source_segment["id"]]
-        if not targets:
+        if not ranked:
             continue
-        features = _pair_feature_rows(
-            source_segment,
-            targets,
-            width=width,
-            height=height,
-            semantic_scorer=semantic_scorer,
-            semantic_scores=semantic_scores,
-        )
-        probabilities = estimator.predict_proba(features)
-        scores = [float(row[1]) for row in probabilities]
-        ranked_indices = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-        best_index = ranked_indices[0]
-        confidence = scores[best_index]
+        best = ranked[0]
+        confidence = best.score
         if confidence < threshold:
             continue
         successor_edges.append(
             {
                 "source": source_segment["id"],
-                "target": targets[best_index]["id"],
+                "target": best.target["id"],
                 "kind": "successor",
                 "confidence": round(confidence, 8),
                 "review_required": True,
@@ -347,11 +411,10 @@ def _predict_roor_page_relations(
                 "rank": 1,
             }
         )
-        selected_features.append(features[best_index])
+        selected_features.append(best.reliability_features)
         selected_confidences.append(confidence)
-        if branch_estimator is None or len(ranked_indices) < 2:
+        if branch_estimator is None or len(ranked) < 2:
             continue
-        ranked = [(scores[index], targets[index], features[index]) for index in ranked_indices]
         branch_confidence = float(
             branch_estimator.predict_proba(
                 [_branch_features(payload, source_segment, ranked)]
@@ -359,13 +422,13 @@ def _predict_roor_page_relations(
         )
         if branch_confidence < branch_threshold:
             continue
-        second_index = ranked_indices[1]
+        second = ranked[1]
         successor_edges.append(
             {
                 "source": source_segment["id"],
-                "target": targets[second_index]["id"],
+                "target": second.target["id"],
                 "kind": "successor",
-                "confidence": round(scores[second_index], 8),
+                "confidence": round(second.score, 8),
                 "branch_confidence": round(branch_confidence, 8),
                 "review_required": True,
                 "relation_policy": "review-only",
@@ -373,8 +436,8 @@ def _predict_roor_page_relations(
                 "rank": 2,
             }
         )
-        selected_features.append(features[second_index])
-        selected_confidences.append(scores[second_index])
+        selected_features.append(second.reliability_features)
+        selected_confidences.append(second.score)
         branch_edge_count += 1
 
     for source_id, (target_id, evidence) in structure_role_edges.items():
@@ -420,6 +483,8 @@ def _predict_roor_page_relations(
                 "structure_role_edge_count": len(structure_role_edges),
                 "structure_role_fusion": structure_role_fusion,
                 "semantic_scorer": bundle.get("semantic_scorer"),
+                "semantic_fusion": bundle.get("semantic_fusion"),
+                "semantic_top_k": bundle.get("semantic_top_k"),
                 **_prediction_reliability(
                     selected_features,
                     selected_confidences,
@@ -589,6 +654,9 @@ def load_relation_ranker(model_path: str | Path) -> tuple[dict[str, Any], dict[s
         raise ValueError("relation ranker manifest feature version does not match model")
     if manifest.get("semantic_scorer") != bundle.get("semantic_scorer"):
         raise ValueError("relation ranker semantic scorer manifest does not match model")
+    for key in ("semantic_fusion", "semantic_top_k"):
+        if manifest.get(key) != bundle.get(key):
+            raise ValueError(f"relation ranker {key} manifest does not match model")
     return bundle, manifest
 
 
@@ -692,6 +760,187 @@ def _fit_estimator(
     return estimator, sklearn.__version__
 
 
+def _fit_semantic_reranker(
+    pair_estimator: Any,
+    documents: Sequence[dict[str, Any]],
+    *,
+    semantic_scorer: SemanticPairScorer,
+    top_k: int,
+    random_seed: int,
+) -> tuple[Any, float, dict[str, Any], list[list[float]]]:
+    records, relation_count = _semantic_rerank_training_records(
+        pair_estimator,
+        documents,
+        semantic_scorer=semantic_scorer,
+        top_k=top_k,
+    )
+    if not records:
+        raise ValueError("semantic reranker did not produce training candidates")
+    oof_scores: list[float | None] = [None] * len(records)
+    fold_document_counts: list[int] = []
+    for fold in range(SEMANTIC_RERANK_OOF_FOLDS):
+        held_indices = [
+            index
+            for index, record in enumerate(records)
+            if _semantic_oof_fold(record.uid) == fold
+        ]
+        train_indices = [
+            index
+            for index, record in enumerate(records)
+            if _semantic_oof_fold(record.uid) != fold
+        ]
+        if not held_indices or not train_indices:
+            raise ValueError("semantic reranker document OOF split produced an empty fold")
+        fold_document_counts.append(
+            len({records[index].uid for index in held_indices})
+        )
+        fold_estimator = _fit_semantic_rerank_estimator(
+            [records[index].features for index in train_indices],
+            [records[index].label for index in train_indices],
+            random_seed=random_seed + fold,
+        )
+        predictions = fold_estimator.predict_proba(
+            [records[index].features for index in held_indices]
+        )
+        for index, prediction in zip(held_indices, predictions, strict=True):
+            oof_scores[index] = float(prediction[1])
+    if any(score is None for score in oof_scores):
+        raise RuntimeError("semantic reranker OOF predictions are incomplete")
+    threshold, oof_metrics = _calibrate_semantic_rerank_threshold(
+        records,
+        [float(score) for score in oof_scores],
+        relation_count=relation_count,
+    )
+    features = [record.features for record in records]
+    labels = [record.label for record in records]
+    estimator = _fit_semantic_rerank_estimator(
+        features,
+        labels,
+        random_seed=random_seed,
+    )
+    candidate_label_count = sum(labels)
+    diagnostics = {
+        "policy": "base-top-k-semantic-rerank-with-document-hash-oof-threshold",
+        "top_k": top_k,
+        "oof_fold_count": SEMANTIC_RERANK_OOF_FOLDS,
+        "oof_fold_document_counts": fold_document_counts,
+        "document_count": len({record.uid for record in records}),
+        "training_candidate_count": len(records),
+        "training_candidate_positive_count": candidate_label_count,
+        "relation_count": relation_count,
+        "candidate_recall": round(
+            candidate_label_count / relation_count if relation_count else 0.0,
+            8,
+        ),
+        "threshold_source": "fit-document-oof-only",
+        "oof_calibration": oof_metrics,
+    }
+    return estimator, threshold, diagnostics, features
+
+
+def _semantic_rerank_training_records(
+    pair_estimator: Any,
+    documents: Sequence[dict[str, Any]],
+    *,
+    semantic_scorer: SemanticPairScorer,
+    top_k: int,
+) -> tuple[list[_SemanticRerankRecord], int]:
+    records: list[_SemanticRerankRecord] = []
+    relation_count = 0
+    for payload in documents:
+        uid = str(payload.get("uid") or payload.get("img", {}).get("fname") or "")
+        truth = {tuple(edge) for edge in payload["ro_linkings"]}
+        relation_count += len(truth)
+        outgoing: dict[Any, set[Any]] = defaultdict(set)
+        for source_ref, target_ref in truth:
+            outgoing[source_ref].add(target_ref)
+        for source, candidates in _semantic_rerank_page_candidates(
+            pair_estimator,
+            payload,
+            semantic_scorer=semantic_scorer,
+            top_k=top_k,
+        ):
+            source_key = _relation_ref_key(source["id"])
+            records.extend(
+                _SemanticRerankRecord(
+                    uid=uid,
+                    source_key=source_key,
+                    features=rerank_features,
+                    label=int(target["id"] in outgoing[source["id"]]),
+                )
+                for target, _, rerank_features in candidates
+            )
+    return records, relation_count
+
+
+def _fit_semantic_rerank_estimator(
+    features: Sequence[Sequence[float]],
+    labels: Sequence[int],
+    *,
+    random_seed: int,
+) -> Any:
+    try:
+        from sklearn.ensemble import HistGradientBoostingClassifier
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install requirements-semantic-order.txt to train a semantic reranker"
+        ) from exc
+    estimator = HistGradientBoostingClassifier(
+        max_iter=120,
+        max_leaf_nodes=15,
+        learning_rate=0.08,
+        l2_regularization=2.0,
+        class_weight="balanced",
+        random_state=random_seed,
+    )
+    estimator.fit(features, labels)
+    return estimator
+
+
+def _calibrate_semantic_rerank_threshold(
+    records: Sequence[_SemanticRerankRecord],
+    scores: Sequence[float],
+    *,
+    relation_count: int,
+) -> tuple[float, dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[tuple[float, bool]]] = defaultdict(list)
+    for record, score in zip(records, scores, strict=True):
+        grouped[(record.uid, record.source_key)].append((float(score), bool(record.label)))
+    ranked = [max(candidates, key=lambda item: item[0]) for candidates in grouped.values()]
+    best: tuple[float, float, float, float, int, int] | None = None
+    for step in range(5, 96):
+        threshold = step / 100
+        selected = [correct for score, correct in ranked if score >= threshold]
+        predicted = len(selected)
+        correct = sum(selected)
+        precision = correct / predicted if predicted else 0.0
+        recall = correct / relation_count if relation_count else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        candidate = (f1, precision, threshold, recall, predicted, correct)
+        if best is None or candidate > best:
+            best = candidate
+    assert best is not None
+    f1, precision, threshold, recall, predicted, correct = best
+    return threshold, {
+        "relation_count": relation_count,
+        "predicted_edge_count": predicted,
+        "correct_edge_count": correct,
+        "precision": round(precision, 8),
+        "recall": round(recall, 8),
+        "f1": round(f1, 8),
+        "threshold": threshold,
+    }
+
+
+def _semantic_oof_fold(uid: str) -> int:
+    digest = hashlib.sha256(f"semantic-oof:{uid}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % SEMANTIC_RERANK_OOF_FOLDS
+
+
+def _relation_ref_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
 def _feature_envelope(features: Sequence[Sequence[float]]) -> dict[str, list[float]]:
     try:
         import numpy as np
@@ -752,6 +1001,8 @@ def _fit_branch_estimator(
     *,
     random_seed: int,
     semantic_scorer: SemanticPairScorer | None = None,
+    semantic_reranker: Any | None = None,
+    semantic_top_k: int = DEFAULT_SEMANTIC_RERANK_TOP_K,
 ) -> Any:
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -767,6 +1018,8 @@ def _fit_branch_estimator(
             pair_estimator,
             payload,
             semantic_scorer=semantic_scorer,
+            semantic_reranker=semantic_reranker,
+            semantic_top_k=semantic_top_k,
         ):
             if len(ranked) < 2:
                 continue
@@ -789,45 +1042,39 @@ def _calibrate_top_successor_threshold(
     documents: Sequence[dict[str, Any]],
     *,
     semantic_scorer: SemanticPairScorer | None = None,
+    semantic_reranker: Any | None = None,
+    semantic_top_k: int = DEFAULT_SEMANTIC_RERANK_TOP_K,
+    fixed_threshold: float | None = None,
 ) -> tuple[float, dict[str, Any]]:
     ranked: list[tuple[float, bool]] = []
     total_relation_count = 0
     for payload in documents:
-        segments = [_validated_segment(segment) for segment in payload["document"]]
-        image = payload["img"]
-        width = _positive_float(image["width"], "img.width")
-        height = _positive_float(image["height"], "img.height")
         relations = {tuple(edge) for edge in payload["ro_linkings"]}
         total_relation_count += len(relations)
         outgoing: dict[Any, set[Any]] = defaultdict(set)
         for source_ref, target_ref in relations:
             outgoing[source_ref].add(target_ref)
-        semantic_scores = _document_semantic_score_lookup(
-            segments,
-            segments,
-            semantic_scorer,
-        )
-        for source in segments:
-            targets = [target for target in segments if target["id"] != source["id"]]
-            if not targets:
+        for source, source_ranked in _ranked_document_targets(
+            estimator,
+            payload,
+            semantic_scorer=semantic_scorer,
+            semantic_reranker=semantic_reranker,
+            semantic_top_k=semantic_top_k,
+        ):
+            if not source_ranked:
                 continue
-            probabilities = estimator.predict_proba(
-                _pair_feature_rows(
-                    source,
-                    targets,
-                    width=width,
-                    height=height,
-                    semantic_scorer=semantic_scorer,
-                    semantic_scores=semantic_scores,
-                )
+            best = source_ranked[0]
+            ranked.append(
+                (best.score, best.target["id"] in outgoing[source["id"]])
             )
-            scores = [float(row[1]) for row in probabilities]
-            best_index = max(range(len(scores)), key=scores.__getitem__)
-            ranked.append((scores[best_index], targets[best_index]["id"] in outgoing[source["id"]]))
 
     best: tuple[float, float, float, float, int, int] | None = None
-    for step in range(5, 96):
-        threshold = step / 100
+    thresholds = (
+        [fixed_threshold]
+        if fixed_threshold is not None
+        else [step / 100 for step in range(5, 96)]
+    )
+    for threshold in thresholds:
         selected = [correct for score, correct in ranked if score >= threshold]
         predicted = len(selected)
         correct = sum(selected)
@@ -857,6 +1104,8 @@ def _calibrate_branch_threshold(
     *,
     top_threshold: float,
     semantic_scorer: SemanticPairScorer | None = None,
+    semantic_reranker: Any | None = None,
+    semantic_top_k: int = DEFAULT_SEMANTIC_RERANK_TOP_K,
 ) -> tuple[float, dict[str, Any]]:
     records: list[tuple[float, bool, bool]] = []
     relation_count = 0
@@ -867,17 +1116,19 @@ def _calibrate_branch_threshold(
             pair_estimator,
             payload,
             semantic_scorer=semantic_scorer,
+            semantic_reranker=semantic_reranker,
+            semantic_top_k=semantic_top_k,
         ):
-            if not ranked or ranked[0][0] < top_threshold:
+            if not ranked or ranked[0].score < top_threshold:
                 continue
-            first_edge = (source["id"], ranked[0][1]["id"])
+            first_edge = (source["id"], ranked[0].target["id"])
             records.append((0.0, first_edge in relations, False))
             if len(ranked) < 2:
                 continue
             branch_probability = float(
                 branch_estimator.predict_proba([_branch_features(payload, source, ranked)])[0][1]
             )
-            second_edge = (source["id"], ranked[1][1]["id"])
+            second_edge = (source["id"], ranked[1].target["id"])
             records.append((branch_probability, second_edge in relations, True))
 
     best: tuple[float, float, float, float, int, int, int] | None = None
@@ -912,7 +1163,49 @@ def _ranked_document_targets(
     payload: Mapping[str, Any],
     *,
     semantic_scorer: SemanticPairScorer | None = None,
-) -> list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]]:
+    semantic_reranker: Any | None = None,
+    semantic_top_k: int = DEFAULT_SEMANTIC_RERANK_TOP_K,
+) -> list[tuple[dict[str, Any], list[_RankedTarget]]]:
+    if semantic_reranker is not None:
+        if semantic_scorer is None:
+            raise ValueError("semantic reranker requires its semantic scorer")
+        candidates = _semantic_rerank_page_candidates(
+            estimator,
+            payload,
+            semantic_scorer=semantic_scorer,
+            top_k=semantic_top_k,
+        )
+        all_features = [
+            rerank_features
+            for _, source_candidates in candidates
+            for _, _, rerank_features in source_candidates
+        ]
+        all_scores = (
+            [float(row[1]) for row in semantic_reranker.predict_proba(all_features)]
+            if all_features
+            else []
+        )
+        offset = 0
+        reranked_sources: list[tuple[dict[str, Any], list[_RankedTarget]]] = []
+        for source, source_candidates in candidates:
+            count = len(source_candidates)
+            source_scores = all_scores[offset : offset + count]
+            offset += count
+            ranked = sorted(
+                (
+                    _RankedTarget(score, target, pair_features, rerank_features)
+                    for score, (target, pair_features, rerank_features) in zip(
+                        source_scores,
+                        source_candidates,
+                        strict=True,
+                    )
+                ),
+                key=lambda item: item.score,
+                reverse=True,
+            )
+            reranked_sources.append((source, ranked))
+        return reranked_sources
+
     segments = [_validated_segment(segment) for segment in payload["document"]]
     image = payload["img"]
     width = _positive_float(image["width"], "img.width")
@@ -922,7 +1215,7 @@ def _ranked_document_targets(
         segments,
         semantic_scorer,
     )
-    ranked_sources: list[tuple[dict[str, Any], list[tuple[float, dict[str, Any], list[float]]]]] = []
+    ranked_sources: list[tuple[dict[str, Any], list[_RankedTarget]]] = []
     for source in segments:
         targets = [target for target in segments if target["id"] != source["id"]]
         if not targets:
@@ -939,20 +1232,146 @@ def _ranked_document_targets(
         probabilities = estimator.predict_proba(features)
         ranked = sorted(
             (
-                (float(probability[1]), target, pair_features)
+                _RankedTarget(
+                    float(probability[1]),
+                    target,
+                    pair_features,
+                    pair_features,
+                )
                 for probability, target, pair_features in zip(probabilities, targets, features, strict=True)
             ),
-            key=lambda item: item[0],
+            key=lambda item: item.score,
             reverse=True,
         )
         ranked_sources.append((source, ranked))
     return ranked_sources
 
 
+def _semantic_rerank_page_candidates(
+    estimator: Any,
+    payload: Mapping[str, Any],
+    *,
+    semantic_scorer: SemanticPairScorer,
+    top_k: int,
+) -> list[
+    tuple[
+        dict[str, Any],
+        list[tuple[dict[str, Any], list[float], list[float]]],
+    ]
+]:
+    segments = [_validated_segment(segment) for segment in payload["document"]]
+    image = payload["img"]
+    width = _positive_float(image["width"], "img.width")
+    height = _positive_float(image["height"], "img.height")
+    staged: list[
+        tuple[
+            dict[str, Any],
+            list[dict[str, Any]],
+            list[list[float]],
+            list[float],
+        ]
+    ] = []
+    semantic_pairs: list[tuple[str, str]] = []
+    for source in segments:
+        targets = [target for target in segments if target["id"] != source["id"]]
+        if not targets:
+            staged.append((source, [], [], []))
+            continue
+        pair_features = [
+            _pair_features(source, target, width=width, height=height)
+            for target in targets
+        ]
+        base_scores = [
+            float(row[1]) for row in estimator.predict_proba(pair_features)
+        ]
+        indices = sorted(
+            range(len(targets)),
+            key=base_scores.__getitem__,
+            reverse=True,
+        )[:top_k]
+        selected_targets = [targets[index] for index in indices]
+        selected_features = [pair_features[index] for index in indices]
+        selected_scores = [base_scores[index] for index in indices]
+        source_text = str(source.get("text") or "").strip()
+        semantic_pairs.extend(
+            (source_text, str(target.get("text") or "").strip())
+            for target in selected_targets
+        )
+        staged.append(
+            (source, selected_targets, selected_features, selected_scores)
+        )
+
+    semantic_scores = semantic_scorer.score_pairs(semantic_pairs)
+    if len(semantic_scores) != len(semantic_pairs):
+        raise RuntimeError("semantic scorer returned an unexpected score count")
+    offset = 0
+    result: list[
+        tuple[
+            dict[str, Any],
+            list[tuple[dict[str, Any], list[float], list[float]]],
+        ]
+    ] = []
+    for source, targets, pair_features, base_scores in staged:
+        count = len(targets)
+        source_semantic_scores = semantic_scores[offset : offset + count]
+        offset += count
+        rerank_features = _semantic_rerank_features(
+            base_scores,
+            source_semantic_scores,
+            pair_features,
+            top_k=top_k,
+        )
+        result.append(
+            (
+                source,
+                list(
+                    zip(
+                        targets,
+                        pair_features,
+                        rerank_features,
+                        strict=True,
+                    )
+                ),
+            )
+        )
+    return result
+
+
+def _semantic_rerank_features(
+    base_scores: Sequence[float],
+    semantic_scores: Sequence[float],
+    pair_features: Sequence[list[float]],
+    *,
+    top_k: int,
+) -> list[list[float]]:
+    if not base_scores:
+        return []
+    top_base_score = float(base_scores[0])
+    maximum_semantic_score = max(float(score) for score in semantic_scores)
+    mean_semantic_score = sum(float(score) for score in semantic_scores) / len(
+        semantic_scores
+    )
+    return [
+        [
+            float(base_score),
+            top_base_score - float(base_score),
+            rank / top_k,
+            float(semantic_score),
+            float(semantic_score) - maximum_semantic_score,
+            float(semantic_score) - mean_semantic_score,
+            *features,
+        ]
+        for rank, (base_score, semantic_score, features) in enumerate(
+            zip(base_scores, semantic_scores, pair_features, strict=True),
+            start=1,
+        )
+    ]
+
+
 def _branch_features(
     payload: Mapping[str, Any],
     source: Mapping[str, Any],
-    ranked: Sequence[tuple[float, dict[str, Any], list[float]]],
+    ranked: Sequence[_RankedTarget],
 ) -> list[float]:
     width = _positive_float(payload["img"]["width"], "img.width")
     height = _positive_float(payload["img"]["height"], "img.height")
@@ -968,13 +1387,13 @@ def _branch_features(
         (x1 - x0) / width,
         (y1 - y0) / height,
         len(payload["document"]) / 256,
-        first[0],
-        second[0],
-        first[0] - second[0],
+        first.score,
+        second.score,
+        first.score - second.score,
         len(text) / 256,
         float(text.endswith((".", ":", ";", "?", "!"))),
-        *first[2][8:20],
-        *second[2][8:20],
+        *first.pair_features[8:20],
+        *second.pair_features[8:20],
     ]
 
 
@@ -1080,12 +1499,14 @@ def _pair_features(
 
 def _feature_version_for_scorer(
     semantic_scorer: SemanticPairScorer | None,
+    *,
+    semantic_fusion: SemanticFusion = "top-k-rerank",
 ) -> str:
-    return (
-        SEMANTIC_RELATION_FEATURE_VERSION
-        if semantic_scorer is not None
-        else RELATION_FEATURE_VERSION
-    )
+    if semantic_scorer is None:
+        return RELATION_FEATURE_VERSION
+    if semantic_fusion == "top-k-rerank":
+        return SEMANTIC_RERANK_RELATION_FEATURE_VERSION
+    return SEMANTIC_RELATION_FEATURE_VERSION
 
 
 def _semantic_descriptor(
@@ -1118,7 +1539,10 @@ def _validate_semantic_feature_contract(
         if semantic_scorer is not None:
             raise ValueError("base relation ranker does not accept a semantic scorer")
         return feature_version
-    if feature_version != SEMANTIC_RELATION_FEATURE_VERSION:
+    if feature_version not in {
+        SEMANTIC_RELATION_FEATURE_VERSION,
+        SEMANTIC_RERANK_RELATION_FEATURE_VERSION,
+    }:
         raise ValueError("unsupported relation ranker feature version")
     if semantic_scorer is None:
         raise ValueError("semantic relation ranker requires its semantic scorer")
@@ -1128,6 +1552,15 @@ def _validate_semantic_feature_contract(
     actual = _semantic_descriptor(semantic_scorer)
     if actual != dict(expected):
         raise ValueError("semantic scorer identity does not match relation ranker model")
+    if feature_version == SEMANTIC_RERANK_RELATION_FEATURE_VERSION:
+        if bundle.get("semantic_reranker") is None:
+            raise ValueError("semantic reranker model is missing")
+        try:
+            top_k = int(bundle.get("semantic_top_k"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("semantic reranker top-k contract is missing") from exc
+        if top_k < 2:
+            raise ValueError("semantic reranker top-k contract is invalid")
     return feature_version
 
 

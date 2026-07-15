@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from io import BytesIO
+from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import fitz
@@ -490,11 +491,33 @@ def test_relation_corpus_benchmark_reports_role_fusion_ab(
         "load_relation_ranker",
         lambda _: ({"estimator": _DownwardEstimator(), "threshold": 0.5}, {"model_sha256": "test"}),
     )
+    manifest = json.loads(corpus.manifest_path.read_text(encoding="utf-8"))
+    semantic_paths = {
+        (corpus.out_dir / sample["semantic_sidecar"]).resolve()
+        for sample in manifest["samples"]
+    }
+    prediction_count = 0
+    original_predict = relation_ranker._predict_roor_page_relations
+    original_read_text = Path.read_text
+
+    def tracking_predict(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal prediction_count
+        prediction_count += 1
+        return original_predict(*args, **kwargs)
+
+    def tracking_read_text(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self.resolve() in semantic_paths:
+            assert prediction_count == 2 * len(manifest["samples"])
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(relation_ranker, "_predict_roor_page_relations", tracking_predict)
+    monkeypatch.setattr(Path, "read_text", tracking_read_text)
 
     result = benchmark_comphrdoc_relation_corpus(corpus.out_dir, tmp_path / "model.joblib")
 
     assert result.report["sample_count"] == 1
     assert result.report["inference_inputs_are_answer_free"] is True
+    assert result.report["labels_opened_after_all_predictions"] is True
     assert result.report["noise"]["profile"] == "clean"
     assert result.report["noise"]["resolvable_label_ratio"] == 1.0
     assert result.report["graphical_label_audit"]["oracle_graphical_label_count"] == 1

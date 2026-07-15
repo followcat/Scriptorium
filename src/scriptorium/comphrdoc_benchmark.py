@@ -1161,6 +1161,7 @@ def benchmark_comphrdoc_relation_corpus(
     floating_model_path: str | Path | None = None,
     noise_profile: str = "clean",
     output: str | Path | None = None,
+    semantic_scorer: Any | None = None,
 ) -> CompHrDocRelationBenchmarkResult:
     """Score relation-role fusion on an answer-separated Comp-HRDoc corpus."""
 
@@ -1191,9 +1192,17 @@ def benchmark_comphrdoc_relation_corpus(
     noise_totals: Counter[str] = Counter()
     graphical_audit_totals: Counter[str] = Counter()
     page_results: list[dict[str, Any]] = []
+    pending: list[
+        tuple[
+            Mapping[str, Any],
+            dict[str, Any],
+            dict[str, list[dict[str, Any]]],
+        ]
+    ] = []
+    # Phase one finishes every provider prediction before any semantic sidecar
+    # path is resolved or opened.
     for sample in manifest.get("samples", []):
         structure_path = corpus / str(sample["structure"])
-        semantic_path = corpus / str(sample["semantic_sidecar"])
         structure = json.loads(structure_path.read_text(encoding="utf-8"))
         structure, noise_diagnostics = perturb_relation_structure(
             structure,
@@ -1209,6 +1218,35 @@ def benchmark_comphrdoc_relation_corpus(
             "prefix_corruption",
         ):
             noise_totals[key] += int(noise_diagnostics.get(key, 0))
+        prediction_cache: dict[bool, dict[str, Any]] = {}
+        prediction_edges_by_mode: dict[str, list[dict[str, Any]]] = {}
+        for mode, enabled in modes.items():
+            if enabled not in prediction_cache:
+                prediction_cache[enabled] = relation_ranker._predict_roor_page_relations(
+                    structure,
+                    bundle=bundle,
+                    manifest=model_manifest,
+                    structure_role_fusion=enabled,
+                    semantic_scorer=semantic_scorer,
+                ).structure_payload
+            prediction_edges = list(prediction_cache[enabled].get("successor_edges", []))
+            if mode == "native-plus-trained-floating":
+                assert floating_bundle is not None and floating_manifest is not None
+                learned = floating_ranker._predict_floating_relations(
+                    structure,
+                    bundle=floating_bundle,
+                    manifest=floating_manifest,
+                )
+                learned_sources = {edge["source"] for edge in learned.successor_edges}
+                prediction_edges = [
+                    edge for edge in prediction_edges if edge["source"] not in learned_sources
+                ] + learned.successor_edges
+            prediction_edges_by_mode[mode] = prediction_edges
+        pending.append((sample, structure, prediction_edges_by_mode))
+
+    # Phase two opens immutable labels only after phase one is complete.
+    for sample, structure, prediction_edges_by_mode in pending:
+        semantic_path = corpus / str(sample["semantic_sidecar"])
         semantic = json.loads(semantic_path.read_text(encoding="utf-8"))
         truth = {tuple(edge) for edge in semantic.get("ro_linkings", [])}
         retained_ids = {
@@ -1271,28 +1309,9 @@ def benchmark_comphrdoc_relation_corpus(
                 )
             },
         }
-        prediction_cache: dict[bool, dict[str, Any]] = {}
-        for mode, enabled in modes.items():
-            if enabled not in prediction_cache:
-                prediction_cache[enabled] = relation_ranker._predict_roor_page_relations(
-                    structure,
-                    bundle=bundle,
-                    manifest=model_manifest,
-                    structure_role_fusion=enabled,
-                ).structure_payload
-            prediction = prediction_cache[enabled]
-            prediction_edges = list(prediction.get("successor_edges", []))
+        for mode in modes:
+            prediction_edges = prediction_edges_by_mode[mode]
             if mode == "native-plus-trained-floating":
-                assert floating_bundle is not None and floating_manifest is not None
-                learned = floating_ranker._predict_floating_relations(
-                    structure,
-                    bundle=floating_bundle,
-                    manifest=floating_manifest,
-                )
-                learned_sources = {edge["source"] for edge in learned.successor_edges}
-                prediction_edges = [
-                    edge for edge in prediction_edges if edge["source"] not in learned_sources
-                ] + learned.successor_edges
                 role_origin = "trained-floating-pair"
             else:
                 role_origin = "structure-role-geometry"
@@ -1510,12 +1529,16 @@ def benchmark_comphrdoc_relation_corpus(
         "corpus_manifest": str(manifest_path),
         "corpus_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "model_sha256": model_manifest.get("model_sha256"),
+        "semantic_scorer": model_manifest.get("semantic_scorer"),
+        "semantic_fusion": model_manifest.get("semantic_fusion"),
+        "semantic_top_k": model_manifest.get("semantic_top_k"),
         "floating_model_sha256": (
             floating_manifest.get("model_sha256") if floating_manifest is not None else None
         ),
         "sample_count": len(page_results),
         "selection": manifest.get("selection"),
         "inference_inputs_are_answer_free": manifest.get("inference_inputs_are_answer_free"),
+        "labels_opened_after_all_predictions": True,
         "noise": {
             "profile": noise_profile,
             **dict(noise_totals),

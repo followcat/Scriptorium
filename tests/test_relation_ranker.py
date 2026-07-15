@@ -61,6 +61,22 @@ class _FakeSemanticScorer:
         return [-0.1 if target.startswith("Second") else -1.0 for _, target in pairs]
 
 
+class _RecordingSemanticScorer(_FakeSemanticScorer):
+    def __init__(self) -> None:
+        self.pairs: list[tuple[str, str]] = []
+
+    def score_pairs(self, pairs):  # type: ignore[no-untyped-def]
+        self.pairs.extend(pairs)
+        return super().score_pairs(pairs)
+
+
+class _FakeSemanticReranker:
+    def predict_proba(self, features: list[list[float]]) -> list[list[float]]:
+        assert all(len(row) == 31 for row in features)
+        scores = [0.9 if row[3] > -0.5 else 0.1 for row in features]
+        return [[1 - score, score] for score in scores]
+
+
 def test_prediction_emits_isolated_review_only_successors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         relation_ranker,
@@ -191,6 +207,55 @@ def test_base_ranker_rejects_semantic_feature_shape_change(
             "model.joblib",
             semantic_scorer=_FakeSemanticScorer(),
         )
+
+
+def test_semantic_reranker_scores_only_base_top_k_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scorer = _RecordingSemanticScorer()
+    bundle = {
+        "feature_version": relation_ranker.SEMANTIC_RERANK_RELATION_FEATURE_VERSION,
+        "semantic_scorer": relation_ranker._semantic_descriptor(scorer),
+        "semantic_fusion": "top-k-rerank",
+        "semantic_top_k": 2,
+        "semantic_reranker": _FakeSemanticReranker(),
+        "estimator": _FakeEstimator(),
+        "threshold": 0.5,
+    }
+    monkeypatch.setattr(
+        relation_ranker,
+        "load_relation_ranker",
+        lambda _: (bundle, {"model_sha256": "abc123"}),
+    )
+
+    result = predict_structure_relations(
+        _answer_free_payload(),
+        "model.joblib",
+        semantic_scorer=scorer,
+    )
+
+    assert len(scorer.pairs) == 6
+    assert result.structure_payload["relation_ranker"]["semantic_fusion"] == (
+        "top-k-rerank"
+    )
+    assert result.structure_payload["relation_ranker"]["semantic_top_k"] == 2
+    assert [(edge["source"], edge["target"]) for edge in result.structure_payload["successor_edges"]] == [
+        (10, 20),
+        (30, 20),
+    ]
+
+
+def test_semantic_rerank_features_include_relative_base_and_nsp_margins() -> None:
+    features = relation_ranker._semantic_rerank_features(
+        [0.8, 0.6],
+        [-0.2, -0.5],
+        [[1.0] * 25, [2.0] * 25],
+        top_k=5,
+    )
+
+    assert features[0][:6] == pytest.approx([0.8, 0.0, 0.2, -0.2, 0.0, 0.15])
+    assert features[1][:6] == pytest.approx([0.6, 0.2, 0.4, -0.5, -0.3, -0.15])
+    assert len(features[0]) == 31
 
 
 def test_prediction_prefers_explicit_figure_caption_relation(

@@ -756,16 +756,45 @@ def benchmark_comphrdoc_relations_command(
         help="Deterministic synthetic layout/OCR perturbation profile.",
     ),
     output: Path | None = typer.Option(None, "--output", "-o"),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Semantic scorer required by semantic ranker models ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+    ),
+    semantic_device: str = typer.Option("cpu", "--semantic-device"),
 ) -> None:
     """A/B score structure-role fusion on a Comp-HRDoc relation corpus."""
 
     try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
         result = benchmark_comphrdoc_relation_corpus(
             corpus_dir,
             model,
             floating_model_path=floating_model,
             noise_profile=noise_profile,
             output=output,
+            semantic_scorer=scorer,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
@@ -1959,6 +1988,17 @@ def train_relation_ranker_command(
         "--semantic-device",
         help="Torch device used only by the optional semantic scorer.",
     ),
+    semantic_fusion: str = typer.Option(
+        "top-k-rerank",
+        "--semantic-fusion",
+        help="Semantic fusion mode: top-k-rerank or direct.",
+    ),
+    semantic_top_k: int = typer.Option(
+        5,
+        "--semantic-top-k",
+        min=2,
+        help="Base-ranker candidates scored per source by the semantic reranker.",
+    ),
 ) -> None:
     """Train a review-only successor ranker without reading validation labels."""
 
@@ -1977,6 +2017,8 @@ def train_relation_ranker_command(
             random_seed=seed,
             negative_candidates=negative_candidates,
             semantic_scorer=scorer,
+            semantic_fusion=semantic_fusion,
+            semantic_top_k=semantic_top_k,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="dataset_dir") from exc
@@ -1989,6 +2031,8 @@ def train_relation_ranker_command(
     typer.echo(f"Branch calibration F1: {result.manifest['branch_calibration']['f1']}")
     typer.echo(f"Branch threshold: {result.manifest['branch_threshold']}")
     typer.echo(f"Semantic scorer: {semantic_scorer or 'disabled'}")
+    if semantic_scorer:
+        typer.echo(f"Semantic fusion: {semantic_fusion}")
 
 
 @app.command("train-floating-ranker")
