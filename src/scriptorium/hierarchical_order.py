@@ -34,7 +34,7 @@ from .relation_order import (
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "local-streams-with-provider-continuity-v6"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-adjacency-rescue-v7"
 PROVIDER_COARSE_REGION_SOURCE = "normalized-provider-structure"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
@@ -53,6 +53,8 @@ UNASSIGNED_FALLBACK_CONFIDENCE = 0.5
 PROVIDER_LOCAL_STREAM_MIN_LINE_GAP = -0.25
 PROVIDER_LOCAL_STREAM_MAX_LINE_GAP = 1.25
 PROVIDER_CROSS_TRANSITION_MAX_BASE_RANK_DISPLACEMENT = 4
+PROVIDER_NATIVE_ADJACENCY_MIN_RELATION_SCORE = 0.95
+PROVIDER_NATIVE_ADJACENCY_MIN_HORIZONTAL_OVERLAP = 0.5
 
 
 @dataclass(frozen=True)
@@ -339,6 +341,7 @@ def build_hierarchical_order_proposal(
                     if (edge.source, edge.target) in external_transition_edge_keys
                 ),
             ),
+            candidate_edges=transition_relation_evidence.candidate_edges,
         )
     if transitions_enabled and transition_relation_evidence is not None:
         (
@@ -386,6 +389,37 @@ def build_hierarchical_order_proposal(
             if transitions_enabled
             else []
         )
+    (
+        adjacency_rescue_transitions,
+        adjacency_rescue_evidence,
+        adjacency_rescue_diagnostics,
+    ) = _provider_native_adjacency_rescue(
+        base_ids,
+        elements=elements,
+        membership_by_element=membership_by_element,
+        region_role_by_id={region.id: region.role for region in regions},
+        stream_id_by_element=stream_id_by_element,
+        region_streams=streams,
+        cross_transitions=cross_transitions,
+        relation_evidence=transition_relation_evidence,
+        enabled=bool(
+            provider_derived_regions
+            and transitions_enabled
+            and transition_relation_evidence is not None
+        ),
+    )
+    cross_transitions.extend(adjacency_rescue_transitions)
+    relation_evidence_records.extend(adjacency_rescue_evidence)
+    potential_cross_transition_count += int(
+        adjacency_rescue_diagnostics[
+            "provider_native_adjacency_rescue_candidate_count"
+        ]
+    )
+    eligible_cross_transition_count += int(
+        adjacency_rescue_diagnostics[
+            "provider_native_adjacency_rescue_emitted_count"
+        ]
+    )
     relation_cross_transition_count = len(cross_transitions)
     complete_cross_region_chain = _is_complete_cross_region_chain(
         coarse_ids,
@@ -529,7 +563,18 @@ def build_hierarchical_order_proposal(
             if provider_derived_regions
             else None
         ),
+        "provider_native_adjacency_min_relation_score": (
+            PROVIDER_NATIVE_ADJACENCY_MIN_RELATION_SCORE
+            if provider_derived_regions
+            else None
+        ),
+        "provider_native_adjacency_min_horizontal_overlap": (
+            PROVIDER_NATIVE_ADJACENCY_MIN_HORIZONTAL_OVERLAP
+            if provider_derived_regions
+            else None
+        ),
         **provider_stream_diagnostics,
+        **adjacency_rescue_diagnostics,
         **fallback_diagnostics,
         **relation_diagnostics,
         **coarse_diagnostics,
@@ -1608,6 +1653,219 @@ def _provider_local_stream_segments(
     )
 
 
+def _provider_native_adjacency_rescue(
+    base_ids: Sequence[str],
+    *,
+    elements: Sequence[_HierarchyNode],
+    membership_by_element: Mapping[str, _Membership],
+    region_role_by_id: Mapping[str, str],
+    stream_id_by_element: Mapping[str, str],
+    region_streams: Sequence[Mapping[str, Any]],
+    cross_transitions: Sequence[Mapping[str, Any]],
+    relation_evidence: RelationGraphOrderEvidence | None,
+    enabled: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+    """Restore provider-boundary adjacency with independent graph support."""
+
+    diagnostic_names = (
+        "provider_native_adjacency_rescue_considered_count",
+        "provider_native_adjacency_rescue_score_supported_count",
+        "provider_native_adjacency_rescue_geometry_supported_count",
+        "provider_native_adjacency_rescue_candidate_count",
+        "provider_native_adjacency_rescue_emitted_count",
+        "provider_native_adjacency_rescue_element_degree_suppressed_count",
+        "provider_native_adjacency_rescue_region_degree_suppressed_count",
+        "provider_native_adjacency_rescue_cycle_suppressed_count",
+    )
+    diagnostics = {name: 0 for name in diagnostic_names}
+    if not enabled or relation_evidence is None:
+        return [], [], diagnostics
+
+    candidate_score_by_edge: dict[tuple[str, str], float] = {}
+    for edge in relation_evidence.candidate_edges:
+        if not (
+            0 <= edge.source < len(elements)
+            and 0 <= edge.target < len(elements)
+        ):
+            raise ValueError("fine relation graph returned an unknown candidate index")
+        candidate_score_by_edge[(
+            elements[edge.source].id,
+            elements[edge.target].id,
+        )] = float(edge.score)
+    element_by_id = {element.id: element for element in elements}
+    existing_edges = {
+        (str(edge.get("source") or ""), str(edge.get("target") or ""))
+        for stream in region_streams
+        for key in ("successor_edges", "review_successor_edges")
+        for edge in stream.get(key, [])
+        if isinstance(edge, Mapping)
+    }
+    existing_edges.update(
+        (str(edge.get("source") or ""), str(edge.get("target") or ""))
+        for edge in cross_transitions
+        if isinstance(edge, Mapping)
+    )
+    element_successor = {source: target for source, target in existing_edges}
+    element_predecessor = {target: source for source, target in existing_edges}
+    region_successor = {
+        str(edge.get("source_region_id")): str(edge.get("target_region_id"))
+        for edge in cross_transitions
+        if isinstance(edge, Mapping)
+        and edge.get("source_region_id") is not None
+        and edge.get("target_region_id") is not None
+    }
+    region_predecessor = {
+        target: source for source, target in region_successor.items()
+    }
+
+    transitions: list[dict[str, Any]] = []
+    evidence_records: list[dict[str, Any]] = []
+    for source, target in zip(base_ids, base_ids[1:], strict=False):
+        source_membership = membership_by_element[source]
+        target_membership = membership_by_element[target]
+        source_region = source_membership.region_id
+        target_region = target_membership.region_id
+        if (
+            source_region is None
+            or target_region is None
+            or source_region == target_region
+            or str(region_role_by_id.get(source_region) or "").strip().casefold()
+            != "text"
+            or str(region_role_by_id.get(target_region) or "").strip().casefold()
+            != "text"
+            or (source, target) in existing_edges
+        ):
+            continue
+        diagnostics[
+            "provider_native_adjacency_rescue_considered_count"
+        ] += 1
+        score = candidate_score_by_edge.get((source, target), 0.0)
+        if score < PROVIDER_NATIVE_ADJACENCY_MIN_RELATION_SCORE:
+            continue
+        diagnostics[
+            "provider_native_adjacency_rescue_score_supported_count"
+        ] += 1
+        source_box = element_by_id[source].bbox
+        target_box = element_by_id[target].bbox
+        mean_height = max((source_box.height + target_box.height) / 2.0, 1e-9)
+        normalized_gap = (target_box.y0 - source_box.y1) / mean_height
+        horizontal_overlap = _bbox_horizontal_overlap_ratio(
+            source_box,
+            target_box,
+        )
+        if not (
+            PROVIDER_LOCAL_STREAM_MIN_LINE_GAP
+            <= normalized_gap
+            <= PROVIDER_LOCAL_STREAM_MAX_LINE_GAP
+            and horizontal_overlap
+            >= PROVIDER_NATIVE_ADJACENCY_MIN_HORIZONTAL_OVERLAP
+        ):
+            continue
+        diagnostics[
+            "provider_native_adjacency_rescue_geometry_supported_count"
+        ] += 1
+        diagnostics[
+            "provider_native_adjacency_rescue_candidate_count"
+        ] += 1
+        suppression_reason = None
+        if source in element_successor or target in element_predecessor:
+            suppression_reason = "provider-adjacency-element-degree-conflict"
+            diagnostics[
+                "provider_native_adjacency_rescue_element_degree_suppressed_count"
+            ] += 1
+        elif source_region in region_successor or target_region in region_predecessor:
+            suppression_reason = "provider-adjacency-region-degree-conflict"
+            diagnostics[
+                "provider_native_adjacency_rescue_region_degree_suppressed_count"
+            ] += 1
+        elif _element_successor_would_cycle(source, target, element_successor) or (
+            _region_successor_would_cycle(
+                source_region,
+                target_region,
+                region_successor,
+            )
+        ):
+            suppression_reason = "provider-adjacency-cycle"
+            diagnostics[
+                "provider_native_adjacency_rescue_cycle_suppressed_count"
+            ] += 1
+        selected = suppression_reason is None
+        evidence_records.append(
+            {
+                "source": source,
+                "target": target,
+                "source_region_id": source_region,
+                "target_region_id": target_region,
+                "boundary_aligned": True,
+                "transition_status": "selected" if selected else "evidence-only",
+                "suppression_reason": suppression_reason,
+                "confidence": round(min(score, 0.76), 8),
+                "relation_source": "native-relation-graph-adjacency-candidate",
+                "selected_base_rank_displacement": 1,
+                "relation_graph_candidate": {
+                    "score": round(score, 8),
+                    "minimum_score": (
+                        PROVIDER_NATIVE_ADJACENCY_MIN_RELATION_SCORE
+                    ),
+                },
+                "local_continuity": {
+                    "normalized_vertical_gap": round(normalized_gap, 8),
+                    "horizontal_overlap": round(horizontal_overlap, 8),
+                },
+            }
+        )
+        if not selected:
+            continue
+        element_successor[source] = target
+        element_predecessor[target] = source
+        region_successor[source_region] = target_region
+        region_predecessor[target_region] = source_region
+        existing_edges.add((source, target))
+        diagnostics[
+            "provider_native_adjacency_rescue_emitted_count"
+        ] += 1
+        transitions.append(
+            {
+                "source_region_id": source_region,
+                "target_region_id": target_region,
+                "source": source,
+                "target": target,
+                "source_stream_id": stream_id_by_element[source],
+                "target_stream_id": stream_id_by_element[target],
+                "reason": "provider-native-adjacency-relation-rescue",
+                "boundary_aligned": True,
+                "confidence": round(min(score, 0.76), 8),
+                "review_required": True,
+                "evidence": [
+                    "selected-auto-adjacency",
+                    "relation-graph-high-confidence-candidate",
+                    "provider-text-region-boundary",
+                    "local-line-continuity",
+                    "degree-one-acyclic-rescue",
+                ],
+                "relation_graph_candidate": {
+                    "score": round(score, 8),
+                    "minimum_score": (
+                        PROVIDER_NATIVE_ADJACENCY_MIN_RELATION_SCORE
+                    ),
+                },
+                "provenance": {
+                    "kind": "hierarchical-provider-adjacency-rescue-v1",
+                    "provider": HIERARCHICAL_ORDER_PROVIDER,
+                    "transition_policy": (
+                        "provider-native-adjacency-relation-rescue-review-only"
+                    ),
+                },
+            }
+        )
+    return transitions, evidence_records, diagnostics
+
+
+def _bbox_horizontal_overlap_ratio(source: BBox, target: BBox) -> float:
+    overlap = max(0.0, min(source.x1, target.x1) - max(source.x0, target.x0))
+    return overlap / max(min(source.width, target.width), 1e-9)
+
+
 def _unassigned_fallback_relations(
     base_ids: Sequence[str],
     *,
@@ -2049,6 +2307,9 @@ def _relation_graph_cross_region_transitions(
         candidate.diagnostic.has_tied_alternative for candidate in candidates
     )
     return transitions, evidence_records, {
+        "fine_relation_candidate_edge_count": len(
+            relation_evidence.candidate_edges
+        ),
         "fine_relation_selected_edge_count": len(
             relation_evidence.selected_edge_diagnostics
         ),

@@ -11,6 +11,7 @@ import scriptorium.hierarchical_order as hierarchical_order
 from scriptorium.chunkr_order_ranker import ChunkrOrderPredictionResult
 from scriptorium.hierarchical_order import build_hierarchical_order_proposal
 from scriptorium.reading_order import (
+    RelationGraphCandidateEdge,
     RelationGraphEdgeDiagnostics,
     RelationGraphOrderEvidence,
 )
@@ -1190,6 +1191,119 @@ def test_provider_local_stream_keeps_nearby_vertical_continuity() -> None:
 
     assert segments == (("source", "target"),)
     assert reasons == ()
+
+
+def test_provider_hierarchy_rescues_high_confidence_native_adjacency(
+    monkeypatch,
+) -> None:
+    payload = {
+        "id": "provider-adjacency-rescue",
+        "width": 100,
+        "height": 80,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "source", "box": [10, 10, 90, 20], "role": "Text"},
+            {"id": "target", "box": [10, 25, 90, 35], "role": "Text"},
+        ],
+        "regions": [
+            {
+                "id": "region-source",
+                "box": [5, 5, 95, 22],
+                "role": "Text",
+                "member_ids": ["source"],
+            },
+            {
+                "id": "region-target",
+                "box": [5, 23, 95, 40],
+                "role": "Text",
+                "member_ids": ["target"],
+            },
+        ],
+        "input_adapter": {
+            "coarse_region_source": (
+                hierarchical_order.PROVIDER_COARSE_REGION_SOURCE
+            )
+        },
+    }
+    stable_elements = hierarchical_order._nodes_from_payload(
+        payload["elements"],
+        kind="element",
+        width=100,
+        height=80,
+        maximum=hierarchical_order.MAX_HIERARCHY_ELEMENTS,
+    )
+    index_by_id = {
+        element.id: index for index, element in enumerate(stable_elements)
+    }
+    candidate = RelationGraphCandidateEdge(
+        source=index_by_id["source"],
+        target=index_by_id["target"],
+        score=0.97,
+    )
+
+    def selected_order(nodes, **_kwargs):
+        desired = (
+            ["source", "target"]
+            if all(node.id in {"source", "target"} for node in nodes)
+            else ["region-source", "region-target"]
+        )
+        node_index = {node.id: index for index, node in enumerate(nodes)}
+        return tuple(node_index[node_id] for node_id in desired)
+
+    monkeypatch.setattr(hierarchical_order, "_selected_order", selected_order)
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            tuple(range(len(stable_elements))),
+            (),
+            (candidate,),
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    transitions = result.payload["pages"][0]["review_transitions"]
+    assert [
+        (edge["source"], edge["target"], edge["reason"])
+        for edge in transitions
+    ] == [
+        ("source", "target", "provider-native-adjacency-relation-rescue")
+    ]
+    assert transitions[0]["relation_graph_candidate"] == {
+        "score": 0.97,
+        "minimum_score": 0.95,
+    }
+    assert result.diagnostics[
+        "provider_native_adjacency_rescue_emitted_count"
+    ] == 1
+    evidence = result.payload["pages"][0]["cross_region_relation_evidence"]
+    assert evidence[0]["relation_source"] == (
+        "native-relation-graph-adjacency-candidate"
+    )
+
+    low_score_candidate = RelationGraphCandidateEdge(
+        source=index_by_id["source"],
+        target=index_by_id["target"],
+        score=0.94,
+    )
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            tuple(range(len(stable_elements))),
+            (),
+            (low_score_candidate,),
+        ),
+    )
+
+    rejected = build_hierarchical_order_proposal(payload)
+
+    assert rejected.payload["pages"][0]["review_transitions"] == []
+    assert rejected.diagnostics[
+        "provider_native_adjacency_rescue_score_supported_count"
+    ] == 0
 
 
 def test_provider_hierarchy_keeps_nonlocal_native_relation_as_evidence(

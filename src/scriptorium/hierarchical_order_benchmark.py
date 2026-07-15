@@ -17,6 +17,7 @@ HIERARCHY_INPUT_SCHEMA = "scriptorium-hierarchical-order-benchmark-input/v1"
 HIERARCHY_LABEL_SCHEMA = "scriptorium-hierarchical-order-benchmark-labels/v1"
 HIERARCHY_BENCHMARK_SCHEMA = "scriptorium-hierarchical-order-benchmark-report/v1"
 RELATION_DIAGNOSTIC_COUNTERS = (
+    "fine_relation_candidate_edge_count",
     "relation_base_continuity_membership_count",
     "relation_base_boundary_text_membership_count",
     "fine_relation_selected_edge_count",
@@ -34,6 +35,14 @@ RELATION_DIAGNOSTIC_COUNTERS = (
     "provider_local_stream_discontinuity_count",
     "provider_local_stream_backward_discontinuity_count",
     "provider_local_stream_gap_discontinuity_count",
+    "provider_native_adjacency_rescue_considered_count",
+    "provider_native_adjacency_rescue_score_supported_count",
+    "provider_native_adjacency_rescue_geometry_supported_count",
+    "provider_native_adjacency_rescue_candidate_count",
+    "provider_native_adjacency_rescue_emitted_count",
+    "provider_native_adjacency_rescue_element_degree_suppressed_count",
+    "provider_native_adjacency_rescue_region_degree_suppressed_count",
+    "provider_native_adjacency_rescue_cycle_suppressed_count",
     "unassigned_fallback_stream_count",
     "unassigned_fallback_member_count",
     "unassigned_fallback_within_edge_count",
@@ -383,7 +392,7 @@ def benchmark_hierarchical_order_corpus(
         "corpus_manifest_sha256": _file_sha256(manifest_path),
         "sample_count": len(page_results),
         "prediction_policy": (
-            "hierarchical-review-only-provider-continuity-segments-v6"
+            "hierarchical-review-only-provider-adjacency-rescue-v7"
         ),
         "coarse_order_model": (
             "chunkr-pairwise-ranker"

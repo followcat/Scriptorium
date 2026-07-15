@@ -68,7 +68,7 @@ def test_materialized_hierarchy_corpus_is_answer_separated_and_scoreable(
         "fine-relation-graph-boundary"
     )
     assert result.report["prediction_policy"] == (
-        "hierarchical-review-only-provider-continuity-segments-v6"
+        "hierarchical-review-only-provider-adjacency-rescue-v7"
     )
     assert result.report["transition_representation"] == (
         "partial-dag-boundary-aligned-review-relations"

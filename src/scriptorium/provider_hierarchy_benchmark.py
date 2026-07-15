@@ -417,7 +417,7 @@ def benchmark_provider_hierarchy_corpus(
         "partition_filter": normalized_partition,
         "min_geometry_coverage": round(min_geometry_coverage, 8),
         "min_geometry_margin": round(min_geometry_margin, 8),
-        "prediction_policy": "provider-block-hierarchy-continuity-segments-v2",
+        "prediction_policy": "provider-block-hierarchy-adjacency-rescue-v3",
         "relation_metric_policy": (
             "segmentation-invariant union of local-stream and transition edges; "
             "partial-label endpoint-aware precision"

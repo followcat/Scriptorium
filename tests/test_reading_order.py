@@ -386,6 +386,22 @@ def test_relation_graph_order_evidence_returns_order_and_edges_from_one_result()
         page_width=612,
         page_height=792,
     )
+    candidate_scores = {
+        (item.source, item.target): item.score for item in evidence.candidate_edges
+    }
+    assert candidate_scores
+    assert set(
+        (item.source, item.target)
+        for item in evidence.selected_edge_diagnostics
+    ).issubset(candidate_scores)
+    assert max(
+        sum(item.source == source for item in evidence.candidate_edges)
+        for source in range(len(bboxes))
+    ) <= 6
+    assert evidence.candidate_edges[0].as_payload()["score"] == round(
+        evidence.candidate_edges[0].score,
+        8,
+    )
 
 
 def test_relation_graph_selected_edge_diagnostics_mark_geometry_ties_ambiguous() -> None:

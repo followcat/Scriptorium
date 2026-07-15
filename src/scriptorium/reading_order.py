@@ -193,6 +193,22 @@ class _RelationGraphEdge:
 
 
 @dataclass(frozen=True)
+class RelationGraphCandidateEdge:
+    """One scored edge retained in the sparse relation candidate graph."""
+
+    source: int
+    target: int
+    score: float
+
+    def as_payload(self) -> dict[str, float | int]:
+        return {
+            "source": self.source,
+            "target": self.target,
+            "score": round(self.score, 8),
+        }
+
+
+@dataclass(frozen=True)
 class RelationGraphEdgeDiagnostics:
     """Selection-time ambiguity data for one relation-graph successor edge.
 
@@ -258,6 +274,7 @@ class RelationGraphOrderEvidence:
 
     ordered_indices: tuple[int, ...]
     selected_edge_diagnostics: tuple[RelationGraphEdgeDiagnostics, ...]
+    candidate_edges: tuple[RelationGraphCandidateEdge, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -271,6 +288,7 @@ class _RelationGraphResult:
     ordered_indices: list[int]
     selected_edges: tuple[_RelationGraphEdge, ...]
     selected_edge_diagnostics: tuple[RelationGraphEdgeDiagnostics, ...] = ()
+    candidate_edges: tuple[_RelationGraphEdge, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -507,6 +525,10 @@ def infer_relation_graph_order_evidence(
     return RelationGraphOrderEvidence(
         ordered_indices=tuple(result.ordered_indices),
         selected_edge_diagnostics=result.selected_edge_diagnostics,
+        candidate_edges=tuple(
+            RelationGraphCandidateEdge(edge.source, edge.target, edge.score)
+            for edge in result.candidate_edges
+        ),
     )
 
 
@@ -623,6 +645,7 @@ def _infer_relation_graph_result(
         ordered_indices=ordered,
         selected_edges=tuple(selected_edges),
         selected_edge_diagnostics=tuple(selected_edge_diagnostics),
+        candidate_edges=tuple(edges),
     )
 
 
