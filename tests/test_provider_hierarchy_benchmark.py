@@ -19,6 +19,7 @@ from scriptorium.provider_hierarchy_benchmark import (
     PROVIDER_HIERARCHY_BENCHMARK_SCHEMA,
     PROVIDER_HIERARCHY_CORPUS_SCHEMA,
     PROVIDER_HIERARCHY_LABEL_SCHEMA,
+    _score_provider_hierarchy_page,
     benchmark_provider_hierarchy_corpus,
     materialize_provider_hierarchy_corpus,
 )
@@ -152,6 +153,7 @@ def test_provider_hierarchy_benchmark_scores_relations_after_provider_segmentati
         "unassigned": 0,
     }
     assert summary["segmentation_pairwise"]["f1"] == 1.0
+    assert summary["assigned_stream_segmentation_pairwise"]["f1"] == 1.0
     assert summary["provider_hierarchy_relation"]["f1"] == 1.0
     assert summary["truth_within_recovery"]["recall"] == 1.0
     assert summary["truth_cross_recovery"]["recall"] == 1.0
@@ -218,6 +220,70 @@ def test_provider_hierarchy_keeps_unlabelled_relation_pages_in_segmentation(
     assert result.report["summary"]["segmentation_pairwise"]["f1"] == 1.0
 
 
+def test_provider_stream_segmentation_excludes_unassigned_fallback() -> None:
+    prediction = {
+        "base_ordered_element_ids": ["one", "two", "three", "four"],
+        "memberships": [
+            {"element_id": "one", "region_id": "provider-region"},
+            {"element_id": "two", "region_id": "provider-region"},
+            {"element_id": "three", "region_id": None},
+            {"element_id": "four", "region_id": None},
+        ],
+        "pages": [
+            {
+                "reading_streams": [
+                    {
+                        "id": "provider-segment-1",
+                        "region_id": "provider-region",
+                        "members": ["one"],
+                        "successor_edges": [],
+                        "review_successor_edges": [],
+                    },
+                    {
+                        "id": "provider-segment-2",
+                        "region_id": "provider-region",
+                        "members": ["two"],
+                        "successor_edges": [],
+                        "review_successor_edges": [],
+                    },
+                    {
+                        "id": "unassigned-fallback",
+                        "region_id": None,
+                        "members": ["three", "four"],
+                        "successor_edges": [],
+                        "review_successor_edges": [],
+                    },
+                ],
+                "review_transitions": [],
+            }
+        ],
+    }
+    labels = {
+        "memberships": [
+            {"element_id": "one", "oracle_region_id": "oracle-a"},
+            {"element_id": "two", "oracle_region_id": "oracle-a"},
+            {"element_id": "three", "oracle_region_id": "oracle-b"},
+            {"element_id": "four", "oracle_region_id": "oracle-b"},
+        ],
+        "successor_edges": [],
+    }
+
+    _counts, metrics = _score_provider_hierarchy_page(prediction, labels)
+
+    assert metrics["segmentation_pairwise"]["correct"] == 1
+    assert metrics["assigned_stream_segmentation_pairwise"] == {
+        "correct": 0,
+        "predicted": 0,
+        "labels": 2,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "scorable": 0,
+        "unscored": 0,
+        "scorable_fraction": 0.0,
+    }
+
+
 def test_provider_hierarchy_cli_commands(tmp_path: Path) -> None:
     source = _write_source_hierarchy_corpus(tmp_path / "source")
     providers = _write_provider_corpus(tmp_path / "provider")
@@ -250,6 +316,7 @@ def test_provider_hierarchy_cli_commands(tmp_path: Path) -> None:
     assert "Provider hierarchy relation (precision/recall/F1): 1.0/1.0/1.0" in (
         benchmarked.output
     )
+    assert "Assigned-stream segmentation pair F1: 1.0" in benchmarked.output
 
 
 def _write_source_hierarchy_corpus(root: Path, *, sample_count: int = 1) -> Path:

@@ -423,6 +423,10 @@ def benchmark_provider_hierarchy_corpus(
             "partial-label endpoint-aware precision"
         ),
         "segmentation_metric_policy": "oracle co-membership pair F1",
+        "assigned_stream_segmentation_metric_policy": (
+            "oracle co-membership pair F1 over provider-region reading streams; "
+            "unassigned fallback streams excluded"
+        ),
         "external_relation_model_sha256": (
             relation_manifest.get("model_sha256")
             if relation_manifest is not None
@@ -708,6 +712,14 @@ def _score_provider_hierarchy_page(
             if element_id in truth_membership
         }
     )
+    predicted_stream_membership = {
+        str(element_id): str(stream.get("id") or "")
+        for stream in page.get("reading_streams", [])
+        if isinstance(stream, Mapping) and stream.get("region_id") is not None
+        for element_id in stream.get("members", [])
+        if str(element_id) in truth_membership
+    }
+    predicted_stream_pairs = _co_membership_pairs(predicted_stream_membership)
     counts = {
         "provider_hierarchy_relation": _partial_edge_counts(
             predicted_all,
@@ -733,6 +745,11 @@ def _score_provider_hierarchy_page(
         "segmentation_pairwise": Counter(
             correct=len(predicted_pairs & truth_pairs),
             predicted=len(predicted_pairs),
+            labels=len(truth_pairs),
+        ),
+        "assigned_stream_segmentation_pairwise": Counter(
+            correct=len(predicted_stream_pairs & truth_pairs),
+            predicted=len(predicted_stream_pairs),
             labels=len(truth_pairs),
         ),
         "assignment_coverage": Counter(
@@ -784,6 +801,7 @@ def _empty_totals() -> dict[str, Counter[str]]:
             "truth_within_recovery",
             "truth_cross_recovery",
             "segmentation_pairwise",
+            "assigned_stream_segmentation_pairwise",
             "assignment_coverage",
         )
     }

@@ -819,12 +819,19 @@ def benchmark_provider_hierarchy_command(
         raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
     relation = result.report["summary"]["provider_hierarchy_relation"]
     segmentation = result.report["summary"]["segmentation_pairwise"]
+    stream_segmentation = result.report["summary"][
+        "assigned_stream_segmentation_pairwise"
+    ]
     assignment = result.report["summary"]["assignment_coverage"]
     typer.echo(
         "Provider hierarchy relation (precision/recall/F1): "
         f"{relation['precision']}/{relation['recall']}/{relation['f1']}"
     )
     typer.echo(f"Segmentation pair F1: {segmentation['f1']}")
+    typer.echo(
+        "Assigned-stream segmentation pair F1: "
+        f"{stream_segmentation['f1']}"
+    )
     typer.echo(f"Assignment coverage: {assignment['coverage']}")
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
