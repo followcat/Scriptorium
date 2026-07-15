@@ -1720,3 +1720,22 @@ otherwise ordinary pages did not terminate. Sampling isolated the loop, and
 cycles are now normalized to their deterministic visual-minimum root. The slow
 page completes in `2.48s`; the full 403-test suite passes, and all prior
 50/14/32-page benchmark values remain bit-for-bit unchanged.
+
+A strict safe-merge ranker was reevaluated after expansion. Candidates are
+adjacent text-region pairs generated before labels open. Features contain only
+region member counts/order spans, local boundary geometry, text-continuation
+flags, and relation-graph scores. A positive label requires both provider
+regions to be individually pure and their complete member union to belong to
+one oracle region. Five-fold fit OOF keeps whole documents together:
+
+| Strict safe-merge split | Candidates / positives | ROC AUC | Average precision |
+|---|---:|---:|---:|
+| 102-page fit, document OOF | 1420 / 282 | 0.86211189 | 0.58226815 |
+| 26-page calibration replay | 235 / 38 | 0.78760353 | 0.49479894 |
+| 32-page independent-test replay | 483 / 68 | 0.88807583 | 0.61506653 |
+
+No fit-only threshold reaches precision `>= 0.98` with at least 20 candidates.
+The best eligible-size fit bucket is only `19/25 = 0.76`; even a 50-candidate
+minimum peaks at `77/103 = 0.74757282`. The ranker is rejected and no provider
+region is merged. Edge-level successor correctness must not be interpreted as
+cluster-level merge safety.

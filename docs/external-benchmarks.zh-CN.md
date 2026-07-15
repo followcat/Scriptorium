@@ -1526,3 +1526,19 @@ grouping 仍未解决：assigned stream 在扩大 fit/calibration 上只比 prov
 可能在 spatial-graph predecessor 中成环；旧 root traversal 没有 cycle guard，导致两个普通规模
 页面无法结束。采样定位循环后，现在会把 cycle 归一到确定性的视觉最小根。原慢页面在
 `2.48s` 内完成；完整 `403 passed`，既有 50/14/32 页 benchmark 值逐位不变。
+
+扩充后还重新评估了严格 safe-merge ranker。Candidate 是打开 label 前生成的相邻 text-region
+pair；feature 只包含 region member 数量/order span、局部 boundary geometry、文本 continuation
+标记和 relation-graph score。正例要求两个 provider region 各自纯净，并且完整 member union
+属于同一个 oracle region。五折 fit OOF 以整篇文档为分组：
+
+| Strict safe-merge split | Candidates / positives | ROC AUC | Average precision |
+|---|---:|---:|---:|
+| 102 页 fit，document OOF | 1420 / 282 | 0.86211189 | 0.58226815 |
+| 26 页 calibration replay | 235 / 38 | 0.78760353 | 0.49479894 |
+| 32 页独立 test replay | 483 / 68 | 0.88807583 | 0.61506653 |
+
+Fit-only 阈值中，没有一个能同时达到 precision `>= 0.98` 且至少选择 20 个 candidate。满足
+数量要求的最佳 fit bucket 也只有 `19/25 = 0.76`；即使最少 50 个候选，最高也只有
+`77/103 = 0.74757282`。因此该 ranker 被否决，不合并任何 provider region。Edge-level
+successor correctness 不能被解释为 cluster-level merge safety。

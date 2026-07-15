@@ -816,6 +816,13 @@ alignment 失败而被替换。平行 oracle-region control 的 membership cover
 暴露 `predecessor-cycle-normalized`；后续放弃 spatial graph 的路径也能安全终止。合成 regression
 fixture 覆盖了此前的循环。
 
+扩大后的 strict safe-merge 实验只有在两个 provider region 各自纯净、且完整 union 只有一个
+oracle membership 时才标正例。Answer-free member span、boundary geometry、continuation 和
+relation score feature 的 document-OOF fit AUC 为 `0.86211189`，calibration AUC 为
+`0.78760353`，独立 test AUC 为 `0.88807583`。Fit 上没有阈值能在至少 20 个 candidate 时达到
+precision `>= 0.98`，最佳 bucket 也只有 `19/25`。该 estimator 不会序列化，也不会被 runtime
+代码加载。
+
 生成目录明确隔离数据边界：
 
 - `images/` 是 provider 唯一输入。

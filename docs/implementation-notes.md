@@ -1317,6 +1317,14 @@ canonical root. Successful spatial-graph assignments expose
 `predecessor-cycle-normalized`; paths that later decline spatial graph still
 terminate safely. A synthetic regression fixture covers the former loop.
 
+The expanded strict safe-merge experiment labels a region pair positive only
+when both provider regions are pure and their complete union has one oracle
+membership. Answer-free member-span, boundary-geometry, continuation, and
+relation-score features reach document-OOF fit AUC `0.86211189`, calibration
+AUC `0.78760353`, and independent-test AUC `0.88807583`. No fit threshold has
+precision `>= 0.98` over at least 20 candidates; the best such bucket is only
+`19/25`. The estimator is not serialized or loaded by runtime code.
+
 The generated directories enforce the data boundary:
 
 - `images/` is the only provider input.
