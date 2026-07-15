@@ -34,7 +34,7 @@ from .relation_order import (
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v4"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v5"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
 DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
@@ -48,6 +48,7 @@ TEXT_PARENT_PAGE_GAP_RATIO = 0.015
 MAX_HIERARCHY_ELEMENTS = 512
 MAX_HIERARCHY_REGIONS = 128
 EXTERNAL_RELATION_REPLACEMENT_MARGIN = 0.1
+UNASSIGNED_FALLBACK_CONFIDENCE = 0.5
 
 
 @dataclass(frozen=True)
@@ -267,6 +268,11 @@ def build_hierarchical_order_proposal(
         members_by_region=members_by_region,
         membership_by_element=membership_by_element,
     )
+    unassigned_ids = tuple(
+        element_id
+        for element_id in base_ids
+        if membership_by_element[element_id].region_id is None
+    )
     nonempty_region_ids = tuple(
         region_id for region_id in coarse_ids if members_by_region[region_id]
     )
@@ -359,11 +365,7 @@ def build_hierarchical_order_proposal(
             if transitions_enabled
             else []
         )
-    unassigned_ids = tuple(
-        element_id
-        for element_id in base_ids
-        if membership_by_element[element_id].region_id is None
-    )
+    relation_cross_transition_count = len(cross_transitions)
     complete_cross_region_chain = _is_complete_cross_region_chain(
         coarse_ids,
         members_by_region=members_by_region,
@@ -376,6 +378,24 @@ def build_hierarchical_order_proposal(
         streams=streams,
         cross_transitions=cross_transitions,
         enabled=candidate_expansion_enabled,
+    )
+    (
+        fallback_streams,
+        fallback_transitions,
+        fallback_diagnostics,
+    ) = _unassigned_fallback_relations(
+        base_ids,
+        membership_by_element=membership_by_element,
+        region_streams=streams,
+        cross_transitions=cross_transitions,
+    )
+    streams.extend(fallback_streams)
+    cross_transitions.extend(fallback_transitions)
+    potential_cross_transition_count += int(
+        fallback_diagnostics["unassigned_fallback_transition_candidate_count"]
+    )
+    eligible_cross_transition_count += int(
+        fallback_diagnostics["unassigned_fallback_transition_emitted_count"]
     )
     assigned_subsequence = tuple(
         member_id
@@ -463,7 +483,7 @@ def build_hierarchical_order_proposal(
         "candidate_expansion_suppressed_missing_cross_region_evidence": bool(
             transition_relation_evidence is not None
             and len(nonempty_region_ids) > 1
-            and not cross_transitions
+            and relation_cross_transition_count == 0
         ),
         "element_granularity": element_granularity,
         "region_granularity": region_granularity,
@@ -472,6 +492,7 @@ def build_hierarchical_order_proposal(
         "min_geometry_margin": round(min_geometry_margin, 8),
         "min_text_parent_score": DEFAULT_MIN_TEXT_PARENT_SCORE,
         "min_text_parent_margin": DEFAULT_MIN_TEXT_PARENT_MARGIN,
+        **fallback_diagnostics,
         **relation_diagnostics,
         **coarse_diagnostics,
     }
@@ -487,6 +508,7 @@ def build_hierarchical_order_proposal(
         for coarse_order_index, region_id in enumerate(coarse_ids)
     ]
     stream_type_counts = Counter(str(stream["type"]) for stream in streams)
+    fallback_stream_count = len(fallback_streams)
     sidecar_summary = {
         "page_count": 1,
         "stream_count": len(streams),
@@ -498,7 +520,12 @@ def build_hierarchical_order_proposal(
         "review_block_transition_count": len(cross_transitions),
         "stream_type_counts": dict(sorted(stream_type_counts.items())),
         "stream_origin_counts": {
-            "hierarchical-region-membership": len(streams),
+            "hierarchical-region-membership": len(streams) - fallback_stream_count,
+            **(
+                {"unassigned-base-order-fallback": fallback_stream_count}
+                if fallback_stream_count
+                else {}
+            ),
         },
     }
     reading_order_tree = {
@@ -526,8 +553,9 @@ def build_hierarchical_order_proposal(
             for region_id in sidecar_region_ids
         ],
         "unassigned": {
-            "type": "unordered-group",
+            "type": "ordered-segments" if fallback_streams else "unordered-group",
             "members": list(unassigned_ids),
+            "stream_ids": [stream["id"] for stream in fallback_streams],
         },
     }
     document_records = [
@@ -1430,6 +1458,178 @@ def _region_streams(
             }
         )
     return streams
+
+
+def _unassigned_fallback_relations(
+    base_ids: Sequence[str],
+    *,
+    membership_by_element: Mapping[str, _Membership],
+    region_streams: Sequence[Mapping[str, Any]],
+    cross_transitions: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+    """Preserve native adjacency only where provider membership is absent."""
+
+    unassigned = {
+        element_id
+        for element_id in base_ids
+        if membership_by_element[element_id].region_id is None
+    }
+    if not unassigned:
+        return [], [], {
+            "unassigned_fallback_stream_count": 0,
+            "unassigned_fallback_member_count": 0,
+            "unassigned_fallback_within_edge_count": 0,
+            "unassigned_fallback_transition_candidate_count": 0,
+            "unassigned_fallback_transition_emitted_count": 0,
+            "unassigned_fallback_transition_degree_suppressed_count": 0,
+            "unassigned_fallback_transition_cycle_suppressed_count": 0,
+        }
+
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for element_id in base_ids:
+        if element_id in unassigned:
+            current.append(element_id)
+        elif current:
+            segments.append(current)
+            current = []
+    if current:
+        segments.append(current)
+
+    fallback_streams: list[dict[str, Any]] = []
+    stream_by_element: dict[str, str] = {}
+    region_by_element = {
+        element_id: membership.region_id
+        for element_id, membership in membership_by_element.items()
+    }
+    for stream in region_streams:
+        stream_id = str(stream.get("id") or "")
+        for element_id in stream.get("members", []):
+            stream_by_element[str(element_id)] = stream_id
+    for index, segment in enumerate(segments, start=1):
+        stream_id = f"hierarchy-unassigned-{index:03d}"
+        stream_by_element.update((element_id, stream_id) for element_id in segment)
+        fallback_streams.append(
+            {
+                "id": stream_id,
+                "type": "unassigned-fallback",
+                "region_id": None,
+                "order_policy": "preserve-selected-auto-relative-order",
+                "members": list(segment),
+                "successor_edges": [],
+                "review_successor_edges": [
+                    {
+                        "source": source,
+                        "target": target,
+                        "confidence": UNASSIGNED_FALLBACK_CONFIDENCE,
+                        "review_required": True,
+                        "evidence": [
+                            "unassigned-membership",
+                            "selected-auto-adjacency",
+                        ],
+                        "provenance": {
+                            "kind": "hierarchical-unassigned-fallback-successor-v1",
+                            "provider": HIERARCHICAL_ORDER_PROVIDER,
+                            "stream_id": stream_id,
+                        },
+                    }
+                    for source, target in zip(segment, segment[1:], strict=False)
+                ],
+                "proposal": {
+                    "origin": "unassigned-base-order-fallback",
+                    "confidence": UNASSIGNED_FALLBACK_CONFIDENCE,
+                    "evidence": [
+                        "membership-abstention",
+                        "preserve-selected-auto-relative-order",
+                    ],
+                },
+            }
+        )
+
+    existing_edges = {
+        (str(edge.get("source") or ""), str(edge.get("target") or ""))
+        for stream in (*region_streams, *fallback_streams)
+        for key in ("successor_edges", "review_successor_edges")
+        for edge in stream.get(key, [])
+        if isinstance(edge, Mapping)
+    }
+    existing_edges.update(
+        (str(edge.get("source") or ""), str(edge.get("target") or ""))
+        for edge in cross_transitions
+        if isinstance(edge, Mapping)
+    )
+    successor = {source: target for source, target in existing_edges}
+    predecessor = {target: source for source, target in existing_edges}
+    candidate_count = 0
+    degree_suppressed = 0
+    cycle_suppressed = 0
+    fallback_transitions: list[dict[str, Any]] = []
+    for source, target in zip(base_ids, base_ids[1:], strict=False):
+        if source not in unassigned and target not in unassigned:
+            continue
+        if (source, target) in existing_edges:
+            continue
+        if stream_by_element[source] == stream_by_element[target]:
+            continue
+        candidate_count += 1
+        if source in successor or target in predecessor:
+            degree_suppressed += 1
+            continue
+        if _element_successor_would_cycle(source, target, successor):
+            cycle_suppressed += 1
+            continue
+        successor[source] = target
+        predecessor[target] = source
+        fallback_transitions.append(
+            {
+                "source_region_id": region_by_element[source],
+                "target_region_id": region_by_element[target],
+                "source": source,
+                "target": target,
+                "source_stream_id": stream_by_element[source],
+                "target_stream_id": stream_by_element[target],
+                "reason": "unassigned-base-order-fallback",
+                "boundary_aligned": True,
+                "confidence": UNASSIGNED_FALLBACK_CONFIDENCE,
+                "review_required": True,
+                "evidence": [
+                    "membership-abstention-boundary",
+                    "selected-auto-adjacency",
+                    "degree-one-acyclic-fallback",
+                ],
+                "provenance": {
+                    "kind": "hierarchical-unassigned-fallback-transition-v1",
+                    "provider": HIERARCHICAL_ORDER_PROVIDER,
+                    "transition_policy": "unassigned-base-order-fallback-review-only",
+                },
+            }
+        )
+    return fallback_streams, fallback_transitions, {
+        "unassigned_fallback_stream_count": len(fallback_streams),
+        "unassigned_fallback_member_count": len(unassigned),
+        "unassigned_fallback_within_edge_count": sum(
+            len(stream["review_successor_edges"]) for stream in fallback_streams
+        ),
+        "unassigned_fallback_transition_candidate_count": candidate_count,
+        "unassigned_fallback_transition_emitted_count": len(fallback_transitions),
+        "unassigned_fallback_transition_degree_suppressed_count": degree_suppressed,
+        "unassigned_fallback_transition_cycle_suppressed_count": cycle_suppressed,
+    }
+
+
+def _element_successor_would_cycle(
+    source: str,
+    target: str,
+    successor: Mapping[str, str],
+) -> bool:
+    cursor = target
+    visited: set[str] = set()
+    while cursor in successor and cursor not in visited:
+        if cursor == source:
+            return True
+        visited.add(cursor)
+        cursor = successor[cursor]
+    return cursor == source
 
 
 def _relation_graph_cross_region_transitions(

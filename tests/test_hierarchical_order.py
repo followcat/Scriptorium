@@ -37,7 +37,12 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
         == result.payload["base_ordered_element_ids"]
     )
     assert result.diagnostics["fine_relation_cross_region_edge_count"] == 0
-    assert result.payload["pages"][0]["review_transitions"] == []
+    assert [
+        (edge["source"], edge["target"], edge["reason"])
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == [("right-bottom", "footer", "unassigned-base-order-fallback")]
+    assert result.diagnostics["unassigned_fallback_stream_count"] == 1
+    assert result.diagnostics["unassigned_fallback_transition_emitted_count"] == 1
     assert (
         result.diagnostics[
             "candidate_expansion_suppressed_missing_cross_region_evidence"
@@ -46,15 +51,18 @@ def test_hierarchy_groups_lines_without_using_member_list_order() -> None:
     )
     assert is_unaccepted_reading_order_sidecar(result.payload) is True
     assert reading_order_sidecar_summary(result.payload) == {
-        "stream_count": 2,
-        "member_count": 4,
+        "stream_count": 3,
+        "member_count": 5,
         "successor_edge_count": 0,
         "review_successor_edge_count": 2,
-        "review_transition_count": 0,
+        "review_transition_count": 1,
         "strict_block_transition_count": 0,
-        "review_block_transition_count": 0,
-        "stream_type_counts": {"body": 2},
-        "stream_origin_counts": {"hierarchical-region-membership": 2},
+        "review_block_transition_count": 1,
+        "stream_type_counts": {"body": 2, "unassigned-fallback": 1},
+        "stream_origin_counts": {
+            "hierarchical-region-membership": 2,
+            "unassigned-base-order-fallback": 1,
+        },
     }
     streams = {
         stream["region_id"]: stream
@@ -264,7 +272,10 @@ def test_hierarchy_does_not_fill_empty_region_slot_from_semantics_alone() -> Non
         ],
     )
 
-    assert result.payload["pages"][0]["review_transitions"] == []
+    assert [
+        edge["reason"]
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == ["unassigned-base-order-fallback"]
     evidence = result.payload["pages"][0]["cross_region_relation_evidence"]
     external = [
         edge for edge in evidence if edge["relation_source"] == "semantic-successor-ranker"
@@ -504,12 +515,16 @@ def test_hierarchy_suppresses_ood_model_transitions(monkeypatch) -> None:
         "region-right",
         "region-left",
     ]
-    assert result.payload["pages"][0]["review_transitions"] == []
+    assert [
+        edge["reason"]
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == ["unassigned-base-order-fallback"]
     assert (
         result.payload["candidate_ordered_element_ids"]
         == result.payload["base_ordered_element_ids"]
     )
-    assert result.diagnostics["emitted_cross_region_transition_count"] == 0
+    assert result.diagnostics["emitted_cross_region_transition_count"] == 1
+    assert result.diagnostics["unassigned_fallback_transition_emitted_count"] == 1
     assert result.diagnostics["suppressed_cross_region_transition_count"] == 1
     assert result.diagnostics["promotion_decision"] == (
         "reject-cross-region-transitions-page-profile-ood"
@@ -550,7 +565,26 @@ def test_hierarchy_keeps_ambiguous_geometry_unassigned() -> None:
             "reason": "ambiguous-region-overlap",
         }
     ]
-    assert result.payload["pages"][0]["reading_streams"] == []
+    assert result.payload["pages"][0]["reading_streams"] == [
+        {
+            "id": "hierarchy-unassigned-001",
+            "type": "unassigned-fallback",
+            "region_id": None,
+            "order_policy": "preserve-selected-auto-relative-order",
+            "members": ["line"],
+            "successor_edges": [],
+            "review_successor_edges": [],
+            "proposal": {
+                "origin": "unassigned-base-order-fallback",
+                "confidence": 0.5,
+                "evidence": [
+                    "membership-abstention",
+                    "preserve-selected-auto-relative-order",
+                ],
+            },
+        }
+    ]
+    assert result.diagnostics["unassigned_fallback_stream_count"] == 1
     assert result.diagnostics["ambiguous_element_count"] == 1
 
 
@@ -903,9 +937,12 @@ def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None
         chunkr_model="unused-test-model.joblib",
     )
 
-    assert result.payload["pages"][0]["review_transitions"] == []
-    assert result.diagnostics["potential_cross_region_transition_count"] == 2
-    assert result.diagnostics["eligible_cross_region_transition_count"] == 0
+    assert [
+        edge["reason"]
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == ["unassigned-base-order-fallback"]
+    assert result.diagnostics["potential_cross_region_transition_count"] == 3
+    assert result.diagnostics["eligible_cross_region_transition_count"] == 1
     assert result.diagnostics["empty_region_boundary_count"] == 2
     assert result.diagnostics["suppressed_cross_region_transition_count"] == 2
     assert result.diagnostics[
@@ -965,8 +1002,15 @@ def test_hierarchy_does_not_jump_across_unassigned_line(monkeypatch) -> None:
         chunkr_model="unused-test-model.joblib",
     )
 
-    assert result.payload["pages"][0]["review_transitions"] == []
-    assert result.diagnostics["eligible_cross_region_transition_count"] == 0
+    assert [
+        (edge["source"], edge["target"], edge["reason"])
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == [
+        ("top", "gap", "unassigned-base-order-fallback"),
+        ("gap", "bottom", "unassigned-base-order-fallback"),
+    ]
+    assert result.payload["pages"][0]["reading_streams"][-1]["members"] == ["gap"]
+    assert result.diagnostics["eligible_cross_region_transition_count"] == 2
     assert result.diagnostics["empty_region_boundary_count"] == 0
     assert result.diagnostics["unassigned_gap_boundary_count"] == 1
     assert result.diagnostics["suppressed_cross_region_transition_count"] == 1
@@ -975,6 +1019,82 @@ def test_hierarchy_does_not_jump_across_unassigned_line(monkeypatch) -> None:
         "gap",
         "bottom",
     ]
+
+
+def test_hierarchy_unassigned_fallback_preserves_existing_relation_degree(
+    monkeypatch,
+) -> None:
+    payload = {
+        "id": "unassigned-degree-conflict",
+        "width": 100,
+        "height": 120,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "one", "box": [10, 10, 90, 20], "role": "Text"},
+            {"id": "gap", "box": [10, 50, 90, 60], "role": "Formula"},
+            {"id": "two", "box": [10, 90, 90, 100], "role": "Text"},
+        ],
+        "regions": [
+            {
+                "id": "region-one",
+                "box": [5, 5, 95, 25],
+                "role": "Text",
+                "member_ids": ["one"],
+            },
+            {
+                "id": "region-two",
+                "box": [5, 85, 95, 105],
+                "role": "Text",
+                "member_ids": ["two"],
+            },
+        ],
+    }
+    stable_elements = hierarchical_order._nodes_from_payload(
+        payload["elements"],
+        kind="element",
+        width=100,
+        height=120,
+        maximum=hierarchical_order.MAX_HIERARCHY_ELEMENTS,
+    )
+    index_by_id = {
+        element.id: index for index, element in enumerate(stable_elements)
+    }
+    diagnostic = RelationGraphEdgeDiagnostics(
+        source=index_by_id["one"],
+        target=index_by_id["two"],
+        score=0.95,
+        source_candidate_count=1,
+        target_candidate_count=1,
+        source_alternative_score=None,
+        target_alternative_score=None,
+        source_margin=None,
+        target_margin=None,
+        source_regret=0.95,
+        target_regret=0.95,
+        selection_regret=1.9,
+        selection_step=0,
+    )
+    monkeypatch.setattr(
+        hierarchical_order,
+        "infer_relation_graph_order_evidence",
+        lambda *_args: RelationGraphOrderEvidence(
+            tuple(range(len(stable_elements))),
+            (diagnostic,),
+        ),
+    )
+
+    result = build_hierarchical_order_proposal(payload)
+
+    assert [
+        (edge["source"], edge["target"], edge["reason"])
+        for edge in result.payload["pages"][0]["review_transitions"]
+    ] == [("one", "two", "fine-relation-graph-stream-boundary")]
+    assert result.diagnostics["unassigned_fallback_transition_candidate_count"] == 2
+    assert result.diagnostics[
+        "unassigned_fallback_transition_degree_suppressed_count"
+    ] == 2
+    assert result.diagnostics["unassigned_fallback_transition_emitted_count"] == 0
 
 
 def test_hierarchy_does_not_expand_partial_cross_region_chain() -> None:

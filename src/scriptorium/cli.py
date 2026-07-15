@@ -66,6 +66,10 @@ from .provider_anchor_benchmark import (
     freeze_provider_transition_gate,
     freeze_stratified_provider_transition_gate,
 )
+from .provider_hierarchy_benchmark import (
+    benchmark_provider_hierarchy_corpus,
+    materialize_provider_hierarchy_corpus,
+)
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
 from .reading_order_sidecar import (
     build_provider_consensus_sidecar,
@@ -670,6 +674,158 @@ def benchmark_hierarchical_order_corpus_command(
         "Region transition (precision/recall/F1): "
         f"{cross['precision']}/{cross['recall']}/{cross['f1']}"
     )
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
+
+
+@app.command("materialize-provider-hierarchy")
+def materialize_provider_hierarchy_command(
+    source_hierarchy_corpus: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Answer-separated hierarchy corpus supplying fine lines and labels.",
+    ),
+    provider_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Directory containing one provider structure JSON per sample.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/provider-hierarchy-corpus"),
+        "--output",
+        "-o",
+    ),
+    provider_manifest: Optional[Path] = typer.Option(
+        None,
+        "--provider-manifest",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional provider run manifest; Paddle layout runs are auto-detected.",
+    ),
+) -> None:
+    """Replace oracle coarse regions with answer-free provider blocks."""
+
+    try:
+        result = materialize_provider_hierarchy_corpus(
+            source_hierarchy_corpus,
+            provider_dir,
+            output,
+            provider_manifest=provider_manifest,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint="source_hierarchy_corpus",
+        ) from exc
+    typer.echo(f"Provider hierarchy samples: {result.manifest['sample_count']}")
+    typer.echo(f"Provider: {result.manifest['provider']}")
+    typer.echo(f"Partitions: {result.manifest['partition_counts']}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
+@app.command("benchmark-provider-hierarchy")
+def benchmark_provider_hierarchy_command(
+    corpus_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+    ),
+    output: Path = typer.Option(
+        Path("outputs/provider-hierarchy-benchmark.json"),
+        "--output",
+        "-o",
+    ),
+    proposals_dir: Path | None = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Optional directory for per-page review-only proposals.",
+    ),
+    relation_model: Path | None = typer.Option(
+        None,
+        "--relation-model",
+        exists=True,
+        readable=True,
+        help="Optional fine successor ranker used only as review evidence.",
+    ),
+    semantic_scorer: Optional[str] = typer.Option(
+        None,
+        "--semantic-scorer",
+        help=f"Semantic scorer required by semantic relation models ({BERT_TINY_NSP_PRESET}).",
+    ),
+    semantic_model_path: Optional[Path] = typer.Option(
+        None,
+        "--semantic-model-path",
+        exists=True,
+        readable=True,
+    ),
+    semantic_cache: Path = typer.Option(
+        Path("outputs/cache/semantic-successor.sqlite3"),
+        "--semantic-cache",
+    ),
+    semantic_batch_size: int = typer.Option(
+        256,
+        "--semantic-batch-size",
+        min=1,
+    ),
+    semantic_device: str = typer.Option("cpu", "--semantic-device"),
+    partition: Optional[str] = typer.Option(
+        None,
+        "--partition",
+        help="Optional corpus partition to predict and score in isolation.",
+    ),
+    min_geometry_coverage: float = typer.Option(
+        0.1,
+        "--min-geometry-coverage",
+        min=0.01,
+        max=1.0,
+        help="Minimum fine-line coverage by a provider detector block.",
+    ),
+    min_geometry_margin: float = typer.Option(
+        0.1,
+        "--min-geometry-margin",
+        min=0.0,
+        max=1.0,
+        help="Minimum coverage margin over the next provider block.",
+    ),
+) -> None:
+    """Score line successors after provider block segmentation."""
+
+    try:
+        scorer = _semantic_scorer_from_options(
+            semantic_scorer,
+            model_path=semantic_model_path,
+            cache_path=semantic_cache,
+            batch_size=semantic_batch_size,
+            device=semantic_device,
+        )
+        result = benchmark_provider_hierarchy_corpus(
+            corpus_dir,
+            output=output,
+            proposals_dir=proposals_dir,
+            relation_model_path=relation_model,
+            semantic_scorer=scorer,
+            partition=partition,
+            min_geometry_coverage=min_geometry_coverage,
+            min_geometry_margin=min_geometry_margin,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="corpus_dir") from exc
+    relation = result.report["summary"]["provider_hierarchy_relation"]
+    segmentation = result.report["summary"]["segmentation_pairwise"]
+    assignment = result.report["summary"]["assignment_coverage"]
+    typer.echo(
+        "Provider hierarchy relation (precision/recall/F1): "
+        f"{relation['precision']}/{relation['recall']}/{relation['f1']}"
+    )
+    typer.echo(f"Segmentation pair F1: {segmentation['f1']}")
+    typer.echo(f"Assignment coverage: {assignment['coverage']}")
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
     typer.echo(f"Proposals: {result.proposals_dir}")

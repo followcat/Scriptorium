@@ -29,6 +29,13 @@ RELATION_DIAGNOSTIC_COUNTERS = (
     "fine_relation_object_branch_suppressed_count",
     "fine_relation_table_source_suppressed_count",
     "fine_relation_figure_target_suppressed_count",
+    "unassigned_fallback_stream_count",
+    "unassigned_fallback_member_count",
+    "unassigned_fallback_within_edge_count",
+    "unassigned_fallback_transition_candidate_count",
+    "unassigned_fallback_transition_emitted_count",
+    "unassigned_fallback_transition_degree_suppressed_count",
+    "unassigned_fallback_transition_cycle_suppressed_count",
     "external_relation_input_edge_count",
     "external_relation_path_selected_edge_count",
     "external_relation_novel_selected_edge_count",
@@ -371,7 +378,7 @@ def benchmark_hierarchical_order_corpus(
         "corpus_manifest_sha256": _file_sha256(manifest_path),
         "sample_count": len(page_results),
         "prediction_policy": (
-            "hierarchical-review-only-relation-dag-with-object-branches-v4"
+            "hierarchical-review-only-relation-dag-with-unassigned-fallback-v5"
         ),
         "coarse_order_model": (
             "chunkr-pairwise-ranker"
