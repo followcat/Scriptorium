@@ -1718,7 +1718,7 @@ overlapping boxes on pages with a larger median line height could form a cycle
 in spatial-graph predecessor links; root traversal had no cycle guard and two
 otherwise ordinary pages did not terminate. Sampling isolated the loop, and
 cycles are now normalized to their deterministic visual-minimum root. The slow
-page completes in `2.48s`; the full 403-test suite passes, and all prior
+page completes in `2.48s`; the current full 408-test suite passes, and all prior
 50/14/32-page benchmark values remain bit-for-bit unchanged.
 
 A strict safe-merge ranker was reevaluated after expansion. Candidates are
@@ -1739,3 +1739,53 @@ The best eligible-size fit bucket is only `19/25 = 0.76`; even a 50-candidate
 minimum peaks at `77/103 = 0.74757282`. The ranker is rejected and no provider
 region is merged. Edge-level successor correctness must not be interpreted as
 cluster-level merge safety.
+
+### Source-Neutral Fine-Line Paragraph Graph
+
+The rejected region merge is replaced by a source-neutral experiment over fine
+elements. It ignores provider rectangles and constructs sparse candidate pairs
+from selected-order adjacency, relation-graph candidates, and three local
+forward geometry neighbours. The 23 answer-free features cover normalized pair
+geometry, overlap, line dimensions, page position, text length and continuation
+signals, selected adjacency, and relation-graph scores. Equivalent element
+arrays are first canonicalized by geometry and stable id; reversing every input
+array across all 160 pages changes zero candidate records.
+
+```bash
+scriptorium benchmark-paragraph-graph \
+  /path/to/comphrdoc-provider-train-128 \
+  --test-corpus /path/to/comphrdoc-provider-test-32 \
+  --output outputs/paragraph-graph-report.json \
+  --proposals-dir outputs/paragraph-graph-proposals
+```
+
+Five-fold OOF training keeps whole fit documents together. Only fit OOF labels
+select the operating point: at least 100 edges, edge precision `>= 0.97`, then
+maximum complete co-membership pair F1. The resulting threshold `0.94971959` is
+frozen before calibration or independent-test labels are opened. All inputs are
+loaded before fit labels, evaluation predictions and proposals are written
+before evaluation labels, corpus paths are confined and hash-checked, and
+sample ids must be globally unique.
+
+| Partition | Provider-region pair F1 | Assigned-stream pair F1 | Fine-line graph pair F1 | Delta vs assigned | Selected-edge precision |
+|---|---:|---:|---:|---:|---:|
+| 102-page fit, document OOF | 0.71930643 | 0.71988356 | 0.81549627 | +0.09561271 | 0.99202393 |
+| 26-page calibration | 0.62020524 | 0.62210668 | 0.83054081 | +0.20843413 | 0.99642147 |
+| 32-page independent test | 0.80643143 | 0.80042627 | 0.85162046 | +0.05119419 | 0.99548736 |
+
+The independent result also exceeds provider-region grouping by `+0.04518903`.
+Within that test, graphical-multicolumn pages score `0.86536272` and
+multicolumn pages score `0.83935335`. The one graphical-only page contains two
+non-text objects and zero labelled text pairs, so the report marks it as
+unscorable rather than treating its zero-valued metric as evidence of failure.
+
+Each proposal contains thresholded candidate edges and review-required local
+paragraph streams, never oracle membership. It remains
+`runtime_reorder: false`: the current head predicts paragraph co-membership but
+not paragraph-to-paragraph successors, and the held-out corpus is still an
+English scientific-paper family. The next experiment needs a separate
+successor head with degree/cycle constraints and cross-domain annual-report,
+portal, Chinese-document, and image-source labels. This follows relation-first
+reading-order work ([Qiao et al. 2024](https://doi.org/10.1016/j.patcog.2024.110314),
+[ROOR](https://aclanthology.org/2024.emnlp-main.540/)) and the multi-relation
+GraphDoc direction ([ICLR 2025](https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf)).

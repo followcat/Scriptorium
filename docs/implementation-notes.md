@@ -1325,6 +1325,43 @@ AUC `0.78760353`, and independent-test AUC `0.88807583`. No fit threshold has
 precision `>= 0.98` over at least 20 candidates; the best such bucket is only
 `19/25`. The estimator is not serialized or loaded by runtime code.
 
+`benchmark-paragraph-graph` implements the next grouping control directly on
+fine elements and never reads provider regions. It builds candidate pairs from
+selected-order adjacency, the existing sparse relation graph, and bounded local
+geometry. Pair features contain only normalized geometry, overlap and line
+dimensions, page position, text length/continuation classes, selected
+adjacency, and relation scores. Elements are canonicalized by visual geometry
+and stable id before either order primitive runs; a 160-page forward/reversed
+input audit produces identical candidates on every page.
+
+The classifier is a fixed `HistGradientBoostingClassifier` from the optional
+`requirements-relation-ranker.txt` environment. Five-fold `GroupKFold` keeps
+fit documents intact. OOF fit predictions alone choose the threshold under a
+minimum edge precision/count gate; calibration and test use the refit model and
+frozen threshold. Input/label paths are corpus-confined and SHA-256 checked,
+partitions must be document-disjoint, sample ids must be globally unique, and
+membership labels must be complete and unique. Every calibration/test proposal
+is written before its label file is opened.
+
+Thresholded edges become undirected union-find components and are scored
+against complete oracle co-membership pairs. The report also breaks metrics out
+by `layout_stratum` and records candidate-page and labelled-pair-page counts so
+an object-only page is not mistaken for a scored zero. With fit-only threshold
+`0.94971959`, pair F1 is `0.81549627/0.83054081/0.85162046` on 102-page fit OOF,
+26-page calibration, and 32-page independent test. Selected-edge precision is
+`0.99202393/0.99642147/0.99548736`. This improves assigned-stream pair F1 by
+`+0.09561271/+0.20843413/+0.05119419`; independent test also exceeds provider
+regions by `+0.04518903`.
+
+Proposal JSON contains candidate scores and review-required paragraph streams,
+not labels. It is deliberately not a runtime model: paragraph membership is
+only one head of the target graph, and paragraph-to-paragraph successor edges
+are still missing. Relation-prediction research supports adding a separate
+successor head with degree/cycle constraints rather than deriving a page-wide
+permutation from connected components. GraphDoc additionally suggests keeping
+sequence, parent, and reference relations as separate typed graph edges instead
+of overloading one order field.
+
 The generated directories enforce the data boundary:
 
 - `images/` is the only provider input.

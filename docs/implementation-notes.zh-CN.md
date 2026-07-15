@@ -823,6 +823,35 @@ relation score feature 的 document-OOF fit AUC 为 `0.86211189`，calibration A
 precision `>= 0.98`，最佳 bucket 也只有 `19/25`。该 estimator 不会序列化，也不会被 runtime
 代码加载。
 
+`benchmark-paragraph-graph` 会直接在 fine element 上实现下一种 grouping control，完全不读取
+provider region。Candidate pair 来自 selected-order adjacency、既有 sparse relation graph 和
+有界局部 geometry；pair feature 只包含归一化 geometry、overlap 与行尺寸、页内位置、文本长度/
+continuation 类别、selected adjacency 和 relation score。两个 order primitive 运行前，element
+会先按视觉 geometry 与稳定 id 规范化；160 页正序/反序输入审计在每一页都得到完全相同的
+candidate。
+
+Classifier 使用可选 `requirements-relation-ranker.txt` 环境中的固定
+`HistGradientBoostingClassifier`。五折 `GroupKFold` 保持 fit 文档完整；只有 OOF fit prediction
+能在最小 edge precision/count gate 下选择阈值，calibration/test 使用 refit model 和冻结阈值。
+Input/label path 必须限制在 corpus 内并通过 SHA-256 校验，partition 必须按文档互斥，sample id
+必须全局唯一，membership label 必须完整且无重复。所有 calibration/test proposal 都会在打开
+对应 label 文件前写完。
+
+达到阈值的 edge 通过无向 union-find 形成 component，并以完整 oracle co-membership pair 评分。
+报告还会按 `layout_stratum` 拆分指标，并记录有 candidate 的页面数和有 labelled pair 的页面数，
+避免把纯对象页面误读成已评分的零分。Fit-only 阈值 `0.94971959` 下，102 页 fit OOF、26 页
+calibration、32 页独立 test 的 pair F1 分别为
+`0.81549627/0.83054081/0.85162046`，selected-edge precision 为
+`0.99202393/0.99642147/0.99548736`。相对 assigned-stream pair F1 分别提高
+`+0.09561271/+0.20843413/+0.05119419`，独立 test 也比 provider region 高
+`+0.04518903`。
+
+Proposal JSON 只包含 candidate score 和要求复核的 paragraph stream，不包含 label。它有意不作为
+runtime model：paragraph membership 只是目标 graph 的一个 head，paragraph 间 successor edge
+仍未实现。Relation-prediction 研究支持增加带 degree/cycle constraint 的独立 successor head，而
+不是从 connected component 推导一个全页 permutation。GraphDoc 还提示 sequence、parent 和
+reference relation 应保持为不同的 typed graph edge，不应挤进同一个 order 字段。
+
 生成目录明确隔离数据边界：
 
 - `images/` 是 provider 唯一输入。
