@@ -1465,3 +1465,44 @@ fallback 人为制造同组 pair。
 Stream split 没有稳定改善 grouping：calibration 的微小增益没有泛化到 fit 和独立 test。因此该
 指标保留为 regression gate，更广泛的 split 继续被否决。后续 grouping 方案必须在 held-out
 文档上同时改善该诊断和 relation quality。
+
+### 可审计的 128 页训练语料扩充
+
+此前扩大 train-only 重建时，只要 annotation page 超出固定 arXiv v1 PDF 且文本对齐存在歧义，
+流程就会停止。对齐阈值没有因此放宽。Fetcher 现在提供显式的整文档恢复模式：
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 128 --document-count 64 \
+  --calibration-fraction 0.2 --arxiv-version v1 \
+  --annotation-archive /path/to/CompHRDoc.zip \
+  --skip-unaligned-documents \
+  --out-dir data/external/comphrdoc-provider-calibration-128
+```
+
+默认仍为 fail-closed。恢复模式会先对齐一篇文档的全部选中页，之后才写该文档的派生 sample。
+失败时整篇排除，记录 source hash、失败页、最佳 candidate F1、margin 和固定阈值，再从同一
+确定性 hash partition 补选下一篇；不会静默丢掉单页。
+
+真实运行得到 64 篇唯一文档、128 个唯一页面：
+
+| 语料属性 | 结果 |
+|---|---:|
+| Fit / calibration 页 | 102 / 26 |
+| Graphical-multicolumn / multicolumn / graphical | 64 / 60 / 4 |
+| 整篇拒绝并补选的文档 | 2 |
+| Oracle membership coverage | 0.99786574 |
+| Oracle within-region successor F1 | 0.99211930 |
+| Oracle region-transition F1 | 0.92806959 |
+
+两个被拒文档都属于 fit，其 annotation page index 恰好等于 source PDF page count；最佳
+alignment F1 均约为 `0.1482`，明显低于未改变的 `0.6` 门槛，并且都没有进入最终 document
+或 sample 列表。
+
+Grouping 架构下一步应从“合并 detector rectangle”转向 sparse line graph，并分别预测 paragraph
+membership 与 successor。Post-OCR paragraph recognition 的两阶段 line-splitting / line-clustering
+结果优于后续统一局部模型，并明确指出 line width/indentation 是有用的段落上下文
+（[Wang 等，WACV 2022](https://arxiv.org/abs/2101.12741)，
+[Liu 等，DAS 2022](https://arxiv.org/abs/2203.09638)）。这与上面的 assigned-stream 结果一致：
+只拆 region 不是通用 grouping 解法。任何 learned line graph 在 document-held-out segmentation
+与 relation gate 同时通过前都保持 benchmark-only。

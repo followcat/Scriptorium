@@ -1277,14 +1277,29 @@ of aborting image-source benchmarks with `cannot write empty image`.
 
 ## Train-Only Provider Calibration and Fast Paddle Layout
 
-`fetch_comphrdoc_provider_calibration_corpus()` reconstructs a small real-image
+`fetch_comphrdoc_provider_calibration_corpus()` reconstructs a real-image
 provider corpus from the pinned Comp-HRDoc train annotation archive and original
 arXiv PDFs. It uses annotation geometry and categories to stratify pages as
 `multicolumn` or `graphical-multicolumn`, but the selector is not allowed to read
-relation labels. Document ids are SHA-256 partitioned before pages are chosen;
-the current fixed split has three fit documents and one calibration document.
+relation labels. Document ids are SHA-256 partitioned before pages are chosen.
 The manifest records the annotation revision/hash, source PDF URL/hash,
 partition, layout stratum, selection fields, and source-license policy.
+
+Source revision mismatch can place an annotation page outside the downloaded
+PDF. The default remains fail-closed. The explicit
+`--skip-unaligned-documents` mode first checks every selected page in a document;
+only after the whole document passes are derived samples written. An ambiguous
+document is recorded with its partition, PDF hash/page count, failed annotation
+page, best text-alignment candidate, margin, and unchanged acceptance
+thresholds. The entire document is then excluded and the next document in the
+same deterministic partition ranking is selected. Individual pages are never
+silently skipped, and relation labels are not used by alignment or replacement.
+
+The audited expansion reconstructed 128 pages from 64 documents: 102 fit and 26
+calibration pages, with 64 graphical-multicolumn, 60 multicolumn, and 4 graphical
+pages. Two fit documents failed source-page alignment and were replaced. The
+parallel oracle-region control reaches membership coverage `0.99786574`,
+within-region F1 `0.99211930`, and region-transition F1 `0.92806959`.
 
 The generated directories enforce the data boundary:
 

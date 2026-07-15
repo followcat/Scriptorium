@@ -1646,3 +1646,52 @@ gain does not generalize to fit or independent test. This metric is retained as
 a regression gate, and broader splitting remains rejected. Future grouping
 work must improve this diagnostic and relation quality together on held-out
 documents.
+
+### Audited 128-Page Training Expansion
+
+Larger train-only reconstruction previously stopped when an annotation page was
+outside its pinned arXiv v1 PDF and text alignment was ambiguous. Alignment
+thresholds were deliberately not relaxed. The fetcher now has an explicit
+whole-document recovery mode:
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 128 --document-count 64 \
+  --calibration-fraction 0.2 --arxiv-version v1 \
+  --annotation-archive /path/to/CompHRDoc.zip \
+  --skip-unaligned-documents \
+  --out-dir data/external/comphrdoc-provider-calibration-128
+```
+
+The default still fails closed. In recovery mode every selected page is aligned
+before any derived sample for that document is written. A failure excludes the
+entire document, records its source hash, failed page, best candidate F1,
+margin, and fixed thresholds, then selects the next document from the same
+deterministic hash partition. It never drops one page silently.
+
+The real run produced 128 unique pages from 64 unique documents:
+
+| Corpus property | Result |
+|---|---:|
+| Fit / calibration pages | 102 / 26 |
+| Graphical-multicolumn / multicolumn / graphical | 64 / 60 / 4 |
+| Whole documents rejected and replenished | 2 |
+| Oracle membership coverage | 0.99786574 |
+| Oracle within-region successor F1 | 0.99211930 |
+| Oracle region-transition F1 | 0.92806959 |
+
+Both rejected documents were fit documents whose annotated page index equalled
+the source PDF page count. Their best alignment F1 values were approximately
+`0.1482`, well below the unchanged `0.6` minimum, and neither appears in the
+final document or sample lists.
+
+The grouping architecture should now move from merging detector rectangles to a
+sparse line graph with separate paragraph-membership and successor heads.
+Post-OCR paragraph recognition reports better results for its two-stage
+line-splitting/line-clustering model than for the later unified local model, and
+explicitly notes line width/indentation as useful paragraph context
+([Wang et al., WACV 2022](https://arxiv.org/abs/2101.12741),
+[Liu et al., DAS 2022](https://arxiv.org/abs/2203.09638)). This matches the
+assigned-stream result above: region splitting alone is not a general grouping
+solution. Any learned line graph remains benchmark-only until document-held-out
+segmentation and relation gates pass together.

@@ -787,11 +787,22 @@ Sparse graph segmentation 将文本行与区域建模为双向几何关系，再
 ## Train-Only Provider 校准与快速 Paddle Layout
 
 `fetch_comphrdoc_provider_calibration_corpus()` 使用固定版本的 Comp-HRDoc train
-annotation archive 和原始 arXiv PDF 重建小规模真实图像 provider 语料。它只用 annotation
+annotation archive 和原始 arXiv PDF 重建真实图像 provider 语料。它只用 annotation
 geometry/category 将页面分为 `multicolumn` 或 `graphical-multicolumn`，样本选择不能读取
-relation label。文档 id 先按 SHA-256 分区，再选择页面；当前固定拆分包含 3 个 fit 文档和
-1 个 calibration 文档。Manifest 记录 annotation revision/hash、source PDF URL/hash、
+relation label。文档 id 先按 SHA-256 分区，再选择页面。Manifest 记录 annotation
+revision/hash、source PDF URL/hash、
 partition、layout stratum、选择字段和 source license policy。
+
+源版本不一致可能导致 annotation page 超出下载 PDF。默认行为继续 fail-closed。只有显式启用
+`--skip-unaligned-documents` 时，程序才会先预检一篇文档的全部选中页；整篇通过后才写派生
+sample。歧义文档会记录 partition、PDF hash/页数、失败 annotation page、最佳文本对齐
+candidate、margin 和未放宽的验收阈值，然后整篇排除，并从同一确定性 partition 排名补选
+下一篇。任何单页都不会静默跳过，对齐与补选也不会读取 relation label。
+
+审计后的扩充语料包含 64 篇文档、128 页：fit 102 页、calibration 26 页，其中
+graphical-multicolumn 64 页、multicolumn 60 页、graphical 4 页。两个 fit 文档因 source-page
+alignment 失败而被替换。平行 oracle-region control 的 membership coverage 为
+`0.99786574`，within-region F1 为 `0.99211930`，region-transition F1 为 `0.92806959`。
 
 生成目录明确隔离数据边界：
 
