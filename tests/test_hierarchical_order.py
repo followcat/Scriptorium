@@ -583,6 +583,82 @@ def test_hierarchy_continuity_does_not_choose_between_different_neighbor_regions
     assert result.diagnostics["relation_base_continuity_membership_count"] == 0
 
 
+def test_hierarchy_boundary_continuity_uses_unique_tied_region_text() -> None:
+    payload = {
+        "id": "boundary-text-continuity",
+        "width": 100,
+        "height": 100,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {
+                "id": "top",
+                "box": [10, 10, 90, 20],
+                "role": "Text Block",
+                "text": "Alpha",
+            },
+            {
+                "id": "middle",
+                "box": [10, 35, 90, 45],
+                "role": "Text Block",
+                "text": "Fig 2",
+            },
+            {
+                "id": "bottom",
+                "box": [10, 60, 90, 70],
+                "role": "Text Block",
+                "text": "Beta",
+            },
+        ],
+        "regions": [
+            {
+                "id": "top-region",
+                "box": [5, 5, 95, 50],
+                "role": "Text Block",
+                "text": "Alpha Fig 2",
+                "member_ids": ["top"],
+            },
+            {
+                "id": "bottom-region",
+                "box": [5, 30, 95, 75],
+                "role": "Text Block",
+                "text": "Beta",
+                "member_ids": ["bottom"],
+            },
+        ],
+    }
+
+    result = build_hierarchical_order_proposal(payload)
+
+    membership = next(
+        item
+        for item in result.payload["memberships"]
+        if item["element_id"] == "middle"
+    )
+    assert membership["region_id"] == "top-region"
+    assert membership["method"] == "relation-base-boundary-text-parent"
+    assert membership["evidence"] == [
+        "geometry-tied-candidate",
+        "relation-graph-boundary-split",
+        "selected-order-boundary-split",
+        "unique-tied-region-text-containment",
+    ]
+    assert result.diagnostics["relation_base_boundary_text_membership_count"] == 1
+    assert result.diagnostics["ambiguous_element_count"] == 0
+
+    ambiguous = copy.deepcopy(payload)
+    ambiguous["regions"][1]["text"] = "Fig 2 Beta"
+    second = build_hierarchical_order_proposal(ambiguous)
+    second_membership = next(
+        item
+        for item in second.payload["memberships"]
+        if item["element_id"] == "middle"
+    )
+    assert second_membership["region_id"] is None
+    assert second_membership["reason"] == "ambiguous-region-overlap"
+    assert second.diagnostics["relation_base_boundary_text_membership_count"] == 0
+
+
 def test_hierarchy_does_not_jump_across_empty_coarse_region(monkeypatch) -> None:
     payload = _two_column_payload()
     payload["regions"].append(

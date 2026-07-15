@@ -68,7 +68,7 @@ def test_materialized_hierarchy_corpus_is_answer_separated_and_scoreable(
         "fine-relation-graph-boundary"
     )
     assert result.report["prediction_policy"] == (
-        "hierarchical-review-only-relation-dag-with-continuity-membership-v2"
+        "hierarchical-review-only-relation-dag-with-boundary-text-membership-v3"
     )
     assert result.report["transition_representation"] == (
         "partial-dag-boundary-aligned-review-relations"
@@ -83,6 +83,9 @@ def test_materialized_hierarchy_corpus_is_answer_separated_and_scoreable(
     ] == 1
     assert result.report["diagnostic_totals"][
         "relation_base_continuity_membership_count"
+    ] == 0
+    assert result.report["diagnostic_totals"][
+        "relation_base_boundary_text_membership_count"
     ] == 0
     assert result.report["promotion_decision"] == (
         "development-benchmark-only-review-only"

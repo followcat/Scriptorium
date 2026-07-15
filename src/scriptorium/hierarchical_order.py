@@ -30,7 +30,7 @@ from .relation_order import relation_edge_candidate_path_cover
 
 HIERARCHICAL_ORDER_SCHEMA = "scriptorium-hierarchical-order-proposal/v1"
 HIERARCHICAL_ORDER_PROVIDER = "scriptorium-hierarchical-block-line-order"
-HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v2"
+HIERARCHICAL_ORDER_POLICY = "local-streams-with-relation-graph-transitions-v3"
 DEFAULT_MIN_GEOMETRY_COVERAGE = 0.8
 DEFAULT_MIN_GEOMETRY_MARGIN = 0.1
 DEFAULT_MIN_TEXT_PARENT_SCORE = 0.74
@@ -355,6 +355,10 @@ def build_hierarchical_order_proposal(
     continuity_count = sum(
         item.method == "relation-base-continuity-parent" for item in memberships
     )
+    boundary_text_count = sum(
+        item.method == "relation-base-boundary-text-parent"
+        for item in memberships
+    )
     ambiguous_count = sum(
         item.reason == "ambiguous-region-overlap" for item in memberships
     )
@@ -367,11 +371,13 @@ def build_hierarchical_order_proposal(
             + text_geometry_count
             + geometry_count
             + continuity_count
+            + boundary_text_count
         ),
         "explicit_membership_count": explicit_count,
         "text_geometry_membership_count": text_geometry_count,
         "geometry_membership_count": geometry_count,
         "relation_base_continuity_membership_count": continuity_count,
+        "relation_base_boundary_text_membership_count": boundary_text_count,
         "ambiguous_element_count": ambiguous_count,
         "unassigned_element_count": len(unassigned_ids),
         "within_region_successor_count": sum(
@@ -852,36 +858,79 @@ def _refine_ambiguous_memberships_from_continuity(
             for _neighbor_id, diagnostic in relation_neighbors
         ):
             continue
-        relation_regions = [
+        relation_regions = tuple(
             membership_by_element[neighbor_id].region_id
             for neighbor_id, _diagnostic in relation_neighbors
-        ]
-        if relation_regions[0] is None or relation_regions[0] != relation_regions[1]:
+        )
+        if relation_regions[0] is None or relation_regions[1] is None:
             continue
 
         rank = base_rank[element.id]
         if rank == 0 or rank + 1 >= len(base_ids):
             continue
         base_neighbor_ids = (base_ids[rank - 1], base_ids[rank + 1])
-        base_regions = [
+        base_regions = tuple(
             membership_by_element[neighbor_id].region_id
             for neighbor_id in base_neighbor_ids
-        ]
-        if (
-            base_regions[0] is None
-            or base_regions[0] != base_regions[1]
-            or base_regions[0] != relation_regions[0]
-        ):
+        )
+        if base_regions[0] is None or base_regions[1] is None:
             continue
 
-        region_id = str(relation_regions[0])
-        region = region_by_id[region_id]
-        coverage = _bbox_coverage(element.bbox, region.bbox)
         best_coverage = float(membership.coverage or 0.0)
+        tied_region_coverages = {
+            region.id: coverage
+            for region in regions
+            for coverage in [_bbox_coverage(element.bbox, region.bbox)]
+            if coverage >= min_geometry_coverage
+            and best_coverage - coverage < min_geometry_margin
+        }
+        if not tied_region_coverages:
+            continue
+
+        method: str
+        evidence: tuple[str, ...]
         if (
-            coverage < min_geometry_coverage
-            or best_coverage - coverage >= min_geometry_margin
+            relation_regions[0] == relation_regions[1]
+            and base_regions[0] == base_regions[1] == relation_regions[0]
         ):
+            region_id = str(relation_regions[0])
+            method = "relation-base-continuity-parent"
+            evidence = (
+                "geometry-tied-candidate",
+                "relation-graph-bidirectional-continuity",
+                "selected-order-bidirectional-continuity",
+            )
+        elif (
+            relation_regions[0] != relation_regions[1]
+            and base_regions == relation_regions
+        ):
+            compact_text = _compact_semantic_text(element.text)
+            if len(compact_text) < MIN_EXACT_TEXT_PARENT_CHARACTERS:
+                continue
+            matching_regions = tuple(
+                region_id
+                for region_id in sorted(tied_region_coverages)
+                if compact_text
+                in _compact_semantic_text(region_by_id[region_id].text)
+            )
+            if (
+                len(matching_regions) != 1
+                or matching_regions[0] not in relation_regions
+            ):
+                continue
+            region_id = matching_regions[0]
+            method = "relation-base-boundary-text-parent"
+            evidence = (
+                "geometry-tied-candidate",
+                "relation-graph-boundary-split",
+                "selected-order-boundary-split",
+                "unique-tied-region-text-containment",
+            )
+        else:
+            continue
+
+        coverage = tied_region_coverages.get(region_id)
+        if coverage is None:
             continue
         relation_confidence = min(
             diagnostic.score for _neighbor_id, diagnostic in relation_neighbors
@@ -889,17 +938,13 @@ def _refine_ambiguous_memberships_from_continuity(
         refined[element.id] = _Membership(
             element_id=element.id,
             region_id=region_id,
-            method="relation-base-continuity-parent",
+            method=method,
             coverage=coverage,
             runner_up_coverage=membership.runner_up_coverage,
             margin=membership.margin,
             reason=None,
             evidence_confidence=min(relation_confidence, 0.76),
-            evidence=(
-                "geometry-tied-candidate",
-                "relation-graph-bidirectional-continuity",
-                "selected-order-bidirectional-continuity",
-            ),
+            evidence=evidence,
         )
     return tuple(refined[element.id] for element in elements)
 
