@@ -970,6 +970,44 @@ segmentation remains imperfect, the report decision is
 `provider-derived-development-benchmark-review-only` and runtime reorder stays
 disabled.
 
+Policy v6 makes provider origin explicit instead of inferring it from a schema
+name. Both the real `DocumentIR` adapter and corpus materializer write
+`input_adapter.coarse_region_source = normalized-provider-structure`; older or
+oracle hierarchy inputs do not activate the new guards. For each provider
+region, consecutive members in selected order remain one stream. A skipped
+member pair is also retained when its normalized vertical gap is within
+`[-0.25, 1.25]` mean line heights. Otherwise the region is represented by
+multiple streams with stable `-segment-NNN` ids, and no successor edge is
+invented across the discontinuity.
+
+Native boundary transitions are separately gated by absolute selected-base
+rank displacement `<= 4`. A rejected edge remains in
+`cross_region_relation_evidence` with
+`provider-nonlocal-selected-rank-gap`; external semantic edges are not filtered
+by this native guard. Stream segmentation can free element degree slots for v5
+unassigned fallback, but that fallback still requires an unassigned endpoint
+and preserves degree-one acyclicity. Candidate orders are computed before the
+fallback layer and remain unchanged.
+
+Diagnostics include `provider_local_stream_split_count`, backward/gap
+discontinuity counts, and
+`fine_relation_provider_nonlocal_suppressed_count`. Fit/calibration/test
+provider relation F1 changes from
+`0.97433893/0.96754386/0.97016660` to
+`0.97688390/0.97363796/0.97527740`. Test precision/recall is
+`0.97966367/0.97093023`; the flat test F1 is `0.96606248`. The oracle test
+control remains exactly `0.95571096/0.93055556` line/region F1 with no
+provider-only action. The 14-page calibration result still trails flat
+`0.97694650`, so the gate remains review-only.
+
+A same-input v5/v6 replay on real complex pages finds no action on Attention
+PP or PUMA PP. BYD PP suppresses one nonlocal relation transition. JD/Docling
+splits 8 provider chains and suppresses 6 nonlocal native candidates; local
+edges change `89 -> 81`, relation transitions `11 -> 5`, and guarded
+unassigned fallback transitions `10 -> 18`. These are unlabelled diagnostics,
+not accuracy claims. All four base/candidate orders are identical and runtime
+reorder remains false.
+
 ## Comp-HRDoc Relation Benchmark
 
 `fetch-comphrdoc` pins the MIT Comp-HRDoc repository revision and verifies the
@@ -1519,6 +1557,7 @@ relations rather than forcing one global permutation:
 - DLAFormer coarse-to-fine layout analysis: https://arxiv.org/abs/2405.11757
 - Ordering relations for visually rich documents: https://aclanthology.org/2024.emnlp-main.540/
 - PRImA correspondence-aware reading-order evaluation: https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf
+- Sparse graph segmentation and cluster-and-sort reading order: https://arxiv.org/abs/2305.02577
 - XY-Cut++ multi-granularity/cross-modal ordering: https://arxiv.org/abs/2504.10258
 - GraphDoc relation graph (MIT; release TODOs remain): https://github.com/yufanchen96/GraphDoc
 

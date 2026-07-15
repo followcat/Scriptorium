@@ -1367,3 +1367,46 @@ graph。下一步需要提高 provider region grouping，或用独立于评测 l
 flat relation 间选择。评测设计遵循 PRImA 的 correspondence-aware reading-order 原则：先处理
 segmentation mismatch，再评分 relation，而不是要求预测与真值使用相同 region id
 （[Clausner 等，ICDAR 2013](https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf)）。
+
+### Provider Continuity Segments v6
+
+只读取 fit label 的残余审计找到两类 provider 特有错误。第一，同一个 detector region 的 member
+可能在 selected-native order 中被其他 region 打断；v5 仍会把该 region 的全部 member 连成一条
+链。正确 fit edge 都具有局部纵向连续性，错误则集中在纵向回跳或大间距。第二，native relation
+graph 跨越大量 selected-order position 的 transition precision 偏弱。因此 policy v6：
+
+- 当非相邻 member pair 的前向纵向连续性超出平均行高 `[-0.25, 1.25]` 时，把一个 provider
+  region 拆成多个 local stream；
+- selected-rank displacement 大于 4 的 native cross-region candidate 只保留为 evidence，外部
+  semantic edge 不受该 guard 影响；
+- 保留每条 selected-native adjacent edge、全部 membership 决策、base/candidate element order，
+  并继续保持 `runtime_reorder: false`。
+
+阈值仅在 fit 上选择，随后冻结重放 calibration/test。该设计与 sparse graph reading-order 的
+cluster-and-sort 分解一致（[Wang 等，ICDAR 2023](https://arxiv.org/abs/2305.02577)），同时继续
+输出 relation DAG，而不是强制生成一个 permutation。
+
+| Provider hierarchy | v5 F1 | Continuity v6 precision / recall / F1 | Flat F1 | Split / nonlocal suppression |
+|---|---:|---:|---:|---:|
+| 50 页 fit | 0.97433893 | 0.97905759 / 0.97471983 / 0.97688390 | 0.94768195 | 12 / 28 |
+| 14 页 calibration | 0.96754386 | 0.97966401 / 0.96768559 / 0.97363796 | 0.97694650 | 8 / 17 |
+| 32 页官方 test window | 0.97016660 | 0.97966367 / 0.97093023 / 0.97527740 | 0.96606248 | 18 / 28 |
+
+独立 test 相对 v5 提高 `+0.00511080`，相对 flat 提高 `+0.00921492`。Fit 逐页为 15 页提升、
+32 页不变、3 页下降；calibration 为 `7/6/1`，唯一退化 `-0.00063939`；test 为 `9/22/1`，
+唯一退化 `-0.00072107`。Oracle-region 32 页 control 的 line/region F1 逐项保持
+`0.95571096/0.93055556`，provider-only suppression 全部为 0。
+
+同一份 v5/v6 代码还在真实复杂页上做了无标签 A/B。以下只能作为诊断，不能当作正确率：
+
+| 真实页面/provider | v5 -> v6 streams | Within edges | Relation transitions | Fallback transitions | Split / nonlocal |
+|---|---:|---:|---:|---:|---:|
+| Attention 第 1 页 / PP-Structure | 11 -> 11 | 45 -> 45 | 3 -> 3 | 4 -> 4 | 0 / 0 |
+| 比亚迪年报第 136 页 / PP-Structure | 16 -> 16 | 18 -> 18 | 8 -> 7 | 1 -> 1 | 0 / 1 |
+| JD 首页 / Docling | 45 -> 53 | 89 -> 81 | 11 -> 5 | 10 -> 18 | 8 / 6 |
+| PUMA 年报第 5 页 / PP-Structure | 10 -> 10 | 15 -> 15 | 6 -> 6 | 1 -> 1 | 0 / 0 |
+
+JD 展示了预期行为：8 条不连续 provider chain 被拆成独立 translation/review stream，6 条缺少
+支持的远跳选择 abstain；新增 fallback transition 只恢复至少一个 endpoint 未分配的 native
+adjacency。四个页面的 base/candidate order 在 v5/v6 间完全一致。Calibration 仍比 flat 低
+`0.00330854`，因此 provider grouping 与不读取答案的 hierarchy/flat selector 仍是下一步。

@@ -1528,3 +1528,55 @@ relations using evidence independent of evaluation labels. The evaluation
 design follows PRImA's correspondence-aware reading-order principle: score
 relations after accounting for segmentation mismatch rather than requiring
 identical region ids ([Clausner et al., ICDAR 2013](https://www.primaresearch.org/www/assets/papers/ICDAR2013_Clausner_ReadingOrder.pdf)).
+
+### Provider Continuity Segments v6
+
+A fit-only residual audit found two provider-specific failure families. First,
+one detector region could contain members separated in selected-native order by
+another region; v5 still linked every member of that region. Correct fit links
+were locally vertical, while errors were backward jumps or large vertical gaps.
+Second, native relation-graph transitions spanning many selected-order
+positions had weak precision. Policy v6 therefore:
+
+- splits a provider region into local streams when a non-adjacent member pair
+  falls outside `[-0.25, 1.25]` mean line heights of forward vertical
+  continuity;
+- keeps native cross-region candidates with selected-rank displacement above
+  four as evidence-only, while leaving external semantic edges exempt;
+- preserves every selected-native adjacent edge, all membership decisions, the
+  base/candidate element orders, and `runtime_reorder: false`.
+
+The thresholds were selected on fit only and frozen before calibration/test
+replay. This follows the cluster-and-sort separation used by sparse graph
+reading-order work ([Wang et al., ICDAR 2023](https://arxiv.org/abs/2305.02577))
+and retains relation-DAG output rather than forcing one permutation.
+
+| Provider hierarchy | v5 F1 | Continuity v6 precision / recall / F1 | Flat F1 | Splits / nonlocal suppressions |
+|---|---:|---:|---:|---:|
+| 50-page fit | 0.97433893 | 0.97905759 / 0.97471983 / 0.97688390 | 0.94768195 | 12 / 28 |
+| 14-page calibration | 0.96754386 | 0.97966401 / 0.96768559 / 0.97363796 | 0.97694650 | 8 / 17 |
+| 32-page official-test window | 0.97016660 | 0.97966367 / 0.97093023 / 0.97527740 | 0.96606248 | 18 / 28 |
+
+The independent-test gain over v5 is `+0.00511080` and over flat is
+`+0.00921492`. Fit improves on 15 pages, is unchanged on 32, and regresses on
+3; calibration is `7/6/1`, with the only regression `-0.00063939`; test is
+`9/22/1`, with the only regression `-0.00072107`. The oracle-region 32-page
+control remains bit-for-bit at line/region F1
+`0.95571096/0.93055556`, with zero provider-only suppressions.
+
+The same v5/v6 code A/B was replayed on real complex pages without labels. It
+is diagnostic, not correctness evidence:
+
+| Real page/provider | v5 -> v6 streams | Within edges | Relation transitions | Fallback transitions | Split / nonlocal |
+|---|---:|---:|---:|---:|---:|
+| Attention p. 1 / PP-Structure | 11 -> 11 | 45 -> 45 | 3 -> 3 | 4 -> 4 | 0 / 0 |
+| BYD annual report p. 136 / PP-Structure | 16 -> 16 | 18 -> 18 | 8 -> 7 | 1 -> 1 | 0 / 1 |
+| JD homepage / Docling | 45 -> 53 | 89 -> 81 | 11 -> 5 | 10 -> 18 | 8 / 6 |
+| PUMA annual report p. 5 / PP-Structure | 10 -> 10 | 15 -> 15 | 6 -> 6 | 1 -> 1 | 0 / 0 |
+
+JD exposes the intended behavior: eight discontinuous provider chains become
+separate translation/review streams, six unsupported long jumps abstain, and
+new fallback transitions only restore native adjacencies touching unassigned
+elements. Base and candidate orders remain identical between v5 and v6 on all
+four pages. Calibration still trails flat by `0.00330854`, so provider grouping
+and an answer-independent hierarchy/flat selector remain open work.
