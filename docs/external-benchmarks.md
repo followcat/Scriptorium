@@ -1718,7 +1718,7 @@ overlapping boxes on pages with a larger median line height could form a cycle
 in spatial-graph predecessor links; root traversal had no cycle guard and two
 otherwise ordinary pages did not terminate. Sampling isolated the loop, and
 cycles are now normalized to their deterministic visual-minimum root. The slow
-page completes in `2.48s`; the current full 408-test suite passes, and all prior
+page completes in `2.48s`; the current full 411-test suite passes, and all prior
 50/14/32-page benchmark values remain bit-for-bit unchanged.
 
 A strict safe-merge ranker was reevaluated after expansion. Candidates are
@@ -1783,9 +1783,57 @@ Each proposal contains thresholded candidate edges and review-required local
 paragraph streams, never oracle membership. It remains
 `runtime_reorder: false`: the current head predicts paragraph co-membership but
 not paragraph-to-paragraph successors, and the held-out corpus is still an
-English scientific-paper family. The next experiment needs a separate
-successor head with degree/cycle constraints and cross-domain annual-report,
-portal, Chinese-document, and image-source labels. This follows relation-first
+English scientific-paper family. The separate successor head is evaluated
+below; joint decoding still needs cross-domain annual-report, portal,
+Chinese-document, and image-source labels. This follows relation-first
 reading-order work ([Qiao et al. 2024](https://doi.org/10.1016/j.patcog.2024.110314),
 [ROOR](https://aclanthology.org/2024.emnlp-main.540/)) and the multi-relation
 GraphDoc direction ([ICLR 2025](https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf)).
+
+### Directed Fine-Line Successor Graph
+
+Paragraph membership does not determine the immediate edge between two lines
+or the handoff between paragraphs. A second source-neutral benchmark therefore
+trains a directed successor head without provider rectangles or paragraph
+labels:
+
+```bash
+scriptorium benchmark-successor-graph \
+  /path/to/comphrdoc-provider-train-128 \
+  --test-corpus /path/to/comphrdoc-provider-test-32 \
+  --output outputs/successor-graph-report.json \
+  --proposals-dir outputs/successor-graph-proposals
+```
+
+Candidates are bidirectional selected adjacencies, bidirectional sparse
+relation candidates, and the fixed 20 nearest directed geometry targets per
+source. This gives 175,748 fit candidates with 7,858 positive edges and a
+fit-only candidate-recall ceiling of `0.99632306`. The 39 answer-free features
+contain directed geometry/text signals, base-rank direction, relation scores,
+and coarse source/target roles. Five document-level OOF folds choose threshold
+`0.52131309` under fit-only precision `>= 0.97` and at least 1,000 selected
+edges. Each source contributes only its top target; score-ordered degree-one
+and cycle guards then produce an acyclic path cover.
+
+| Partition | Flat F1 | Provider hierarchy F1 | Directed graph F1 | Delta vs provider | Precision / recall | Candidate recall | Cross-region recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 102-page fit, document OOF | 0.96136149 | 0.97747518 | 0.98391591 | +0.00644073 | 0.98279570 / 0.98503867 | 0.99632306 | 0.94290375 |
+| 26-page calibration | 0.97578947 | 0.97717622 | 0.98679345 | +0.00961723 | 0.98523207 / 0.98835979 | 0.99682540 | 0.95205479 |
+| 32-page independent test | 0.96606248 | 0.97547684 | 0.98585545 | +0.01037861 | 0.98566447 / 0.98604651 | 0.99496124 | 0.94796380 |
+
+The independent direction and magnitude agree with fit/calibration. Test
+graphical-multicolumn F1 is `0.97319400`; ordinary multicolumn is
+`0.99527027`. The single graphical-only page has no labelled successor and is
+excluded through explicit labelled-page counts. Path-cover decoding rejects
+`1/1/1` cycles and `6/6/9` incoming conflicts on fit/calibration/test; it raises
+test top-candidate F1 `0.98529412 -> 0.98585545` rather than merely asserting a
+graph invariant.
+
+All 160 forward/reversed element-array comparisons produce identical
+candidates. The full run writes top-three alternatives, score margins, selected
+review edges, and local chains before evaluation labels open; it took `5:16`
+and about `1.07 GB` peak RSS in the observed environment. The output remains
+`runtime_reorder: false`. Both graph heads now generalize within the held-out
+English-paper family, but they are not yet jointly decoded, serialized as a
+runtime model, or validated on annual reports, portals, Chinese documents, and
+image-source OCR. Those gates precede any automatic semantic-order replacement.

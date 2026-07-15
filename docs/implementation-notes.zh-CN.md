@@ -847,10 +847,38 @@ calibration、32 页独立 test 的 pair F1 分别为
 `+0.04518903`。
 
 Proposal JSON 只包含 candidate score 和要求复核的 paragraph stream，不包含 label。它有意不作为
-runtime model：paragraph membership 只是目标 graph 的一个 head，paragraph 间 successor edge
-仍未实现。Relation-prediction 研究支持增加带 degree/cycle constraint 的独立 successor head，而
-不是从 connected component 推导一个全页 permutation。GraphDoc 还提示 sequence、parent 和
+runtime model：paragraph membership 只是目标 graph 的一个 head，而且该 head 不输出 paragraph
+间 successor edge。下方独立 successor head 使用 degree/cycle constraint，而不是从 connected
+component 推导一个全页 permutation。GraphDoc 还提示 sequence、parent 和
 reference relation 应保持为不同的 typed graph edge，不应挤进同一个 order 字段。
+
+`benchmark-successor-graph` 实现了独立的 directed head。Candidate generation 仍然无答案且
+来源无关：它组合 selected adjacency 与 sparse relation candidate 的两个方向，并为每个 source
+增加 20 个按归一化中心距离排序的最近 target。两个 geometry primitive 运行前仍会规范化 element，
+流程不读取 provider region 或 paragraph-membership label。最终 feature vector 有 39 个值：既有
+directed geometry/text feature，再加 base-rank 方向、正反 relation score/selection state，以及
+source/target 的 text/figure/table role indicator。
+
+102 页 fit 得到 175,748 个 candidate、7,858 个 labelled positive，candidate recall 为
+`0.99632306`。五折 `GroupKFold` 保持一篇文档的所有页面不拆分；只有 OOF score 能在
+endpoint-aware precision `>= 0.97` 且至少输出 1,000 条 edge 的约束下选择阈值
+`0.52131309`。每个 source 的确定性 ranking 先看 model score，只有 score 完全相同时才使用无答案的
+relation/base/distance evidence。超过阈值的 top-one edge 再按 score 降序进入共享的 degree-one
+acyclic path-cover primitive。
+
+Fit OOF、calibration、独立 test relation F1 为
+`0.98391591/0.98679345/0.98585545`，provider hierarchy 对照为
+`0.97747518/0.97717622/0.97547684`，flat 对照为
+`0.96136149/0.97578947/0.96606248`。独立 candidate recall 为 `0.99496124`，selected
+within/cross-region recovery 为 `0.99391955/0.94796380`。Decoder 在三个 partition 各拒绝 1 个
+cycle，并拒绝 `6/6/9` 个 incoming conflict，使独立 top-one F1 从 `0.98529412` 提高到
+`0.98585545`。
+
+Proposal 文件只保留每个 source 分数最高的三个 alternative、margin、已接受 review edge 和得到的
+局部 chain。Evaluation proposal 在 label 打开前写出，path/hash 继续绑定 corpus，label 会校验
+unique degree-one acyclic edge；160 页反转审计也确认输入 array 不变量。完整运行实测峰值 RSS 约
+`1.07 GB`；真正的 runtime 实现还需要流式 feature batch 和 hash-bound serialized model。当前没有
+runtime model，paragraph/successor 两个 head 也尚未联合解码或完成跨领域校准。
 
 生成目录明确隔离数据边界：
 

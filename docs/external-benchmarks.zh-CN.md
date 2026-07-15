@@ -1525,7 +1525,7 @@ grouping 仍未解决：assigned stream 在扩大 fit/calibration 上只比 prov
 第一次扩大重放还暴露了性能正确性缺陷：当页面 median line height 较大时，短而重叠的 box
 可能在 spatial-graph predecessor 中成环；旧 root traversal 没有 cycle guard，导致两个普通规模
 页面无法结束。采样定位循环后，现在会把 cycle 归一到确定性的视觉最小根。原慢页面在
-`2.48s` 内完成；当前完整 `408 passed`，既有 50/14/32 页 benchmark 值逐位不变。
+`2.48s` 内完成；当前完整 `411 passed`，既有 50/14/32 页 benchmark 值逐位不变。
 
 扩充后还重新评估了严格 safe-merge ranker。Candidate 是打开 label 前生成的相邻 text-region
 pair；feature 只包含 region member 数量/order span、局部 boundary geometry、文本 continuation
@@ -1577,8 +1577,48 @@ labelled text pair，报告会将其标为不可评分，而不会把零值 metr
 
 每个 proposal 只包含阈值化 candidate edge 和要求复核的局部 paragraph stream，不包含 oracle
 membership。它继续保持 `runtime_reorder: false`：当前 head 预测 paragraph co-membership，但还
-没有预测 paragraph 间 successor，held-out corpus 也仍属于英文科学论文。下一轮需要独立的
-successor head、degree/cycle constraint，以及年报、门户、中文文档和 image source 的跨领域标签。
+没有预测 paragraph 间 successor，held-out corpus 也仍属于英文科学论文。下节会评估独立
+successor head；联合解码仍需要年报、门户、中文文档和 image source 的跨领域标签。
 这与 relation-first reading-order 研究（[Qiao 等 2024](https://doi.org/10.1016/j.patcog.2024.110314)、
 [ROOR](https://aclanthology.org/2024.emnlp-main.540/)）和多关系 GraphDoc 方向
 （[ICLR 2025](https://proceedings.iclr.cc/paper_files/paper/2025/file/cf3d7d8e79703fe947deffb587a83639-Paper-Conference.pdf)）一致。
+
+### 细粒度有向 Successor Graph
+
+Paragraph membership 本身不能决定两行之间的即时边，也不能决定 paragraph 之间的 handoff。因此
+第二个来源无关 benchmark 会训练独立的 directed successor head，且不读取 provider rectangle
+或 paragraph label：
+
+```bash
+scriptorium benchmark-successor-graph \
+  /path/to/comphrdoc-provider-train-128 \
+  --test-corpus /path/to/comphrdoc-provider-test-32 \
+  --output outputs/successor-graph-report.json \
+  --proposals-dir outputs/successor-graph-proposals
+```
+
+Candidate 包括双向 selected adjacency、双向 sparse relation candidate，以及每个 source 固定 20
+个最近的有向 geometry target。Fit 共得到 175,748 个 candidate，其中 7,858 个为正 edge，fit-only
+candidate recall 上限为 `0.99632306`。39 个无答案 feature 包含有向 geometry/text 信号、base-rank
+方向、relation score 和粗粒度 source/target role。五折 document-level OOF 在只看 fit 的
+precision `>= 0.97` 且至少选择 1,000 条 edge 的约束下冻结阈值 `0.52131309`。每个 source 只提交
+top target，再由按 score 排序的 degree-one/cycle guard 生成无环 path cover。
+
+| Partition | Flat F1 | Provider hierarchy F1 | Directed graph F1 | 相对 provider 差值 | Precision / recall | Candidate recall | Cross-region recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 102 页 fit，document OOF | 0.96136149 | 0.97747518 | 0.98391591 | +0.00644073 | 0.98279570 / 0.98503867 | 0.99632306 | 0.94290375 |
+| 26 页 calibration | 0.97578947 | 0.97717622 | 0.98679345 | +0.00961723 | 0.98523207 / 0.98835979 | 0.99682540 | 0.95205479 |
+| 32 页独立 test | 0.96606248 | 0.97547684 | 0.98585545 | +0.01037861 | 0.98566447 / 0.98604651 | 0.99496124 | 0.94796380 |
+
+独立 test 的方向和幅度与 fit/calibration 一致。Test graphical-multicolumn F1 为
+`0.97319400`，普通 multicolumn 为 `0.99527027`；唯一 graphical-only 页没有 labelled successor，
+通过显式 labelled-page count 排除。Path-cover decoder 在 fit/calibration/test 分别拒绝
+`1/1/1` 个 cycle 和 `6/6/9` 个 incoming conflict，并将 test top-candidate F1 从
+`0.98529412` 提高到 `0.98585545`，不是只声明一个图约束。
+
+全部 160 页的正序/反序 element-array 对照得到完全相同的 candidate。完整运行会在打开 evaluation
+label 前写出每个 source 的前三个 alternative、score margin、选中 review edge 和局部 chain；当前
+环境实测耗时 `5:16`、峰值 RSS 约 `1.07 GB`。输出继续保持 `runtime_reorder: false`。两个 graph
+head 现在都在 held-out 英文论文家族内泛化，但尚未联合解码、序列化为 runtime model，也没有在
+年报、门户、中文文档和 image-source OCR 上获得独立验证；这些 gate 通过前不能自动替换
+semantic order。

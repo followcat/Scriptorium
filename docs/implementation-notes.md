@@ -1355,12 +1355,49 @@ regions by `+0.04518903`.
 
 Proposal JSON contains candidate scores and review-required paragraph streams,
 not labels. It is deliberately not a runtime model: paragraph membership is
-only one head of the target graph, and paragraph-to-paragraph successor edges
-are still missing. Relation-prediction research supports adding a separate
-successor head with degree/cycle constraints rather than deriving a page-wide
-permutation from connected components. GraphDoc additionally suggests keeping
+only one head of the target graph, and this head does not emit
+paragraph-to-paragraph successor edges. The separate successor head below uses
+degree/cycle constraints rather than deriving a page-wide permutation from
+connected components. GraphDoc additionally suggests keeping
 sequence, parent, and reference relations as separate typed graph edges instead
 of overloading one order field.
+
+`benchmark-successor-graph` implements the separate directed head. Candidate
+generation is still answer-free and source-neutral: it combines both directions
+of selected adjacency and sparse relation candidates with 20 normalized-center
+nearest targets per source. It canonicalizes elements before either geometry
+primitive runs and does not consume provider regions or paragraph-membership
+labels. The resulting feature vector has 39 values: the existing directed
+geometry/text family plus base-rank direction, forward/reverse relation score
+and selection state, and source/target text/figure/table role indicators.
+
+The 102-page fit partition yields 175,748 candidates, 7,858 labelled positives,
+and candidate recall `0.99632306`. Five `GroupKFold` folds keep all pages from a
+document together. OOF scores alone select threshold `0.52131309` while
+requiring endpoint-aware precision `>= 0.97` and at least 1,000 emitted edges.
+For each source, deterministic ranking uses model score first and answer-free
+relation/base/distance evidence only to resolve exact score ties. Top-one edges
+above threshold are then merged in descending score order through the shared
+degree-one acyclic path-cover primitive.
+
+Fit OOF, calibration, and independent-test relation F1 is
+`0.98391591/0.98679345/0.98585545`, versus provider hierarchy
+`0.97747518/0.97717622/0.97547684` and flat
+`0.96136149/0.97578947/0.96606248`. Independent candidate recall is
+`0.99496124`; selected within/cross-region recovery is
+`0.99391955/0.94796380`. The decoder rejects one cycle in each partition and
+`6/6/9` incoming conflicts, improving independent top-one F1 from `0.98529412`
+to `0.98585545`.
+
+Proposal files retain only the three highest-scoring alternatives per source,
+their margins, accepted review edges, and resulting local chains. Evaluation
+proposals are written before their labels open, paths and hashes remain bound to
+the corpus, labels are checked for unique degree-one acyclic edges, and a
+160-page reversal audit confirms input-array invariance. The observed complete
+run uses about `1.07 GB` peak RSS; a runtime implementation would need streamed
+feature batches and a hash-bound serialized model. No runtime model exists yet,
+and paragraph/successor heads have not been jointly decoded or cross-domain
+calibrated.
 
 The generated directories enforce the data boundary:
 
