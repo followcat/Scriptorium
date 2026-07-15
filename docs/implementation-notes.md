@@ -1301,6 +1301,22 @@ pages. Two fit documents failed source-page alignment and were replaced. The
 parallel oracle-region control reaches membership coverage `0.99786574`,
 within-region F1 `0.99211930`, and region-transition F1 `0.92806959`.
 
+The matching 128-page PP-DocLayoutV3 replay scores provider relation F1
+`0.97747518/0.97717622` on fit/calibration, above flat
+`0.96136149/0.97578947`. Provider-region pair F1 is
+`0.71930643/0.62020524`; actual assigned-stream pair F1 is only
+`0.71988356/0.62210668`. The independent 32-page stream score remains below its
+region score (`0.80042627 < 0.80643143`), so the relation improvement does not
+promote grouping or runtime reorder.
+
+This replay found a predecessor cycle in `_spatial_graph_order()`. The allowed
+small vertical overlap can make two short boxes choose one another when the page
+median line height is much larger. Root tracing now detects the repeated node,
+extracts the cycle, and uses its deterministic visual-minimum member as the
+canonical root. Successful spatial-graph assignments expose
+`predecessor-cycle-normalized`; paths that later decline spatial graph still
+terminate safely. A synthetic regression fixture covers the former loop.
+
 The generated directories enforce the data boundary:
 
 - `images/` is the only provider input.

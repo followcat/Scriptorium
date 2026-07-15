@@ -1506,3 +1506,23 @@ membership 与 successor。Post-OCR paragraph recognition 的两阶段 line-spli
 [Liu 等，DAS 2022](https://arxiv.org/abs/2203.09638)）。这与上面的 assigned-stream 结果一致：
 只拆 region 不是通用 grouping 解法。任何 learned line graph 在 document-held-out segmentation
 与 relation gate 同时通过前都保持 benchmark-only。
+
+随后在全部 128 个渲染图上重新运行 PP-DocLayoutV3；每个 provider JSON 都绑定新的 corpus
+manifest hash。Provider-derived hierarchy 会分别执行 fit 与 calibration prediction，之后才打开
+各自 label：
+
+| Provider hierarchy | Relation F1 | Flat F1 | Provider-region pair F1 | Assigned-stream pair F1 | Assignment coverage |
+|---|---:|---:|---:|---:|---:|
+| 102 页 fit | 0.97747518 | 0.96136149 | 0.71930643 | 0.71988356 | 0.96719334 |
+| 26 页 calibration | 0.97717622 | 0.97578947 | 0.62020524 | 0.62210668 | 0.92364898 |
+| 32 页官方 test window | 0.97547684 | 0.96606248 | 0.80643143 | 0.80042627 | 0.97687225 |
+
+扩大后的 calibration relation 比 flat 高 `+0.00138675`，fit 高 `+0.01611369`，未改变的独立
+test 仍高 `+0.00941436`。这在更广文档集上补上了此前 relation-level calibration 缺口，但
+grouping 仍未解决：assigned stream 在扩大 fit/calibration 上只比 provider region 高
+`+0.00057713/+0.00190144`，在独立 test 上仍低 `-0.00600516`。
+
+第一次扩大重放还暴露了性能正确性缺陷：当页面 median line height 较大时，短而重叠的 box
+可能在 spatial-graph predecessor 中成环；旧 root traversal 没有 cycle guard，导致两个普通规模
+页面无法结束。采样定位循环后，现在会把 cycle 归一到确定性的视觉最小根。原慢页面在
+`2.48s` 内完成；完整 `403 passed`，既有 50/14/32 页 benchmark 值逐位不变。

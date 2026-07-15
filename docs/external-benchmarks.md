@@ -1695,3 +1695,28 @@ explicitly notes line width/indentation as useful paragraph context
 assigned-stream result above: region splitting alone is not a general grouping
 solution. Any learned line graph remains benchmark-only until document-held-out
 segmentation and relation gates pass together.
+
+PP-DocLayoutV3 was then rerun over all 128 rendered images; every provider JSON
+is bound to the new corpus manifest hash. Provider-derived hierarchy predicts
+fit and calibration in separate passes before opening the corresponding labels:
+
+| Provider hierarchy | Relation F1 | Flat F1 | Provider-region pair F1 | Assigned-stream pair F1 | Assignment coverage |
+|---|---:|---:|---:|---:|---:|
+| 102-page fit | 0.97747518 | 0.96136149 | 0.71930643 | 0.71988356 | 0.96719334 |
+| 26-page calibration | 0.97717622 | 0.97578947 | 0.62020524 | 0.62210668 | 0.92364898 |
+| 32-page official-test window | 0.97547684 | 0.96606248 | 0.80643143 | 0.80042627 | 0.97687225 |
+
+The larger calibration relation result is now `+0.00138675` above flat, while
+fit is `+0.01611369` above flat and the unchanged independent test remains
+`+0.00941436` above flat. This closes the previous relation-level calibration
+deficit on a broader document set. It does not close grouping: assigned streams
+gain only `+0.00057713/+0.00190144` over provider regions on expanded
+fit/calibration and still lose `-0.00600516` on independent test.
+
+The first expanded replay also exposed a performance correctness defect. Short
+overlapping boxes on pages with a larger median line height could form a cycle
+in spatial-graph predecessor links; root traversal had no cycle guard and two
+otherwise ordinary pages did not terminate. Sampling isolated the loop, and
+cycles are now normalized to their deterministic visual-minimum root. The slow
+page completes in `2.48s`; the full 403-test suite passes, and all prior
+50/14/32-page benchmark values remain bit-for-bit unchanged.

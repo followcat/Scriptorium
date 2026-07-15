@@ -804,6 +804,18 @@ graphical-multicolumn 64 页、multicolumn 60 页、graphical 4 页。两个 fit
 alignment 失败而被替换。平行 oracle-region control 的 membership coverage 为
 `0.99786574`，within-region F1 为 `0.99211930`，region-transition F1 为 `0.92806959`。
 
+对应的 128 页 PP-DocLayoutV3 重放在 fit/calibration 上得到 provider relation F1
+`0.97747518/0.97717622`，高于 flat `0.96136149/0.97578947`。Provider-region pair F1 为
+`0.71930643/0.62020524`，真正的 assigned-stream pair F1 也只有
+`0.71988356/0.62210668`。独立 32 页 stream 仍低于 region
+（`0.80042627 < 0.80643143`），因此 relation 提升不会晋升 grouping 或 runtime reorder。
+
+这次重放发现 `_spatial_graph_order()` 的 predecessor cycle：页面 median line height 明显较大时，
+允许的小幅纵向重叠可能使两个短 box 互相选择。Root tracing 现在会检测重复节点、提取 cycle，
+并以其中确定性的视觉最小 member 作为 canonical root。最终采用 spatial graph 的 assignment 会
+暴露 `predecessor-cycle-normalized`；后续放弃 spatial graph 的路径也能安全终止。合成 regression
+fixture 覆盖了此前的循环。
+
 生成目录明确隔离数据边界：
 
 - `images/` 是 provider 唯一输入。
