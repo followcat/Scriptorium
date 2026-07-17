@@ -101,6 +101,93 @@ class _SelectedRegion:
     provider_reference: str | None
 
 
+def build_fine_hierarchy_input_from_document(
+    document: DocumentIR,
+    *,
+    page_index: int = 0,
+    sample_id: str | None = None,
+) -> HierarchyInputAdapterResult:
+    """Export answer-free fine-line hierarchy input without provider regions.
+
+    Graph heads only consume fine elements, page geometry, and text. This path
+    lets real PDF/image pages enter paragraph/successor prediction before any
+    structure JSON is available. Regions remain empty by design.
+    """
+
+    from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
+
+    if page_index < 0:
+        raise ValueError("page_index must be non-negative")
+    page = next(
+        (candidate for candidate in document.pages if candidate.page_index == page_index),
+        None,
+    )
+    if page is None:
+        available = sorted(candidate.page_index for candidate in document.pages)
+        raise ValueError(
+            f"DocumentIR has no page_index {page_index}; available page indices: "
+            f"{available}"
+        )
+
+    fine_rejected = Counter[str]()
+    fine_elements: list[ElementIR] = []
+    for element in page.elements:
+        reason = _fine_element_rejection_reason(element)
+        if reason is None:
+            fine_elements.append(element)
+        else:
+            fine_rejected[reason] += 1
+    if not fine_elements:
+        raise ValueError(
+            "DocumentIR page has no visible non-empty text elements for the fine layer"
+        )
+    if len(fine_elements) > MAX_HIERARCHY_ELEMENTS:
+        raise ValueError(
+            f"adapted hierarchy cannot exceed {MAX_HIERARCHY_ELEMENTS} fine elements; "
+            f"page {page_index} has {len(fine_elements)}"
+        )
+
+    elements = [
+        {
+            "id": element.id,
+            "box": element.bbox_pdf.as_list(),
+            "role": _element_role(element),
+            "text": element.source_text,
+        }
+        for element in fine_elements
+    ]
+    payload = {
+        "schema": HIERARCHY_INPUT_SCHEMA,
+        "id": sample_id or f"{document.id or 'document'}-page-{page_index}",
+        "page_index": page_index,
+        "width": float(page.width_pt),
+        "height": float(page.height_pt),
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": elements,
+        "regions": [],
+        "source": {
+            "document_id": document.id,
+            "source": document.source,
+            "source_type": document.source_type,
+            "page_index": page_index,
+            "adapter": "fine-only-document-ir",
+        },
+    }
+    diagnostics = {
+        "schema": HIERARCHY_INPUT_ADAPTER_SCHEMA,
+        "adapter": "fine-only-document-ir",
+        "page_index": page_index,
+        "fine_element_count": len(elements),
+        "fine_element_selection_policy": FINE_ELEMENT_SELECTION_POLICY,
+        "rejected_fine_element_counts": dict(sorted(fine_rejected.items())),
+        "selected_coarse_region_count": 0,
+        "rejected_region_count": 0,
+        "provider_regions_required": False,
+    }
+    return HierarchyInputAdapterResult(payload=payload, diagnostics=diagnostics)
+
+
 def build_hierarchy_input_from_document(
     document: DocumentIR,
     structure_payload: Any,

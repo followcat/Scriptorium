@@ -13,8 +13,12 @@ from scriptorium.hierarchical_order import (
 )
 from scriptorium.hierarchical_order_adapter import (
     HIERARCHY_INPUT_ADAPTER_SCHEMA,
+    build_fine_hierarchy_input_from_document,
     build_hierarchy_input_from_document,
 )
+from scriptorium.hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
+from scriptorium.paragraph_graph_benchmark import _page_candidates as paragraph_page_candidates
+from scriptorium.successor_graph_benchmark import _page_candidates as successor_page_candidates
 from scriptorium.models import BBox, DocumentIR, ElementIR, PageIR
 from scriptorium.reading_order_sidecar import SIDECAR_SCHEMA_NAME
 
@@ -228,6 +232,65 @@ def test_build_hierarchical_order_cli_adapts_document_ir(tmp_path) -> None:
         PROVIDER_COARSE_REGION_SOURCE
     )
     assert output["runtime_reorder"] is False
+
+
+def test_fine_only_hierarchy_input_exports_answer_free_elements(tmp_path) -> None:
+    document = _two_column_document()
+    adapted = build_fine_hierarchy_input_from_document(
+        document,
+        page_index=0,
+        sample_id="paper-page-0",
+    )
+
+    assert adapted.payload["schema"] == HIERARCHY_INPUT_SCHEMA
+    assert adapted.payload["id"] == "paper-page-0"
+    assert adapted.payload["regions"] == []
+    assert [element["id"] for element in adapted.payload["elements"]] == [
+        "left-one",
+        "left-two",
+        "right-one",
+        "right-two",
+    ]
+    assert adapted.diagnostics["adapter"] == "fine-only-document-ir"
+    assert adapted.diagnostics["fine_element_count"] == 4
+    assert adapted.diagnostics["selected_coarse_region_count"] == 0
+    assert adapted.diagnostics["provider_regions_required"] is False
+    assert "source-visual-layer" in adapted.diagnostics["rejected_fine_element_counts"]
+
+    # Graph candidate builders accept fine-only hierarchy input.
+    paragraph_ids, paragraph_candidates = paragraph_page_candidates(adapted.payload)
+    successor_ids, _base_rank, _base_edges, successor_candidates = successor_page_candidates(
+        adapted.payload,
+        nearest_candidates=3,
+    )
+    assert paragraph_ids
+    assert successor_ids
+    assert paragraph_candidates
+    assert successor_candidates
+
+    document_path = tmp_path / "document.ir.json"
+    output_path = tmp_path / "hierarchy-input.json"
+    document.save(document_path)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "export-hierarchy-input",
+            str(document_path),
+            "--page-index",
+            "0",
+            "--sample-id",
+            "cli-page-0",
+            "--output",
+            str(output_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Fine elements: 4" in result.output
+    assert "Adapter: fine-only-document-ir" in result.output
+    exported = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exported["schema"] == HIERARCHY_INPUT_SCHEMA
+    assert exported["id"] == "cli-page-0"
+    assert exported["regions"] == []
 
 
 def _two_column_document() -> DocumentIR:

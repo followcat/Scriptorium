@@ -39,7 +39,10 @@ from .floating_ranker import predict_floating_relations, train_floating_relation
 from .html_edits import apply_html_edit_patch
 from .html_export import HtmlTextFit, export_html
 from .hierarchical_order import build_hierarchical_order_proposal
-from .hierarchical_order_adapter import build_hierarchy_input_from_document
+from .hierarchical_order_adapter import (
+    build_fine_hierarchy_input_from_document,
+    build_hierarchy_input_from_document,
+)
 from .hierarchical_order_benchmark import (
     benchmark_hierarchical_order_corpus,
     materialize_comphrdoc_hierarchy_corpus,
@@ -459,6 +462,75 @@ def benchmark_chunkr_order_ranker_roor_command(
     )
     typer.echo(f"Decision: {report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
+
+
+@app.command("export-hierarchy-input")
+def export_hierarchy_input_command(
+    ir_json: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="DocumentIR JSON.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/hierarchy-input.json"),
+        "--output",
+        "-o",
+    ),
+    page_index: int = typer.Option(
+        0,
+        "--page-index",
+        min=0,
+        help="Zero-based DocumentIR page index to export.",
+    ),
+    sample_id: Optional[str] = typer.Option(
+        None,
+        "--sample-id",
+        help="Optional hierarchy input id.",
+    ),
+    structure_json: Optional[Path] = typer.Option(
+        None,
+        "--structure-json",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional provider structure JSON. When omitted, export fine-only input.",
+    ),
+) -> None:
+    """Export answer-free hierarchy input for graph prediction or hierarchy proposals."""
+
+    try:
+        document = DocumentIR.load(ir_json)
+        if structure_json is None:
+            adapter_result = build_fine_hierarchy_input_from_document(
+                document,
+                page_index=page_index,
+                sample_id=sample_id,
+            )
+        else:
+            adapter_result = build_hierarchy_input_from_document(
+                document,
+                load_structure_json(structure_json),
+                page_index=page_index,
+            )
+            if sample_id:
+                adapter_result.payload["id"] = sample_id
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="ir_json") from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(adapter_result.payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    diagnostics = adapter_result.diagnostics
+    typer.echo(f"Hierarchy input: {output}")
+    typer.echo(f"Fine elements: {diagnostics.get('fine_element_count', 0)}")
+    typer.echo(
+        "Coarse regions: "
+        f"{diagnostics.get('selected_coarse_region_count', 0)}"
+    )
+    typer.echo(f"Adapter: {diagnostics.get('adapter', 'provider-structure')}")
 
 
 @app.command("build-hierarchical-order")
