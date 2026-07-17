@@ -56,6 +56,7 @@ from .ocr import (
 )
 from .opendataloader_provider import OpenDataLoaderAdapter
 from .paddle_layout_provider import PaddleLayoutAdapter, run_paddle_layout_corpus
+from .joint_graph_benchmark import benchmark_joint_graph
 from .paragraph_graph_benchmark import benchmark_paragraph_graph
 from .successor_graph_benchmark import benchmark_successor_graph
 from .pdf_export import print_html_to_pdf
@@ -982,6 +983,75 @@ def benchmark_successor_graph_command(
         typer.echo(
             f"{split} precision / recall / F1: "
             f"{relation['precision']} / {relation['recall']} / {relation['f1']}"
+        )
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
+
+
+@app.command("benchmark-joint-graph")
+def benchmark_joint_graph_command(
+    train_corpus: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Provider hierarchy corpus with document-disjoint fit/calibration labels.",
+    ),
+    paragraph_proposals_dir: Path = typer.Option(
+        ...,
+        "--paragraph-proposals-dir",
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Directory of review-only paragraph-graph proposals.",
+    ),
+    successor_proposals_dir: Path = typer.Option(
+        ...,
+        "--successor-proposals-dir",
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Directory of review-only successor-graph proposals.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/joint-graph-benchmark.json"),
+        "--output",
+        "-o",
+    ),
+    test_corpus: Optional[Path] = typer.Option(
+        None,
+        "--test-corpus",
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Optional independent provider hierarchy test corpus.",
+    ),
+    proposals_dir: Optional[Path] = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Directory for review-only joint hierarchical proposals.",
+    ),
+) -> None:
+    """Jointly decode paragraph and successor graph proposals without runtime reorder."""
+
+    try:
+        result = benchmark_joint_graph(
+            train_corpus,
+            paragraph_proposals_dir=paragraph_proposals_dir,
+            successor_proposals_dir=successor_proposals_dir,
+            output=output,
+            proposals_dir=proposals_dir,
+            test_corpus_dir=test_corpus,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="train_corpus") from exc
+    for split, summary in result.report["summary"].items():
+        relation = summary["selected_relation"]
+        segmentation = summary["segmentation_pairwise"]
+        typer.echo(
+            f"{split} relation F1 / segmentation F1: "
+            f"{relation['f1']} / {segmentation['f1']}"
         )
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
