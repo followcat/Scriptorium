@@ -1871,3 +1871,26 @@ Synthetic multi-column fixture tests cover answer separation, degree-one
 conflicts, missing/poisoned proposals, and proposal schema hygiene. Full
 Comp-HRDoc partition numbers are intentionally not claimed here until the
 frozen train/test corpora are re-run end-to-end with the joint decoder.
+
+DocumentIR bridge path for real sources:
+
+```bash
+scriptorium convert data/external/attention-is-all-you-need.pdf \
+  --out-dir outputs/attention-page0 --dpi 144
+scriptorium export-hierarchy-input outputs/attention-page0/document.ir.json \
+  --page-index 0 --sample-id attention-page-0 \
+  --output outputs/attention-page0/hierarchy-input.json
+scriptorium predict-paragraph-graph outputs/attention-page0/hierarchy-input.json \
+  --model outputs/models/paragraph-graph.joblib \
+  -o outputs/attention-page0/paragraph.proposal.json
+scriptorium predict-successor-graph outputs/attention-page0/hierarchy-input.json \
+  --model outputs/models/successor-graph.joblib \
+  -o outputs/attention-page0/successor.proposal.json
+```
+
+A local smoke run exported 56 fine elements from Attention page 0, produced
+review-only paragraph/successor proposals with `runtime_reorder: false`, and
+joint-decoded synthetic train proposals at perfect fixture F1. That validates
+the pipeline only; models trained on synthetic multi-column fixtures are not
+cross-domain evidence for papers, annual reports, portals, Chinese documents,
+or image-source OCR.

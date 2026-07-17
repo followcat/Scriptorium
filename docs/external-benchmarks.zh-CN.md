@@ -1650,3 +1650,24 @@ scriptorium benchmark-joint-graph   /path/to/comphrdoc-provider-train-128   --pa
 合成多栏 fixture 测试覆盖 answer separation、degree-one 冲突、缺失/污染 proposal 以及
 schema 卫生。在冻结 train/test 语料上端到端重跑 joint decoder 之前，这里不声明完整
 Comp-HRDoc 分区数字。
+
+真实 source 的 DocumentIR 桥接路径：
+
+```bash
+scriptorium convert data/external/attention-is-all-you-need.pdf \
+  --out-dir outputs/attention-page0 --dpi 144
+scriptorium export-hierarchy-input outputs/attention-page0/document.ir.json \
+  --page-index 0 --sample-id attention-page-0 \
+  --output outputs/attention-page0/hierarchy-input.json
+scriptorium predict-paragraph-graph outputs/attention-page0/hierarchy-input.json \
+  --model outputs/models/paragraph-graph.joblib \
+  -o outputs/attention-page0/paragraph.proposal.json
+scriptorium predict-successor-graph outputs/attention-page0/hierarchy-input.json \
+  --model outputs/models/successor-graph.joblib \
+  -o outputs/attention-page0/successor.proposal.json
+```
+
+本地 smoke 从 Attention 第 0 页导出 56 个 fine element，生成
+`runtime_reorder: false` 的 paragraph/successor proposal，并在合成 train proposal
+上 joint decode 得到完美 fixture F1。这只验证链路；用合成多栏 fixture 训练的模型
+不能当作论文、年报、门户、中文文档或 image-source OCR 的跨域证据。
