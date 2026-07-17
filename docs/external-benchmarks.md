@@ -1756,7 +1756,8 @@ scriptorium benchmark-paragraph-graph \
   /path/to/comphrdoc-provider-train-128 \
   --test-corpus /path/to/comphrdoc-provider-test-32 \
   --output outputs/paragraph-graph-report.json \
-  --proposals-dir outputs/paragraph-graph-proposals
+  --proposals-dir outputs/paragraph-graph-proposals \
+  --model-output outputs/models/paragraph-graph.joblib
 ```
 
 Five-fold OOF training keeps whole fit documents together. Only fit OOF labels
@@ -1802,7 +1803,8 @@ scriptorium benchmark-successor-graph \
   /path/to/comphrdoc-provider-train-128 \
   --test-corpus /path/to/comphrdoc-provider-test-32 \
   --output outputs/successor-graph-report.json \
-  --proposals-dir outputs/successor-graph-proposals
+  --proposals-dir outputs/successor-graph-proposals \
+  --model-output outputs/models/successor-graph.joblib
 ```
 
 Candidates are bidirectional selected adjacencies, bidirectional sparse
@@ -1835,9 +1837,11 @@ review edges, and local chains before evaluation labels open; it took `5:16`
 and about `1.07 GB` peak RSS in the observed environment. The output remains
 `runtime_reorder: false`. Both graph heads generalize within the held-out
 English-paper family. A separate joint decoder now consumes their review-only
-proposals; serialization, bounded-memory training, and cross-domain annual-
-report / portal / Chinese / image-source labels remain open gates before any
-automatic semantic-order replacement.
+proposals. Both heads can serialize a hash-checked `.joblib` model via
+`--model-output` and score evaluation pages with page-wise feature batches so
+the dense fit matrix is released before proposal generation. Cross-domain
+annual-report / portal / Chinese / image-source labels remain open gates before
+any automatic semantic-order replacement.
 
 ### Joint Paragraph/Successor Decode
 

@@ -1556,7 +1556,8 @@ scriptorium benchmark-paragraph-graph \
   /path/to/comphrdoc-provider-train-128 \
   --test-corpus /path/to/comphrdoc-provider-test-32 \
   --output outputs/paragraph-graph-report.json \
-  --proposals-dir outputs/paragraph-graph-proposals
+  --proposals-dir outputs/paragraph-graph-proposals \
+  --model-output outputs/models/paragraph-graph.joblib
 ```
 
 五折 OOF 训练以整篇 fit 文档为分组。只有 fit OOF label 能选择 operating point：至少 100 条 edge、
@@ -1594,7 +1595,8 @@ scriptorium benchmark-successor-graph \
   /path/to/comphrdoc-provider-train-128 \
   --test-corpus /path/to/comphrdoc-provider-test-32 \
   --output outputs/successor-graph-report.json \
-  --proposals-dir outputs/successor-graph-proposals
+  --proposals-dir outputs/successor-graph-proposals \
+  --model-output outputs/models/successor-graph.joblib
 ```
 
 Candidate 包括双向 selected adjacency、双向 sparse relation candidate，以及每个 source 固定 20
@@ -1620,8 +1622,9 @@ top target，再由按 score 排序的 degree-one/cycle guard 生成无环 path 
 label 前写出每个 source 的前三个 alternative、score margin、选中 review edge 和局部 chain；当前
 环境实测耗时 `5:16`、峰值 RSS 约 `1.07 GB`。输出继续保持 `runtime_reorder: false`。两个 graph
 head 现在都在 held-out 英文论文家族内泛化。独立的 joint decoder 已可消费它们的 review-only
-proposal；序列化、有界内存训练，以及年报/门户/中文文档/image-source OCR 的跨域标签仍是
-runtime 替换前的开放 gate。
+proposal。两个 head 都可通过 `--model-output` 写出带 SHA-256 校验的 `.joblib` 模型，并在
+evaluation 阶段按页批打分以释放 dense fit matrix。年报/门户/中文文档/image-source OCR
+的跨域标签仍是 runtime 替换前的开放 gate。
 
 ### 联合 Paragraph/Successor 解码
 

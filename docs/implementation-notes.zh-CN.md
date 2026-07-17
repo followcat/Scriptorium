@@ -880,13 +880,17 @@ unique degree-one acyclic edge；160 页反转审计也确认输入 array 不变
 `1.07 GB`；真正的 runtime 实现还需要流式 feature batch 和 hash-bound serialized model。当前没有
 runtime model，跨领域校准也仍未完成。
 
+两个 graph head 都可通过共享的 `graph_model.py` 可选序列化 review-only 模型：
+`--model-output path.joblib` 会写出 estimator 与冻结阈值，并附带 SHA-256
+manifest；evaluation 按页批打分，以便先释放 dense fit matrix。
 `benchmark-joint-graph` 会在不重训的前提下联合解码两个 review-only head：加载
 paragraph 与 successor proposal，把 within-paragraph successor edge 作为
 degree-one 无环 path cover 的 protected edge，只接受 score 排序后的
 tail→head cross-paragraph edge，写出联合层次化 proposal，再打开 label。Joint
 输出保持 `runtime_reorder: false`，且不包含 oracle membership/scope 字段。合成
-多栏 fixture 在 `tests/test_joint_graph_benchmark.py` 覆盖该解码契约；完整
-Comp-HRDoc 分区指标只在冻结语料端到端重跑后记录。
+多栏 fixture 在 `tests/test_joint_graph_benchmark.py` 覆盖该解码契约，模型
+round-trip 在 `tests/test_graph_model.py`；完整 Comp-HRDoc 分区指标只在冻结语料
+端到端重跑后记录。
 
 生成目录明确隔离数据边界：
 

@@ -1398,14 +1398,19 @@ run uses about `1.07 GB` peak RSS; a runtime implementation would need streamed
 feature batches and a hash-bound serialized model. No runtime model exists yet,
 and cross-domain calibration remains open.
 
+Both graph heads optionally serialize a review-only model through shared
+`graph_model.py` helpers: `--model-output path.joblib` writes the estimator and
+frozen threshold with an adjacent SHA-256 manifest, and evaluation scoring uses
+page-wise feature batches so the dense fit matrix can be released first.
 `benchmark-joint-graph` jointly decodes the two review-only heads without
 retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts
 only score-ordered tail→head cross-paragraph edges, writes joint hierarchical
 proposals, then opens labels. Joint output keeps `runtime_reorder: false` and
 omits oracle membership/scope fields. Synthetic multi-column fixtures cover the
-decoder contract in `tests/test_joint_graph_benchmark.py`. Full Comp-HRDoc
-partition metrics are recorded only after an end-to-end frozen-corpus rerun.
+decoder contract in `tests/test_joint_graph_benchmark.py` and model round-trips
+in `tests/test_graph_model.py`. Full Comp-HRDoc partition metrics are recorded
+only after an end-to-end frozen-corpus rerun.
 
 The generated directories enforce the data boundary:
 
