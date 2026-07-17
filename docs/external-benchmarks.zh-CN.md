@@ -1757,3 +1757,25 @@ chain 变成 14 个 packaging 组件（标题/作者块、摘要块、Introducti
 迁移到 Attention 第 1 页（56 行 → 49 edges / 7 streams / 17 packaging 组件）和
 比亚迪 2024 年报第 1 页中文标题块（4 行 → 3 edges / 1 stream / 2 packaging 组件）。
 输出仍为 `runtime_reorder: false`，不是 promotion 窗口。
+
+更大的 train-only 64 页 Comp-HRDoc smoke（`fit/calibration = 54/10` 页、24 篇文档，
+跳过 2 篇 audited unaligned document；5 折 document OOF；gate 更接近冻结协议，
+edge precision `>= 0.97`，successor nearest-candidates `20`）用相同方式物化：
+
+| Head | Fit 指标 | Calibration 指标 |
+|---|---:|---:|
+| Paragraph pair F1 | 0.84452242 | 0.76297923 |
+| Paragraph selected-edge precision | 0.99062063 | 0.99832636 |
+| Paragraph graphical-multicolumn F1 | 0.88971368 | 0.75113300 |
+| Successor relation F1 | 0.97869507 | 0.97864552 |
+| Successor multicolumn F1 | 0.98739255 | 0.98886414 |
+| Successor graphical-multicolumn F1 | 0.96908345 | 0.96626181 |
+| Successor cross-region recall | 0.93150685 | 0.88421053 |
+| Joint relation F1 | 0.97869507 | 0.97864552 |
+| Joint segmentation pair F1 | 0.84455113 | 0.76297923 |
+| Joint within-region recall | 0.98870239 | 0.99171271 |
+| Joint cross-region recall | 0.93150685 | 0.88421053 |
+
+64 页 joint mode：62 普通 package、1 chain fallback、1 geometry-chain fallback。
+Joint relation 再次与 successor head 完全一致，并附带 paragraph packaging。这仍不是
+冻结 128/32 独立 test 协议，且保持 `runtime_reorder: false`。

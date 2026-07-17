@@ -1989,3 +1989,27 @@ page 1 (56 lines → 49 edges / 7 streams / 17 packaging components) and BYD
 2024 annual-report page 1 Chinese title block (4 lines → 3 edges / 1 stream /
 2 packaging components). Outputs remain `runtime_reorder: false` and are not a
 promotion window.
+
+A larger train-only 64-page Comp-HRDoc smoke (`fit/calibration = 54/10` pages
+from 24 documents after two audited unaligned-document skips; 5-fold document
+OOF; gates closer to the frozen protocol with edge precision `>= 0.97` and
+successor nearest-candidates `20`) was materialized the same way:
+
+| Head | Fit metric | Calibration metric |
+|---|---:|---:|
+| Paragraph pair F1 | 0.84452242 | 0.76297923 |
+| Paragraph selected-edge precision | 0.99062063 | 0.99832636 |
+| Paragraph graphical-multicolumn F1 | 0.88971368 | 0.75113300 |
+| Successor relation F1 | 0.97869507 | 0.97864552 |
+| Successor multicolumn F1 | 0.98739255 | 0.98886414 |
+| Successor graphical-multicolumn F1 | 0.96908345 | 0.96626181 |
+| Successor cross-region recall | 0.93150685 | 0.88421053 |
+| Joint relation F1 | 0.97869507 | 0.97864552 |
+| Joint segmentation pair F1 | 0.84455113 | 0.76297923 |
+| Joint within-region recall | 0.98870239 | 0.99171271 |
+| Joint cross-region recall | 0.93150685 | 0.88421053 |
+
+Joint modes on the 64 pages: 62 ordinary package, 1 chain fallback, 1
+geometry-chain fallback. Joint relation metrics again match the successor head
+exactly while adding paragraph packaging. This is still not the frozen 128/32
+independent-test protocol and remains `runtime_reorder: false`.
