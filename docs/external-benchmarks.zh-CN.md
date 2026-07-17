@@ -1671,3 +1671,49 @@ scriptorium predict-successor-graph outputs/attention-page0/hierarchy-input.json
 `runtime_reorder: false` 的 paragraph/successor proposal，并在合成 train proposal
 上 joint decode 得到完美 fixture F1。这只验证链路；用合成多栏 fixture 训练的模型
 不能当作论文、年报、门户、中文文档或 image-source OCR 的跨域证据。
+
+### Graph Hierarchy 物化与 8 页 Comp-HRDoc Smoke
+
+`materialize-graph-hierarchy` 会把 answer-separated hierarchy corpus 转成 fine-line
+graph head 使用的 provider-hierarchy corpus schema，且不运行 layout provider。Input
+只保留 fine text/geometry（`regions: []`）；所有 input 写完后才打开 labels：
+
+```bash
+scriptorium materialize-comphrdoc-hierarchy \
+  data/external/comphrdoc-provider-calibration-smoke \
+  -o outputs/comphrdoc-hierarchy-smoke
+scriptorium materialize-graph-hierarchy \
+  outputs/comphrdoc-hierarchy-smoke \
+  -o outputs/graph-hierarchy-smoke
+scriptorium benchmark-paragraph-graph outputs/graph-hierarchy-smoke \
+  --cross-validation-folds 2 \
+  --minimum-edge-precision 0.9 --minimum-selected-edges 20 \
+  --model-output outputs/graph-hierarchy-smoke/models/paragraph.joblib \
+  -o outputs/graph-hierarchy-smoke/paragraph-report.json
+scriptorium benchmark-successor-graph outputs/graph-hierarchy-smoke \
+  --cross-validation-folds 2 --nearest-candidates 10 \
+  --minimum-edge-precision 0.9 --minimum-selected-edges 50 \
+  --model-output outputs/graph-hierarchy-smoke/models/successor.joblib \
+  -o outputs/graph-hierarchy-smoke/successor-report.json
+scriptorium benchmark-joint-graph outputs/graph-hierarchy-smoke \
+  --paragraph-proposals-dir outputs/graph-hierarchy-smoke/paragraph-proposals \
+  --successor-proposals-dir outputs/graph-hierarchy-smoke/successor-proposals \
+  -o outputs/graph-hierarchy-smoke/joint-report.json
+```
+
+在 8 页 train-only Comp-HRDoc smoke（`fit/calibration = 6/2` 页、4 篇文档；2 折
+document OOF，不是冻结的 128/32 协议）上：
+
+| Head | Fit 指标 | Calibration 指标 |
+|---|---:|---:|
+| Paragraph pair F1 | 0.85743802 | 0.78170674 |
+| Paragraph selected-edge precision | 0.96118012 | 0.96888889 |
+| Successor relation F1 | 0.97297297 | 0.95681063 |
+| Successor cross-region recall | 0.85526316 | 0.73684211 |
+| Joint relation F1 | 0.96106785 | 0.91719745 |
+| Joint segmentation pair F1 | 0.85743802 | 0.78170674 |
+
+Joint decode 现在只加载达到 successor 阈值的 rank-1 candidate（或已 path-cover 的
+selected edge），不会重新引入低分 rank-1 噪声。所有输出保持 `runtime_reorder: false`。
+这些 8 页数字只是链路证据：拆分很小、operating gate 放宽，不是冻结独立 test 的
+promotion 窗口。

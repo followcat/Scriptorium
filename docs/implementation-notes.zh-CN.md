@@ -887,7 +887,10 @@ manifest；evaluation 按页批打分，以便先释放 dense fit matrix；
 生成 review-only proposal，无需 labels。`export-hierarchy-input` 从 DocumentIR
 构建该 hierarchy input：带 `--structure-json` 时沿用 provider coarse-region
 adapter；省略时由 `build_fine_hierarchy_input_from_document` 只导出可见非空文本，
-`regions` 留空供 graph head 使用。
+`regions` 留空供 graph head 使用。`materialize-graph-hierarchy` 会把
+answer-separated hierarchy corpus 改写成 graph head 使用的 provider-hierarchy
+corpus/label schema，input 中仍不含 provider sequence/relation。Joint decode 只
+加载达到 successor 阈值的 rank-1 candidate，避免低分边被重新引入。
 `benchmark-joint-graph` 会在不重训的前提下联合解码两个 review-only head：加载
 paragraph 与 successor proposal，把 within-paragraph successor edge 作为
 degree-one 无环 path cover 的 protected edge，只接受 score 排序后的

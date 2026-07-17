@@ -1894,3 +1894,51 @@ joint-decoded synthetic train proposals at perfect fixture F1. That validates
 the pipeline only; models trained on synthetic multi-column fixtures are not
 cross-domain evidence for papers, annual reports, portals, Chinese documents,
 or image-source OCR.
+
+### Graph Hierarchy Materialize and 8-Page Comp-HRDoc Smoke
+
+`materialize-graph-hierarchy` converts an answer-separated hierarchy corpus into
+the provider-hierarchy corpus schema used by the fine-line graph heads without
+running a layout provider. Inputs keep fine text/geometry only (`regions: []`);
+labels open only after every input is written:
+
+```bash
+scriptorium materialize-comphrdoc-hierarchy \
+  data/external/comphrdoc-provider-calibration-smoke \
+  -o outputs/comphrdoc-hierarchy-smoke
+scriptorium materialize-graph-hierarchy \
+  outputs/comphrdoc-hierarchy-smoke \
+  -o outputs/graph-hierarchy-smoke
+scriptorium benchmark-paragraph-graph outputs/graph-hierarchy-smoke \
+  --cross-validation-folds 2 \
+  --minimum-edge-precision 0.9 --minimum-selected-edges 20 \
+  --model-output outputs/graph-hierarchy-smoke/models/paragraph.joblib \
+  -o outputs/graph-hierarchy-smoke/paragraph-report.json
+scriptorium benchmark-successor-graph outputs/graph-hierarchy-smoke \
+  --cross-validation-folds 2 --nearest-candidates 10 \
+  --minimum-edge-precision 0.9 --minimum-selected-edges 50 \
+  --model-output outputs/graph-hierarchy-smoke/models/successor.joblib \
+  -o outputs/graph-hierarchy-smoke/successor-report.json
+scriptorium benchmark-joint-graph outputs/graph-hierarchy-smoke \
+  --paragraph-proposals-dir outputs/graph-hierarchy-smoke/paragraph-proposals \
+  --successor-proposals-dir outputs/graph-hierarchy-smoke/successor-proposals \
+  -o outputs/graph-hierarchy-smoke/joint-report.json
+```
+
+On an 8-page train-only Comp-HRDoc smoke (`fit/calibration = 6/2` pages from 4
+documents; 2-fold document OOF, not the frozen 128/32 protocol):
+
+| Head | Fit metric | Calibration metric |
+|---|---:|---:|
+| Paragraph pair F1 | 0.85743802 | 0.78170674 |
+| Paragraph selected-edge precision | 0.96118012 | 0.96888889 |
+| Successor relation F1 | 0.97297297 | 0.95681063 |
+| Successor cross-region recall | 0.85526316 | 0.73684211 |
+| Joint relation F1 | 0.96106785 | 0.91719745 |
+| Joint segmentation pair F1 | 0.85743802 | 0.78170674 |
+
+Joint decode now loads only successor rank-1 candidates at/above the successor
+threshold (or already selected path-cover edges), so low-score rank-1 noise is
+not reintroduced. All outputs remain `runtime_reorder: false`. These 8-page
+numbers are pipeline evidence only: they use a tiny document-disjoint split,
+relaxed operating gates, and are not a frozen independent-test promotion window.
