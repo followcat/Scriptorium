@@ -400,6 +400,142 @@ def _split_chain_by_geometry(
     return parts
 
 
+@dataclass(frozen=True)
+class JointGraphProposalResult:
+    proposal_path: Path
+    proposal: dict[str, Any]
+    hierarchy_input_path: Path | None
+    paragraph_proposal_path: Path
+    successor_proposal_path: Path
+    decoder_mode: str
+
+
+def propose_joint_graph(
+    hierarchy_input: str | Path | Mapping[str, Any],
+    *,
+    paragraph_model: str | Path,
+    successor_model: str | Path,
+    output: str | Path,
+    sample_id: str | None = None,
+    work_dir: str | Path | None = None,
+) -> JointGraphProposalResult:
+    """Predict paragraph/successor proposals and package a review-only joint graph.
+
+    This is the single-page operator path for real DocumentIR/hierarchy inputs.
+    It never reorders runtime IR.
+    """
+
+    from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
+    from .paragraph_graph_benchmark import predict_paragraph_graph
+    from .successor_graph_benchmark import predict_successor_graph
+
+    if isinstance(hierarchy_input, Mapping):
+        payload = dict(hierarchy_input)
+        hierarchy_path: Path | None = None
+    else:
+        hierarchy_path = Path(hierarchy_input)
+        payload = _json_object(hierarchy_path, label="hierarchy input")
+    if payload.get("schema") != HIERARCHY_INPUT_SCHEMA:
+        raise ValueError("joint proposal input has an unsupported hierarchy schema")
+
+    sample = sample_id or str(payload.get("id") or Path(str(output)).stem)
+    root = Path(work_dir) if work_dir is not None else Path(output).parent
+    root.mkdir(parents=True, exist_ok=True)
+    if hierarchy_path is None:
+        hierarchy_path = root / f"{_safe_filename(sample)}.hierarchy-input.json"
+        _write_json(hierarchy_path, payload)
+
+    paragraph_path = root / f"{_safe_filename(sample)}.paragraph-graph.json"
+    successor_path = root / f"{_safe_filename(sample)}.successor-graph.json"
+    paragraph = predict_paragraph_graph(
+        hierarchy_path,
+        paragraph_model,
+        output=paragraph_path,
+        sample_id=sample,
+    )
+    successor = predict_successor_graph(
+        hierarchy_path,
+        successor_model,
+        output=successor_path,
+        sample_id=sample,
+    )
+
+    membership, element_ids = _membership_from_paragraph_proposal(paragraph.proposal)
+    base_rank = _base_rank_from_proposals(
+        element_ids,
+        successor_payload=successor.proposal,
+    )
+    element_ids = tuple(
+        sorted(element_ids, key=lambda element_id: (base_rank[element_id], element_id))
+    )
+    successor_edges = _scored_edges_from_successor_proposal(successor.proposal)
+    element_boxes: dict[str, tuple[float, float, float, float]] = {}
+    for raw in payload.get("elements") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        element_id = str(raw.get("id") or "").strip()
+        raw_box = raw.get("box")
+        if not element_id or not isinstance(raw_box, list) or len(raw_box) != 4:
+            continue
+        try:
+            box = (
+                float(raw_box[0]),
+                float(raw_box[1]),
+                float(raw_box[2]),
+                float(raw_box[3]),
+            )
+        except (TypeError, ValueError):
+            continue
+        if box[2] > box[0] and box[3] > box[1]:
+            element_boxes[element_id] = box
+
+    decoded = joint_decode_page(
+        element_ids=element_ids,
+        paragraph_membership=membership,
+        successor_edges=successor_edges,
+        base_rank=base_rank,
+        element_boxes=element_boxes or None,
+    )
+    page = _PageProposals(
+        sample_id=sample,
+        partition="predict",
+        layout_stratum=str(payload.get("layout_stratum") or "unspecified"),
+        document_id=str(payload.get("document_id") or sample),
+        element_ids=element_ids,
+        base_rank=base_rank,
+        paragraph_membership=membership,
+        paragraph_edges=(),
+        successor_edges=successor_edges,
+        paragraph_threshold=float(paragraph.proposal.get("threshold") or 0.0),
+        successor_threshold=float(successor.proposal.get("threshold") or 0.0),
+        paragraph_proposal_path=paragraph.proposal_path,
+        successor_proposal_path=successor.proposal_path,
+        corpus=root,
+        labels_relative="",
+        labels_sha256="",
+        element_boxes=element_boxes or None,
+    )
+    proposal_path = Path(output)
+    written = _write_proposals([page], [decoded], proposal_path.parent)
+    if not written:
+        raise ValueError("joint proposal generation produced no output")
+    generated = Path(written[0])
+    if generated.resolve() != proposal_path.resolve():
+        proposal_path.parent.mkdir(parents=True, exist_ok=True)
+        proposal_path.write_text(generated.read_text(encoding="utf-8"), encoding="utf-8")
+        if generated != proposal_path:
+            generated.unlink(missing_ok=True)
+    proposal = _json_object(proposal_path, label="joint graph proposal")
+    return JointGraphProposalResult(
+        proposal_path=proposal_path,
+        proposal=proposal,
+        hierarchy_input_path=hierarchy_path,
+        paragraph_proposal_path=paragraph.proposal_path,
+        successor_proposal_path=successor.proposal_path,
+        decoder_mode=decoded.decoder_mode,
+    )
+
+
 def benchmark_joint_graph(
     train_corpus_dir: str | Path,
     *,

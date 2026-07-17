@@ -59,7 +59,7 @@ from .ocr import (
 )
 from .opendataloader_provider import OpenDataLoaderAdapter
 from .paddle_layout_provider import PaddleLayoutAdapter, run_paddle_layout_corpus
-from .joint_graph_benchmark import benchmark_joint_graph
+from .joint_graph_benchmark import benchmark_joint_graph, propose_joint_graph
 from .paragraph_graph_benchmark import (
     benchmark_paragraph_graph,
     predict_paragraph_graph,
@@ -1202,6 +1202,84 @@ def predict_successor_graph_command(
     typer.echo(f"Reading streams: {len(streams)}")
     typer.echo(f"Proposal: {result.proposal_path}")
     typer.echo(f"Model: {result.model_path}")
+
+
+@app.command("propose-joint-graph")
+def propose_joint_graph_command(
+    hierarchy_input: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Answer-free hierarchy input JSON, or DocumentIR when --page-index is used.",
+    ),
+    paragraph_model: Path = typer.Option(
+        ...,
+        "--paragraph-model",
+        exists=True,
+        readable=True,
+        help="Serialized paragraph-graph .joblib model with adjacent manifest.",
+    ),
+    successor_model: Path = typer.Option(
+        ...,
+        "--successor-model",
+        exists=True,
+        readable=True,
+        help="Serialized successor-graph .joblib model with adjacent manifest.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/joint-graph.proposal.json"),
+        "--output",
+        "-o",
+    ),
+    sample_id: Optional[str] = typer.Option(
+        None,
+        "--sample-id",
+        help="Optional proposal id; defaults to hierarchy/document id.",
+    ),
+    page_index: Optional[int] = typer.Option(
+        None,
+        "--page-index",
+        min=0,
+        help="When set, treat hierarchy_input as DocumentIR and export fine-only hierarchy first.",
+    ),
+    work_dir: Optional[Path] = typer.Option(
+        None,
+        "--work-dir",
+        help="Optional directory for intermediate hierarchy/paragraph/successor artifacts.",
+    ),
+) -> None:
+    """Predict and package a review-only joint graph proposal for one page."""
+
+    try:
+        source: Path | dict = hierarchy_input
+        if page_index is not None:
+            document = DocumentIR.load(hierarchy_input)
+            adapter = build_fine_hierarchy_input_from_document(
+                document,
+                page_index=page_index,
+                sample_id=sample_id,
+            )
+            source = adapter.payload
+        result = propose_joint_graph(
+            source,
+            paragraph_model=paragraph_model,
+            successor_model=successor_model,
+            output=output,
+            sample_id=sample_id,
+            work_dir=work_dir,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="hierarchy_input") from exc
+    edges = result.proposal.get("successor_edges") or []
+    streams = result.proposal.get("reading_streams") or []
+    components = result.proposal.get("paragraph_streams") or []
+    typer.echo(f"Decoder mode: {result.decoder_mode}")
+    typer.echo(f"Successor edges: {len(edges)}")
+    typer.echo(f"Reading streams: {len(streams)}")
+    typer.echo(f"Paragraph components: {len(components)}")
+    typer.echo(f"Proposal: {result.proposal_path}")
+    if result.hierarchy_input_path is not None:
+        typer.echo(f"Hierarchy input: {result.hierarchy_input_path}")
 
 
 @app.command("benchmark-joint-graph")

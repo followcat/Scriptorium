@@ -28,6 +28,7 @@ from scriptorium.successor_graph_benchmark import (
 from scriptorium.joint_graph_benchmark import (
     JOINT_GRAPH_PROPOSAL_SCHEMA,
     benchmark_joint_graph,
+    propose_joint_graph,
 )
 
 
@@ -299,6 +300,60 @@ def test_serialized_models_predict_hierarchy_inputs_and_joint_decode(
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert payload["schema"] == JOINT_GRAPH_PROPOSAL_SCHEMA
         assert payload["runtime_reorder"] is False
+
+
+def test_propose_joint_graph_packages_single_page_hierarchy(tmp_path: Path) -> None:
+    train = _write_corpus(
+        tmp_path / "train",
+        [(f"fit-{index}", "fit") for index in range(4)]
+        + [(f"calibration-{index}", "calibration") for index in range(2)],
+    )
+    paragraph = benchmark_paragraph_graph(
+        train,
+        output=tmp_path / "paragraph-report.json",
+        proposals_dir=tmp_path / "paragraph-proposals",
+        model_output=tmp_path / "paragraph.joblib",
+        cross_validation_folds=2,
+        minimum_edge_precision=0.5,
+        minimum_selected_edges=1,
+    )
+    successor = benchmark_successor_graph(
+        train,
+        output=tmp_path / "successor-report.json",
+        proposals_dir=tmp_path / "successor-proposals",
+        model_output=tmp_path / "successor.joblib",
+        cross_validation_folds=2,
+        nearest_candidates=3,
+        minimum_edge_precision=0.5,
+        minimum_selected_edges=1,
+    )
+    assert paragraph.model_path is not None
+    assert successor.model_path is not None
+
+    hierarchy_input, _labels = _page_payload("holdout-page", offset=1)
+    hierarchy_path = tmp_path / "holdout-input.json"
+    _write_json(hierarchy_path, hierarchy_input)
+
+    result = propose_joint_graph(
+        hierarchy_path,
+        paragraph_model=paragraph.model_path,
+        successor_model=successor.model_path,
+        output=tmp_path / "holdout.joint-graph.json",
+        sample_id="holdout-page",
+        work_dir=tmp_path / "propose-work",
+    )
+
+    assert result.proposal["schema"] == JOINT_GRAPH_PROPOSAL_SCHEMA
+    assert result.proposal["runtime_reorder"] is False
+    assert result.proposal["id"] == "holdout-page"
+    assert result.decoder_mode.startswith("successor-path-cover-package")
+    assert result.proposal.get("successor_edges")
+    assert result.proposal.get("reading_streams")
+    assert result.paragraph_proposal_path.is_file()
+    assert result.successor_proposal_path.is_file()
+    text = result.proposal_path.read_text(encoding="utf-8")
+    assert "oracle_region_id" not in text
+    assert "oracle_scope" not in text
 
 
 def _write_corpus(root: Path, documents: list[tuple[str, str]]) -> Path:
