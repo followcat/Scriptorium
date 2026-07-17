@@ -1804,3 +1804,73 @@ Joint relation 再次与 successor head 完全一致。相比更早冻结的 128
 successor 独立 test F1 `0.98585545`，本 64-train 独立 test 达到 `0.98125509`，
 且未用 test label 选阈值。训练量仍只有冻结 train 协议的一半，因此这是强独立
 test 链路证据，但不能替代完整 128/32 freeze。所有输出保持 `runtime_reorder: false`。
+
+### 冻结协议 Graph Hierarchy 重放（128/32）
+
+原始 paragraph 与 successor head 随后在冻结 train 协议下，用 fine-only
+graph-hierarchy 物化重放：
+
+```bash
+scriptorium fetch-comphrdoc-provider-calibration \
+  --sample-count 128 --document-count 64 \
+  --out-dir data/external/comphrdoc-provider-calibration-128-smoke \
+  --skip-unaligned-documents
+scriptorium fetch-comphrdoc-provider-test \
+  --sample-count 32 --document-count 16 \
+  --out-dir data/external/comphrdoc-provider-test-32-smoke
+scriptorium materialize-comphrdoc-hierarchy \
+  data/external/comphrdoc-provider-calibration-128-smoke \
+  -o outputs/comphrdoc-hierarchy-128-smoke
+scriptorium materialize-graph-hierarchy \
+  outputs/comphrdoc-hierarchy-128-smoke \
+  -o outputs/graph-hierarchy-128-smoke
+scriptorium materialize-comphrdoc-hierarchy \
+  data/external/comphrdoc-provider-test-32-smoke \
+  -o outputs/comphrdoc-hierarchy-test-32-smoke
+scriptorium materialize-graph-hierarchy \
+  outputs/comphrdoc-hierarchy-test-32-smoke \
+  -o outputs/graph-hierarchy-test-32-smoke
+scriptorium benchmark-paragraph-graph outputs/graph-hierarchy-128-smoke \
+  --test-corpus outputs/graph-hierarchy-test-32-smoke \
+  --cross-validation-folds 5 \
+  --minimum-edge-precision 0.97 --minimum-selected-edges 100 \
+  --model-output outputs/graph-hierarchy-128-smoke/models/paragraph.joblib \
+  -o outputs/graph-hierarchy-128-smoke/paragraph-report.json
+scriptorium benchmark-successor-graph outputs/graph-hierarchy-128-smoke \
+  --test-corpus outputs/graph-hierarchy-test-32-smoke \
+  --cross-validation-folds 5 --nearest-candidates 20 \
+  --minimum-edge-precision 0.97 --minimum-selected-edges 1000 \
+  --model-output outputs/graph-hierarchy-128-smoke/models/successor.joblib \
+  -o outputs/graph-hierarchy-128-smoke/successor-report.json
+scriptorium benchmark-joint-graph outputs/graph-hierarchy-128-smoke \
+  --paragraph-proposals-dir outputs/graph-hierarchy-128-smoke/paragraph-proposals \
+  --successor-proposals-dir outputs/graph-hierarchy-128-smoke/successor-proposals \
+  --test-corpus outputs/graph-hierarchy-test-32-smoke \
+  -o outputs/graph-hierarchy-128-smoke/joint-report.json
+```
+
+Train 分区匹配冻结协议（`fit/calibration = 102/26` 页、64 篇文档，跳过 3 篇
+audited unaligned document）。冻结阈值与 fit-OOF 数字复现原始 head：
+
+| Head | Fit OOF | Calibration | 独立 test |
+|---|---:|---:|---:|
+| Paragraph pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
+| Paragraph selected-edge precision | 0.99202393 | 0.99648712 | 0.99504132 |
+| Paragraph frozen threshold | 0.94971959 | — | — |
+| Successor relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
+| Successor multicolumn F1 | 0.99177650 | 0.99482840 | 0.99019964 |
+| Successor graphical-multicolumn F1 | 0.97438163 | 0.97919217 | 0.97350070 |
+| Successor cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
+| Successor frozen threshold | 0.52131309 | — | — |
+| Joint relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
+| Joint segmentation pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
+| Joint within-region recall | 0.99279387 | 0.99509503 | 0.99118943 |
+| Joint cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
+
+全部 160 个 joint proposal 使用 `successor-path-cover-package`。Fit-OOF successor
+F1 与两个冻结阈值与原始 directed-successor / paragraph-graph freeze 完全一致。
+独立 test successor F1 `0.98287811` 接近更早报告的 freeze `0.98585545`；paragraph
+独立 test pair F1 `0.77932483` 低于更早的 `0.85162046`，因为本次重放物化的是
+fine-only graph-hierarchy 输入（`regions: []`），而不是 provider-derived coarse
+region。Joint 在不损失 relation 的前提下打包 successor path cover。输出保持
+`runtime_reorder: false`。
