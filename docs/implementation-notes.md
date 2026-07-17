@@ -1414,8 +1414,10 @@ hierarchy labels; when the paragraph head is over-fragmented (singleton rate
 >= 0.85) it falls back to successor-chain packaging and, if element boxes are
 available, further splits those chains on column wraps and large vertical gaps;
 it falls back to paragraph-protected re-decode only when the loaded successor
-edges are not a path cover; and it scores relations with the same partial-label
-precision as the successor head.
+edges are not a path cover; and it scores relations with the same partial-label precision as the
+successor head. `propose-joint-graph` runs the single-page operator path:
+optional DocumentIR fine-only export, paragraph/successor prediction, then
+joint packaging into one review-only proposal.
 `benchmark-joint-graph` jointly decodes the two review-only heads without
 retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts

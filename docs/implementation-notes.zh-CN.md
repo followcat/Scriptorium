@@ -893,7 +893,9 @@ corpus/label schema，input 中仍不含 provider sequence/relation。Joint deco
 paragraph head 过度碎片化（singleton rate >= 0.85）时回退到 successor-chain
 packaging，并在有 element box 时按列换行/大间距进一步拆链；仅当加载的 successor
 edge 不是 path cover 时才回退到 paragraph-protected 重解码；relation 评分与
-successor head 使用相同的 partial-label precision。
+successor head 使用相同的 partial-label precision。`propose-joint-graph` 提供
+单页操作路径：可选 DocumentIR fine-only 导出、paragraph/successor 预测，再 joint
+打包为一条 review-only proposal。
 `benchmark-joint-graph` 会在不重训的前提下联合解码两个 review-only head：加载
 paragraph 与 successor proposal，把 within-paragraph successor edge 作为
 degree-one 无环 path cover 的 protected edge，只接受 score 排序后的

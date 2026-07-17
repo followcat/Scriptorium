@@ -1886,6 +1886,14 @@ scriptorium predict-paragraph-graph outputs/attention-page0/hierarchy-input.json
 scriptorium predict-successor-graph outputs/attention-page0/hierarchy-input.json \
   --model outputs/models/successor-graph.joblib \
   -o outputs/attention-page0/successor.proposal.json
+
+# Or one-shot from DocumentIR:
+scriptorium propose-joint-graph outputs/attention-page0/document.ir.json \
+  --page-index 0 --sample-id attention-page-0 \
+  --paragraph-model outputs/models/paragraph-graph.joblib \
+  --successor-model outputs/models/successor-graph.joblib \
+  --work-dir outputs/attention-page0/propose-work \
+  -o outputs/attention-page0/joint.proposal.json
 ```
 
 A local smoke run exported 56 fine elements from Attention page 0, produced
@@ -1976,5 +1984,8 @@ singleton, joint packaging used
 block, introduction heading, left-column body, right-column continuation) while
 keeping the same 90 relation edges and 9 reading streams. In-domain 32-page
 pages stayed on ordinary package mode, so labeled segmentation metrics were
-unchanged. Outputs remain `runtime_reorder: false` and are not a promotion
-window.
+unchanged. The same 32-page models transferred qualitatively to Attention
+page 1 (56 lines → 49 edges / 7 streams / 17 packaging components) and BYD
+2024 annual-report page 1 Chinese title block (4 lines → 3 edges / 1 stream /
+2 packaging components). Outputs remain `runtime_reorder: false` and are not a
+promotion window.

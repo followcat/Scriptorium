@@ -63,6 +63,8 @@ scriptorium export-hierarchy-input outputs/doc/document.ir.json --page-index 0 -
 scriptorium predict-paragraph-graph hierarchy.json --model models/paragraph.joblib -o paragraph.proposal.json
 scriptorium predict-successor-graph hierarchy.json --model models/successor.joblib -o successor.proposal.json
 scriptorium benchmark-joint-graph TRAIN --paragraph-proposals-dir PARA --successor-proposals-dir SUCC -o joint.json
+scriptorium propose-joint-graph document.ir.json --page-index 0 \
+  --paragraph-model models/paragraph.joblib --successor-model models/successor.joblib -o joint.proposal.json
 ```
 
 Graph proposals stay `runtime_reorder: false` until external-benchmark gates promote them.

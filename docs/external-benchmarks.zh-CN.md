@@ -1665,6 +1665,14 @@ scriptorium predict-paragraph-graph outputs/attention-page0/hierarchy-input.json
 scriptorium predict-successor-graph outputs/attention-page0/hierarchy-input.json \
   --model outputs/models/successor-graph.joblib \
   -o outputs/attention-page0/successor.proposal.json
+
+# 或从 DocumentIR 一键：
+scriptorium propose-joint-graph outputs/attention-page0/document.ir.json \
+  --page-index 0 --sample-id attention-page-0 \
+  --paragraph-model outputs/models/paragraph-graph.joblib \
+  --successor-model outputs/models/successor-graph.joblib \
+  --work-dir outputs/attention-page0/propose-work \
+  -o outputs/attention-page0/joint.proposal.json
 ```
 
 本地 smoke 从 Attention 第 0 页导出 56 个 fine element，生成
@@ -1745,5 +1753,7 @@ successor edge。由于域外 paragraph head 全是 singleton，joint packaging 
 `successor-path-cover-package-chain-geometry-fallback`：5 次几何拆分把 9 条原始
 chain 变成 14 个 packaging 组件（标题/作者块、摘要块、Introduction 标题、左栏
 正文、右栏续文），relation edge 仍为 90 条、reading stream 仍为 9 条。域内 32 页
-仍走普通 package mode，带标签 segmentation 指标不变。输出仍为
-`runtime_reorder: false`，不是 promotion 窗口。
+仍走普通 package mode，带标签 segmentation 指标不变。同一套 32 页模型还 qualitative
+迁移到 Attention 第 1 页（56 行 → 49 edges / 7 streams / 17 packaging 组件）和
+比亚迪 2024 年报第 1 页中文标题块（4 行 → 3 edges / 1 stream / 2 packaging 组件）。
+输出仍为 `runtime_reorder: false`，不是 promotion 窗口。
