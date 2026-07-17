@@ -889,8 +889,9 @@ manifest；evaluation 按页批打分，以便先释放 dense fit matrix；
 adapter；省略时由 `build_fine_hierarchy_input_from_document` 只导出可见非空文本，
 `regions` 留空供 graph head 使用。`materialize-graph-hierarchy` 会把
 answer-separated hierarchy corpus 改写成 graph head 使用的 provider-hierarchy
-corpus/label schema，input 中仍不含 provider sequence/relation。Joint decode 只
-加载达到 successor 阈值的 rank-1 candidate，避免低分边被重新引入。
+corpus/label schema，input 中仍不含 provider sequence/relation。Joint decode 优先打包合法 successor path cover 与 paragraph hierarchy 标签；仅当
+加载的 successor edge 不是 path cover 时才回退到 paragraph-protected 重解码；
+relation 评分与 successor head 使用相同的 partial-label precision。
 `benchmark-joint-graph` 会在不重训的前提下联合解码两个 review-only head：加载
 paragraph 与 successor proposal，把 within-paragraph successor edge 作为
 degree-one 无环 path cover 的 protected edge，只接受 score 排序后的

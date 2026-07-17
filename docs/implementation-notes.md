@@ -1409,9 +1409,10 @@ provider coarse-region adapter; without it, `build_fine_hierarchy_input_from_doc
 exports visible non-empty text only and leaves `regions` empty for graph heads.
 `materialize-graph-hierarchy` rewrites an answer-separated hierarchy corpus into
 the provider-hierarchy corpus/label schemas used by the graph heads, still
-without provider sequence or relation fields in the input. Joint decode loads
-only successor rank-1 candidates at/above the successor threshold so rejected
-low-score edges are not revived.
+without provider sequence or relation fields in the input. Joint decode prefers packaging a valid successor path cover with paragraph
+hierarchy labels, falls back to paragraph-protected re-decode only when the
+loaded successor edges are not a path cover, and scores relations with the same
+partial-label precision as the successor head.
 `benchmark-joint-graph` jointly decodes the two review-only heads without
 retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts

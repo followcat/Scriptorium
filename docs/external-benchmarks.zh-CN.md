@@ -1710,10 +1710,14 @@ document OOF，不是冻结的 128/32 协议）上：
 | Paragraph selected-edge precision | 0.96118012 | 0.96888889 |
 | Successor relation F1 | 0.97297297 | 0.95681063 |
 | Successor cross-region recall | 0.85526316 | 0.73684211 |
-| Joint relation F1 | 0.96106785 | 0.91719745 |
+| Joint relation F1 | 0.97297297 | 0.95681063 |
 | Joint segmentation pair F1 | 0.85743802 | 0.78170674 |
+| Joint within-region recall | 0.98921833 | 1.0 |
+| Joint cross-region recall | 0.85526316 | 0.73684211 |
 
-Joint decode 现在只加载达到 successor 阈值的 rank-1 candidate（或已 path-cover 的
-selected edge），不会重新引入低分 rank-1 噪声。所有输出保持 `runtime_reorder: false`。
-这些 8 页数字只是链路证据：拆分很小、operating gate 放宽，不是冻结独立 test 的
-promotion 窗口。
+Joint decode 优先把 successor path cover 与 paragraph hierarchy 标签打包
+（`decoder_mode: successor-path-cover-package`）；仅当加载的 successor edge 不是合法
+path cover 时，才回退到 paragraph-protected 重解码。Relation 评分使用 partial-label
+口径，并在本 smoke 上与 successor head 对齐（`0.97297297 / 0.95681063`）。所有输出
+保持 `runtime_reorder: false`。这些 8 页数字只是链路证据：拆分很小、operating gate
+放宽，不是冻结独立 test 的 promotion 窗口。

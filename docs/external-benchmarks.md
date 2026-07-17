@@ -1934,11 +1934,16 @@ documents; 2-fold document OOF, not the frozen 128/32 protocol):
 | Paragraph selected-edge precision | 0.96118012 | 0.96888889 |
 | Successor relation F1 | 0.97297297 | 0.95681063 |
 | Successor cross-region recall | 0.85526316 | 0.73684211 |
-| Joint relation F1 | 0.96106785 | 0.91719745 |
+| Joint relation F1 | 0.97297297 | 0.95681063 |
 | Joint segmentation pair F1 | 0.85743802 | 0.78170674 |
+| Joint within-region recall | 0.98921833 | 1.0 |
+| Joint cross-region recall | 0.85526316 | 0.73684211 |
 
-Joint decode now loads only successor rank-1 candidates at/above the successor
-threshold (or already selected path-cover edges), so low-score rank-1 noise is
-not reintroduced. All outputs remain `runtime_reorder: false`. These 8-page
-numbers are pipeline evidence only: they use a tiny document-disjoint split,
-relaxed operating gates, and are not a frozen independent-test promotion window.
+Joint decode prefers packaging a successor path cover with paragraph hierarchy
+labels (`decoder_mode: successor-path-cover-package`); it falls back to
+paragraph-protected re-decode only when the loaded successor edges are not a
+valid path cover. Relation scoring is partial-label-aware and matches the
+successor head on this smoke (`0.97297297 / 0.95681063`). All outputs remain
+`runtime_reorder: false`. These 8-page numbers are pipeline evidence only: they
+use a tiny document-disjoint split, relaxed operating gates, and are not a
+frozen independent-test promotion window.
