@@ -1721,3 +1721,26 @@ path cover 时，才回退到 paragraph-protected 重解码。Relation 评分使
 口径，并在本 smoke 上与 successor head 对齐（`0.97297297 / 0.95681063`）。所有输出
 保持 `runtime_reorder: false`。这些 8 页数字只是链路证据：拆分很小、operating gate
 放宽，不是冻结独立 test 的 promotion 窗口。
+
+更大的 train-only 32 页 Comp-HRDoc smoke（`fit/calibration = 26/6` 页、12 篇文档，
+跳过 1 篇 audited unaligned document；3 折 document OOF；仍不是冻结 128/32 协议）
+用相同方式物化，并以更紧的 gate（`edge precision >= 0.95`）评分：
+
+| Head | Fit 指标 | Calibration 指标 |
+|---|---:|---:|
+| Paragraph pair F1 | 0.81574340 | 0.67942089 |
+| Paragraph selected-edge precision | 0.99407992 | 1.0 |
+| Successor relation F1 | 0.97468010 | 0.98010471 |
+| Successor multicolumn F1 | 0.98110831 | 0.98863636 |
+| Successor graphical-multicolumn F1 | 0.96693767 | 0.96955504 |
+| Successor cross-region recall | 0.93354430 | 0.90196078 |
+| Joint relation F1 | 0.97468010 | 0.98010471 |
+| Joint segmentation pair F1 | 0.81574340 | 0.67942089 |
+| Joint within-region recall | 0.98875661 | 0.99528302 |
+| Joint cross-region recall | 0.93354430 | 0.90196078 |
+
+全部 32 个 joint proposal 使用 `successor-path-cover-package`。Joint relation 指标
+与 successor head 完全一致，同时附带 paragraph co-membership stream。对
+Transformer-XL 第 1 页的 qualitative 迁移（fine-only 导出，99 行）得到 90 条
+successor edge，打包为 9 条 review stream，首条 stream 含标题与作者行；paragraph
+组件在域外保持保守。输出仍为 `runtime_reorder: false`，不是 promotion 窗口。

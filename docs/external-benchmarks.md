@@ -1947,3 +1947,29 @@ successor head on this smoke (`0.97297297 / 0.95681063`). All outputs remain
 `runtime_reorder: false`. These 8-page numbers are pipeline evidence only: they
 use a tiny document-disjoint split, relaxed operating gates, and are not a
 frozen independent-test promotion window.
+
+A larger train-only 32-page Comp-HRDoc smoke (`fit/calibration = 26/6` pages from
+12 documents after one audited unaligned-document skip; 3-fold document OOF;
+still not the frozen 128/32 protocol) was materialized the same way and scored
+with tighter gates (`edge precision >= 0.95`):
+
+| Head | Fit metric | Calibration metric |
+|---|---:|---:|
+| Paragraph pair F1 | 0.81574340 | 0.67942089 |
+| Paragraph selected-edge precision | 0.99407992 | 1.0 |
+| Successor relation F1 | 0.97468010 | 0.98010471 |
+| Successor multicolumn F1 | 0.98110831 | 0.98863636 |
+| Successor graphical-multicolumn F1 | 0.96693767 | 0.96955504 |
+| Successor cross-region recall | 0.93354430 | 0.90196078 |
+| Joint relation F1 | 0.97468010 | 0.98010471 |
+| Joint segmentation pair F1 | 0.81574340 | 0.67942089 |
+| Joint within-region recall | 0.98875661 | 0.99528302 |
+| Joint cross-region recall | 0.93354430 | 0.90196078 |
+
+All 32 joint proposals used `successor-path-cover-package`. Joint relation
+metrics match the successor head exactly while adding paragraph co-membership
+streams. Qualitative transfer to Transformer-XL page 1 (fine-only export, 99
+lines) produced 90 successor edges packaged into 9 review streams with title and
+author lines in the first stream; paragraph components stayed conservative
+out-of-domain. Outputs remain `runtime_reorder: false` and are not a promotion
+window.
