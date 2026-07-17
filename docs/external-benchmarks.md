@@ -2115,3 +2115,17 @@ paragraph independent-test pair F1 `0.77932483` is lower than the earlier
 (`regions: []`) rather than provider-derived coarse regions. Joint packages the
 successor path cover without relation regression. Outputs remain
 `runtime_reorder: false`.
+
+The frozen 128-train models were also applied through `propose-joint-graph` on
+real pages without labels:
+
+| Source | Fine lines | Successor edges | Streams | Packaging components | Decoder mode |
+|---|---:|---:|---:|---:|---|
+| Attention p.1 | 56 | 50 | 6 | 15 | geometry-chain fallback |
+| Transformer-XL p.1 | 99 | 89 | 10 | 15 | geometry-chain fallback |
+| BYD 2024 annual report p.1 | 4 | 1 | 3 | 3 | chain fallback |
+
+English multi-column papers get useful body packaging under OOD singleton
+paragraph heads. The Chinese annual-report cover page remains sparse under
+native PDF text extraction, so labeled Chinese/image-source corpora are still
+required before claiming cross-domain readiness.
