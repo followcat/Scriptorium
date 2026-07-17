@@ -1740,7 +1740,8 @@ path cover 时，才回退到 paragraph-protected 重解码。Relation 评分使
 | Joint cross-region recall | 0.93354430 | 0.90196078 |
 
 全部 32 个 joint proposal 使用 `successor-path-cover-package`。Joint relation 指标
-与 successor head 完全一致，同时附带 paragraph co-membership stream。对
-Transformer-XL 第 1 页的 qualitative 迁移（fine-only 导出，99 行）得到 90 条
-successor edge，打包为 9 条 review stream，首条 stream 含标题与作者行；paragraph
-组件在域外保持保守。输出仍为 `runtime_reorder: false`，不是 promotion 窗口。
+与 successor head 完全一致，同时附带 paragraph co-membership stream。对 Transformer-XL 第 1 页的 qualitative 迁移（fine-only 导出，99 行）得到 90 条
+successor edge。由于域外 paragraph head 全是 singleton，joint packaging 使用
+`successor-path-cover-package-chain-fallback`，产出 9 条 review stream（最长正文
+stream 60 行），标题/作者行在前。域内 32 页仍走普通 package mode，带标签
+segmentation 指标不变。输出仍为 `runtime_reorder: false`，不是 promotion 窗口。

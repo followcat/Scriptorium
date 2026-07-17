@@ -70,6 +70,30 @@ def test_joint_decode_packages_valid_successor_path_cover() -> None:
     assert decoded.diagnostics["endpoint_cross_candidate_count"] == 0
 
 
+def test_joint_decode_falls_back_to_successor_chains_when_paragraphs_are_singletons() -> None:
+    decoded = joint_decode_page(
+        element_ids=["a", "b", "c", "d"],
+        paragraph_membership={"a": "p1", "b": "p2", "c": "p3", "d": "p4"},
+        successor_edges=[
+            _ScoredEdge("a", "b", 0.91),
+            _ScoredEdge("b", "c", 0.88),
+            _ScoredEdge("c", "d", 0.93),
+        ],
+    )
+
+    assert decoded.decoder_mode == "successor-path-cover-package-chain-fallback"
+    assert sorted(decoded.selected_edges) == [("a", "b"), ("b", "c"), ("c", "d")]
+    # Chain packaging treats the path as one hierarchical component without
+    # changing the successor path cover.
+    assert decoded.within_selected_edges == frozenset(
+        {("a", "b"), ("b", "c"), ("c", "d")}
+    )
+    assert decoded.cross_selected_edges == frozenset()
+    assert decoded.streams == (("a", "b", "c", "d"),)
+    assert decoded.diagnostics["paragraph_component_count"] == 1
+    assert decoded.diagnostics["paragraph_singleton_rate_x1000"] == 1000
+
+
 def test_joint_decode_rejects_cross_edge_that_breaks_degree_one() -> None:
     decoded = joint_decode_page(
         element_ids=["a", "b", "c", "d", "e", "f"],

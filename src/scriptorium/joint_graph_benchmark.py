@@ -24,7 +24,7 @@ from .successor_graph_benchmark import SUCCESSOR_GRAPH_PROPOSAL_SCHEMA
 
 JOINT_GRAPH_BENCHMARK_SCHEMA = "scriptorium-joint-graph-benchmark/v1"
 JOINT_GRAPH_PROPOSAL_SCHEMA = "scriptorium-joint-graph-proposal/v1"
-JOINT_GRAPH_DECODER_VERSION = "successor-package-or-paragraph-protected-v2"
+JOINT_GRAPH_DECODER_VERSION = "successor-package-chain-fallback-or-protected-v3"
 
 
 @dataclass(frozen=True)
@@ -128,27 +128,47 @@ def joint_decode_page(
     edge_pairs = [(edge.source, edge.target) for edge in known_edges]
     if edge_pairs and _is_degree_one_acyclic_path_cover(edge_pairs):
         selected = frozenset((str(source), str(target)) for source, target in edge_pairs)
+        package_membership = dict(membership)
+        decoder_mode = "successor-path-cover-package"
+        # Over-fragmented paragraph heads (common OOD) collapse hierarchy packaging.
+        # Fall back to successor chains as paragraph components without changing edges.
+        if _singleton_rate(package_membership) >= 0.85:
+            package_membership = _membership_from_chains(
+                _edge_chains(ids, selected, rank)
+            )
+            decoder_mode = "successor-path-cover-package-chain-fallback"
         within_selected = frozenset(
-            (edge.source, edge.target)
-            for edge in within
-            if (edge.source, edge.target) in selected
+            (source, target)
+            for source, target in selected
+            if package_membership[source] == package_membership[target]
         )
         cross_selected = selected - within_selected
         streams = tuple(tuple(chain) for chain in _edge_chains(ids, selected, rank))
         return _DecodedPage(
-            membership=membership,
+            membership=package_membership,
             selected_edges=selected,
             within_selected_edges=within_selected,
             cross_selected_edges=cross_selected,
             streams=streams,
-            decoder_mode="successor-path-cover-package",
+            decoder_mode=decoder_mode,
             diagnostics={
                 "element_count": len(ids),
-                "paragraph_component_count": len(set(membership.values())),
+                "paragraph_component_count": len(set(package_membership.values())),
+                "paragraph_singleton_rate_x1000": int(
+                    round(_singleton_rate(membership) * 1000)
+                ),
                 "successor_candidate_count": len(successor_edges),
                 "unknown_successor_count": unknown,
-                "within_candidate_count": len(within),
-                "cross_candidate_count": len(cross),
+                "within_candidate_count": sum(
+                    1
+                    for source, target in selected
+                    if membership[source] == membership[target]
+                ),
+                "cross_candidate_count": sum(
+                    1
+                    for source, target in selected
+                    if membership[source] != membership[target]
+                ),
                 "endpoint_cross_candidate_count": 0,
                 "within_selected_count": len(within_selected),
                 "cross_selected_count": len(cross_selected),
@@ -274,6 +294,25 @@ def _is_degree_one_acyclic_path_cover(edges: Sequence[tuple[str, str]]) -> bool:
     return True
 
 
+def _singleton_rate(membership: Mapping[str, str]) -> float:
+    if not membership:
+        return 1.0
+    counts: dict[str, int] = defaultdict(int)
+    for group_id in membership.values():
+        counts[str(group_id)] += 1
+    singletons = sum(1 for size in counts.values() if size == 1)
+    return singletons / len(membership)
+
+
+def _membership_from_chains(chains: Sequence[Sequence[str]]) -> dict[str, str]:
+    membership: dict[str, str] = {}
+    for index, chain in enumerate(chains, start=1):
+        group_id = f"successor-chain-{index:04d}"
+        for element_id in chain:
+            membership[str(element_id)] = group_id
+    return membership
+
+
 def benchmark_joint_graph(
     train_corpus_dir: str | Path,
     *,
@@ -394,9 +433,10 @@ def benchmark_joint_graph(
         "successor_proposals_dir": str(successor_root),
         "decoder_policy": (
             "prefer packaging a successor path cover with paragraph hierarchy "
-            "labels; fall back to paragraph-protected path cover with "
-            "score-ordered tail-to-head cross edges when successors are not a "
-            "valid path cover"
+            "labels; fall back to successor-chain packaging when paragraph "
+            "singleton rate is at least 0.85; fall back to paragraph-protected "
+            "path cover with score-ordered tail-to-head cross edges when "
+            "successors are not a valid path cover"
         ),
         "label_policy": (
             "complete oracle co-membership plus published Comp-HRDoc immediate "
