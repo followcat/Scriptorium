@@ -1625,8 +1625,9 @@ head 现在都在 held-out 英文论文家族内泛化。独立的 joint decoder
 proposal。两个 head 都可通过 `--model-output` 写出带 SHA-256 校验的 `.joblib` 模型，在
 evaluation 阶段按页批打分以释放 dense fit matrix，并通过
 `predict-paragraph-graph` / `predict-successor-graph` 对单页 hierarchy input 生成
-review-only proposal。年报/门户/中文文档/image-source OCR 的跨域标签仍是 runtime
-替换前的开放 gate。
+review-only proposal。真实 PDF/图片页可先用 `export-hierarchy-input` 做 fine-only
+DocumentIR 导出，无需 provider structure。年报/门户/中文文档/image-source OCR 的
+跨域标签仍是 runtime 替换前的开放 gate。
 
 ### 联合 Paragraph/Successor 解码
 

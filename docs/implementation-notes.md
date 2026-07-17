@@ -1403,7 +1403,10 @@ Both graph heads optionally serialize a review-only model through shared
 frozen threshold with an adjacent SHA-256 manifest, evaluation scoring uses
 page-wise feature batches so the dense fit matrix can be released first, and
 `predict-paragraph-graph` / `predict-successor-graph` score one hierarchy input
-into a review-only proposal without labels.
+into a review-only proposal without labels. `export-hierarchy-input` builds that
+hierarchy input from DocumentIR: with `--structure-json` it keeps the existing
+provider coarse-region adapter; without it, `build_fine_hierarchy_input_from_document`
+exports visible non-empty text only and leaves `regions` empty for graph heads.
 `benchmark-joint-graph` jointly decodes the two review-only heads without
 retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts

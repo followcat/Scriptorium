@@ -1841,9 +1841,10 @@ proposals. Both heads can serialize a hash-checked `.joblib` model via
 `--model-output`, score evaluation pages with page-wise feature batches so the
 dense fit matrix is released before proposal generation, and emit single-page
 review proposals through `predict-paragraph-graph` /
-`predict-successor-graph`. Cross-domain annual-report / portal / Chinese /
-image-source labels remain open gates before any automatic semantic-order
-replacement.
+`predict-successor-graph`. Real PDF/image pages can enter that path without
+provider structure via `export-hierarchy-input` (fine-only DocumentIR export).
+Cross-domain annual-report / portal / Chinese / image-source labels remain open
+gates before any automatic semantic-order replacement.
 
 ### Joint Paragraph/Successor Decode
 
