@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .graph_model import (
+    flatten_page_scores,
+    predict_feature_batches,
+    save_graph_model,
+)
 from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
 from .models import BBox
 from .provider_hierarchy_benchmark import (
@@ -25,6 +30,7 @@ from .relation_order import merge_relation_edge_path_cover
 
 SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
 SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v1"
+SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
 SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-relation-text-v1"
 DEFAULT_NEAREST_CANDIDATES = 20
 PROPOSAL_ALTERNATIVES_PER_SOURCE = 3
@@ -35,6 +41,8 @@ class SuccessorGraphBenchmarkResult:
     report_path: Path
     proposals_dir: Path
     report: dict[str, Any]
+    model_path: Path | None = None
+    model_manifest_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,7 @@ def benchmark_successor_graph(
     output: str | Path,
     proposals_dir: str | Path | None = None,
     test_corpus_dir: str | Path | None = None,
+    model_output: str | Path | None = None,
     cross_validation_folds: int = 5,
     nearest_candidates: int = DEFAULT_NEAREST_CANDIDATES,
     minimum_edge_precision: float = 0.97,
@@ -184,7 +193,13 @@ def benchmark_successor_graph(
         numpy=numpy,
     )
 
+    feature_count = int(x_fit.shape[1])
+    fit_candidate_count = int(x_fit.shape[0])
+    fit_positive_candidate_count = int(y_fit.sum())
     estimator = estimator_class(**estimator_parameters).fit(x_fit, y_fit)
+    # Free the dense fit matrix before page-wise evaluation scoring.
+    del x_fit
+    del y_fit
     calibration_scores = _predict_pages(estimator, calibration_pages, numpy=numpy)
     test_scores = _predict_pages(estimator, test_pages, numpy=numpy)
     calibration_ranked = _rank_pages(calibration_pages, calibration_scores)
@@ -210,6 +225,43 @@ def benchmark_successor_graph(
         threshold,
         proposal_root,
     )
+
+    model_path: Path | None = None
+    model_manifest_path: Path | None = None
+    model_manifest: dict[str, Any] | None = None
+    if model_output is not None:
+        artifact = save_graph_model(
+            model_path=model_output,
+            schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
+            head="directed-successor",
+            feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            threshold=threshold,
+            estimator=estimator,
+            estimator_parameters=estimator_parameters,
+            feature_count=feature_count,
+            nearest_candidates=nearest_candidates,
+            train_corpus_manifest_sha256=_file_sha256(train_manifest_path),
+            fit_document_count=len({page.sample["document_id"] for page in fit_pages}),
+            fit_page_count=len(fit_pages),
+            fit_candidate_count=fit_candidate_count,
+            fit_positive_count=fit_positive_candidate_count,
+            cross_validation_folds=cross_validation_folds,
+            minimum_edge_precision=minimum_edge_precision,
+            minimum_selected_edges=minimum_selected_edges,
+            random_seed=random_seed,
+            scikit_learn_version=sklearn_version,
+            extra_manifest={
+                "decoder_policy": (
+                    "top-one-per-source then score-ordered degree-one acyclic path cover"
+                ),
+                "promotion_decision": "benchmark-only-directed-successor-graph",
+                "fit_operating_point": operating_point,
+                "prediction_policy": "page-wise feature batches",
+            },
+        )
+        model_path = artifact.model_path
+        model_manifest_path = artifact.manifest_path
+        model_manifest = artifact.manifest
 
     # Evaluation labels are resolved only after every evaluation proposal exists.
     calibration_labels = [_load_labels(page) for page in calibration_pages]
@@ -282,9 +334,10 @@ def benchmark_successor_graph(
         "fit_page_count": len(fit_pages),
         "calibration_page_count": len(calibration_pages),
         "test_page_count": len(test_pages),
-        "feature_count": int(x_fit.shape[1]),
-        "fit_candidate_count": int(x_fit.shape[0]),
-        "fit_positive_candidate_count": int(y_fit.sum()),
+        "feature_count": feature_count,
+        "fit_candidate_count": fit_candidate_count,
+        "fit_positive_candidate_count": fit_positive_candidate_count,
+        "prediction_policy": "page-wise feature batches",
         "cross_validation_folds": cross_validation_folds,
         "cross_validation_unit": "document",
         "cross_validation_seed_policy": "random_seed plus zero-based fold index",
@@ -313,10 +366,25 @@ def benchmark_successor_graph(
             "calibration": calibration_proposals,
             "test": test_proposals,
         },
+        "model": (
+            {
+                "path": str(model_path),
+                "manifest_path": str(model_manifest_path),
+                "manifest": model_manifest,
+            }
+            if model_path is not None
+            else None
+        ),
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(report_path, report)
-    return SuccessorGraphBenchmarkResult(report_path, proposal_root, report)
+    return SuccessorGraphBenchmarkResult(
+        report_path,
+        proposal_root,
+        report,
+        model_path=model_path,
+        model_manifest_path=model_manifest_path,
+    )
 
 
 def _corpus_manifest(corpus: Path) -> tuple[Path, dict[str, Any]]:
@@ -593,10 +661,13 @@ def _training_matrix(
 
 
 def _predict_pages(estimator: Any, pages: list[_Page], *, numpy: Any) -> Any:
-    features = [candidate.features for page in pages for candidate in page.candidates]
-    if not features:
-        return numpy.asarray([], dtype=float)
-    return estimator.predict_proba(numpy.asarray(features, dtype=float))[:, 1]
+    page_batches = [
+        [candidate.features for candidate in page.candidates] for page in pages
+    ]
+    return flatten_page_scores(
+        predict_feature_batches(estimator, page_batches, numpy=numpy),
+        numpy=numpy,
+    )
 
 
 def _rank_pages(pages: list[_Page], scores: Any) -> list[_RankedPage]:

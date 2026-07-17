@@ -11,6 +11,11 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
+from .graph_model import (
+    flatten_page_scores,
+    predict_feature_batches,
+    save_graph_model,
+)
 from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
 from .models import BBox
 from .provider_hierarchy_benchmark import (
@@ -25,6 +30,7 @@ from .reading_order import (
 
 PARAGRAPH_GRAPH_BENCHMARK_SCHEMA = "scriptorium-paragraph-graph-benchmark/v1"
 PARAGRAPH_GRAPH_PROPOSAL_SCHEMA = "scriptorium-paragraph-graph-proposal/v1"
+PARAGRAPH_GRAPH_MODEL_SCHEMA = "scriptorium-paragraph-graph-model/v1"
 PARAGRAPH_GRAPH_FEATURE_VERSION = "fine-line-local-relation-text-v1"
 
 
@@ -33,6 +39,8 @@ class ParagraphGraphBenchmarkResult:
     report_path: Path
     proposals_dir: Path
     report: dict[str, Any]
+    model_path: Path | None = None
+    model_manifest_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,7 @@ def benchmark_paragraph_graph(
     output: str | Path,
     proposals_dir: str | Path | None = None,
     test_corpus_dir: str | Path | None = None,
+    model_output: str | Path | None = None,
     cross_validation_folds: int = 5,
     minimum_edge_precision: float = 0.97,
     minimum_selected_edges: int = 100,
@@ -137,7 +146,13 @@ def benchmark_paragraph_graph(
         minimum_selected_edges=minimum_selected_edges,
         numpy=numpy,
     )
+    feature_count = int(x_fit.shape[1])
+    fit_candidate_count = int(x_fit.shape[0])
+    fit_positive_count = int(y_fit.sum())
     estimator = estimator_class(**estimator_parameters).fit(x_fit, y_fit)
+    # Free the dense fit matrix before page-wise evaluation scoring.
+    del x_fit
+    del y_fit
     calibration_scores = _predict_pages(estimator, calibration_pages, numpy=numpy)
     test_scores = _predict_pages(estimator, test_pages, numpy=numpy)
 
@@ -156,6 +171,40 @@ def benchmark_paragraph_graph(
         proposal_root,
     )
     test_proposals = _write_proposals(test_pages, test_scores, threshold, proposal_root)
+
+    model_path: Path | None = None
+    model_manifest_path: Path | None = None
+    model_manifest: dict[str, Any] | None = None
+    if model_output is not None:
+        artifact = save_graph_model(
+            model_path=model_output,
+            schema=PARAGRAPH_GRAPH_MODEL_SCHEMA,
+            head="paragraph-comembership",
+            feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            threshold=threshold,
+            estimator=estimator,
+            estimator_parameters=estimator_parameters,
+            feature_count=feature_count,
+            train_corpus_manifest_sha256=_file_sha256(train_manifest_path),
+            fit_document_count=len({page.sample["document_id"] for page in fit_pages}),
+            fit_page_count=len(fit_pages),
+            fit_candidate_count=fit_candidate_count,
+            fit_positive_count=fit_positive_count,
+            cross_validation_folds=cross_validation_folds,
+            minimum_edge_precision=minimum_edge_precision,
+            minimum_selected_edges=minimum_selected_edges,
+            random_seed=random_seed,
+            scikit_learn_version=sklearn_version,
+            extra_manifest={
+                "component_policy": "thresholded undirected edges with union-find",
+                "promotion_decision": "benchmark-only-line-paragraph-graph",
+                "fit_operating_point": operating_point,
+                "prediction_policy": "page-wise feature batches",
+            },
+        )
+        model_path = artifact.model_path
+        model_manifest_path = artifact.manifest_path
+        model_manifest = artifact.manifest
 
     # Evaluation labels are resolved only after every evaluation proposal exists.
     calibration_labels = [_load_labels(page) for page in calibration_pages]
@@ -225,9 +274,10 @@ def benchmark_paragraph_graph(
         "fit_page_count": len(fit_pages),
         "calibration_page_count": len(calibration_pages),
         "test_page_count": len(test_pages),
-        "feature_count": int(x_fit.shape[1]),
-        "fit_candidate_count": int(x_fit.shape[0]),
-        "fit_positive_count": int(y_fit.sum()),
+        "feature_count": feature_count,
+        "fit_candidate_count": fit_candidate_count,
+        "fit_positive_count": fit_positive_count,
+        "prediction_policy": "page-wise feature batches",
         "cross_validation_folds": cross_validation_folds,
         "cross_validation_unit": "document",
         "minimum_edge_precision": minimum_edge_precision,
@@ -254,10 +304,25 @@ def benchmark_paragraph_graph(
             "calibration": calibration_proposals,
             "test": test_proposals,
         },
+        "model": (
+            {
+                "path": str(model_path),
+                "manifest_path": str(model_manifest_path),
+                "manifest": model_manifest,
+            }
+            if model_path is not None
+            else None
+        ),
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(report_path, report)
-    return ParagraphGraphBenchmarkResult(report_path, proposal_root, report)
+    return ParagraphGraphBenchmarkResult(
+        report_path,
+        proposal_root,
+        report,
+        model_path=model_path,
+        model_manifest_path=model_manifest_path,
+    )
 
 
 def _corpus_manifest(corpus: Path) -> tuple[Path, dict[str, Any]]:
@@ -482,10 +547,13 @@ def _training_matrix(pages: list[_Page], labels: list[dict[str, str]]) -> tuple[
 
 
 def _predict_pages(estimator: Any, pages: list[_Page], *, numpy: Any) -> Any:
-    features = [candidate.features for page in pages for candidate in page.candidates]
-    if not features:
-        return numpy.asarray([], dtype=float)
-    return estimator.predict_proba(numpy.asarray(features, dtype=float))[:, 1]
+    page_batches = [
+        [candidate.features for candidate in page.candidates] for page in pages
+    ]
+    return flatten_page_scores(
+        predict_feature_batches(estimator, page_batches, numpy=numpy),
+        numpy=numpy,
+    )
 
 
 def _freeze_threshold(

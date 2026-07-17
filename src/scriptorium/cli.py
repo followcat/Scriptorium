@@ -868,6 +868,11 @@ def benchmark_paragraph_graph_command(
         "--proposals-dir",
         help="Directory for review-only line paragraph streams.",
     ),
+    model_output: Optional[Path] = typer.Option(
+        None,
+        "--model-output",
+        help="Optional .joblib path for the review-only paragraph graph model.",
+    ),
     cross_validation_folds: int = typer.Option(
         5,
         "--cross-validation-folds",
@@ -893,6 +898,7 @@ def benchmark_paragraph_graph_command(
             output=output,
             proposals_dir=proposals_dir,
             test_corpus_dir=test_corpus,
+            model_output=model_output,
             cross_validation_folds=cross_validation_folds,
             minimum_edge_precision=minimum_edge_precision,
             minimum_selected_edges=minimum_selected_edges,
@@ -910,6 +916,9 @@ def benchmark_paragraph_graph_command(
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
     typer.echo(f"Proposals: {result.proposals_dir}")
+    if result.model_path is not None:
+        typer.echo(f"Model: {result.model_path}")
+        typer.echo(f"Model manifest: {result.model_manifest_path}")
 
 
 @app.command("benchmark-successor-graph")
@@ -938,6 +947,11 @@ def benchmark_successor_graph_command(
         None,
         "--proposals-dir",
         help="Directory for review-only directed successor proposals.",
+    ),
+    model_output: Optional[Path] = typer.Option(
+        None,
+        "--model-output",
+        help="Optional .joblib path for the review-only successor graph model.",
     ),
     cross_validation_folds: int = typer.Option(
         5,
@@ -970,6 +984,7 @@ def benchmark_successor_graph_command(
             output=output,
             proposals_dir=proposals_dir,
             test_corpus_dir=test_corpus,
+            model_output=model_output,
             cross_validation_folds=cross_validation_folds,
             nearest_candidates=nearest_candidates,
             minimum_edge_precision=minimum_edge_precision,
@@ -987,6 +1002,9 @@ def benchmark_successor_graph_command(
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
     typer.echo(f"Proposals: {result.proposals_dir}")
+    if result.model_path is not None:
+        typer.echo(f"Model: {result.model_path}")
+        typer.echo(f"Model manifest: {result.model_manifest_path}")
 
 
 @app.command("benchmark-joint-graph")
