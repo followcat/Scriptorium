@@ -1396,8 +1396,16 @@ the corpus, labels are checked for unique degree-one acyclic edges, and a
 160-page reversal audit confirms input-array invariance. The observed complete
 run uses about `1.07 GB` peak RSS; a runtime implementation would need streamed
 feature batches and a hash-bound serialized model. No runtime model exists yet,
-and paragraph/successor heads have not been jointly decoded or cross-domain
-calibrated.
+and cross-domain calibration remains open.
+
+`benchmark-joint-graph` jointly decodes the two review-only heads without
+retraining. It loads paragraph and successor proposals, protects
+within-paragraph successor edges inside a degree-one acyclic path cover, accepts
+only score-ordered tail→head cross-paragraph edges, writes joint hierarchical
+proposals, then opens labels. Joint output keeps `runtime_reorder: false` and
+omits oracle membership/scope fields. Synthetic multi-column fixtures cover the
+decoder contract in `tests/test_joint_graph_benchmark.py`. Full Comp-HRDoc
+partition metrics are recorded only after an end-to-end frozen-corpus rerun.
 
 The generated directories enforce the data boundary:
 

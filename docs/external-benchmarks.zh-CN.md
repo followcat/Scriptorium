@@ -1619,6 +1619,28 @@ top target，再由按 score 排序的 degree-one/cycle guard 生成无环 path 
 全部 160 页的正序/反序 element-array 对照得到完全相同的 candidate。完整运行会在打开 evaluation
 label 前写出每个 source 的前三个 alternative、score margin、选中 review edge 和局部 chain；当前
 环境实测耗时 `5:16`、峰值 RSS 约 `1.07 GB`。输出继续保持 `runtime_reorder: false`。两个 graph
-head 现在都在 held-out 英文论文家族内泛化，但尚未联合解码、序列化为 runtime model，也没有在
-年报、门户、中文文档和 image-source OCR 上获得独立验证；这些 gate 通过前不能自动替换
-semantic order。
+head 现在都在 held-out 英文论文家族内泛化。独立的 joint decoder 已可消费它们的 review-only
+proposal；序列化、有界内存训练，以及年报/门户/中文文档/image-source OCR 的跨域标签仍是
+runtime 替换前的开放 gate。
+
+### 联合 Paragraph/Successor 解码
+
+`benchmark-joint-graph` 不会重训任一 head。它只加载已有的 review-only paragraph 与 successor
+proposal，写出联合层次化 proposal，再打开 label：
+
+```bash
+scriptorium benchmark-joint-graph   /path/to/comphrdoc-provider-train-128   --paragraph-proposals-dir outputs/paragraph-graph-proposals   --successor-proposals-dir outputs/successor-graph-proposals   --test-corpus /path/to/comphrdoc-provider-test-32   --output outputs/joint-graph-report.json   --proposals-dir outputs/joint-graph-proposals
+```
+
+解码契约：
+
+1. Paragraph proposal stream 定义 co-membership 组件。
+2. Successor 的 rank-1 candidate 分成 within-paragraph 与 cross-paragraph 两个池。
+3. Within-paragraph edge 在 degree-one 无环 path cover 中作为 protected edge。
+4. Cross-paragraph edge 只能连接 chain tail → chain head，并按 score 优先接受，仍受同一
+   path-cover 约束。
+5. Joint proposal 保持 `runtime_reorder: false`，且不写入 oracle membership / oracle scope。
+
+合成多栏 fixture 测试覆盖 answer separation、degree-one 冲突、缺失/污染 proposal 以及
+schema 卫生。在冻结 train/test 语料上端到端重跑 joint decoder 之前，这里不声明完整
+Comp-HRDoc 分区数字。

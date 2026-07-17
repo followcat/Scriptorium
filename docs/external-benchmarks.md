@@ -1833,7 +1833,34 @@ All 160 forward/reversed element-array comparisons produce identical
 candidates. The full run writes top-three alternatives, score margins, selected
 review edges, and local chains before evaluation labels open; it took `5:16`
 and about `1.07 GB` peak RSS in the observed environment. The output remains
-`runtime_reorder: false`. Both graph heads now generalize within the held-out
-English-paper family, but they are not yet jointly decoded, serialized as a
-runtime model, or validated on annual reports, portals, Chinese documents, and
-image-source OCR. Those gates precede any automatic semantic-order replacement.
+`runtime_reorder: false`. Both graph heads generalize within the held-out
+English-paper family. A separate joint decoder now consumes their review-only
+proposals; serialization, bounded-memory training, and cross-domain annual-
+report / portal / Chinese / image-source labels remain open gates before any
+automatic semantic-order replacement.
+
+### Joint Paragraph/Successor Decode
+
+`benchmark-joint-graph` does not retrain either head. It loads existing
+review-only paragraph and successor proposals, writes joint hierarchical
+proposals, then opens labels:
+
+```bash
+scriptorium benchmark-joint-graph   /path/to/comphrdoc-provider-train-128   --paragraph-proposals-dir outputs/paragraph-graph-proposals   --successor-proposals-dir outputs/successor-graph-proposals   --test-corpus /path/to/comphrdoc-provider-test-32   --output outputs/joint-graph-report.json   --proposals-dir outputs/joint-graph-proposals
+```
+
+Decoder contract:
+
+1. Paragraph proposal streams define co-membership components.
+2. Successor rank-1 candidates are split into within-paragraph and
+   cross-paragraph pools.
+3. Within-paragraph edges are protected in a degree-one acyclic path cover.
+4. Cross-paragraph edges may connect only a chain tail to a chain head and are
+   accepted score-first under the same path-cover guards.
+5. Joint proposals keep `runtime_reorder: false` and never contain oracle
+   membership or oracle scope fields.
+
+Synthetic multi-column fixture tests cover answer separation, degree-one
+conflicts, missing/poisoned proposals, and proposal schema hygiene. Full
+Comp-HRDoc partition numbers are intentionally not claimed here until the
+frozen train/test corpora are re-run end-to-end with the joint decoder.
