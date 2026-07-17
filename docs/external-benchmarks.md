@@ -2013,3 +2013,32 @@ Joint modes on the 64 pages: 62 ordinary package, 1 chain fallback, 1
 geometry-chain fallback. Joint relation metrics again match the successor head
 exactly while adding paragraph packaging. This is still not the frozen 128/32
 independent-test protocol and remains `runtime_reorder: false`.
+
+The same 64-page train protocol was then scored on an independently selected
+official Comp-HRDoc test corpus (`32` pages / `16` documents;
+`graphical-multicolumn/multicolumn = 17/15`). Thresholds were frozen on the
+64-page fit partition only; the independent test labels were opened after
+proposals were written:
+
+| Head | Independent test metric |
+|---|---:|
+| Paragraph pair F1 | 0.76418501 |
+| Paragraph selected-edge precision | 0.99628504 |
+| Paragraph multicolumn F1 | 0.80136420 |
+| Paragraph graphical-multicolumn F1 | 0.73005029 |
+| Successor relation F1 | 0.98125509 |
+| Successor multicolumn F1 | 0.98874773 |
+| Successor graphical-multicolumn F1 | 0.97166744 |
+| Successor within-region recall | 0.99021047 |
+| Successor cross-region recall | 0.93902439 |
+| Joint relation F1 | 0.98125509 |
+| Joint segmentation pair F1 | 0.76418501 |
+| Joint within-region recall | 0.99021047 |
+| Joint cross-region recall | 0.93902439 |
+
+Joint again matches the successor head on relation metrics. Compared with the
+earlier frozen 128-train directed-successor independent test F1 `0.98585545`,
+this 64-train independent test reaches `0.98125509` without using test labels
+for threshold selection. Training size is still half the frozen train protocol,
+so this is strong independent-test pipeline evidence but not a replacement for
+the full 128/32 freeze. All outputs remain `runtime_reorder: false`.
