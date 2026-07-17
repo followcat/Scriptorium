@@ -42,11 +42,32 @@ def test_joint_decode_protects_within_paragraph_and_accepts_tail_to_head_cross()
         ],
     )
 
+    # Conflicting edges force the paragraph-protected fallback.
+    assert decoded.decoder_mode == "paragraph-protected-path-cover"
     assert sorted(decoded.selected_edges) == [("a", "b"), ("b", "c"), ("c", "d")]
     assert decoded.within_selected_edges == frozenset({("a", "b"), ("c", "d")})
     assert decoded.cross_selected_edges == frozenset({("b", "c")})
     assert decoded.streams == (("a", "b", "c", "d"),)
     assert decoded.diagnostics["endpoint_cross_candidate_count"] == 1
+
+
+def test_joint_decode_packages_valid_successor_path_cover() -> None:
+    decoded = joint_decode_page(
+        element_ids=["a", "b", "c", "d"],
+        paragraph_membership={"a": "p1", "b": "p1", "c": "p2", "d": "p2"},
+        successor_edges=[
+            _ScoredEdge("a", "b", 0.91),
+            _ScoredEdge("b", "c", 0.88),
+            _ScoredEdge("c", "d", 0.93),
+        ],
+    )
+
+    assert decoded.decoder_mode == "successor-path-cover-package"
+    assert sorted(decoded.selected_edges) == [("a", "b"), ("b", "c"), ("c", "d")]
+    assert decoded.within_selected_edges == frozenset({("a", "b"), ("c", "d")})
+    assert decoded.cross_selected_edges == frozenset({("b", "c")})
+    assert decoded.streams == (("a", "b", "c", "d"),)
+    assert decoded.diagnostics["endpoint_cross_candidate_count"] == 0
 
 
 def test_joint_decode_rejects_cross_edge_that_breaks_degree_one() -> None:
@@ -70,6 +91,7 @@ def test_joint_decode_rejects_cross_edge_that_breaks_degree_one() -> None:
         ],
     )
 
+    assert decoded.decoder_mode == "paragraph-protected-path-cover"
     assert ("b", "c") in decoded.selected_edges
     assert ("b", "e") not in decoded.selected_edges
     assert ("d", "e") in decoded.selected_edges

@@ -24,7 +24,7 @@ from .successor_graph_benchmark import SUCCESSOR_GRAPH_PROPOSAL_SCHEMA
 
 JOINT_GRAPH_BENCHMARK_SCHEMA = "scriptorium-joint-graph-benchmark/v1"
 JOINT_GRAPH_PROPOSAL_SCHEMA = "scriptorium-joint-graph-proposal/v1"
-JOINT_GRAPH_DECODER_VERSION = "paragraph-protected-successor-path-cover-v1"
+JOINT_GRAPH_DECODER_VERSION = "successor-package-or-paragraph-protected-v2"
 
 
 @dataclass(frozen=True)
@@ -71,6 +71,7 @@ class _DecodedPage:
     cross_selected_edges: frozenset[tuple[str, str]]
     streams: tuple[tuple[str, ...], ...]
     diagnostics: dict[str, int]
+    decoder_mode: str
 
 
 @dataclass(frozen=True)
@@ -87,11 +88,14 @@ def joint_decode_page(
     successor_edges: Sequence[_ScoredEdge],
     base_rank: Mapping[str, int] | None = None,
 ) -> _DecodedPage:
-    """Decode paragraph components with protected within-paragraph successors.
+    """Package successor path covers with paragraph hierarchy metadata.
 
-    Within-paragraph successor edges are protected in the degree-one acyclic
-    path cover. Cross-paragraph edges may only connect a chain tail to a chain
-    head and are accepted score-first. The result remains review-only evidence.
+    Prefer a successor-primary policy: when the provided successor edges already
+    form a degree-one acyclic path cover, keep them and only use paragraph
+    membership for within/cross labeling and hierarchical stream packaging.
+    Otherwise fall back to paragraph-protected decoding: within-paragraph edges
+    are protected, and cross-paragraph edges may only connect chain tails to
+    heads. The result remains review-only evidence.
     """
 
     ids = tuple(str(element_id) for element_id in element_ids)
@@ -103,17 +107,64 @@ def joint_decode_page(
         for index, element_id in enumerate(ids)
     }
 
-    within: list[_ScoredEdge] = []
-    cross: list[_ScoredEdge] = []
+    known_edges: list[_ScoredEdge] = []
     unknown = 0
     for edge in successor_edges:
         if edge.source not in membership or edge.target not in membership:
             unknown += 1
             continue
-        if membership[edge.source] == membership[edge.target]:
-            within.append(edge)
-        else:
-            cross.append(edge)
+        known_edges.append(edge)
+
+    within = [
+        edge
+        for edge in known_edges
+        if membership[edge.source] == membership[edge.target]
+    ]
+    cross = [
+        edge
+        for edge in known_edges
+        if membership[edge.source] != membership[edge.target]
+    ]
+    edge_pairs = [(edge.source, edge.target) for edge in known_edges]
+    if edge_pairs and _is_degree_one_acyclic_path_cover(edge_pairs):
+        selected = frozenset((str(source), str(target)) for source, target in edge_pairs)
+        within_selected = frozenset(
+            (edge.source, edge.target)
+            for edge in within
+            if (edge.source, edge.target) in selected
+        )
+        cross_selected = selected - within_selected
+        streams = tuple(tuple(chain) for chain in _edge_chains(ids, selected, rank))
+        return _DecodedPage(
+            membership=membership,
+            selected_edges=selected,
+            within_selected_edges=within_selected,
+            cross_selected_edges=cross_selected,
+            streams=streams,
+            decoder_mode="successor-path-cover-package",
+            diagnostics={
+                "element_count": len(ids),
+                "paragraph_component_count": len(set(membership.values())),
+                "successor_candidate_count": len(successor_edges),
+                "unknown_successor_count": unknown,
+                "within_candidate_count": len(within),
+                "cross_candidate_count": len(cross),
+                "endpoint_cross_candidate_count": 0,
+                "within_selected_count": len(within_selected),
+                "cross_selected_count": len(cross_selected),
+                "selected_edge_count": len(selected),
+                "within_outgoing_conflict_rejection_count": 0,
+                "within_incoming_conflict_rejection_count": 0,
+                "within_cycle_rejection_count": 0,
+                "cross_outgoing_conflict_rejection_count": 0,
+                "cross_incoming_conflict_rejection_count": 0,
+                "cross_cycle_rejection_count": 0,
+                "within_chain_count": len(
+                    _chain_endpoints(ids, within_selected, rank)[2]
+                ),
+                "joint_stream_count": len(streams),
+            },
+        )
 
     within.sort(
         key=lambda edge: (
@@ -134,7 +185,8 @@ def joint_decode_page(
     endpoint_cross = [
         edge
         for edge in cross
-        if chain_tail.get(edge.source) == edge.source and chain_head.get(edge.target) == edge.target
+        if chain_tail.get(edge.source) == edge.source
+        and chain_head.get(edge.target) == edge.target
     ]
     endpoint_cross.sort(
         key=lambda edge: (
@@ -155,16 +207,14 @@ def joint_decode_page(
     )
     within_selected = selected & protected_selected
     cross_selected = selected - protected_selected
-    streams = tuple(
-        tuple(chain)
-        for chain in _edge_chains(ids, selected, rank)
-    )
+    streams = tuple(tuple(chain) for chain in _edge_chains(ids, selected, rank))
     return _DecodedPage(
         membership=membership,
         selected_edges=selected,
         within_selected_edges=within_selected,
         cross_selected_edges=cross_selected,
         streams=streams,
+        decoder_mode="paragraph-protected-path-cover",
         diagnostics={
             "element_count": len(ids),
             "paragraph_component_count": len(set(membership.values())),
@@ -198,6 +248,30 @@ def joint_decode_page(
             "joint_stream_count": len(streams),
         },
     )
+
+
+def _is_degree_one_acyclic_path_cover(edges: Sequence[tuple[str, str]]) -> bool:
+    successor: dict[str, str] = {}
+    predecessor: dict[str, str] = {}
+    for source, target in edges:
+        if source == target or source in successor or target in predecessor:
+            return False
+        successor[source] = target
+        predecessor[target] = source
+    seen: set[str] = set()
+    for start in successor:
+        if start in seen:
+            continue
+        current = start
+        path: set[str] = set()
+        while current in successor:
+            if current in path:
+                return False
+            path.add(current)
+            seen.add(current)
+            current = successor[current]
+        seen.add(current)
+    return True
 
 
 def benchmark_joint_graph(
@@ -319,8 +393,10 @@ def benchmark_joint_graph(
         "paragraph_proposals_dir": str(paragraph_root),
         "successor_proposals_dir": str(successor_root),
         "decoder_policy": (
-            "protect within-paragraph successor edges, then accept score-ordered "
-            "tail-to-head cross-paragraph edges under a degree-one acyclic path cover"
+            "prefer packaging a successor path cover with paragraph hierarchy "
+            "labels; fall back to paragraph-protected path cover with "
+            "score-ordered tail-to-head cross edges when successors are not a "
+            "valid path cover"
         ),
         "label_policy": (
             "complete oracle co-membership plus published Comp-HRDoc immediate "
@@ -561,74 +637,73 @@ def _scored_edges_from_candidates(
 
 
 def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_ScoredEdge, ...]:
-    """Load thresholded top-1 directed candidates for joint path cover.
+    """Load successor edges for joint packaging or constrained re-decode.
 
-    Prefer rank-1 ``candidate_edges`` at or above the successor proposal
-    threshold so paragraph protection can re-resolve conflicts on the same
-    candidate pool the successor head would accept. Unthresholded rank-1 edges
-    reintroduce low-score noise the successor head already rejected. Fall back
-    to the path-covered ``successor_edges`` list when candidates are absent.
+    Prefer the already path-covered ``successor_edges`` list so successor-primary
+    packaging can preserve the successor head exactly. Fall back to thresholded
+    rank-1 ``candidate_edges`` only when selected edges are absent.
     """
 
-    threshold = float(payload.get("threshold") or 0.0)
-    raw_candidates = payload.get("candidate_edges")
-    if isinstance(raw_candidates, list) and raw_candidates:
-        top_edges: list[_ScoredEdge] = []
-        for raw in raw_candidates:
+    selected = payload.get("successor_edges")
+    if isinstance(selected, list) and selected:
+        edges: list[_ScoredEdge] = []
+        for raw in selected:
             if not isinstance(raw, Mapping):
-                raise ValueError("successor candidate edges must be objects")
-            rank = raw.get("rank")
-            if rank is not None and int(rank) != 1:
-                continue
-            score = float(raw.get("score") or 0.0)
-            selected = raw.get("selected") is True
-            if score < threshold and not selected:
-                continue
+                raise ValueError("successor proposal edges must be objects")
             source = str(raw.get("source") or "").strip()
             target = str(raw.get("target") or "").strip()
             if not source or not target:
-                continue
-            top_edges.append(
+                raise ValueError("successor proposal edges require source and target")
+            edges.append(
                 _ScoredEdge(
                     source=source,
                     target=target,
-                    score=score,
+                    score=float(raw.get("confidence") or raw.get("score") or 0.0),
                     rank=1,
-                    top_score_margin=(
-                        float(raw["top_score_margin"])
-                        if raw.get("top_score_margin") is not None
-                        else None
-                    ),
                 )
             )
-        by_source: dict[str, _ScoredEdge] = {}
-        for edge in top_edges:
-            previous = by_source.get(edge.source)
-            if previous is None or edge.score > previous.score:
-                by_source[edge.source] = edge
-        if by_source:
-            return tuple(by_source[source] for source in sorted(by_source))
+        return tuple(edges)
 
-    selected = payload.get("successor_edges")
-    if not isinstance(selected, list) or not selected:
-        raise ValueError("successor proposal requires rank-1 candidates or successor_edges")
-    edges: list[_ScoredEdge] = []
-    for raw in selected:
+    threshold = float(payload.get("threshold") or 0.0)
+    raw_candidates = payload.get("candidate_edges")
+    if not isinstance(raw_candidates, list) or not raw_candidates:
+        raise ValueError("successor proposal requires successor_edges or candidate_edges")
+    top_edges: list[_ScoredEdge] = []
+    for raw in raw_candidates:
         if not isinstance(raw, Mapping):
-            raise ValueError("successor proposal edges must be objects")
+            raise ValueError("successor candidate edges must be objects")
+        rank = raw.get("rank")
+        if rank is not None and int(rank) != 1:
+            continue
+        score = float(raw.get("score") or 0.0)
+        selected_flag = raw.get("selected") is True
+        if score < threshold and not selected_flag:
+            continue
         source = str(raw.get("source") or "").strip()
         target = str(raw.get("target") or "").strip()
         if not source or not target:
-            raise ValueError("successor proposal edges require source and target")
-        edges.append(
+            continue
+        top_edges.append(
             _ScoredEdge(
                 source=source,
                 target=target,
-                score=float(raw.get("confidence") or raw.get("score") or 0.0),
+                score=score,
                 rank=1,
+                top_score_margin=(
+                    float(raw["top_score_margin"])
+                    if raw.get("top_score_margin") is not None
+                    else None
+                ),
             )
         )
-    return tuple(edges)
+    by_source: dict[str, _ScoredEdge] = {}
+    for edge in top_edges:
+        previous = by_source.get(edge.source)
+        if previous is None or edge.score > previous.score:
+            by_source[edge.source] = edge
+    if not by_source:
+        raise ValueError("successor proposal has no usable directed candidates")
+    return tuple(by_source[source] for source in sorted(by_source))
 
 
 def _write_proposals(
@@ -648,6 +723,7 @@ def _write_proposals(
             "id": page.sample_id,
             "partition": page.partition,
             "decoder_version": JOINT_GRAPH_DECODER_VERSION,
+            "decoder_mode": decoded.decoder_mode,
             "runtime_reorder": False,
             "paragraph_threshold": round(page.paragraph_threshold, 8),
             "successor_threshold": round(page.successor_threshold, 8),
@@ -749,11 +825,14 @@ def _score_pages(
             decoded.selected_edges,
             page_labels.edges,
         )
-        successor_only_counts["correct"] += len(
-            {(edge.source, edge.target) for edge in page.successor_edges} & page_labels.edges
+        successor_only_edges = frozenset(
+            (edge.source, edge.target) for edge in page.successor_edges
         )
-        successor_only_counts["predicted"] += len(page.successor_edges)
-        successor_only_counts["labels"] += len(page_labels.edges)
+        _accumulate_partial_counts(
+            successor_only_counts,
+            successor_only_edges,
+            page_labels.edges,
+        )
 
         within_truth = {
             edge
@@ -761,12 +840,15 @@ def _score_pages(
             if scope == "within-oracle-region"
         }
         cross_truth = page_labels.edges - within_truth
-        within_counts["correct"] += len(decoded.within_selected_edges & within_truth)
+        # Recovery is over oracle scopes among selected edges, independent of
+        # predicted paragraph membership packaging.
+        within_counts["correct"] += len(decoded.selected_edges & within_truth)
         within_counts["labels"] += len(within_truth)
-        cross_counts["correct"] += len(decoded.cross_selected_edges & cross_truth)
+        cross_counts["correct"] += len(decoded.selected_edges & cross_truth)
         cross_counts["labels"] += len(cross_truth)
         labelled_relation_pages += bool(page_labels.edges)
         decoder_counts.update(decoded.diagnostics)
+        decoder_counts[f"mode:{decoded.decoder_mode}"] += 1
 
     return {
         "page_count": len(pages),
@@ -910,13 +992,37 @@ def _accumulate_partial_counts(
     predicted: frozenset[tuple[str, str]],
     labels: frozenset[tuple[str, str]],
 ) -> None:
+    endpoints = {endpoint for edge in labels for endpoint in edge}
+    scorable = {
+        edge for edge in predicted if edge[0] in endpoints and edge[1] in endpoints
+    }
     counts["correct"] += len(predicted & labels)
     counts["predicted"] += len(predicted)
+    counts["scorable"] += len(scorable)
+    counts["unscored"] += len(predicted - scorable)
     counts["labels"] += len(labels)
 
 
 def _partial_relation_summary(counts: Counter[str]) -> dict[str, int | float]:
-    return _precision_recall_f1(counts)
+    correct = int(counts["correct"])
+    predicted = int(counts["predicted"])
+    scorable = int(counts["scorable"])
+    unscored = int(counts["unscored"])
+    labels = int(counts["labels"])
+    precision = _ratio(correct, scorable)
+    recall = _ratio(correct, labels)
+    f1 = _ratio(2 * precision * recall, precision + recall)
+    return {
+        "correct": correct,
+        "predicted": predicted,
+        "labels": labels,
+        "precision": round(precision, 8),
+        "recall": round(recall, 8),
+        "f1": round(f1, 8),
+        "scorable": scorable,
+        "unscored": unscored,
+        "scorable_fraction": round(_ratio(scorable, predicted), 8),
+    }
 
 
 def _recall_summary(counts: Counter[str]) -> dict[str, int | float]:
