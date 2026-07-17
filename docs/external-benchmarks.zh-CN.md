@@ -1622,9 +1622,11 @@ top target，再由按 score 排序的 degree-one/cycle guard 生成无环 path 
 label 前写出每个 source 的前三个 alternative、score margin、选中 review edge 和局部 chain；当前
 环境实测耗时 `5:16`、峰值 RSS 约 `1.07 GB`。输出继续保持 `runtime_reorder: false`。两个 graph
 head 现在都在 held-out 英文论文家族内泛化。独立的 joint decoder 已可消费它们的 review-only
-proposal。两个 head 都可通过 `--model-output` 写出带 SHA-256 校验的 `.joblib` 模型，并在
-evaluation 阶段按页批打分以释放 dense fit matrix。年报/门户/中文文档/image-source OCR
-的跨域标签仍是 runtime 替换前的开放 gate。
+proposal。两个 head 都可通过 `--model-output` 写出带 SHA-256 校验的 `.joblib` 模型，在
+evaluation 阶段按页批打分以释放 dense fit matrix，并通过
+`predict-paragraph-graph` / `predict-successor-graph` 对单页 hierarchy input 生成
+review-only proposal。年报/门户/中文文档/image-source OCR 的跨域标签仍是 runtime
+替换前的开放 gate。
 
 ### 联合 Paragraph/Successor 解码
 

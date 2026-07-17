@@ -1400,8 +1400,10 @@ and cross-domain calibration remains open.
 
 Both graph heads optionally serialize a review-only model through shared
 `graph_model.py` helpers: `--model-output path.joblib` writes the estimator and
-frozen threshold with an adjacent SHA-256 manifest, and evaluation scoring uses
-page-wise feature batches so the dense fit matrix can be released first.
+frozen threshold with an adjacent SHA-256 manifest, evaluation scoring uses
+page-wise feature batches so the dense fit matrix can be released first, and
+`predict-paragraph-graph` / `predict-successor-graph` score one hierarchy input
+into a review-only proposal without labels.
 `benchmark-joint-graph` jointly decodes the two review-only heads without
 retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts
