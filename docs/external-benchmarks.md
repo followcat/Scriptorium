@@ -1970,8 +1970,11 @@ All 32 joint proposals used `successor-path-cover-package`. Joint relation
 metrics match the successor head exactly while adding paragraph co-membership
 streams. Qualitative transfer to Transformer-XL page 1 (fine-only export, 99
 lines) produced 90 successor edges. Because the OOD paragraph head was fully
-singleton, joint packaging used `successor-path-cover-package-chain-fallback`
-and emitted 9 review streams (largest body stream length 60) with title/author
-lines first. In-domain 32-page pages stayed on ordinary package mode, so
-labeled segmentation metrics were unchanged. Outputs remain
-`runtime_reorder: false` and are not a promotion window.
+singleton, joint packaging used
+`successor-path-cover-package-chain-geometry-fallback`: 5 geometry splits turned
+9 raw chains into 14 packaging components (title/author block, abstract-like
+block, introduction heading, left-column body, right-column continuation) while
+keeping the same 90 relation edges and 9 reading streams. In-domain 32-page
+pages stayed on ordinary package mode, so labeled segmentation metrics were
+unchanged. Outputs remain `runtime_reorder: false` and are not a promotion
+window.

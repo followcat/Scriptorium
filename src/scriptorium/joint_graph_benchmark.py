@@ -24,7 +24,7 @@ from .successor_graph_benchmark import SUCCESSOR_GRAPH_PROPOSAL_SCHEMA
 
 JOINT_GRAPH_BENCHMARK_SCHEMA = "scriptorium-joint-graph-benchmark/v1"
 JOINT_GRAPH_PROPOSAL_SCHEMA = "scriptorium-joint-graph-proposal/v1"
-JOINT_GRAPH_DECODER_VERSION = "successor-package-chain-fallback-or-protected-v3"
+JOINT_GRAPH_DECODER_VERSION = "successor-package-geometry-chain-or-protected-v4"
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,7 @@ class _PageProposals:
     corpus: Path
     labels_relative: str
     labels_sha256: str
+    element_boxes: dict[str, tuple[float, float, float, float]] | None = None
 
 
 @dataclass(frozen=True)
@@ -87,15 +88,17 @@ def joint_decode_page(
     paragraph_membership: Mapping[str, str],
     successor_edges: Sequence[_ScoredEdge],
     base_rank: Mapping[str, int] | None = None,
+    element_boxes: Mapping[str, Sequence[float]] | None = None,
 ) -> _DecodedPage:
     """Package successor path covers with paragraph hierarchy metadata.
 
     Prefer a successor-primary policy: when the provided successor edges already
     form a degree-one acyclic path cover, keep them and only use paragraph
     membership for within/cross labeling and hierarchical stream packaging.
-    Otherwise fall back to paragraph-protected decoding: within-paragraph edges
-    are protected, and cross-paragraph edges may only connect chain tails to
-    heads. The result remains review-only evidence.
+    When the paragraph head is over-fragmented, package with successor chains
+    and optionally split those chains on column wraps / large gaps when boxes
+    are available. Otherwise fall back to paragraph-protected decoding. The
+    result remains review-only evidence.
     """
 
     ids = tuple(str(element_id) for element_id in element_ids)
@@ -106,6 +109,7 @@ def joint_decode_page(
         element_id: int(base_rank[element_id]) if base_rank is not None else index
         for index, element_id in enumerate(ids)
     }
+    boxes = _normalize_element_boxes(element_boxes)
 
     known_edges: list[_ScoredEdge] = []
     unknown = 0
@@ -130,13 +134,24 @@ def joint_decode_page(
         selected = frozenset((str(source), str(target)) for source, target in edge_pairs)
         package_membership = dict(membership)
         decoder_mode = "successor-path-cover-package"
+        geometry_splits = 0
         # Over-fragmented paragraph heads (common OOD) collapse hierarchy packaging.
         # Fall back to successor chains as paragraph components without changing edges.
         if _singleton_rate(package_membership) >= 0.85:
-            package_membership = _membership_from_chains(
-                _edge_chains(ids, selected, rank)
+            chains = _edge_chains(ids, selected, rank)
+            if boxes:
+                refined: list[list[str]] = []
+                for chain in chains:
+                    parts = _split_chain_by_geometry(chain, boxes)
+                    geometry_splits += max(0, len(parts) - 1)
+                    refined.extend(parts)
+                chains = refined
+            package_membership = _membership_from_chains(chains)
+            decoder_mode = (
+                "successor-path-cover-package-chain-geometry-fallback"
+                if geometry_splits
+                else "successor-path-cover-package-chain-fallback"
             )
-            decoder_mode = "successor-path-cover-package-chain-fallback"
         within_selected = frozenset(
             (source, target)
             for source, target in selected
@@ -157,6 +172,7 @@ def joint_decode_page(
                 "paragraph_singleton_rate_x1000": int(
                     round(_singleton_rate(membership) * 1000)
                 ),
+                "geometry_chain_split_count": geometry_splits,
                 "successor_candidate_count": len(successor_edges),
                 "unknown_successor_count": unknown,
                 "within_candidate_count": sum(
@@ -313,6 +329,77 @@ def _membership_from_chains(chains: Sequence[Sequence[str]]) -> dict[str, str]:
     return membership
 
 
+def _normalize_element_boxes(
+    element_boxes: Mapping[str, Sequence[float]] | None,
+) -> dict[str, tuple[float, float, float, float]] | None:
+    if not element_boxes:
+        return None
+    normalized: dict[str, tuple[float, float, float, float]] = {}
+    for element_id, raw in element_boxes.items():
+        if raw is None or len(raw) != 4:
+            continue
+        box = (float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        normalized[str(element_id)] = box
+    return normalized or None
+
+
+def _split_chain_by_geometry(
+    chain: Sequence[str],
+    boxes: Mapping[str, tuple[float, float, float, float]],
+) -> list[list[str]]:
+    """Split a successor chain on column wraps and large vertical gaps.
+
+    Relation edges stay unchanged; this only refines packaging membership for
+    over-fragmented paragraph heads.
+    """
+
+    if len(chain) <= 1:
+        return [list(chain)]
+
+    gaps: list[float] = []
+    for source, target in zip(chain, chain[1:], strict=False):
+        if source not in boxes or target not in boxes:
+            gaps.append(0.0)
+            continue
+        source_box = boxes[source]
+        target_box = boxes[target]
+        gaps.append(target_box[1] - source_box[3])
+    positive = sorted(gap for gap in gaps if gap > 0)
+    median_gap = positive[len(positive) // 2] if positive else 1.0
+    gap_threshold = max(6.0, median_gap * 2.5)
+
+    parts: list[list[str]] = [[str(chain[0])]]
+    for index, (source, target) in enumerate(zip(chain, chain[1:], strict=False)):
+        split = False
+        if source in boxes and target in boxes:
+            source_box = boxes[source]
+            target_box = boxes[target]
+            source_center_x = (source_box[0] + source_box[2]) / 2
+            target_center_x = (target_box[0] + target_box[2]) / 2
+            dx = target_center_x - source_center_x
+            source_width = max(source_box[2] - source_box[0], 1.0)
+            target_width = max(target_box[2] - target_box[0], 1.0)
+            overlap = max(
+                0.0,
+                min(source_box[2], target_box[2]) - max(source_box[0], target_box[0]),
+            )
+            horizontal_overlap = overlap / min(source_width, target_width)
+            gap = gaps[index]
+            # Column wrap: large horizontal jump with little overlap,
+            # or a large negative vertical jump after finishing a column.
+            if (abs(dx) > 40.0 and horizontal_overlap < 0.25) or gap < -50.0:
+                split = True
+            elif gap > gap_threshold and horizontal_overlap >= 0.5:
+                split = True
+        if split:
+            parts.append([str(target)])
+        else:
+            parts[-1].append(str(target))
+    return parts
+
+
 def benchmark_joint_graph(
     train_corpus_dir: str | Path,
     *,
@@ -434,9 +521,10 @@ def benchmark_joint_graph(
         "decoder_policy": (
             "prefer packaging a successor path cover with paragraph hierarchy "
             "labels; fall back to successor-chain packaging when paragraph "
-            "singleton rate is at least 0.85; fall back to paragraph-protected "
-            "path cover with score-ordered tail-to-head cross edges when "
-            "successors are not a valid path cover"
+            "singleton rate is at least 0.85, optionally splitting chains on "
+            "column wraps and large vertical gaps when boxes are available; "
+            "fall back to paragraph-protected path cover with score-ordered "
+            "tail-to-head cross edges when successors are not a valid path cover"
         ),
         "label_policy": (
             "complete oracle co-membership plus published Comp-HRDoc immediate "
@@ -481,6 +569,7 @@ def _decode_loaded_page(page: _PageProposals) -> _DecodedPage:
         paragraph_membership=page.paragraph_membership,
         successor_edges=page.successor_edges,
         base_rank=page.base_rank,
+        element_boxes=page.element_boxes,
     )
 
 
@@ -546,6 +635,11 @@ def _load_pages(
             undirected=True,
         )
         successor_edges = _scored_edges_from_successor_proposal(successor_payload)
+        element_boxes = _load_element_boxes_from_corpus(
+            corpus,
+            raw_sample.get("input"),
+            expected_ids=set(element_ids),
+        )
         pages.append(
             _PageProposals(
                 sample_id=sample_id,
@@ -564,9 +658,51 @@ def _load_pages(
                 corpus=corpus,
                 labels_relative=labels_relative,
                 labels_sha256=labels_sha256,
+                element_boxes=element_boxes,
             )
         )
     return pages
+
+
+def _load_element_boxes_from_corpus(
+    corpus: Path,
+    relative_input: object,
+    *,
+    expected_ids: set[str],
+) -> dict[str, tuple[float, float, float, float]] | None:
+    if not isinstance(relative_input, str) or not relative_input.strip():
+        return None
+    try:
+        input_path = _confined_path(corpus, relative_input, label="sample input")
+        payload = _json_object(input_path, label="sample input")
+    except ValueError:
+        return None
+    raw_elements = payload.get("elements")
+    if not isinstance(raw_elements, list):
+        return None
+    boxes: dict[str, tuple[float, float, float, float]] = {}
+    for raw in raw_elements:
+        if not isinstance(raw, Mapping):
+            continue
+        element_id = str(raw.get("id") or "").strip()
+        if not element_id or element_id not in expected_ids:
+            continue
+        raw_box = raw.get("box")
+        if not isinstance(raw_box, list) or len(raw_box) != 4:
+            continue
+        try:
+            box = (
+                float(raw_box[0]),
+                float(raw_box[1]),
+                float(raw_box[2]),
+                float(raw_box[3]),
+            )
+        except (TypeError, ValueError):
+            continue
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        boxes[element_id] = box
+    return boxes or None
 
 
 def _membership_from_paragraph_proposal(

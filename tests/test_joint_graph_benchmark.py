@@ -94,6 +94,37 @@ def test_joint_decode_falls_back_to_successor_chains_when_paragraphs_are_singlet
     assert decoded.diagnostics["paragraph_singleton_rate_x1000"] == 1000
 
 
+def test_joint_decode_splits_singleton_fallback_chains_on_column_wraps() -> None:
+    decoded = joint_decode_page(
+        element_ids=["a", "b", "c", "d"],
+        paragraph_membership={"a": "p1", "b": "p2", "c": "p3", "d": "p4"},
+        successor_edges=[
+            _ScoredEdge("a", "b", 0.91),
+            _ScoredEdge("b", "c", 0.88),  # column wrap in geometry
+            _ScoredEdge("c", "d", 0.93),
+        ],
+        element_boxes={
+            "a": (10, 10, 80, 20),
+            "b": (10, 25, 80, 35),
+            "c": (120, 10, 190, 20),  # right column top
+            "d": (120, 25, 190, 35),
+        },
+    )
+
+    assert decoded.decoder_mode == "successor-path-cover-package-chain-geometry-fallback"
+    # Relation edges are unchanged.
+    assert sorted(decoded.selected_edges) == [("a", "b"), ("b", "c"), ("c", "d")]
+    assert decoded.streams == (("a", "b", "c", "d"),)
+    # Packaging membership is split around the column wrap.
+    assert decoded.membership["a"] == decoded.membership["b"]
+    assert decoded.membership["c"] == decoded.membership["d"]
+    assert decoded.membership["a"] != decoded.membership["c"]
+    assert decoded.within_selected_edges == frozenset({("a", "b"), ("c", "d")})
+    assert decoded.cross_selected_edges == frozenset({("b", "c")})
+    assert decoded.diagnostics["geometry_chain_split_count"] == 1
+    assert decoded.diagnostics["paragraph_component_count"] == 2
+
+
 def test_joint_decode_rejects_cross_edge_that_breaks_degree_one() -> None:
     decoded = joint_decode_page(
         element_ids=["a", "b", "c", "d", "e", "f"],
