@@ -13,6 +13,7 @@ from typing import Any
 
 from .graph_model import (
     flatten_page_scores,
+    load_graph_model,
     predict_feature_batches,
     save_graph_model,
 )
@@ -322,6 +323,76 @@ def benchmark_paragraph_graph(
         report,
         model_path=model_path,
         model_manifest_path=model_manifest_path,
+    )
+
+
+@dataclass(frozen=True)
+class ParagraphGraphPredictionResult:
+    proposal_path: Path
+    proposal: dict[str, Any]
+    model_path: Path
+    model_manifest_path: Path
+
+
+def predict_paragraph_graph(
+    hierarchy_input: str | Path | Mapping[str, Any],
+    model_path: str | Path,
+    *,
+    output: str | Path,
+    sample_id: str | None = None,
+    partition: str = "predict",
+) -> ParagraphGraphPredictionResult:
+    """Score one answer-free hierarchy input with a serialized paragraph model."""
+
+    payload = (
+        dict(hierarchy_input)
+        if isinstance(hierarchy_input, Mapping)
+        else _json_object(Path(hierarchy_input), label="paragraph graph input")
+    )
+    if payload.get("schema") != HIERARCHY_INPUT_SCHEMA:
+        raise ValueError("paragraph graph input has an unsupported schema")
+    artifact = load_graph_model(
+        model_path,
+        expected_schema=PARAGRAPH_GRAPH_MODEL_SCHEMA,
+        expected_head="paragraph-comembership",
+        expected_feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+    )
+    threshold = float(artifact.bundle["threshold"])
+    estimator = artifact.bundle["estimator"]
+    element_ids, candidates = _page_candidates(payload)
+    if candidates and len(candidates[0].features) != int(artifact.bundle["feature_count"]):
+        raise ValueError("paragraph model feature_count does not match input candidates")
+    sample = {
+        "id": sample_id or str(payload.get("id") or Path(str(output)).stem),
+        "document_id": str(payload.get("document_id") or payload.get("id") or "document"),
+        "layout_stratum": str(payload.get("layout_stratum") or "unspecified"),
+    }
+    page = _Page(
+        corpus=Path("."),
+        sample=sample,
+        split=partition,
+        element_ids=element_ids,
+        candidates=candidates,
+    )
+    _, _, numpy, _ = _training_modules()
+    scores = _predict_pages(estimator, [page], numpy=numpy)
+    proposal_path = Path(output)
+    proposal_root = proposal_path.parent
+    proposal_root.mkdir(parents=True, exist_ok=True)
+    written = _write_proposals([page], scores, threshold, proposal_root)
+    if not written:
+        raise ValueError("paragraph graph prediction produced no proposal")
+    generated = Path(written[0])
+    if generated.resolve() != proposal_path.resolve():
+        proposal_path.write_text(generated.read_text(encoding="utf-8"), encoding="utf-8")
+        if generated != proposal_path:
+            generated.unlink(missing_ok=True)
+    proposal = _json_object(proposal_path, label="paragraph graph proposal")
+    return ParagraphGraphPredictionResult(
+        proposal_path=proposal_path,
+        proposal=proposal,
+        model_path=artifact.model_path,
+        model_manifest_path=artifact.manifest_path,
     )
 
 

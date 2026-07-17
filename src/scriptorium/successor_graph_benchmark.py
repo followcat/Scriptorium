@@ -12,6 +12,7 @@ from typing import Any
 
 from .graph_model import (
     flatten_page_scores,
+    load_graph_model,
     predict_feature_batches,
     save_graph_model,
 )
@@ -384,6 +385,86 @@ def benchmark_successor_graph(
         report,
         model_path=model_path,
         model_manifest_path=model_manifest_path,
+    )
+
+
+@dataclass(frozen=True)
+class SuccessorGraphPredictionResult:
+    proposal_path: Path
+    proposal: dict[str, Any]
+    model_path: Path
+    model_manifest_path: Path
+
+
+def predict_successor_graph(
+    hierarchy_input: str | Path | Mapping[str, Any],
+    model_path: str | Path,
+    *,
+    output: str | Path,
+    sample_id: str | None = None,
+    partition: str = "predict",
+) -> SuccessorGraphPredictionResult:
+    """Score one answer-free hierarchy input with a serialized successor model."""
+
+    payload = (
+        dict(hierarchy_input)
+        if isinstance(hierarchy_input, Mapping)
+        else _json_object(Path(hierarchy_input), label="successor graph input")
+    )
+    if payload.get("schema") != HIERARCHY_INPUT_SCHEMA:
+        raise ValueError("successor graph input has an unsupported schema")
+    artifact = load_graph_model(
+        model_path,
+        expected_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
+        expected_head="directed-successor",
+        expected_feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+    )
+    nearest_candidates = int(
+        artifact.bundle.get("nearest_candidates") or DEFAULT_NEAREST_CANDIDATES
+    )
+    threshold = float(artifact.bundle["threshold"])
+    estimator = artifact.bundle["estimator"]
+    element_ids, base_rank, base_edges, candidates = _page_candidates(
+        payload,
+        nearest_candidates=nearest_candidates,
+    )
+    if candidates and len(candidates[0].features) != int(artifact.bundle["feature_count"]):
+        raise ValueError("successor model feature_count does not match input candidates")
+    sample = {
+        "id": sample_id or str(payload.get("id") or Path(str(output)).stem),
+        "document_id": str(payload.get("document_id") or payload.get("id") or "document"),
+        "layout_stratum": str(payload.get("layout_stratum") or "unspecified"),
+    }
+    page = _Page(
+        corpus=Path("."),
+        sample=sample,
+        split=partition,
+        element_ids=element_ids,
+        base_rank=base_rank,
+        base_edges=base_edges,
+        candidates=candidates,
+    )
+    _, _, numpy, _ = _training_modules()
+    scores = _predict_pages(estimator, [page], numpy=numpy)
+    ranked = _rank_pages([page], scores)
+    proposal_path = Path(output)
+    proposal_root = proposal_path.parent
+    proposal_root.mkdir(parents=True, exist_ok=True)
+    # Write through the shared proposal helper into a temp root, then move/rename.
+    written = _write_proposals([page], ranked, threshold, proposal_root)
+    if not written:
+        raise ValueError("successor graph prediction produced no proposal")
+    generated = Path(written[0])
+    if generated.resolve() != proposal_path.resolve():
+        proposal_path.write_text(generated.read_text(encoding="utf-8"), encoding="utf-8")
+        if generated != proposal_path:
+            generated.unlink(missing_ok=True)
+    proposal = _json_object(proposal_path, label="successor graph proposal")
+    return SuccessorGraphPredictionResult(
+        proposal_path=proposal_path,
+        proposal=proposal,
+        model_path=artifact.model_path,
+        model_manifest_path=artifact.manifest_path,
     )
 
 

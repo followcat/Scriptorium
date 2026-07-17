@@ -57,8 +57,14 @@ from .ocr import (
 from .opendataloader_provider import OpenDataLoaderAdapter
 from .paddle_layout_provider import PaddleLayoutAdapter, run_paddle_layout_corpus
 from .joint_graph_benchmark import benchmark_joint_graph
-from .paragraph_graph_benchmark import benchmark_paragraph_graph
-from .successor_graph_benchmark import benchmark_successor_graph
+from .paragraph_graph_benchmark import (
+    benchmark_paragraph_graph,
+    predict_paragraph_graph,
+)
+from .successor_graph_benchmark import (
+    benchmark_successor_graph,
+    predict_successor_graph,
+)
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -921,6 +927,49 @@ def benchmark_paragraph_graph_command(
         typer.echo(f"Model manifest: {result.model_manifest_path}")
 
 
+@app.command("predict-paragraph-graph")
+def predict_paragraph_graph_command(
+    hierarchy_input: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Answer-free hierarchy input JSON for one page.",
+    ),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        exists=True,
+        readable=True,
+        help="Serialized paragraph-graph .joblib model with adjacent manifest.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/paragraph-graph.proposal.json"),
+        "--output",
+        "-o",
+    ),
+    sample_id: Optional[str] = typer.Option(
+        None,
+        "--sample-id",
+        help="Optional proposal id; defaults to hierarchy input id.",
+    ),
+) -> None:
+    """Predict a review-only paragraph graph proposal from a serialized model."""
+
+    try:
+        result = predict_paragraph_graph(
+            hierarchy_input,
+            model,
+            output=output,
+            sample_id=sample_id,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="hierarchy_input") from exc
+    streams = result.proposal.get("reading_streams") or []
+    typer.echo(f"Paragraph streams: {len(streams)}")
+    typer.echo(f"Proposal: {result.proposal_path}")
+    typer.echo(f"Model: {result.model_path}")
+
+
 @app.command("benchmark-successor-graph")
 def benchmark_successor_graph_command(
     train_corpus: Path = typer.Argument(
@@ -1005,6 +1054,51 @@ def benchmark_successor_graph_command(
     if result.model_path is not None:
         typer.echo(f"Model: {result.model_path}")
         typer.echo(f"Model manifest: {result.model_manifest_path}")
+
+
+@app.command("predict-successor-graph")
+def predict_successor_graph_command(
+    hierarchy_input: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Answer-free hierarchy input JSON for one page.",
+    ),
+    model: Path = typer.Option(
+        ...,
+        "--model",
+        exists=True,
+        readable=True,
+        help="Serialized successor-graph .joblib model with adjacent manifest.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/successor-graph.proposal.json"),
+        "--output",
+        "-o",
+    ),
+    sample_id: Optional[str] = typer.Option(
+        None,
+        "--sample-id",
+        help="Optional proposal id; defaults to hierarchy input id.",
+    ),
+) -> None:
+    """Predict a review-only successor graph proposal from a serialized model."""
+
+    try:
+        result = predict_successor_graph(
+            hierarchy_input,
+            model,
+            output=output,
+            sample_id=sample_id,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="hierarchy_input") from exc
+    edges = result.proposal.get("successor_edges") or []
+    streams = result.proposal.get("reading_streams") or []
+    typer.echo(f"Successor edges: {len(edges)}")
+    typer.echo(f"Reading streams: {len(streams)}")
+    typer.echo(f"Proposal: {result.proposal_path}")
+    typer.echo(f"Model: {result.model_path}")
 
 
 @app.command("benchmark-joint-graph")
