@@ -268,6 +268,183 @@ def materialize_provider_hierarchy_corpus(
     return ProviderHierarchyCorpusResult(target, manifest_path, manifest)
 
 
+def materialize_graph_hierarchy_corpus(
+    source_hierarchy_corpus: str | Path,
+    out_dir: str | Path,
+) -> ProviderHierarchyCorpusResult:
+    """Convert a hierarchy corpus into graph-benchmark provider-hierarchy format.
+
+    Inputs stay answer-free fine-line hierarchy pages. Oracle membership and
+    published successor labels are rewritten into the provider-hierarchy label
+    schema after every input is written. No provider model is required.
+    """
+
+    source_root = Path(source_hierarchy_corpus).resolve()
+    source_manifest_path = source_root / "hierarchical_order_corpus_manifest.json"
+    source_manifest = _json_object(source_manifest_path, label="source manifest")
+    if source_manifest.get("schema") != HIERARCHY_CORPUS_SCHEMA:
+        raise ValueError("unsupported source hierarchy corpus schema")
+    if source_manifest.get("inference_inputs_are_answer_free") is not True:
+        raise ValueError("source hierarchy corpus must declare answer-free inputs")
+    samples = source_manifest.get("samples")
+    if not isinstance(samples, list) or not samples:
+        raise ValueError("source hierarchy corpus must contain samples")
+
+    target = Path(out_dir)
+    inputs_dir = target / "inputs"
+    labels_dir = target / "labels"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
+    seen_ids: set[str] = set()
+    # Phase one: materialize every answer-free input before any label is opened.
+    for raw_sample in samples:
+        if not isinstance(raw_sample, Mapping):
+            raise ValueError("source hierarchy samples must be objects")
+        sample_id = str(raw_sample.get("id") or "").strip()
+        document_id = str(raw_sample.get("document_id") or "").strip()
+        if not sample_id or sample_id in seen_ids:
+            raise ValueError("source hierarchy sample ids must be non-empty and unique")
+        if not document_id:
+            raise ValueError("source hierarchy samples require document_id")
+        seen_ids.add(sample_id)
+        source_input_path = _confined_path(
+            source_root,
+            raw_sample.get("input"),
+            label="source hierarchy input",
+        )
+        _verify_file_hash(
+            source_input_path,
+            raw_sample.get("input_sha256"),
+            label="source hierarchy input",
+        )
+        source_payload = _json_object(source_input_path, label="source hierarchy input")
+        if source_payload.get("schema") != HIERARCHY_INPUT_SCHEMA:
+            raise ValueError(f"sample {sample_id} has unsupported hierarchy input schema")
+        raw_elements = source_payload.get("elements")
+        if not isinstance(raw_elements, list) or not raw_elements:
+            raise ValueError(f"sample {sample_id} hierarchy input has no fine elements")
+        elements = []
+        for raw_element in raw_elements:
+            if not isinstance(raw_element, Mapping):
+                raise ValueError(f"sample {sample_id} elements must be objects")
+            element_id = str(raw_element.get("id") or "").strip()
+            if not element_id:
+                raise ValueError(f"sample {sample_id} elements require ids")
+            elements.append(
+                {
+                    "id": element_id,
+                    "box": list(raw_element.get("box") or []),
+                    "role": str(raw_element.get("role") or "text"),
+                    "text": str(raw_element.get("text") or ""),
+                }
+            )
+        input_payload = {
+            "schema": HIERARCHY_INPUT_SCHEMA,
+            "id": sample_id,
+            "page_index": raw_sample.get("page_index"),
+            "width": source_payload.get("width"),
+            "height": source_payload.get("height"),
+            "element_granularity": "fine",
+            "region_granularity": "coarse",
+            "elements": elements,
+            # Graph heads ignore regions; keep empty so inputs stay provider-free.
+            "regions": [],
+            "source": {
+                "adapter": "graph-hierarchy-from-comphrdoc",
+                "document_id": document_id,
+                "page_index": raw_sample.get("page_index"),
+                "layout_stratum": raw_sample.get("layout_stratum"),
+            },
+        }
+        input_path = inputs_dir / f"{_safe_filename(sample_id)}.hierarchy-input.json"
+        _write_json(input_path, input_payload)
+        sample = {
+            "id": sample_id,
+            "document_id": document_id,
+            "page_index": raw_sample.get("page_index"),
+            "partition": raw_sample.get("partition"),
+            "layout_stratum": raw_sample.get("layout_stratum"),
+            "input": str(input_path.relative_to(target)),
+            "input_sha256": _file_sha256(input_path),
+            "labels": None,
+            "labels_sha256": None,
+            "fine_element_count": len(elements),
+            "provider_region_count": 0,
+            "successor_label_count": 0,
+        }
+        prepared.append((sample, input_path, input_payload))
+
+    # Phase two: open labels only after every input exists.
+    manifest_samples: list[dict[str, Any]] = []
+    for sample, input_path, input_payload in prepared:
+        sample_id = str(sample["id"])
+        source_sample = next(
+            item
+            for item in samples
+            if isinstance(item, Mapping) and str(item.get("id") or "") == sample_id
+        )
+        source_label_path = _confined_path(
+            source_root,
+            source_sample.get("labels"),
+            label="source hierarchy labels",
+        )
+        _verify_file_hash(
+            source_label_path,
+            source_sample.get("labels_sha256"),
+            label="source hierarchy labels",
+        )
+        source_labels = _json_object(source_label_path, label="source hierarchy labels")
+        labels = _provider_hierarchy_labels(
+            source_labels,
+            input_payload=input_payload,
+            sample_id=sample_id,
+        )
+        label_path = labels_dir / f"{_safe_filename(sample_id)}.provider-labels.json"
+        _write_json(label_path, labels)
+        sample["labels"] = str(label_path.relative_to(target))
+        sample["labels_sha256"] = _file_sha256(label_path)
+        sample["successor_label_count"] = len(labels["successor_edges"])
+        manifest_samples.append(sample)
+
+    manifest = {
+        "schema": PROVIDER_HIERARCHY_CORPUS_SCHEMA,
+        "source_dataset": source_manifest.get("source_dataset"),
+        "source_schema": source_manifest.get("source_schema"),
+        "source_hierarchy_manifest": str(source_manifest_path),
+        "source_hierarchy_manifest_sha256": _file_sha256(source_manifest_path),
+        "source_corpus_manifest_sha256": source_manifest.get("source_manifest_sha256"),
+        "provider": "none-graph-hierarchy-export",
+        "provider_root": None,
+        "provider_manifest": None,
+        "provider_manifest_sha256": None,
+        "sample_count": len(manifest_samples),
+        "partition_counts": dict(
+            sorted(
+                Counter(
+                    str(sample.get("partition") or "unknown")
+                    for sample in manifest_samples
+                ).items()
+            )
+        ),
+        "inference_inputs_are_answer_free": True,
+        "selection_uses_relation_labels": False,
+        "answer_separation": {
+            "input": "fine text/geometry only; regions empty; no provider sequence",
+            "labels": "oracle co-membership and complete published successor sidecar",
+            "provider_sequence_values_in_input": False,
+            "provider_relation_values_in_input": False,
+            "prediction_reads_all_inputs_before_labels": True,
+            "labels_opened_after_all_inputs_written": True,
+        },
+        "samples": manifest_samples,
+    }
+    manifest_path = target / "provider_hierarchy_corpus_manifest.json"
+    _write_json(manifest_path, manifest)
+    return ProviderHierarchyCorpusResult(target, manifest_path, manifest)
+
+
 def benchmark_provider_hierarchy_corpus(
     corpus_dir: str | Path,
     *,

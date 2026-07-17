@@ -80,6 +80,7 @@ from .provider_anchor_benchmark import (
 )
 from .provider_hierarchy_benchmark import (
     benchmark_provider_hierarchy_corpus,
+    materialize_graph_hierarchy_corpus,
     materialize_provider_hierarchy_corpus,
 )
 from .quality import compare_html_to_rendered_pdf, compare_pdf_renderings
@@ -805,6 +806,36 @@ def materialize_provider_hierarchy_command(
             param_hint="source_hierarchy_corpus",
         ) from exc
     typer.echo(f"Provider hierarchy samples: {result.manifest['sample_count']}")
+    typer.echo(f"Provider: {result.manifest['provider']}")
+    typer.echo(f"Partitions: {result.manifest['partition_counts']}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+
+
+@app.command("materialize-graph-hierarchy")
+def materialize_graph_hierarchy_command(
+    source_hierarchy_corpus: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        readable=True,
+        help="Answer-separated hierarchy corpus supplying fine lines and labels.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/graph-hierarchy-corpus"),
+        "--output",
+        "-o",
+    ),
+) -> None:
+    """Convert a hierarchy corpus into graph-benchmark provider-hierarchy format."""
+
+    try:
+        result = materialize_graph_hierarchy_corpus(source_hierarchy_corpus, output)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint="source_hierarchy_corpus",
+        ) from exc
+    typer.echo(f"Graph hierarchy samples: {result.manifest['sample_count']}")
     typer.echo(f"Provider: {result.manifest['provider']}")
     typer.echo(f"Partitions: {result.manifest['partition_counts']}")
     typer.echo(f"Manifest: {result.manifest_path}")

@@ -561,13 +561,16 @@ def _scored_edges_from_candidates(
 
 
 def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_ScoredEdge, ...]:
-    """Load top-1 directed candidates so joint decode can re-run path cover.
+    """Load thresholded top-1 directed candidates for joint path cover.
 
-    Prefer rank-1 ``candidate_edges`` over the already path-covered
-    ``successor_edges`` list. Reusing only the final selected edges would hide
-    conflicts that paragraph protection is meant to resolve.
+    Prefer rank-1 ``candidate_edges`` at or above the successor proposal
+    threshold so paragraph protection can re-resolve conflicts on the same
+    candidate pool the successor head would accept. Unthresholded rank-1 edges
+    reintroduce low-score noise the successor head already rejected. Fall back
+    to the path-covered ``successor_edges`` list when candidates are absent.
     """
 
+    threshold = float(payload.get("threshold") or 0.0)
     raw_candidates = payload.get("candidate_edges")
     if isinstance(raw_candidates, list) and raw_candidates:
         top_edges: list[_ScoredEdge] = []
@@ -577,6 +580,10 @@ def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_
             rank = raw.get("rank")
             if rank is not None and int(rank) != 1:
                 continue
+            score = float(raw.get("score") or 0.0)
+            selected = raw.get("selected") is True
+            if score < threshold and not selected:
+                continue
             source = str(raw.get("source") or "").strip()
             target = str(raw.get("target") or "").strip()
             if not source or not target:
@@ -585,7 +592,7 @@ def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_
                 _ScoredEdge(
                     source=source,
                     target=target,
-                    score=float(raw.get("score") or 0.0),
+                    score=score,
                     rank=1,
                     top_score_margin=(
                         float(raw["top_score_margin"])
