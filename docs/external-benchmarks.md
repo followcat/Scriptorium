@@ -268,6 +268,36 @@ usable review streams on float-dense CVPR pages, equation-interrupted pages,
 and three-column magazine pages, but these are qualitative smoke checks, not
 labelled cross-domain evidence.
 
+### Labelled hard-page evaluation v1
+
+Relation-style semantic sidecars now cover two hard pages:
+`benchmarks/semantic-ground-truth/segment-anything.semantic-order.json` (page 5:
+full-width Figure 4 caption, section heading, and two-column body) and
+`benchmarks/semantic-ground-truth/hello-world-22.semantic-order.json` (page 5
+contents page with feature boxes and a three-column article index). First-run
+results on the Hello World contents page exposed a real failure: the selected
+order classified the three-column index as a data table and read it row-major.
+
+| Metric | Before fix | After row-height grid guard |
+|---|---:|---:|
+| Pair accuracy | 0.74275362 | 0.90579710 |
+| Successor accuracy | 0.21739130 | 0.60869565 |
+| Relation successor accuracy | 0.21212121 | 0.66666667 |
+| Precedence accuracy | 0.88888889 | 0.88888889 |
+
+The guard now requires multi-cell rows to be height-uniform before treating a
+page as a data table; magazine/index pages mix title-height and
+description-height cells in the same visual row and stay column-readable.
+Labeled regression pages keep their scores: Attention p. 1, Transformer-XL
+pp. 1-3, and web-HN all remain `1.0`; PUMA mixed-table pages keep their
+existing strategies; the full suite is `429 passed`. The remaining gap on the
+contents page (box-flow candidate at `0.78260870` successor accuracy) is the
+next labeled target for candidate arbitration.
+
+Segment Anything p. 5 scores `1.0` on pair, successor, relation-successor, and
+relation-precedence accuracy in the first labeled run, confirming the selected
+native order handles full-width float captions and two-column handoffs there.
+
 BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 
 ## PP-StructureV3 A/B

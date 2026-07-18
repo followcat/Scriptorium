@@ -1,0 +1,246 @@
+{
+  "version": 3,
+  "description": "Partial semantic reading-order anchors for Hello World Magazine issue 22, page 5 (1-based): a contents page with feature boxes at the top and a three-column article index. Labels use relation-style successor/precedence edges inside each TOC column and feature box; column handoffs are labelled explicitly because the page has several acceptable global orders.",
+  "source": "https://www.raspberrypi.org/hello-world/issues/22",
+  "source_pdf": "data/external/hello-world-22.pdf",
+  "pages": [
+    {
+      "page_index": 4,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "\u0007CODE CLUB",
+        "\u0007AI TOOLS FOR LEARNING",
+        "LEARNING",
+        "EXPLAINING AI",
+        "40   \u0007EXPLAINING AI",
+        "42   \u0007MODEL CARDS",
+        "44   \u0007RECOMMENDER SYSTEMS",
+        "46   \u0007DEMYSTIFYING MACHINE",
+        "48   \u0007TIKTOK’S ALGORITHMS",
+        "50   \u0007AI DEBATE",
+        "54   \u0007AI TOOLS FOR LEARNING",
+        "56   \u0007KEEP PROGRAMMING",
+        "58   \u0007CODE CLUB",
+        "60   \u0007COMPUTER SCIENCE AND",
+        "62   \u0007ONLINE COURSES",
+        "64   \u0007TEACH FIRST",
+        "67   \u0007WIPSCE 2023",
+        "70   \u0007INFORMATION TECHNOLOGY",
+        "72   \u0007INTRO TO AI",
+        "CONVERSATION",
+        "REVIEWS",
+        "85   \u0007BOOK REVIEW",
+        "helloworld.cc",
+        "5"
+      ],
+      "successor_edges": [
+        [
+          "\u0007CODE CLUB",
+          "Four groups share"
+        ],
+        [
+          "their experiences of",
+          "starting a Code Club"
+        ],
+        [
+          "\u0007AI TOOLS FOR LEARNING",
+          "Programming with ChatGPT"
+        ],
+        [
+          "LEARNING",
+          "RESOURCES & LESSON PLANS"
+        ],
+        [
+          "70   \u0007INFORMATION TECHNOLOGY",
+          "IT all around us"
+        ],
+        [
+          "72   \u0007INTRO TO AI",
+          "A lesson from Experience AI"
+        ],
+        [
+          "EXPLAINING AI",
+          "How we explain AI"
+        ],
+        [
+          "How we explain AI",
+          "terms to young people"
+        ],
+        [
+          "40   \u0007EXPLAINING AI",
+          "How we created a glossary of AI"
+        ],
+        [
+          "How we created a glossary of AI",
+          "terms for young people"
+        ],
+        [
+          "42   \u0007MODEL CARDS",
+          "Teaching AI explainability"
+        ],
+        [
+          "44   \u0007RECOMMENDER SYSTEMS",
+          "The hidden AI steering our choices"
+        ],
+        [
+          "46   \u0007DEMYSTIFYING MACHINE",
+          "LEARNING"
+        ],
+        [
+          "48   \u0007TIKTOK’S ALGORITHMS",
+          "Can AI and data create"
+        ],
+        [
+          "Can AI and data create",
+          "more inclusion?"
+        ],
+        [
+          "50   \u0007AI DEBATE",
+          "Do the benefits of AI outweigh"
+        ],
+        [
+          "Do the benefits of AI outweigh",
+          "the risks?"
+        ],
+        [
+          "54   \u0007AI TOOLS FOR LEARNING",
+          "Programming with ChatGPT"
+        ],
+        [
+          "56   \u0007KEEP PROGRAMMING",
+          "Learners still need hands-on"
+        ],
+        [
+          "Learners still need hands-on",
+          "programming practice"
+        ],
+        [
+          "58   \u0007CODE CLUB",
+          "Four groups share their experiences"
+        ],
+        [
+          "Four groups share their experiences",
+          "of starting a Code Club"
+        ],
+        [
+          "60   \u0007COMPUTER SCIENCE AND",
+          "GEOMETRY"
+        ],
+        [
+          "62   \u0007ONLINE COURSES",
+          "Tips for making the most of online"
+        ],
+        [
+          "Tips for making the most of online",
+          "learning for CPD"
+        ],
+        [
+          "64   \u0007TEACH FIRST",
+          "Trainee teachers share how they put"
+        ],
+        [
+          "67   \u0007WIPSCE 2023",
+          "Teacher thoughts from a computing"
+        ],
+        [
+          "BEBRAS",
+          "A fun challenge in"
+        ],
+        [
+          "GREEN SCREEN",
+          "Developing learners’ digital skills with"
+        ],
+        [
+          "INSIDER’S GUIDE",
+          "Work-related learning experience"
+        ],
+        [
+          "T LEVELS",
+          "Tips from one of the first T-level"
+        ],
+        [
+          "EVOLVING COMPUTING",
+          "Teaching systems thinking"
+        ],
+        [
+          "85   \u0007BOOK REVIEW",
+          "Teach Data Literacy"
+        ]
+      ],
+      "precedence_edges": [
+        {
+          "source": "\u0007CODE CLUB",
+          "target": "\u0007AI TOOLS FOR LEARNING"
+        },
+        {
+          "source": "40   \u0007EXPLAINING AI",
+          "target": "42   \u0007MODEL CARDS"
+        },
+        {
+          "source": "42   \u0007MODEL CARDS",
+          "target": "44   \u0007RECOMMENDER SYSTEMS"
+        },
+        {
+          "source": "44   \u0007RECOMMENDER SYSTEMS",
+          "target": "46   \u0007DEMYSTIFYING MACHINE"
+        },
+        {
+          "source": "46   \u0007DEMYSTIFYING MACHINE",
+          "target": "48   \u0007TIKTOK’S ALGORITHMS"
+        },
+        {
+          "source": "48   \u0007TIKTOK’S ALGORITHMS",
+          "target": "50   \u0007AI DEBATE"
+        },
+        {
+          "source": "50   \u0007AI DEBATE",
+          "target": "54   \u0007AI TOOLS FOR LEARNING"
+        },
+        {
+          "source": "54   \u0007AI TOOLS FOR LEARNING",
+          "target": "56   \u0007KEEP PROGRAMMING"
+        },
+        {
+          "source": "56   \u0007KEEP PROGRAMMING",
+          "target": "58   \u0007CODE CLUB"
+        },
+        {
+          "source": "58   \u0007CODE CLUB",
+          "target": "60   \u0007COMPUTER SCIENCE AND"
+        },
+        {
+          "source": "60   \u0007COMPUTER SCIENCE AND",
+          "target": "62   \u0007ONLINE COURSES"
+        },
+        {
+          "source": "62   \u0007ONLINE COURSES",
+          "target": "64   \u0007TEACH FIRST"
+        },
+        {
+          "source": "64   \u0007TEACH FIRST",
+          "target": "67   \u0007WIPSCE 2023"
+        },
+        {
+          "source": "67   \u0007WIPSCE 2023",
+          "target": "70   \u0007INFORMATION TECHNOLOGY"
+        },
+        {
+          "source": "70   \u0007INFORMATION TECHNOLOGY",
+          "target": "72   \u0007INTRO TO AI"
+        },
+        {
+          "source": "72   \u0007INTRO TO AI",
+          "target": "CONVERSATION"
+        },
+        {
+          "source": "CONVERSATION",
+          "target": "REVIEWS"
+        },
+        {
+          "source": "REVIEWS",
+          "target": "85   \u0007BOOK REVIEW"
+        }
+      ]
+    }
+  ]
+}

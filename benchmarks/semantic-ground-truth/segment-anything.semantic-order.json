@@ -1,0 +1,41 @@
+{
+  "version": 3,
+  "description": "Partial semantic reading-order anchors for the CVPR 2023 Segment Anything paper, page 5 (1-based). The page has a full-width Figure 4 caption, section heading, and two-column body. Labels follow caption -> heading -> left column -> right column.",
+  "source": "https://arxiv.org/pdf/2304.02643",
+  "source_pdf": "data/external/segment-anything.pdf",
+  "pages": [
+    {
+      "page_index": 4,
+      "match_mode": "ordered-subsequence",
+      "text_sequence": [
+        "Figure 4: Segment Anything Model (SAM) overview. A heavyweight image encoder outputs an image embedding that can",
+        "prompts corresponding to more than one object, SAM can output multiple valid masks and associated conﬁdence scores.",
+        "3. Segment Anything Model",
+        "We next describe the Segment Anything Model (SAM)",
+        "ponents at a high-level here, with details in §A.",
+        "Image encoder. Motivated by scalability and powerful pre-",
+        "Prompt encoder. We consider two sets of prompts: sparse",
+        "Mask decoder. The mask decoder efﬁciently maps the im-",
+        "Resolving ambiguity. With one output, the model will av-",
+        "subpart). During training, we backprop only the minimum",
+        "loss [15, 45, 64] over masks. To rank masks, the model pre-",
+        "Efﬁciency. The overall model design is largely motivated",
+        "Losses and training. We supervise mask prediction with",
+        "4. Segment Anything Data Engine",
+        "Assisted-manual stage. In the ﬁrst stage, resembling clas-",
+        "next image once a mask took over 30 seconds to annotate.",
+        "5"
+      ],
+      "successor_edges": [
+        ["Figure 4: Segment Anything Model (SAM) overview. A heavyweight image encoder outputs an image embedding that can", "3. Segment Anything Model"],
+        ["3. Segment Anything Model", "We next describe the Segment Anything Model (SAM)"],
+        ["subpart). During training, we backprop only the minimum", "loss [15, 45, 64] over masks. To rank masks, the model pre-"],
+        ["lowing SAM to integrate seamlessly into our data engine.", "4. Segment Anything Data Engine"]
+      ],
+      "precedence_edges": [
+        {"source": "Figure 4: Segment Anything Model (SAM) overview. A heavyweight image encoder outputs an image embedding that can", "target": "We next describe the Segment Anything Model (SAM)"},
+        {"source": "3. Segment Anything Model", "target": "4. Segment Anything Data Engine"}
+      ]
+    }
+  ]
+}
