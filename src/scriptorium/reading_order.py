@@ -3733,6 +3733,17 @@ def _looks_like_table_grid(bboxes: list[BBox], page_width: float) -> bool:
     if len(multi_cell_rows) < 3 or len(multi_cell_rows) / len(rows) < 0.5:
         return False
 
+    # A real table row is one record: its cells share roughly the same height.
+    # Index/TOC pages mix title-height and description-height entries in the
+    # same visual row, so they fail this check and stay column-readable.
+    uniform_rows = 0
+    for row in multi_cell_rows:
+        row_heights = [bbox.height for bbox in row if bbox.height > 0]
+        if row_heights and min(row_heights) / max(row_heights) >= 0.5:
+            uniform_rows += 1
+    if uniform_rows / len(multi_cell_rows) < 0.5:
+        return False
+
     repeated_x_clusters = _cluster_positions(
         [_center_x(bbox) for row in multi_cell_rows for bbox in row],
         tolerance=page_width * 0.04,

@@ -206,6 +206,55 @@ def test_column_flow_detects_three_repeated_anchor_columns() -> None:
     assert all(by_item[index].scope == "body" for index in first_column + second_column + third_column)
 
 
+def test_toc_index_page_with_badges_stays_column_readable() -> None:
+    # Magazine contents page: each visual row mixes a tall badge+title cell from
+    # one column with short description cells from the other columns, so rows
+    # are not height-uniform. The table-grid guard must not force row-major.
+    bboxes: list[BBox] = []
+    first_column: list[int] = []
+    second_column: list[int] = []
+    third_column: list[int] = []
+
+    for row in range(12):
+        y0 = 96 + row * 15
+        first_column.append(len(bboxes))
+        bboxes.append(BBox(x0=52, y0=y0, x1=190, y1=y0 + 24))
+        second_column.append(len(bboxes))
+        bboxes.append(BBox(x0=244, y0=y0, x1=362, y1=y0 + 11))
+        third_column.append(len(bboxes))
+        bboxes.append(BBox(x0=418, y0=y0, x1=540, y1=y0 + 11))
+
+    assignments = infer_semantic_reading_order(
+        bboxes, page_width=595, page_height=782, strategy="column-flow-v1"
+    )
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in first_column + second_column + third_column} == {3}
+    assert max(by_item[index].semantic_order for index in first_column) < min(
+        by_item[index].semantic_order for index in second_column
+    )
+    assert max(by_item[index].semantic_order for index in second_column) < min(
+        by_item[index].semantic_order for index in third_column
+    )
+
+
+def test_uniform_narrow_cell_grid_stays_row_major() -> None:
+    # Data-table-like grid: narrow short cells with uniform heights keep the
+    # row-major table guard instead of being split into text columns.
+    bboxes: list[BBox] = []
+    for row in range(12):
+        y0 = 96 + row * 12
+        for x0, x1 in [(72, 100), (220, 250), (396, 424)]:
+            bboxes.append(BBox(x0=x0, y0=y0, x1=x1, y1=y0 + 10))
+
+    assignments = infer_semantic_reading_order(
+        bboxes, page_width=595, page_height=782, strategy="column-flow-v1"
+    )
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].column_count for index in by_item} == {1}
+
+
 def test_spatial_graph_orders_overlapping_weak_columns() -> None:
     bboxes: list[BBox] = []
     left_indices: list[int] = []
