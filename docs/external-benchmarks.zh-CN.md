@@ -17,6 +17,9 @@
 | JD 首页完整截图 PNG | `outputs/external/jd-home/full-page.png` | `https://www.jd.com/` 在当前环境会跳转到 `https://hk.jd.com/` | 同一电商首页截图的一等 image source 路径。 |
 | JD 首页完整截图 PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` 在当前环境会跳转到 `https://hk.jd.com/` | 电商首页完整截图封装成 image-only PDF，用于考察网页图文混排和 OCR 锚点。 |
 | Hacker News 打印 PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | 真实网页打印 PDF，包含门户/列表式排版，并有已跟踪的 semantic sidecar。 |
+| Segment Anything | `data/external/segment-anything.pdf` | `https://arxiv.org/pdf/2304.02643`（arXiv 非独占分发许可）| CVPR 双栏论文，含大量跨栏整宽浮动体、图注与表格；针对 graphical-multicolumn paragraph/successor head。 |
+| Mamba | `data/external/mamba.pdf` | `https://arxiv.org/pdf/2312.00752`（CC BY 4.0）| 36 页双栏论文，重公式与算法框频繁打断段落流；针对公式打断下的 paragraph co-membership。 |
+| Hello World Magazine #22 | `data/external/hello-world-22.pdf` | `https://downloads.ctfassets.net/oshmmv7kdjgm/1aZQzDy8H3lB6RmeaV5qeQ/db8c10ed2bbfcf5d869842758fa59d7f/HW22_DIGITAL_v2.pdf`（Raspberry Pi 基金会免费下载）| 88 页真·三栏杂志，含边栏、拉引语和图文混排；针对三栏 flow 与复杂页 candidate disagreement。 |
 
 ## 重新创建输入
 
@@ -32,6 +35,26 @@ curl --fail --location https://annualreports.com/Click/27465 \
 ```bash
 curl --fail --location https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF \
   --output data/external/byd-2024-annual-report.pdf
+```
+
+下载更难的论文与杂志样本：
+
+```bash
+curl --fail --location https://arxiv.org/pdf/2304.02643 \
+  --output data/external/segment-anything.pdf
+curl --fail --location https://arxiv.org/pdf/2312.00752 \
+  --output data/external/mamba.pdf
+curl --fail --location \
+  https://downloads.ctfassets.net/oshmmv7kdjgm/1aZQzDy8H3lB6RmeaV5qeQ/db8c10ed2bbfcf5d869842758fa59d7f/HW22_DIGITAL_v2.pdf \
+  --output data/external/hello-world-22.pdf
+```
+
+当前本地校验值：
+
+```text
+SHA256 c6ca524e47200c3e542587ca76ac1dbc89cc67340f948c819250d16fdbd90cfb  data/external/segment-anything.pdf
+SHA256 adf70ed1803c85b1899dec3e21f3af0b124411439e8654b840ea65f7b9f52b2e  data/external/mamba.pdf
+SHA256 c3acc0639306dacf2e2492c50ed6f9a47c054e53ce0cb208a560d7637098f62a  data/external/hello-world-22.pdf
 ```
 
 当前本地校验：
@@ -142,6 +165,39 @@ JD 截图 PNG 一等 image source 路径：
   --fidelity-background auto
 ```
 
+Segment Anything 前 6 页（浮动体密集双栏）：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/segment-anything.pdf \
+  --out-dir outputs/external/segment-anything-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 6 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+Mamba 前 6 页（公式/算法密集双栏）：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/mamba.pdf \
+  --out-dir outputs/external/mamba-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 6 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+Hello World Magazine #22 前 8 页（三栏杂志）：
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/hello-world-22.pdf \
+  --out-dir outputs/external/hello-world-22-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 8 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
 比亚迪财务报表区间，按源页码抽样第 136-160 页：
 
 ```bash
@@ -190,8 +246,13 @@ JD 截图 PNG 一等 image source 路径：
 | 比亚迪 2024 年年度报告 | 40 | `fidelity/raster` | 0.89780001 | 0.10219999 | 0.05377595 | 9531 | 3015 | 0 | 0 | 1052 | 0 | 0 | 0 | 0 | 0.32890849 | 2496/2975 | 0.09694495 | 981/2975 | 0 | 33 | 97 right | 0.89081217 | 0 | `0.35 / high` |
 | JD 首页截图 PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 | JD 首页截图 PNG | 1 | `structured/image-source` | 0.99236799 | 0.00763201 | 0.00763201 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.43833464 | 128/133 | 0.21894288 | 120/133 | 8 | 0 | 0 | 0.77151567 | 0 | `0.35 / high` |
+| Segment Anything 前 6 页 | 6 | `fidelity/raster` | 1.0 | 0.0 | 0.0 | 756 | 508 | 0 | 0 | 0 | 0 | 0 | 0 | 12 | 0.12455820 | 0.26294821 | 0.14942108 | 0.15537849 | 0 | 0 | 0 | 0.94933071 | 0 | `0.35 / high` |
+| Mamba 前 6 页 | 6 | `fidelity/raster` | 1.0 | 0.0 | 0.0 | 419 | 272 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | — | 0.49250000 | — | 0.26690000 | 0 | 5 | 0 | 0.79220000 | 0 | `0.35 / high` |
+| Hello World #22 前 8 页 | 8 | `fidelity/raster` | 0.97960639 | 0.01343025 | 0.02039361 | 1440 | 570 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | 0.48750000 | — | 0.69570000 | 8 | 25 | 0 | 0.89690000 | 0 | `0.35 / high` |
 
 JD PNG 直接输入验证了 image source 一等路径。它和 image-only PDF 兼容路径产生相同语义规模：135 个总元素、134 个可编辑 OCR 文本锚点、35 个 grid-island 元素，并且同样因为缺少 semantic sidecar evidence 而保持 high 阅读风险。视觉分数略低，是因为评分路径直接比较 source image visual layer 与 HTML 打印结果，而不是和 image-only PDF rasterization 比较；页数和页面尺寸仍然匹配。当前 benchmark 也会输出 `semantic_layer_driver`，用于区分结构 JSON、OCR JSON、OCR fallback 和 visual-only 图片运行。
+
+这三个新样本构成当前多栏阅读顺序的高难度集合。Segment Anything 在 6 页样本中把 756 个元素里的 496 个放进多栏 flow，含 9 条 caption-figure stream 与跨栏整宽浮动体；Mamba 用整宽公式与算法框打断段落（5 个 footnote 元素，successor-consensus 分歧 `0.2030`）；Hello World #22 是真·三栏杂志，relation-graph 与 successor-consensus 的 successor 分歧（`0.6957` / `0.5836`）为当前样本最高，是最强的 candidate-disagreement 压力源。三者目前还没有已跟踪的 semantic sidecar；下一步是为每份样本的代表页添加 relation-style 标签。
 
 比亚迪是当前复杂中文年报压力样本。本地 PDF 为 290 页、10,092,140 bytes。快速 PyMuPDF profile 显示：前 20 页有 497 个 text blocks 和 1088 个 drawing objects，而 PUMA 同页数只有 257 个 text blocks 和 375 个 drawing objects。全 PDF 中，比亚迪有 50,724 个 drawing objects，并有 101 页 `blocks >= 30`；PUMA 对应为 37,081 个 drawing objects 和 65 页。因此它补上了 PUMA 覆盖不足的中文公告、财务表格、密集线框和翻译回渲染维度。
 

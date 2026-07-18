@@ -17,6 +17,9 @@ These samples are intentionally kept out of git because `data/` and `outputs/` a
 | JD homepage screenshot PNG | `outputs/external/jd-home/full-page.png` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | First-class image source path for the same ecommerce homepage screenshot. |
 | JD homepage screenshot PDF | `outputs/external/jd-home/input.pdf` | `https://www.jd.com/` redirects to `https://hk.jd.com/` in this environment | Full-page ecommerce homepage screenshot converted into an image-only PDF. |
 | Hacker News print PDF | `outputs/external/web-hn/input.pdf` | `https://news.ycombinator.com/` | Real web-to-PDF portal/list layout with tracked semantic sidecar labels. |
+| Segment Anything | `data/external/segment-anything.pdf` | `https://arxiv.org/pdf/2304.02643` (arXiv non-exclusive distribution) | CVPR two-column paper with dense cross-column full-width floats, figure captions, and tables. Targets graphical-multicolumn paragraph/successor heads. |
+| Mamba | `data/external/mamba.pdf` | `https://arxiv.org/pdf/2312.00752` (CC BY 4.0) | 36-page two-column paper with heavy display equations and algorithm boxes that interrupt paragraph flow. Targets paragraph co-membership under formula interruption. |
+| Hello World Magazine #22 | `data/external/hello-world-22.pdf` | `https://downloads.ctfassets.net/oshmmv7kdjgm/1aZQzDy8H3lB6RmeaV5qeQ/db8c10ed2bbfcf5d869842758fa59d7f/HW22_DIGITAL_v2.pdf` (free download from the Raspberry Pi Foundation) | 88-page true three-column magazine with sidebars, pull quotes, and image-mixed article pages. Targets three-column flow and complex-page candidate disagreement. |
 
 ## Recreate Inputs
 
@@ -32,6 +35,26 @@ Download the BYD A-share annual report from CNInfo:
 ```bash
 curl --fail --location https://static.cninfo.com.cn/finalpage/2025-03-25/1222881496.PDF \
   --output data/external/byd-2024-annual-report.pdf
+```
+
+Download the harder paper and magazine samples:
+
+```bash
+curl --fail --location https://arxiv.org/pdf/2304.02643 \
+  --output data/external/segment-anything.pdf
+curl --fail --location https://arxiv.org/pdf/2312.00752 \
+  --output data/external/mamba.pdf
+curl --fail --location \
+  https://downloads.ctfassets.net/oshmmv7kdjgm/1aZQzDy8H3lB6RmeaV5qeQ/db8c10ed2bbfcf5d869842758fa59d7f/HW22_DIGITAL_v2.pdf \
+  --output data/external/hello-world-22.pdf
+```
+
+Current local checksums:
+
+```text
+SHA256 c6ca524e47200c3e542587ca76ac1dbc89cc67340f948c819250d16fdbd90cfb  data/external/segment-anything.pdf
+SHA256 adf70ed1803c85b1899dec3e21f3af0b124411439e8654b840ea65f7b9f52b2e  data/external/mamba.pdf
+SHA256 c3acc0639306dacf2e2492c50ed6f9a47c054e53ce0cb208a560d7637098f62a  data/external/hello-world-22.pdf
 ```
 
 Current local checksum:
@@ -142,6 +165,39 @@ BYD A-share annual report, first 40 pages:
   --fidelity-background auto
 ```
 
+Segment Anything, first 6 pages (float-dense two-column):
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/segment-anything.pdf \
+  --out-dir outputs/external/segment-anything-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 6 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+Mamba, first 6 pages (equation/algorithm-dense two-column):
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/mamba.pdf \
+  --out-dir outputs/external/mamba-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 6 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
+Hello World Magazine #22, first 8 pages (three-column magazine):
+
+```bash
+./.venv/bin/scriptorium benchmark data/external/hello-world-22.pdf \
+  --out-dir outputs/external/hello-world-22-benchmark-v1 \
+  --dpi 144 \
+  --max-pages 8 \
+  --html-mode auto \
+  --fidelity-background auto
+```
+
 BYD financial statement section, explicit source pages 136-160:
 
 ```bash
@@ -190,8 +246,13 @@ Translation re-rendering stress run for annual-report, ecommerce screenshot, and
 | BYD 2024 Annual Report | 40 | `fidelity/raster` | 0.89780001 | 0.10219999 | 0.05377595 | 9531 | 3015 | 0 | 0 | 1052 | 0 | 0 | 0 | 0 | 0.32890849 | 2496/2975 | 0.09694495 | 981/2975 | 0 | 33 | 97 right | 0.89081217 | 0 | `0.35 / high` |
 | JD homepage screenshot PDF | 1 | `fidelity/raster` | 0.99576887 | 0.00423113 | 0.00423113 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.42778588 | 127/133 | 0.21624958 | 117/133 | 0 | 0 | 0 | 0.83 | 0 | `0.35 / high` |
 | JD homepage screenshot PNG | 1 | `structured/image-source` | 0.99236799 | 0.00763201 | 0.00763201 | 135 | 134 | 1 | 134 | 0 | 0 | 0 | 0 | 0 | 0.43833464 | 128/133 | 0.21894288 | 120/133 | 8 | 0 | 0 | 0.77151567 | 0 | `0.35 / high` |
+| Segment Anything, first 6 pages | 6 | `fidelity/raster` | 1.0 | 0.0 | 0.0 | 756 | 508 | 0 | 0 | 0 | 0 | 0 | 0 | 12 | 0.12455820 | 0.26294821 | 0.14942108 | 0.15537849 | 0 | 0 | 0 | 0.94933071 | 0 | `0.35 / high` |
+| Mamba, first 6 pages | 6 | `fidelity/raster` | 1.0 | 0.0 | 0.0 | 419 | 272 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | — | 0.49250000 | — | 0.26690000 | 0 | 5 | 0 | 0.79220000 | 0 | `0.35 / high` |
+| Hello World #22, first 8 pages | 8 | `fidelity/raster` | 0.97960639 | 0.01343025 | 0.02039361 | 1440 | 570 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | 0.48750000 | — | 0.69570000 | 8 | 25 | 0 | 0.89690000 | 0 | `0.35 / high` |
 
 The direct JD PNG run validates the first-class image-source path. It produces the same semantic inventory as the image-only PDF compatibility path: 135 total elements, 134 editable OCR text anchors, 35 grid-island elements, and the same high reading-risk diagnosis caused by missing semantic sidecar evidence. The visual score is slightly lower because the comparison path renders the source image layer directly instead of comparing against image-only PDF rasterization, but page count and page dimensions still match. Current benchmark reports also expose `semantic_layer_driver`, so image cases can distinguish structure JSON, OCR JSON, OCR fallback, and visual-only runs.
+
+The three new samples are the current hard-case set for multi-column reading order. Segment Anything packs 496 of 756 sampled elements into multi-column flow with 9 caption-figure streams and cross-column full-width floats; Mamba interrupts paragraphs with full-width display equations and algorithm boxes (5 footnote elements, successor-consensus successor disagreement `0.2030`); Hello World #22 is a true three-column magazine whose relation-graph and successor-consensus successor disagreement (`0.6957` / `0.5836`) are the highest in the current set, making it the strongest candidate-disagreement stressor. None of the three has tracked semantic sidecars yet; adding relation-style labels to a few representative pages of each is the next annotation step.
 
 BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 
