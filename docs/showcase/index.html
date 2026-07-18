@@ -279,6 +279,8 @@
       <a class="jump-link" href="#financial-report">Financial report</a>
       <a class="jump-link" href="#image-source">Image source</a>
       <a class="jump-link" href="#magazine">Three-column magazine</a>
+      <a class="jump-link" href="#float-paper">Float-dense paper</a>
+      <a class="jump-link" href="#equation-paper">Equation-heavy paper</a>
     </nav>
   </header>
 
@@ -384,7 +386,7 @@
         <div>
           <p class="eyebrow">PDF / three-column magazine</p>
           <h2>Hello World Magazine #22, page 5</h2>
-          <p class="sample-description">A true three-column magazine article page with mixed images and dense caption/footer content. It is the strongest candidate-disagreement stressor in the current external benchmark set.</p>
+          <p class="sample-description">A true three-column magazine contents page with mixed images and dense caption/footer content. It is the strongest candidate-disagreement stressor in the current external benchmark set, and the page that drove the guarded magazine column-flow fixes (labelled successor accuracy 0.22 to 0.78).</p>
         </div>
       </div>
       <div class="comparison">
@@ -406,7 +408,71 @@
             </span>
           </figcaption>
           <div class="html-stage"><iframe id="hello-world-html" title="Hello World magazine converted fidelity HTML" data-source-width="1191" data-source-height="1565" src="converted/hello-world-magazine/index.html"></iframe></div>
-          <p class="html-note">The fidelity layer keeps the magazine visual while exposing editable text anchors across three columns, captions, and footer artifacts.</p>
+          <p class="html-note">The fidelity layer keeps the magazine visual while the column-flow reading order exposes editable anchors across the three index columns, feature boxes, and footer artifacts.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="float-paper">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">PDF / float-dense two-column paper</p>
+          <h2>Segment Anything, page 5</h2>
+          <p class="sample-description">A CVPR two-column paper page with a full-width Figure 4 caption and cross-column floats. The tracked semantic sidecar scores pair, successor, and relation accuracy 1.0 on this page.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source PDF page</span>
+            <a class="pane-link" href="converted/segment-anything/assets/page_0005/page_0005.png">Open image</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/segment-anything-page-5.png" alt="Segment Anything page 5 source"></div>
+          <p class="source-note">Segment Anything (arXiv:2304.02643), sampled at 144 DPI.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/segment-anything/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="segment-anything-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="segment-anything-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="segment-anything-html" title="Segment Anything converted fidelity HTML" data-source-width="1224" data-source-height="1584" src="converted/segment-anything/index.html"></iframe></div>
+          <p class="html-note">The fidelity layer preserves the dense figure layout while caption, heading, and two-column body anchors stay editable.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="equation-paper">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">PDF / equation-heavy two-column paper</p>
+          <h2>Mamba, page 4</h2>
+          <p class="sample-description">A math and algorithm heavy two-column paper where display equations and algorithm boxes interrupt paragraph flow. It has the lowest reading-order confidence in the current paper set.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source PDF page</span>
+            <a class="pane-link" href="converted/mamba/assets/page_0004/page_0004.png">Open image</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/mamba-page-4.png" alt="Mamba page 4 source"></div>
+          <p class="source-note">Mamba (arXiv:2312.00752, CC BY 4.0), sampled at 144 DPI.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/mamba/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="mamba-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="mamba-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="mamba-html" title="Mamba converted fidelity HTML" data-source-width="1224" data-source-height="1584" src="converted/mamba/index.html"></iframe></div>
+          <p class="html-note">The fidelity layer keeps equations and algorithm boxes intact while text anchors remain editable for translation experiments.</p>
         </figure>
       </div>
     </section>

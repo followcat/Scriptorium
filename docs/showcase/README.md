@@ -66,11 +66,13 @@ four local reading streams for editing and translation experiments.
 
 ## Three-column magazine
 
-Hello World Magazine #22 page 5 is a true three-column article page with mixed
-images, captions, and footer artifacts. It is the strongest candidate-order
-disagreement stressor in the current external benchmark set. The full issue is
-a [free download](https://www.raspberrypi.org/hello-world/issues/22) from the
-Raspberry Pi Foundation.
+Hello World Magazine #22 page 5 is a true three-column contents page with
+mixed images, captions, and footer artifacts. It is the strongest
+candidate-order disagreement stressor in the current external benchmark set,
+and the page that drove the guarded magazine column-flow fixes (labelled
+successor accuracy `0.22 -> 0.78`, pair accuracy `0.74 -> 0.96`). The full
+issue is a [free download](https://www.raspberrypi.org/hello-world/issues/22)
+from the Raspberry Pi Foundation.
 
 <table>
   <tr>
@@ -80,6 +82,42 @@ Raspberry Pi Foundation.
   <tr>
     <td><a href="converted/hello-world-magazine/assets/page_0005/page_0005.png"><img src="assets/hello-world-page-5.png" alt="Hello World magazine page 5 source" width="100%"></a></td>
     <td><a href="converted/hello-world-magazine/index.html"><img src="assets/hello-world-generated.png" alt="Hello World magazine generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
+## Float-dense two-column paper
+
+Segment Anything page 5 combines a full-width Figure 4 caption with
+cross-column floats and two-column body text. The tracked relation-style
+semantic sidecar scores pair, successor, and relation accuracy `1.0` on this
+page. Source: [arXiv:2304.02643](https://arxiv.org/abs/2304.02643).
+
+<table>
+  <tr>
+    <th width="50%">Source PDF page</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="converted/segment-anything/assets/page_0005/page_0005.png"><img src="assets/segment-anything-page-5.png" alt="Segment Anything page 5 source" width="100%"></a></td>
+    <td><a href="converted/segment-anything/index.html"><img src="assets/segment-anything-generated.png" alt="Segment Anything generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
+## Equation-heavy two-column paper
+
+Mamba page 4 is a math and algorithm heavy two-column page where display
+equations and algorithm boxes interrupt paragraph flow; it has the lowest
+reading-order confidence in the current paper set. Source:
+[arXiv:2312.00752](https://arxiv.org/abs/2312.00752) (CC BY 4.0).
+
+<table>
+  <tr>
+    <th width="50%">Source PDF page</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="converted/mamba/assets/page_0004/page_0004.png"><img src="assets/mamba-page-4.png" alt="Mamba page 4 source" width="100%"></a></td>
+    <td><a href="converted/mamba/index.html"><img src="assets/mamba-generated.png" alt="Mamba generated HTML" width="100%"></a></td>
   </tr>
 </table>
 
