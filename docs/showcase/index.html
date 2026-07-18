@@ -278,6 +278,7 @@
       <a class="jump-link" href="#paper">Paper PDF</a>
       <a class="jump-link" href="#financial-report">Financial report</a>
       <a class="jump-link" href="#image-source">Image source</a>
+      <a class="jump-link" href="#magazine">Three-column magazine</a>
     </nav>
   </header>
 
@@ -374,6 +375,38 @@
           </figcaption>
           <div class="html-stage"><iframe id="jd-html" title="JD homepage converted fidelity HTML" data-source-width="1440" data-source-height="1635" src="converted/jd-home/index.html"></iframe></div>
           <p class="html-note">The fidelity layer preserves the source visual while the underlying DOM provides transparent editable OCR anchors.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="magazine">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">PDF / three-column magazine</p>
+          <h2>Hello World Magazine #22, page 5</h2>
+          <p class="sample-description">A true three-column magazine article page with mixed images and dense caption/footer content. It is the strongest candidate-disagreement stressor in the current external benchmark set.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source PDF page</span>
+            <a class="pane-link" href="converted/hello-world-magazine/assets/page_0005/page_0005.png">Open image</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/hello-world-page-5.png" alt="Hello World magazine page 5 source"></div>
+          <p class="source-note">Hello World issue 22 (Raspberry Pi Foundation, free download), sampled at 144 DPI.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/hello-world-magazine/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="hello-world-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="hello-world-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="hello-world-html" title="Hello World magazine converted fidelity HTML" data-source-width="1191" data-source-height="1565" src="converted/hello-world-magazine/index.html"></iframe></div>
+          <p class="html-note">The fidelity layer keeps the magazine visual while exposing editable text anchors across three columns, captions, and footer artifacts.</p>
         </figure>
       </div>
     </section>

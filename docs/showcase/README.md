@@ -64,6 +64,25 @@ four local reading streams for editing and translation experiments.
   </tr>
 </table>
 
+## Three-column magazine
+
+Hello World Magazine #22 page 5 is a true three-column article page with mixed
+images, captions, and footer artifacts. It is the strongest candidate-order
+disagreement stressor in the current external benchmark set. The full issue is
+a [free download](https://www.raspberrypi.org/hello-world/issues/22) from the
+Raspberry Pi Foundation.
+
+<table>
+  <tr>
+    <th width="50%">Source PDF page</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="converted/hello-world-magazine/assets/page_0005/page_0005.png"><img src="assets/hello-world-page-5.png" alt="Hello World magazine page 5 source" width="100%"></a></td>
+    <td><a href="converted/hello-world-magazine/index.html"><img src="assets/hello-world-generated.png" alt="Hello World magazine generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
 The HTML links above point to the versioned generated files, so GitHub displays
 their source. Use the [interactive gallery](https://followcat.github.io/Scriptorium/),
 download the workflow artifact, or open `docs/showcase/index.html` from a
