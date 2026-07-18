@@ -238,6 +238,85 @@ def test_toc_index_page_with_badges_stays_column_readable() -> None:
     )
 
 
+def test_toc_bottom_description_lines_are_not_footnotes() -> None:
+    # Contents-page columns keep narrow description lines at the bottom of each
+    # column at the same height as the description lines above them. They are
+    # column continuations, not footnotes, even though the bottom zone and the
+    # wide titles make them look like a note cluster.
+    bboxes: list[BBox] = []
+    first_column: list[int] = []
+    second_column: list[int] = []
+    third_column: list[int] = []
+
+    for row in range(14):
+        y0 = 96 + row * 44
+        first_column.append(len(bboxes))
+        bboxes.append(BBox(x0=52, y0=y0, x1=182, y1=y0 + 24))
+        first_column.append(len(bboxes))
+        bboxes.append(BBox(x0=74, y0=y0 + 15, x1=169, y1=y0 + 26))
+        second_column.append(len(bboxes))
+        bboxes.append(BBox(x0=222, y0=y0, x1=352, y1=y0 + 24))
+        second_column.append(len(bboxes))
+        bboxes.append(BBox(x0=244, y0=y0 + 15, x1=339, y1=y0 + 26))
+        third_column.append(len(bboxes))
+        bboxes.append(BBox(x0=396, y0=y0, x1=526, y1=y0 + 24))
+        third_column.append(len(bboxes))
+        bboxes.append(BBox(x0=418, y0=y0 + 15, x1=513, y1=y0 + 26))
+
+    assignments = infer_semantic_reading_order(
+        bboxes, page_width=595, page_height=782, strategy="column-flow-v1"
+    )
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert not any(by_item[index].scope == "footnote" for index in by_item)
+    assert not any(
+        (by_item[index].reading_order_stream_type or "") == "footnote" for index in by_item
+    )
+    assert max(by_item[index].semantic_order for index in first_column) < min(
+        by_item[index].semantic_order for index in second_column
+    )
+    assert max(by_item[index].semantic_order for index in second_column) < min(
+        by_item[index].semantic_order for index in third_column
+    )
+
+
+def test_smaller_bottom_notes_stay_footnotes() -> None:
+    # A bottom note that is genuinely smaller than the body text above keeps
+    # the footnote role instead of being merged into the body column.
+    bboxes: list[BBox] = []
+    body_indices: list[int] = []
+    note_indices: list[int] = []
+
+    for entry in range(8):
+        y0 = 90 + entry * 40
+        body_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=52, y0=y0, x1=190, y1=y0 + 21))
+        body_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=74, y0=y0 + 15, x1=190, y1=y0 + 26))
+        body_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=222, y0=y0, x1=362, y1=y0 + 21))
+        body_indices.append(len(bboxes))
+        bboxes.append(BBox(x0=244, y0=y0 + 15, x1=362, y1=y0 + 26))
+
+    note_y = 640
+    note_indices.append(len(bboxes))
+    bboxes.append(BBox(x0=74, y0=note_y, x1=190, y1=note_y + 8))
+    note_indices.append(len(bboxes))
+    bboxes.append(BBox(x0=74, y0=note_y + 12, x1=190, y1=note_y + 20))
+    note_indices.append(len(bboxes))
+    bboxes.append(BBox(x0=74, y0=note_y + 24, x1=190, y1=note_y + 32))
+
+    assignments = infer_semantic_reading_order(
+        bboxes, page_width=595, page_height=782, strategy="column-flow-v1"
+    )
+    by_item = {assignment.item_index: assignment for assignment in assignments}
+
+    assert {by_item[index].scope for index in note_indices} == {"footnote"}
+    assert max(by_item[index].semantic_order for index in body_indices) < min(
+        by_item[index].semantic_order for index in note_indices
+    )
+
+
 def test_uniform_narrow_cell_grid_stays_row_major() -> None:
     # Data-table-like grid: narrow short cells with uniform heights keep the
     # row-major table guard instead of being split into text columns.

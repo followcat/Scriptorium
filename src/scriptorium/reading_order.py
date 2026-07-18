@@ -391,7 +391,10 @@ def infer_semantic_reading_order(
 
     xy_result = _recursive_xy_cut_order(bboxes, page_width, page_height)
     if strategy == "recursive-xy-cut-v1" or (
-        strategy == "auto" and xy_result.has_horizontal_split and xy_result.has_vertical_split
+        strategy == "auto"
+        and xy_result.has_horizontal_split
+        and xy_result.has_vertical_split
+        and not _strong_balanced_text_columns(bboxes, page_width, page_height)
     ):
         return _with_reading_streams(
             _assign_order_metadata(
@@ -410,6 +413,24 @@ def infer_semantic_reading_order(
     return _with_reading_streams(
         _column_flow_assignments(bboxes, page_width, page_height, visual_indices, visual_rank, normalized_texts)
     )
+
+
+def _strong_balanced_text_columns(bboxes: list[BBox], page_width: float, page_height: float) -> bool:
+    """Check for strong balanced text columns that outrank the XY-cut path.
+
+    Magazine/index pages have three balanced anchored text columns; letting
+    recursive XY-cut win there interleaves the columns. Two-column pages and
+    financial or card pages keep the XY-cut result so existing behavior stays
+    unchanged until labelled evidence covers them.
+    """
+
+    columns = _infer_column_clusters(bboxes, page_width, page_height)
+    if len(columns) < 3:
+        return False
+    if _looks_like_table_grid(bboxes, page_width):
+        return False
+    sizes = sorted(len(column) for column in columns)
+    return sizes[0] / sizes[-1] >= 0.5
 
 
 def infer_box_flow_order(
@@ -3101,8 +3122,59 @@ def _infer_footnote_items(
         note_rows = rows[row_position:]
         note_indices = {index for note_row in note_rows for index in note_row}
         if _looks_like_footnote_cluster(note_indices, bboxes, page_width, page_height, body_height):
+            if _footnote_notes_match_body_column_heights(
+                note_indices, source_indices, bboxes, body_height, page_width, page_height
+            ):
+                continue
             return note_indices
     return set()
+
+
+def _footnote_notes_match_body_column_heights(
+    note_indices: set[int],
+    source_indices: list[int],
+    bboxes: list[BBox],
+    body_height: float,
+    page_width: float,
+    page_height: float,
+) -> bool:
+    """Reject note clusters that continue multi-column body text at body height.
+
+    Real footnotes are smaller than the body text above them, or sit at the
+    bottom of a single-column page. Magazine/index pages keep description
+    lines at the bottom of each column at the same height as the description
+    lines above; those are body text, not notes. A cluster is treated as body
+    text only when the page has multiple body columns and most notes have a
+    same-column body item above them at roughly the same height within a
+    bounded window.
+    """
+
+    non_note = [index for index in source_indices if index not in note_indices and bboxes[index].height > 0]
+    if len(non_note) < 8:
+        return False
+    body_columns = _infer_column_clusters(
+        [bboxes[index] for index in non_note],
+        page_width,
+        page_height,
+    )
+    if len(body_columns) < 2:
+        return False
+    window = max(60.0, body_height * 8)
+    matched = 0
+    for note_index in note_indices:
+        note = bboxes[note_index]
+        for index in non_note:
+            body = bboxes[index]
+            if min(body.x1, note.x1) - max(body.x0, note.x0) <= 0:
+                continue
+            gap = note.y0 - body.y1
+            if gap < -1.0 or gap > window:
+                continue
+            ratio = note.height / body.height
+            if 0.87 <= ratio <= 1.15:
+                matched += 1
+                break
+    return matched * 5 >= len(note_indices) * 3
 
 
 def _looks_like_footnote_cluster(
@@ -3372,6 +3444,8 @@ def _infer_grid_islands(
         )
         if len(island_indices) < 6 or any(index in consumed for index in island_indices):
             continue
+        if not _grid_run_rows_are_height_uniform(run, bboxes):
+            continue
         if _grid_run_looks_like_body_columns(island_indices, repeated_slots_by_item, bboxes, page_width):
             continue
         islands.append(
@@ -3384,6 +3458,25 @@ def _infer_grid_islands(
         )
         consumed.update(island_indices)
     return islands
+
+
+def _grid_run_rows_are_height_uniform(run: list[tuple[int, ...]], bboxes: list[BBox]) -> bool:
+    """Require card rows to share roughly equal cell heights.
+
+    A real card/product grid row is a band of same-height cards. Magazine or
+    index columns interleave tall entry titles with short description lines in
+    the same visual row, so their runs are not height-uniform and must stay in
+    the normal column flow instead of becoming grid islands.
+    """
+
+    if not run:
+        return False
+    uniform_rows = 0
+    for row in run:
+        heights = [bboxes[index].height for index in row if bboxes[index].height > 0]
+        if heights and min(heights) / max(heights) >= 0.5:
+            uniform_rows += 1
+    return uniform_rows * 2 >= len(run)
 
 
 def _row_looks_like_table_cells(row: list[int], bboxes: list[BBox], page_width: float) -> bool:
