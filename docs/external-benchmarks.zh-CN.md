@@ -276,18 +276,22 @@ relation-style semantic sidecar 现在覆盖两个难页：
 目录页：feature 盒 + 三栏文章索引）。Hello World 目录页的首轮结果暴露了一个真实
 失败：selected order 把三栏索引判成数据表格并按行读取。
 
-| 指标 | 修复前 | 行高网格守卫修复后 |
+| 指标 | 修复前 | 完整杂志修复链后 |
 |---|---:|---:|
-| Pair accuracy | 0.74275362 | 0.90579710 |
-| Successor accuracy | 0.21739130 | 0.60869565 |
-| Relation successor accuracy | 0.21212121 | 0.66666667 |
-| Precedence accuracy | 0.88888889 | 0.88888889 |
+| Pair accuracy | 0.74275362 | 0.96014493 |
+| Successor accuracy | 0.21739130 | 0.78260870 |
+| Relation successor accuracy | 0.21212121 | 0.93939394 |
+| Precedence accuracy | 0.88888889 | 1.0 |
 
-守卫现在要求多单元行必须行高一致才判为数据表格；杂志/索引页在同一视觉行里混合
-标题行高与描述行高的单元，因此保持按栏读取。带标签回归页保持原分：Attention 第 1
-页、Transformer-XL 第 1-3 页与 web-HN 均为 `1.0`；PUMA 混合表格页策略不变；全量
-`429 passed`。目录页上 box-flow 候选仍有 `0.78260870` 的 successor accuracy，是
-candidate 仲裁的下一个带标签目标。
+守卫链共三部分，每部分都有门控保证既有页面行为不变。第一，多单元行必须行高一致
+才判为数据表格；杂志/索引页在同一视觉行混合标题行高与描述行高的单元，保持按栏
+读取。第二，栏底与正文同高的描述行不再被误判为 footnote，而真正更小的脚注
+（BYD/PUMA 脚注与正文行高比 `0.64-0.85`）和单栏页脚（web-HN）保留 footnote 角色。
+第三，仅当页面有三个均衡的非表格文本栏时，递归 XY-cut 才让位于栏目流策略，因此
+双栏论文与财务表格保持 XY-cut 结果。successor accuracy 现已追平 box-flow 候选
+（`0.78260870`），pair accuracy 超过它。带标签回归页保持原分：Attention 第 1 页、
+Transformer-XL 第 1-3 页、web-HN 均为 `1.0`；PUMA 混合表格与 JD 卡片网格策略不变；
+全量 `431 passed`。
 
 Segment Anything 第 5 页在首轮带标签评测中 pair / successor / relation-successor /
 relation-precedence 全部为 `1.0`，确认 selected 原生顺序能处理整宽浮动图注与双栏

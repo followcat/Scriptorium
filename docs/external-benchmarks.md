@@ -278,21 +278,27 @@ contents page with feature boxes and a three-column article index). First-run
 results on the Hello World contents page exposed a real failure: the selected
 order classified the three-column index as a data table and read it row-major.
 
-| Metric | Before fix | After row-height grid guard |
+| Metric | Before fixes | After full magazine fix chain |
 |---|---:|---:|
-| Pair accuracy | 0.74275362 | 0.90579710 |
-| Successor accuracy | 0.21739130 | 0.60869565 |
-| Relation successor accuracy | 0.21212121 | 0.66666667 |
-| Precedence accuracy | 0.88888889 | 0.88888889 |
+| Pair accuracy | 0.74275362 | 0.96014493 |
+| Successor accuracy | 0.21739130 | 0.78260870 |
+| Relation successor accuracy | 0.21212121 | 0.93939394 |
+| Precedence accuracy | 0.88888889 | 1.0 |
 
-The guard now requires multi-cell rows to be height-uniform before treating a
-page as a data table; magazine/index pages mix title-height and
+The guard chain has three parts, each gated so existing pages keep their
+behavior. First, multi-cell rows must be height-uniform before a page is
+treated as a data table; magazine/index pages mix title-height and
 description-height cells in the same visual row and stay column-readable.
-Labeled regression pages keep their scores: Attention p. 1, Transformer-XL
-pp. 1-3, and web-HN all remain `1.0`; PUMA mixed-table pages keep their
-existing strategies; the full suite is `429 passed`. The remaining gap on the
-contents page (box-flow candidate at `0.78260870` successor accuracy) is the
-next labeled target for candidate arbitration.
+Second, bottom description lines that continue multi-column body text at body
+height are no longer misclassified as footnotes, while genuinely smaller notes
+(BYD/PUMA footnote height ratio `0.64-0.85`) and single-column footers
+(web-HN) keep the footnote role. Third, recursive XY-cut yields to the
+column-flow stack only when a page has three balanced non-table text columns,
+so two-column papers and financial tables keep the XY-cut result. The
+successor accuracy now matches the box-flow candidate (`0.78260870`), and pair
+accuracy exceeds it. Labeled regression pages keep their scores: Attention
+p. 1, Transformer-XL pp. 1-3, web-HN all remain `1.0`; PUMA mixed-table and
+JD card-grid strategies are unchanged; the full suite is `431 passed`.
 
 Segment Anything p. 5 scores `1.0` on pair, successor, relation-successor, and
 relation-precedence accuracy in the first labeled run, confirming the selected
