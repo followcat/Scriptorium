@@ -254,6 +254,20 @@ The direct JD PNG run validates the first-class image-source path. It produces t
 
 The three new samples are the current hard-case set for multi-column reading order. Segment Anything packs 496 of 756 sampled elements into multi-column flow with 9 caption-figure streams and cross-column full-width floats; Mamba interrupts paragraphs with full-width display equations and algorithm boxes (5 footnote elements, successor-consensus successor disagreement `0.2030`); Hello World #22 is a true three-column magazine whose relation-graph and successor-consensus successor disagreement (`0.6957` / `0.5836`) are the highest in the current set, making it the strongest candidate-disagreement stressor. None of the three has tracked semantic sidecars yet; adding relation-style labels to a few representative pages of each is the next annotation step.
 
+The frozen 128-train models were applied through `propose-joint-graph` as a first qualitative transfer check:
+
+| Source page | Fine lines | Successor edges | Streams | Packaging components | Decoder mode |
+|---|---:|---:|---:|---:|---|
+| Segment Anything p. 3 (float page) | 12 | 10 | 2 | 2 | chain fallback |
+| Segment Anything p. 5 (two-column body) | 101 | 86 | 15 | 29 | geometry-chain fallback |
+| Mamba p. 4 | 48 | 43 | 5 | 17 | geometry-chain fallback |
+| Hello World #22 p. 5 | 83 | 62 | 21 | 31 | geometry-chain fallback |
+
+All outputs stay `runtime_reorder: false`. The frozen English-paper heads emit
+usable review streams on float-dense CVPR pages, equation-interrupted pages,
+and three-column magazine pages, but these are qualitative smoke checks, not
+labelled cross-domain evidence.
+
 BYD is the current complex Chinese annual-report stressor. It is 290 pages and 10,092,140 bytes locally. A quick PyMuPDF profile shows that its first 20 pages expose 497 text blocks and 1088 drawing objects, compared with PUMA's 257 text blocks and 375 drawing objects over the same page count. Across the full PDF, BYD has 50,724 drawing objects and 101 pages with at least 30 text blocks, compared with PUMA's 37,081 drawing objects and 65 such pages. It therefore adds a harder Chinese table/vector/form-report dimension that PUMA does not cover well.
 
 ## PP-StructureV3 A/B
