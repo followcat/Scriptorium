@@ -1,0 +1,3691 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scriptorium Export</title>
+  <style>
+    @page {
+      size: 585.0pt 750.0pt;
+      margin: 0;
+    }
+    :root {
+      color-scheme: light;
+      --page-gap: 24px;
+      --overlay-border: rgba(29, 97, 179, 0.65);
+      --overlay-fill: rgba(255, 255, 255, 0.68);
+      --debug-fill: rgba(255, 214, 102, 0.16);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #777;
+      font-family: Arial, sans-serif;
+    }
+    .document {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--page-gap);
+      padding: var(--page-gap);
+    }
+    .page {
+      position: relative;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 18px rgba(0, 0, 0, 0.28);
+      flex: 0 0 auto;
+    }
+    .page-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+    .element {
+      position: absolute;
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text-color, #111);
+      line-height: var(--line-height, 1.15);
+      font-family: var(--font-family, serif);
+      font-size: var(--font-size, 12px);
+      font-weight: var(--font-weight, 400);
+      font-style: var(--font-style, normal);
+      z-index: 1;
+    }
+    body.mode-background .element {
+      display: none;
+    }
+    body.mode-structured {
+      background: #777;
+    }
+    body.mode-structured .element {
+      border: 0;
+      background: transparent;
+      color: var(--text-color, #111);
+      outline: 0;
+    }
+    body.mode-structured .element:not([data-type="shape"]) {
+      overflow: visible;
+      white-space: pre;
+      text-align: justify;
+      text-align-last: justify;
+    }
+    body.mode-fidelity .element {
+      border: 0;
+      background: transparent;
+      outline: 0;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="false"] {
+      display: none;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: var(--replacement-mask-color, #fff);
+      padding: var(--replacement-padding-top, 0px) var(--replacement-padding-right, 0px) var(--replacement-padding-bottom, 0px) var(--replacement-padding-left, 0px);
+      font-size: calc(var(--font-size, 12px) * var(--replacement-fit-scale, 1));
+      line-height: var(--replacement-line-height, var(--line-height, 1.15));
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover .text-run,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    .text-run {
+      white-space: pre;
+    }
+    .element.text-fit {
+      overflow: hidden;
+      white-space: normal;
+      text-align: left !important;
+      text-align-last: auto !important;
+    }
+    .text-fit-layer {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+    .editable-text-proxy {
+      position: absolute;
+      inset: 0;
+      display: block;
+      overflow: visible;
+      white-space: pre;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      pointer-events: auto;
+    }
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      opacity: 0.18;
+    }
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
+      color: var(--text-color, #111);
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
+    }
+    .element.positioned-runs {
+      overflow: hidden !important;
+      white-space: normal;
+      text-align: left;
+      text-align-last: auto;
+    }
+    .element.positioned-runs .text-run {
+      position: absolute;
+      display: block;
+      overflow: visible;
+      line-height: 1;
+      transform-origin: left top;
+    }
+    body.mode-structured .element:focus {
+      outline: 2px solid rgba(29, 97, 179, 0.82);
+      outline-offset: 2px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+      text-align: left;
+      text-align-last: auto;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover .text-run,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    body.mode-debug .element {
+      border: 1px solid var(--overlay-border);
+      background: var(--debug-fill);
+      color: transparent;
+    }
+    body.mode-source .element,
+    body.mode-edited .element,
+    body.mode-translated .element,
+    body.mode-bilingual .element {
+      border: 1px solid transparent;
+      background: transparent;
+    }
+    body.mode-source.show-boxes .element,
+    body.mode-edited.show-boxes .element,
+    body.mode-translated.show-boxes .element,
+    body.mode-bilingual.show-boxes .element {
+      border-color: var(--overlay-border);
+      background: var(--overlay-fill);
+    }
+    .element[data-type="table"],
+    .element[data-type="figure"],
+    .element[data-type="formula"],
+    .element[data-type="image"],
+    .element[data-type="shape"] {
+      color: transparent;
+    }
+    .element[data-type="shape"] {
+      z-index: 0;
+      pointer-events: none;
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    .element[data-scriptorium-shape-line="true"] {
+      overflow: visible;
+      background: transparent;
+      border: 0;
+    }
+    .element[data-scriptorium-shape-path="true"] {
+      overflow: visible;
+      background: transparent;
+      border: 0;
+    }
+    .shape-line {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .shape-vector {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .element[data-type="image"] {
+      z-index: 0;
+      pointer-events: none;
+    }
+    .embedded-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+    body.mode-structured .element[data-type="shape"] {
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    body.mode-structured .element[data-scriptorium-shape-line="true"] {
+      background: transparent;
+      border: 0;
+    }
+    body.mode-structured .element[data-scriptorium-shape-path="true"] {
+      background: transparent;
+      border: 0;
+    }
+    .element-label {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translateY(-100%);
+      padding: 2px 5px;
+      border-radius: 3px 3px 0 0;
+      background: rgba(29, 97, 179, 0.88);
+      color: #fff;
+      font: 10px/1.2 Arial, sans-serif;
+    }
+    body.mode-debug .element-label {
+      display: block;
+    }
+    @media print {
+      html, body { background: #fff; }
+      .document {
+        display: block;
+        padding: 0;
+        font-size: 0;
+        line-height: 0;
+      }
+      .page {
+        display: block;
+        width: var(--page-width-pt) !important;
+        height: var(--page-height-pt) !important;
+        margin: 0;
+        box-shadow: none;
+        break-after: auto;
+        page-break-after: auto;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .page + .page {
+        break-before: page;
+        page-break-before: always;
+      }
+      body.mode-fidelity .element {
+        display: none !important;
+      }
+      body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+        display: block !important;
+        left: var(--print-left) !important;
+        top: var(--print-top) !important;
+        width: var(--print-width) !important;
+        height: var(--print-height) !important;
+        overflow: hidden;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        text-align: left;
+        text-align-last: auto;
+        color: var(--text-color, #111) !important;
+        -webkit-text-fill-color: currentColor;
+        background: var(--replacement-mask-color, #fff);
+        padding: var(--print-replacement-padding-top, var(--replacement-padding-top, 0px)) var(--print-replacement-padding-right, var(--replacement-padding-right, 0px)) var(--print-replacement-padding-bottom, var(--replacement-padding-bottom, 0px)) var(--print-replacement-padding-left, var(--replacement-padding-left, 0px));
+        font-size: calc(var(--print-font-size, var(--font-size, 12px)) * var(--replacement-fit-scale, 1));
+        line-height: var(--replacement-line-height, var(--line-height, 1.15));
+        outline: 0;
+        z-index: 2;
+      }
+      .element.text-fit .editable-text-proxy {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="mode-structured" data-document-id="0a12b60a28f54839b68cc3af07175c33">
+  <main class="document">
+    <section
+      class="page"
+      data-page-index="0"
+      style="
+        width: 780.000px;
+        height: 1000.000px;
+        --page-width-pt: 585.0pt;
+        --page-height-pt: 750.0pt;
+      "
+    >
+      <div
+        id="p0001-source-image"
+        class="element editable-node"
+        data-id="p0001-source-image"
+        data-type="image"
+        data-scriptorium-element-id="p0001-source-image"
+        data-scriptorium-role="image"
+        data-scriptorium-source="image-source"
+        data-scriptorium-style-id="style-001"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="0.0,0.0,585.0,750.0"
+        data-bbox-px="0.0,0.0,780.0,1000.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/0"
+        data-reading-order="0"
+        data-scriptorium-semantic-order="0"
+        data-scriptorium-visual-order="0"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="source-image-background"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="1.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 0.000px;
+          top: 0.000px;
+          width: 780.000px;
+          height: 1000.000px;
+          --print-left: 0.000px;
+          --print-top: 0.000px;
+          --print-width: 585.000px;
+          --print-height: 750.000px;
+          --font-size: 12px;
+          --print-font-size: 12.0000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">image #0</span><img class="embedded-image" src="assets/page_0001/crops/page_0001.png" alt="" draggable="false"></div>
+      <div
+        id="p0001-e0001"
+        class="element editable-node"
+        data-id="p0001-e0001"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0001"
+        data-scriptorium-role="heading"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RECORDS RETENTION SCHEDULE RECONCILIATION"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="150.75,33.75,435.0,47.25"
+        data-bbox-px="201.0,45.0,580.0,63.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/1"
+        data-reading-order="1"
+        data-scriptorium-semantic-order="1"
+        data-scriptorium-visual-order="1"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="full"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,full-width-flow-break,external-structure-label,external-structure-doc_title"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 201.000px;
+          top: 45.000px;
+          width: 379.000px;
+          height: 18.000px;
+          --print-left: 150.750px;
+          --print-top: 33.750px;
+          --print-width: 284.250px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #1</span>RECORDS RETENTION SCHEDULE RECONCILIATION</div>
+      <div
+        id="p0001-e0002"
+        class="element editable-node"
+        data-id="p0001-e0002"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0002"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-003"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RECORDS MANAGEMENT DEPARTMENT - M /C"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="172.5,55.5,417.0,68.25"
+        data-bbox-px="230.0,74.0,556.0,91.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/2"
+        data-reading-order="2"
+        data-scriptorium-semantic-order="2"
+        data-scriptorium-visual-order="2"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 230.000px;
+          top: 74.000px;
+          width: 326.000px;
+          height: 17.000px;
+          --print-left: 172.500px;
+          --print-top: 55.500px;
+          --print-width: 244.500px;
+          --print-height: 12.750px;
+          --font-size: 12.24px;
+          --print-font-size: 12.2400px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #2</span>RECORDS MANAGEMENT DEPARTMENT - M /C</div>
+      <div
+        id="p0001-e0003"
+        class="element editable-node"
+        data-id="p0001-e0003"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0003"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DEPARTMENT NAME"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="66.75,101.25,175.5,114.75"
+        data-bbox-px="89.0,135.0,234.0,153.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/3"
+        data-reading-order="3"
+        data-scriptorium-semantic-order="3"
+        data-scriptorium-visual-order="3"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="2"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h0/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 89.000px;
+          top: 135.000px;
+          width: 145.000px;
+          height: 18.000px;
+          --print-left: 66.750px;
+          --print-top: 101.250px;
+          --print-width: 108.750px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #3</span>DEPARTMENT NAME</div>
+      <div
+        id="p0001-e0004"
+        class="element editable-node"
+        data-id="p0001-e0004"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0004"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-004"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="SCIENCE & TECHNOLOGY"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="240.75,99.75,380.25,114.75"
+        data-bbox-px="321.0,133.0,507.0,153.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/4"
+        data-reading-order="4"
+        data-scriptorium-semantic-order="4"
+        data-scriptorium-visual-order="4"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="2"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h0/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 321.000px;
+          top: 133.000px;
+          width: 186.000px;
+          height: 20.000px;
+          --print-left: 240.750px;
+          --print-top: 99.750px;
+          --print-width: 139.500px;
+          --print-height: 15.000px;
+          --font-size: 14.4px;
+          --print-font-size: 14.4000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #4</span>SCIENCE & TECHNOLOGY</div>
+      <div
+        id="p0001-e0005"
+        class="element editable-node"
+        data-id="p0001-e0005"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0005"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-003"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="COST CENTER NUMBER"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="71.25,136.5,195.75,149.25"
+        data-bbox-px="95.0,182.0,261.0,199.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/5"
+        data-reading-order="6"
+        data-scriptorium-semantic-order="6"
+        data-scriptorium-visual-order="6"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="2"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h0/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="body-segment-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 95.000px;
+          top: 182.000px;
+          width: 166.000px;
+          height: 17.000px;
+          --print-left: 71.250px;
+          --print-top: 136.500px;
+          --print-width: 124.500px;
+          --print-height: 12.750px;
+          --font-size: 12.24px;
+          --print-font-size: 12.2400px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #6</span>COST CENTER NUMBER</div>
+      <div
+        id="p0001-e0006"
+        class="element editable-node"
+        data-id="p0001-e0006"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0006"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="141"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="269.25,134.25,292.5,147.75"
+        data-bbox-px="359.0,179.0,390.0,197.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/6"
+        data-reading-order="5"
+        data-scriptorium-semantic-order="5"
+        data-scriptorium-visual-order="5"
+        data-scriptorium-column-index="1"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="2"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h0/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="body-segment-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 359.000px;
+          top: 179.000px;
+          width: 31.000px;
+          height: 18.000px;
+          --print-left: 269.250px;
+          --print-top: 134.250px;
+          --print-width: 23.250px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #5</span>141</div>
+      <div
+        id="p0001-e0007"
+        class="element editable-node"
+        data-id="p0001-e0007"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0007"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-005"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="INDEX BINDERS CONSOLIDATED BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="70.5,180.0,275.25,194.25"
+        data-bbox-px="94.0,240.0,367.0,259.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/7"
+        data-reading-order="7"
+        data-scriptorium-semantic-order="7"
+        data-scriptorium-visual-order="7"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="3"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h0/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-003"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-003"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 94.000px;
+          top: 240.000px;
+          width: 273.000px;
+          height: 19.000px;
+          --print-left: 70.500px;
+          --print-top: 180.000px;
+          --print-width: 204.750px;
+          --print-height: 14.250px;
+          --font-size: 13.68px;
+          --print-font-size: 13.6800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #7</span>INDEX BINDERS CONSOLIDATED BY:</div>
+      <div
+        id="p0001-e0008"
+        class="element editable-node"
+        data-id="p0001-e0008"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0008"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-005"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="N /A"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="172.5,214.5,198.75,228.75"
+        data-bbox-px="230.0,286.0,265.0,305.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/8"
+        data-reading-order="8"
+        data-scriptorium-semantic-order="8"
+        data-scriptorium-visual-order="8"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="4"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h0/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 230.000px;
+          top: 286.000px;
+          width: 35.000px;
+          height: 19.000px;
+          --print-left: 172.500px;
+          --print-top: 214.500px;
+          --print-width: 26.250px;
+          --print-height: 14.250px;
+          --font-size: 13.68px;
+          --print-font-size: 13.6800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #8</span>N /A</div>
+      <div
+        id="p0001-e0009"
+        class="element editable-node"
+        data-id="p0001-e0009"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0009"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="349.5,216.0,380.25,229.5"
+        data-bbox-px="466.0,288.0,507.0,306.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/9"
+        data-reading-order="9"
+        data-scriptorium-semantic-order="9"
+        data-scriptorium-visual-order="9"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="4"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h0/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 466.000px;
+          top: 288.000px;
+          width: 41.000px;
+          height: 18.000px;
+          --print-left: 349.500px;
+          --print-top: 216.000px;
+          --print-width: 30.750px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #9</span>DATE</div>
+      <div
+        id="p0001-e0010"
+        class="element editable-node"
+        data-id="p0001-e0010"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0010"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-005"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="INDEX BINDER RE- LABELED BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="71.25,259.5,255.0,273.75"
+        data-bbox-px="95.0,346.0,340.0,365.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/10"
+        data-reading-order="10"
+        data-scriptorium-semantic-order="10"
+        data-scriptorium-visual-order="10"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="5"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h0/h0/v0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-005"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-005"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 95.000px;
+          top: 346.000px;
+          width: 245.000px;
+          height: 19.000px;
+          --print-left: 71.250px;
+          --print-top: 259.500px;
+          --print-width: 183.750px;
+          --print-height: 14.250px;
+          --font-size: 13.68px;
+          --print-font-size: 13.6800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #10</span>INDEX BINDER RE- LABELED BY:</div>
+      <div
+        id="p0001-e0011"
+        class="element editable-node"
+        data-id="p0001-e0011"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0011"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-006"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="<unk> Mallery"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="81.0,291.0,212.25,319.5"
+        data-bbox-px="108.0,388.0,283.0,426.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/11"
+        data-reading-order="11"
+        data-scriptorium-semantic-order="11"
+        data-scriptorium-visual-order="11"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="5"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h0/h0/v0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-005"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-005"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 108.000px;
+          top: 388.000px;
+          width: 175.000px;
+          height: 38.000px;
+          --print-left: 81.000px;
+          --print-top: 291.000px;
+          --print-width: 131.250px;
+          --print-height: 28.500px;
+          --font-size: 27.36px;
+          --print-font-size: 27.3600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #11</span><unk> Mallery</div>
+      <div
+        id="p0001-e0012"
+        class="element editable-node"
+        data-id="p0001-e0012"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0012"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="351.75,294.0,382.5,307.5"
+        data-bbox-px="469.0,392.0,510.0,410.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/12"
+        data-reading-order="12"
+        data-scriptorium-semantic-order="12"
+        data-scriptorium-visual-order="12"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="5"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h0/h0/v1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-005"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="body-segment-005"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 469.000px;
+          top: 392.000px;
+          width: 41.000px;
+          height: 18.000px;
+          --print-left: 351.750px;
+          --print-top: 294.000px;
+          --print-width: 30.750px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #12</span>DATE</div>
+      <div
+        id="p0001-e0013"
+        class="element editable-node"
+        data-id="p0001-e0013"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0013"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2 /15 /90"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="417.75,292.5,467.25,306.0"
+        data-bbox-px="557.0,390.0,623.0,408.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/13"
+        data-reading-order="13"
+        data-scriptorium-semantic-order="13"
+        data-scriptorium-visual-order="13"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="5"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h0/h0/v1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-005"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="body-segment-005"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 557.000px;
+          top: 390.000px;
+          width: 66.000px;
+          height: 18.000px;
+          --print-left: 417.750px;
+          --print-top: 292.500px;
+          --print-width: 49.500px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #13</span>2 /15 /90</div>
+      <div
+        id="p0001-e0014"
+        class="element editable-node"
+        data-id="p0001-e0014"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0014"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RETENTION & RECOMMENDATION FILE REORGANIZED AND RE- LABELED BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="72.0,338.25,493.5,354.0"
+        data-bbox-px="96.0,451.0,658.0,472.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/14"
+        data-reading-order="14"
+        data-scriptorium-semantic-order="14"
+        data-scriptorium-visual-order="14"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="full"
+        data-scriptorium-flow-segment="5"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h0/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-005"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="5"
+        data-scriptorium-translation-stream-id="body-segment-005"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,full-width-flow-break,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 96.000px;
+          top: 451.000px;
+          width: 562.000px;
+          height: 21.000px;
+          --print-left: 72.000px;
+          --print-top: 338.250px;
+          --print-width: 421.500px;
+          --print-height: 15.750px;
+          --font-size: 15.12px;
+          --print-font-size: 15.1200px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #14</span>RETENTION & RECOMMENDATION FILE REORGANIZED AND RE- LABELED BY:</div>
+      <div
+        id="p0001-e0015"
+        class="element editable-node"
+        data-id="p0001-e0015"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0015"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-008"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="N /A"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="171.75,374.25,198.0,385.5"
+        data-bbox-px="229.0,499.0,264.0,514.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/15"
+        data-reading-order="15"
+        data-scriptorium-semantic-order="15"
+        data-scriptorium-visual-order="15"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="6"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-006"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-006"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 229.000px;
+          top: 499.000px;
+          width: 35.000px;
+          height: 15.000px;
+          --print-left: 171.750px;
+          --print-top: 374.250px;
+          --print-width: 26.250px;
+          --print-height: 11.250px;
+          --font-size: 10.8px;
+          --print-font-size: 10.8000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #15</span>N /A</div>
+      <div
+        id="p0001-e0016"
+        class="element editable-node"
+        data-id="p0001-e0016"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0016"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-008"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="351.75,374.25,380.25,385.5"
+        data-bbox-px="469.0,499.0,507.0,514.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/16"
+        data-reading-order="16"
+        data-scriptorium-semantic-order="16"
+        data-scriptorium-visual-order="16"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="6"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h0/h1/h1/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-006"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-006"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 469.000px;
+          top: 499.000px;
+          width: 38.000px;
+          height: 15.000px;
+          --print-left: 351.750px;
+          --print-top: 374.250px;
+          --print-width: 28.500px;
+          --print-height: 11.250px;
+          --font-size: 10.8px;
+          --print-font-size: 10.8000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #16</span>DATE</div>
+      <div
+        id="p0001-e0017"
+        class="element editable-node"
+        data-id="p0001-e0017"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0017"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-004"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RECORDS RETENTION SCHEDULE PLACED IN INDEX BINDER AND IN FILE BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="72.0,419.25,515.25,434.25"
+        data-bbox-px="96.0,559.0,687.0,579.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/17"
+        data-reading-order="17"
+        data-scriptorium-semantic-order="17"
+        data-scriptorium-visual-order="17"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="full"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-007"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-007"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,full-width-flow-break,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 96.000px;
+          top: 559.000px;
+          width: 591.000px;
+          height: 20.000px;
+          --print-left: 72.000px;
+          --print-top: 419.250px;
+          --print-width: 443.250px;
+          --print-height: 15.000px;
+          --font-size: 14.4px;
+          --print-font-size: 14.4000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #17</span>RECORDS RETENTION SCHEDULE PLACED IN INDEX BINDER AND IN FILE BY:</div>
+      <div
+        id="p0001-e0018"
+        class="element editable-node"
+        data-id="p0001-e0018"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0018"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-009"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Wayne Boughan"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="117.0,443.25,230.25,480.0"
+        data-bbox-px="156.0,591.0,307.0,640.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/18"
+        data-reading-order="18"
+        data-scriptorium-semantic-order="18"
+        data-scriptorium-visual-order="18"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-007"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-007"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 156.000px;
+          top: 591.000px;
+          width: 151.000px;
+          height: 49.000px;
+          --print-left: 117.000px;
+          --print-top: 443.250px;
+          --print-width: 113.250px;
+          --print-height: 36.750px;
+          --font-size: 35.28px;
+          --print-font-size: 35.2800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #18</span>Wayne Boughan</div>
+      <div
+        id="p0001-e0019"
+        class="element editable-node"
+        data-id="p0001-e0019"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0019"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="351.0,451.5,381.75,467.25"
+        data-bbox-px="468.0,602.0,509.0,623.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/19"
+        data-reading-order="19"
+        data-scriptorium-semantic-order="19"
+        data-scriptorium-visual-order="19"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-001-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="external-block-body-001-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 468.000px;
+          top: 602.000px;
+          width: 41.000px;
+          height: 21.000px;
+          --print-left: 351.000px;
+          --print-top: 451.500px;
+          --print-width: 30.750px;
+          --print-height: 15.750px;
+          --font-size: 15.12px;
+          --print-font-size: 15.1200px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #19</span>DATE</div>
+      <div
+        id="p0001-e0020"
+        class="element editable-node"
+        data-id="p0001-e0020"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0020"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="4 /18 /90"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="417.0,451.5,468.0,465.0"
+        data-bbox-px="556.0,602.0,624.0,620.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/20"
+        data-reading-order="20"
+        data-scriptorium-semantic-order="20"
+        data-scriptorium-visual-order="20"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-001-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="external-block-body-001-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 556.000px;
+          top: 602.000px;
+          width: 68.000px;
+          height: 18.000px;
+          --print-left: 417.000px;
+          --print-top: 451.500px;
+          --print-width: 51.000px;
+          --print-height: 13.500px;
+          --font-size: 12.96px;
+          --print-font-size: 12.9600px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #20</span>4 /18 /90</div>
+      <div
+        id="p0001-e0021"
+        class="element editable-node"
+        data-id="p0001-e0021"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0021"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="BOXES CREATED FOR HARD COPY PERMANENT RETENTION RECORDS BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="71.25,497.25,473.25,513.75"
+        data-bbox-px="95.0,663.0,631.0,685.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/21"
+        data-reading-order="21"
+        data-scriptorium-semantic-order="21"
+        data-scriptorium-visual-order="21"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="full"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-007"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="body-segment-007"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,full-width-flow-break,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 95.000px;
+          top: 663.000px;
+          width: 536.000px;
+          height: 22.000px;
+          --print-left: 71.250px;
+          --print-top: 497.250px;
+          --print-width: 402.000px;
+          --print-height: 16.500px;
+          --font-size: 15.84px;
+          --print-font-size: 15.8400px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #21</span>BOXES CREATED FOR HARD COPY PERMANENT RETENTION RECORDS BY:</div>
+      <div
+        id="p0001-e0022"
+        class="element editable-node"
+        data-id="p0001-e0022"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0022"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-005"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="N /A"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="172.5,531.75,195.75,546.0"
+        data-bbox-px="230.0,709.0,261.0,728.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/22"
+        data-reading-order="23"
+        data-scriptorium-semantic-order="23"
+        data-scriptorium-visual-order="23"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-007"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="5"
+        data-scriptorium-translation-stream-id="body-segment-007"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 230.000px;
+          top: 709.000px;
+          width: 31.000px;
+          height: 19.000px;
+          --print-left: 172.500px;
+          --print-top: 531.750px;
+          --print-width: 23.250px;
+          --print-height: 14.250px;
+          --font-size: 13.68px;
+          --print-font-size: 13.6800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #23</span>N /A</div>
+      <div
+        id="p0001-e0023"
+        class="element editable-node"
+        data-id="p0001-e0023"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0023"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-004"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="349.5,531.0,380.25,546.0"
+        data-bbox-px="466.0,708.0,507.0,728.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/23"
+        data-reading-order="22"
+        data-scriptorium-semantic-order="22"
+        data-scriptorium-visual-order="22"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="7"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h0"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-007"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="body-segment-007"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 466.000px;
+          top: 708.000px;
+          width: 41.000px;
+          height: 20.000px;
+          --print-left: 349.500px;
+          --print-top: 531.000px;
+          --print-width: 30.750px;
+          --print-height: 15.000px;
+          --font-size: 14.4px;
+          --print-font-size: 14.4000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #22</span>DATE</div>
+      <div
+        id="p0001-e0024"
+        class="element editable-node"
+        data-id="p0001-e0024"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0024"
+        data-scriptorium-role="heading"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-011"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="2051119008"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="539.25,573.0,557.25,678.0"
+        data-bbox-px="719.0,764.0,743.0,904.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/24"
+        data-reading-order="25"
+        data-scriptorium-semantic-order="25"
+        data-scriptorium-visual-order="25"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="8"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-008"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-segment-008"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 719.000px;
+          top: 764.000px;
+          width: 24.000px;
+          height: 140.000px;
+          --print-left: 539.250px;
+          --print-top: 573.000px;
+          --print-width: 18.000px;
+          --print-height: 105.000px;
+          --font-size: 48.0px;
+          --print-font-size: 48.0000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #25</span>2051119008</div>
+      <div
+        id="p0001-e0025"
+        class="element editable-node"
+        data-id="p0001-e0025"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0025"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="RECORDS TRANSFER INVENTORY FORMS UPDATED BY:"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="73.5,577.5,370.5,594.0"
+        data-bbox-px="98.0,770.0,494.0,792.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/25"
+        data-reading-order="24"
+        data-scriptorium-semantic-order="24"
+        data-scriptorium-visual-order="24"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="full"
+        data-scriptorium-flow-segment="8"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-008"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-segment-008"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,full-width-flow-break,external-structure-label,external-structure-text,external-structure-parent-order-review-only"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 98.000px;
+          top: 770.000px;
+          width: 396.000px;
+          height: 22.000px;
+          --print-left: 73.500px;
+          --print-top: 577.500px;
+          --print-width: 297.000px;
+          --print-height: 16.500px;
+          --font-size: 15.84px;
+          --print-font-size: 15.8400px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #24</span>RECORDS TRANSFER INVENTORY FORMS UPDATED BY:</div>
+      <div
+        id="p0001-e0026"
+        class="element editable-node"
+        data-id="p0001-e0026"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0026"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-012"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Wayne Baughan"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="116.25,599.25,235.5,639.75"
+        data-bbox-px="155.0,799.0,314.0,853.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/26"
+        data-reading-order="26"
+        data-scriptorium-semantic-order="26"
+        data-scriptorium-visual-order="26"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="8"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-008"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="body-segment-008"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 155.000px;
+          top: 799.000px;
+          width: 159.000px;
+          height: 54.000px;
+          --print-left: 116.250px;
+          --print-top: 599.250px;
+          --print-width: 119.250px;
+          --print-height: 40.500px;
+          --font-size: 38.88px;
+          --print-font-size: 38.8800px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #26</span>Wayne Baughan</div>
+      <div
+        id="p0001-e0027"
+        class="element editable-node"
+        data-id="p0001-e0027"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0027"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-003"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DATE"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="351.0,612.0,381.75,624.75"
+        data-bbox-px="468.0,816.0,509.0,833.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/27"
+        data-reading-order="27"
+        data-scriptorium-semantic-order="27"
+        data-scriptorium-visual-order="27"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="8"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-008"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="body-segment-008"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut,external-structure-label,external-structure-text"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 468.000px;
+          top: 816.000px;
+          width: 41.000px;
+          height: 17.000px;
+          --print-left: 351.000px;
+          --print-top: 612.000px;
+          --print-width: 30.750px;
+          --print-height: 12.750px;
+          --font-size: 12.24px;
+          --print-font-size: 12.2400px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #27</span>DATE</div>
+      <div
+        id="p0001-e0028"
+        class="element editable-node"
+        data-id="p0001-e0028"
+        data-type="text"
+        data-scriptorium-element-id="p0001-e0028"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-ocr"
+        data-scriptorium-style-id="style-004"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="7 /25 /90"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-estimated-overflow="false"
+        data-scriptorium-replacement-rendered-overflow=""
+        data-scriptorium-replacement-rendered-fit-scale=""
+        data-scriptorium-replacement-rendered-line-height=""
+        data-scriptorium-replacement-rendered-fit-policy=""
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-scriptorium-replacement-mask-color=""
+        data-scriptorium-replacement-mask-color-source=""
+        data-scriptorium-replacement-padding-constrained="false"
+        data-scriptorium-replacement-padding-constraint-ids=""
+        data-scriptorium-replacement-padding-constraints=""
+        data-bbox-pdf="417.0,610.5,468.0,625.5"
+        data-bbox-px="556.0,814.0,624.0,834.0"
+        data-xml-node="element"
+        data-ir-path="/pages/0/elements/28"
+        data-reading-order="28"
+        data-scriptorium-semantic-order="28"
+        data-scriptorium-visual-order="28"
+        data-scriptorium-column-index="2"
+        data-scriptorium-column-count="3"
+        data-scriptorium-column-span="column"
+        data-scriptorium-flow-segment="8"
+        data-scriptorium-reading-order-strategy="recursive-xy-cut-v1"
+        data-scriptorium-reading-order-region="root/h1/h1"
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-segment-008"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="5"
+        data-scriptorium-translation-stream-id="body-segment-008"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.83"
+        data-scriptorium-reading-order-evidence="recursive-xy-cut,horizontal-whitespace-cut,vertical-whitespace-cut"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 556.000px;
+          top: 814.000px;
+          width: 68.000px;
+          height: 20.000px;
+          --print-left: 417.000px;
+          --print-top: 610.500px;
+          --print-width: 51.000px;
+          --print-height: 15.000px;
+          --font-size: 14.4px;
+          --print-font-size: 14.4000px;
+          --line-height: 1.15;
+          --font-family: serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0.0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+          --replacement-mask-color: #fff;
+          --print-replacement-padding-top: 0.0000px;
+          --print-replacement-padding-right: 0.0000px;
+          --print-replacement-padding-bottom: 0.0000px;
+          --print-replacement-padding-left: 0.0000px;
+        "
+      ><span class="element-label">text #28</span>7 /25 /90</div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const replacementSelector = '.element[data-scriptorium-has-replacement="true"]';
+      const minScale = 0.62;
+      const minLineHeight = 1.0;
+      const measurementTolerance = 1;
+
+      function number(value, fallback) {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      }
+
+      function declaredScale(owner) {
+        return Math.max(minScale, Math.min(1, number(owner.dataset.scriptoriumReplacementFitScale, 1)));
+      }
+
+      function declaredLineHeight(owner) {
+        const inline = owner.style.getPropertyValue("--line-height");
+        const computed = getComputedStyle(owner).getPropertyValue("--line-height");
+        return Math.max(minLineHeight, number(inline || computed, 1.15));
+      }
+
+      function hasOverflow(owner) {
+        return owner.scrollWidth > owner.clientWidth + measurementTolerance
+          || owner.scrollHeight > owner.clientHeight + measurementTolerance;
+      }
+
+      function setFit(owner, scale, lineHeight) {
+        owner.style.setProperty("--replacement-fit-scale", scale.toFixed(4));
+        owner.style.setProperty("--replacement-line-height", lineHeight.toFixed(4));
+      }
+
+      function maxFittingScale(owner, lineHeight) {
+        setFit(owner, minScale, lineHeight);
+        if (hasOverflow(owner)) {
+          return { scale: minScale, fits: false };
+        }
+        setFit(owner, 1, lineHeight);
+        if (!hasOverflow(owner)) {
+          return { scale: 1, fits: true };
+        }
+        let low = minScale;
+        let high = 1;
+        for (let iteration = 0; iteration < 12; iteration += 1) {
+          const middle = (low + high) / 2;
+          setFit(owner, middle, lineHeight);
+          if (hasOverflow(owner)) {
+            high = middle;
+          } else {
+            low = middle;
+          }
+        }
+        return { scale: low, fits: true };
+      }
+
+      function reset(owner) {
+        owner.style.setProperty("--replacement-fit-scale", declaredScale(owner).toFixed(4));
+        owner.style.removeProperty("--replacement-line-height");
+        owner.dataset.scriptoriumReplacementRenderedOverflow = "";
+        owner.dataset.scriptoriumReplacementRenderedFitScale = "";
+        owner.dataset.scriptoriumReplacementRenderedLineHeight = "";
+        owner.dataset.scriptoriumReplacementRenderedFitPolicy = "";
+        owner.dataset.scriptoriumReplacementOverflow = owner.dataset.scriptoriumReplacementEstimatedOverflow || "false";
+      }
+
+      function fit(owner) {
+        if (!owner || owner.dataset.scriptoriumHasReplacement !== "true") {
+          if (owner) {
+            reset(owner);
+          }
+          return null;
+        }
+
+        const lineHeight = declaredLineHeight(owner);
+        let selected = {
+          ...maxFittingScale(owner, lineHeight),
+          lineHeight,
+        };
+        if (lineHeight > minLineHeight) {
+          const compact = {
+            ...maxFittingScale(owner, minLineHeight),
+            lineHeight: minLineHeight,
+          };
+          if (compact.fits && compact.scale > selected.scale + 0.01) {
+            selected = compact;
+          }
+        }
+
+        setFit(owner, selected.scale, selected.lineHeight);
+        const overflow = hasOverflow(owner);
+        owner.dataset.scriptoriumReplacementRenderedOverflow = overflow ? "true" : "false";
+        owner.dataset.scriptoriumReplacementRenderedFitScale = selected.scale.toFixed(4);
+        owner.dataset.scriptoriumReplacementRenderedLineHeight = selected.lineHeight.toFixed(4);
+        owner.dataset.scriptoriumReplacementRenderedFitPolicy = "browser-layout-v1";
+        owner.dataset.scriptoriumReplacementOverflow = overflow ? "true" : "false";
+        return {
+          overflow,
+          scale: selected.scale,
+          lineHeight: selected.lineHeight,
+          fits: selected.fits,
+        };
+      }
+
+      function fitAll() {
+        return Array.from(document.querySelectorAll(replacementSelector)).map(fit).filter(Boolean);
+      }
+
+      fitAll();
+      const fontReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+      const ready = Promise.resolve(fontReady).catch(() => undefined).then(() => fitAll());
+      window.addEventListener("beforeprint", fitAll);
+      const printMedia = window.matchMedia && window.matchMedia("print");
+      if (printMedia && printMedia.addEventListener) {
+        printMedia.addEventListener("change", event => {
+          if (event.matches) {
+            fitAll();
+          }
+        });
+      }
+      window.ScriptoriumFitting = Object.freeze({ fit, fitAll, reset, ready });
+    })();
+  </script>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+        if (window.ScriptoriumFitting) {
+          window.ScriptoriumFitting.fit(owner);
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+          if (window.ScriptoriumFitting) {
+            window.ScriptoriumFitting.fit(owner);
+          }
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
+</body>
+</html>

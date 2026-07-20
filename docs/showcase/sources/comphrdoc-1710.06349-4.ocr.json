@@ -1,0 +1,890 @@
+{
+  "source": "comphrdoc-answer-free-input",
+  "pages": [
+    {
+      "page_index": 0,
+      "elements": [
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            560,
+            298,
+            571
+          ],
+          "text": "ger value to the star coordinate in the image, which is ≃ 0.3826,",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            406,
+            466,
+            416
+          ],
+          "text": "physically motivated set of parameters.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            384,
+            566,
+            394
+          ],
+          "text": "optical response, and in particular of the radial distortion, would",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            484,
+            298,
+            494
+          ],
+          "text": "sources and the computed position of their matching stars in the",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            373,
+            566,
+            383
+          ],
+          "text": "suggests however that any more sophisticated modelling of the",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            49,
+            674,
+            278,
+            684
+          ],
+          "text": "7 https://harrisgeospatial.com/docs/CURVEFIT.html",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            256,
+            415,
+            267
+          ],
+          "text": "discrepancy between the measured and modelled positions of the Nm stars found in the frame.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            563,
+            566,
+            573
+          ],
+          "text": "listed in Table 1. As expected, using instead a discrete pixel lo-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            350,
+            298,
+            361
+          ],
+          "text": "curvefit7 routine included in the standard IDL library, and its",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            224,
+            566,
+            235
+          ],
+          "text": "night, and #6 obtained four months later. Figures 2 and 3 correspond to row R2. The focal length f1 was converted from pixels to mm",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            640,
+            566,
+            650
+          ],
+          "text": "the horizon, making the resulting processed images and movies",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            318,
+            298,
+            328
+          ],
+          "text": "in ( x, y) coordinates. To do this non-linear fitting, we tried and",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            474,
+            566,
+            484
+          ],
+          "text": "produced by the right camera, maybe due to its optics, which",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            213,
+            566,
+            223
+          ],
+          "text": "and right (rows R1 to R6) cameras. All runs were shot on consecutive nights, except for #2 to 4 which were produced on the same",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            319,
+            566,
+            328
+          ],
+          "text": "runs may be due to a partial (anti-)correlation between these two",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            626,
+            298,
+            639
+          ],
+          "text": "( f1, f3 , f5 , ∆x , ∆y ) and the level of residual discrepancies in po-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            506,
+            298,
+            516
+          ],
+          "text": "Their discrepancies, shown as magenta arrows (after multiplica-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            325,
+            506,
+            566,
+            518
+          ],
+          "text": "As mentioned in Sect. 3.1, different options were considered",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            307,
+            298,
+            318
+          ],
+          "text": "for the set of parameters that minimize the 2Nm discrepancies",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            562,
+            716,
+            566,
+            725
+          ],
+          "text": "5",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            528,
+            298,
+            538
+          ],
+          "text": "any clear trend. The residual distances have a mean value of 0.29",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            232,
+            566,
+            245
+          ],
+          "text": "assuming a pixel size of 8.40µm. The errors quoted on the parameters f1, f3 , f5, ∆x , ∆y are those returned by the non-linear fitting",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            629,
+            566,
+            639
+          ],
+          "text": "less than one pixel in the region of interest, ie, everywhere above",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            57,
+            584,
+            298,
+            594
+          ],
+          "text": "As shown in Table 1, the same reconstruction procedure was",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            311,
+            362,
+            566,
+            373
+          ],
+          "text": "f3 and f5 are treated together, and not considered separately. This",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            617,
+            298,
+            627
+          ],
+          "text": "spread over a four month period. The optics related parameters",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            530,
+            566,
+            540
+          ],
+          "text": "centroid on a 5x5 patch (so-called option (c)) instead of 3x3",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            461,
+            196,
+            471
+          ],
+          "text": "viding a stable set of fitted parameters.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            246,
+            566,
+            256
+          ],
+          "text": "procedure, based on the assumed discretization error on star location. The two rightmost columns show the mean and maximum",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            417,
+            298,
+            427
+          ],
+          "text": "is increased, and we again look for a new estimate of the parame-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            572,
+            121,
+            582
+          ],
+          "text": "as shown in Sect. 2.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            395,
+            298,
+            405
+          ],
+          "text": "returned meaningful error bars on those parameters. Injecting",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            395,
+            566,
+            405
+          ],
+          "text": "require either the use of a basis of orthogonal polynomials, or a",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            452,
+            566,
+            462
+          ],
+          "text": "seems to perform a bit better than the left one on this respect.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            550,
+            298,
+            560
+          ],
+          "text": "found is compatible with the error created by assigning an inte-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            552,
+            566,
+            562
+          ],
+          "text": "and did not improve the residual discrepancies compared to those",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            428,
+            298,
+            439
+          ],
+          "text": "ters minimizing the 2Nm discrepancies. The process is repeated a",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            49,
+            685,
+            174,
+            695
+          ],
+          "text": "8 http://purl.com/net/mpfit",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            171,
+            37,
+            437,
+            46
+          ],
+          "text": "E. Hivon, J. Mouette & T. Legault: Making 3D Movies of Northern Lights",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            585,
+            566,
+            595
+          ],
+          "text": "compatible with the quoted error bars, and larger mean and worst",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            539,
+            298,
+            549
+          ],
+          "text": "(in pixel units), with a worst case of 0.68. The mean residual",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            340,
+            298,
+            350
+          ],
+          "text": "Marquardt algorithm (Marquardt, 1963; Press et al., 1992): the",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            686,
+            566,
+            696
+          ],
+          "text": "parameter model considered in Mori et al. (2013), which ig-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            361,
+            298,
+            372
+          ],
+          "text": "drop-in replacement mpcurvefit8 by Markwardt (2009) based",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            572,
+            566,
+            584
+          ],
+          "text": "cation (option (a)) lead to different parameter values, with a shift",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            495,
+            298,
+            505
+          ],
+          "text": "best fit model of the camera response, for one specific image.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            496,
+            390,
+            506
+          ],
+          "text": "their position easier.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            607,
+            566,
+            617
+          ],
+          "text": "for the 12 images tested, the sky to pixel mappings of Eq. (7)",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            297,
+            298,
+            307
+          ],
+          "text": "and the close bright pixel to be the same object, we then look",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            406,
+            297,
+            417
+          ],
+          "text": "these new parameters in Eq. (7), the number of coincidences Nm",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            430,
+            566,
+            440
+          ],
+          "text": "or below what is expected from quantization error of the star",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            449,
+            298,
+            461
+          ],
+          "text": "(22 ≤ Nm ≤ 28 depending on the image being treated), and pro-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            373,
+            298,
+            383
+          ],
+          "text": "on the MINPACK algorithm of Moré (1978). We found the best fit",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            384,
+            298,
+            394
+          ],
+          "text": "parameter values to be nearly identical, but only the latter routine",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            200,
+            566,
+            212
+          ],
+          "text": "Table 1. Parameters of the camera response, for frames taken from six different shooting sequences with the left (rows L1 to L6)",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            539,
+            566,
+            551
+          ],
+          "text": "used here made no significant difference on the parameter values",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            297,
+            566,
+            307
+          ],
+          "text": "mounted and remounted between observations performed on dif-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            441,
+            566,
+            451
+          ],
+          "text": "coordinates (0.3826 pixels), and we note that the right camera",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            325,
+            419,
+            566,
+            429
+          ],
+          "text": "In each case, the mean residual error in position is compatible",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            595,
+            298,
+            605
+          ],
+          "text": "applied, for each of the two cameras, on images extracted from",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            517,
+            298,
+            527
+          ],
+          "text": "tion by 200) seem fairly randomly distributed and do not exhibit",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            439,
+            298,
+            449
+          ],
+          "text": "few times, rapidly converging toward a stable number of matches",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            519,
+            566,
+            529
+          ],
+          "text": "to determine the stars position on the camera frame. Using the",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            595,
+            566,
+            606
+          ],
+          "text": "case discrepancies (by ∼30% and ∼20% respectively). However,",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            485,
+            566,
+            495
+          ],
+          "text": "by bluring lightly the stars makes the sub-pixel determination of",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            648,
+            298,
+            660
+          ],
+          "text": "largest relative changes affecting ∆x , ∆y when the lenses were un-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            327,
+            298,
+            339
+          ],
+          "text": "compared two different IDL implementations of the Levenberg-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            651,
+            453,
+            661
+          ],
+          "text": "of Auroras nearly indistinguishable.",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            57,
+            473,
+            298,
+            483
+          ],
+          "text": "Figure 3 compares the measured position of the bright",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            325,
+            664,
+            566,
+            674
+          ],
+          "text": "The 8-parameter mapping model considered here therefore",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            604,
+            298,
+            616
+          ],
+          "text": "six different shooting sequences, filmed on four different nights",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            88,
+            56,
+            517,
+            198
+          ],
+          "text": "[table p0005 g0002]",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            42,
+            639,
+            298,
+            649
+          ],
+          "text": "sition, were found to be quite stable for each camera, with the",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            311,
+            338,
+            566,
+            351
+          ],
+          "text": "f3 + f5 varies less between runs than either f3 or f5 . However, this",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            307,
+            566,
+            318
+          ],
+          "text": "ferent nights. The relatively large changes of f3 and f5 between",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            351,
+            566,
+            361
+          ],
+          "text": "degeneracy does not hamper the modelling of Eq. (7) as long as",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            616,
+            566,
+            628
+          ],
+          "text": "resulting from options (a) and (b) respectively differed by quite",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            329,
+            566,
+            339
+          ],
+          "text": "parameters, which also shows on the fact that the combination",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            675,
+            566,
+            685
+          ],
+          "text": "seems to generate smaller reconstruction errors than the 6-",
+          "confidence": 1
+        },
+        {
+          "type": "text",
+          "bbox_px": [
+            310,
+            463,
+            566,
+            473
+          ],
+          "text": "This may be due to the slightly lesser sharpness of the images",
+          "confidence": 1
+        }
+      ]
+    }
+  ]
+}

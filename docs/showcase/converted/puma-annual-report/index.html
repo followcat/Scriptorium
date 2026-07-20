@@ -1,0 +1,3423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scriptorium Export</title>
+  <style>
+    @page {
+      size: 595.3200073242188pt 841.9199829101562pt;
+      margin: 0;
+    }
+    :root {
+      color-scheme: light;
+      --page-gap: 24px;
+      --overlay-border: rgba(29, 97, 179, 0.65);
+      --overlay-fill: rgba(255, 255, 255, 0.68);
+      --debug-fill: rgba(255, 214, 102, 0.16);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #777;
+      font-family: Arial, sans-serif;
+    }
+    .document {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--page-gap);
+      padding: var(--page-gap);
+    }
+    .page {
+      position: relative;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 18px rgba(0, 0, 0, 0.28);
+      flex: 0 0 auto;
+    }
+    .page-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+    .element {
+      position: absolute;
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text-color, #111);
+      line-height: var(--line-height, 1.15);
+      font-family: var(--font-family, serif);
+      font-size: var(--font-size, 12px);
+      font-weight: var(--font-weight, 400);
+      font-style: var(--font-style, normal);
+      z-index: 1;
+    }
+    body.mode-background .element {
+      display: none;
+    }
+    body.mode-structured {
+      background: #777;
+    }
+    body.mode-structured .element {
+      border: 0;
+      background: transparent;
+      color: var(--text-color, #111);
+      outline: 0;
+    }
+    body.mode-structured .element:not([data-type="shape"]) {
+      overflow: visible;
+      white-space: pre;
+      text-align: justify;
+      text-align-last: justify;
+    }
+    body.mode-fidelity .element {
+      border: 0;
+      background: transparent;
+      outline: 0;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="false"] {
+      display: none;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.88);
+      padding: var(--replacement-padding-top, 0px) var(--replacement-padding-right, 0px) var(--replacement-padding-bottom, 0px) var(--replacement-padding-left, 0px);
+      font-size: calc(var(--font-size, 12px) * var(--replacement-fit-scale, 1));
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    body.mode-fidelity .element[data-scriptorium-has-replacement="true"] .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:hover .text-run,
+    body.mode-fidelity .element[data-scriptorium-editable="true"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    .text-run {
+      white-space: pre;
+    }
+    .element.text-fit {
+      overflow: hidden;
+      white-space: normal;
+      text-align: left !important;
+      text-align-last: auto !important;
+    }
+    .text-fit-layer {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+    .editable-text-proxy {
+      position: absolute;
+      inset: 0;
+      display: block;
+      overflow: visible;
+      white-space: pre;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      pointer-events: auto;
+    }
+    body.mode-structured .element.text-fit:focus-within .text-fit-layer,
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      opacity: 0.18;
+    }
+    body.mode-structured .element.text-fit:focus-within .editable-text-proxy {
+      color: var(--text-color, #111);
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element.text-fit[data-scriptorium-live-replacement="true"] .text-fit-layer {
+      display: none;
+    }
+    .element.positioned-runs {
+      overflow: hidden !important;
+      white-space: normal;
+      text-align: left;
+      text-align-last: auto;
+    }
+    .element.positioned-runs .text-run {
+      position: absolute;
+      display: block;
+      overflow: visible;
+      line-height: 1;
+      transform-origin: left top;
+    }
+    body.mode-structured .element:focus {
+      outline: 2px solid rgba(29, 97, 179, 0.82);
+      outline-offset: 2px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] {
+      color: transparent !important;
+      caret-color: var(--text-color, #111);
+      -webkit-text-fill-color: transparent;
+      text-align: left;
+      text-align-last: auto;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"] .text-run {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus {
+      color: var(--text-color, #111) !important;
+      -webkit-text-fill-color: currentColor;
+      background: rgba(255, 255, 255, 0.78);
+      outline: 2px solid rgba(29, 97, 179, 0.74);
+      outline-offset: 1px;
+    }
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:hover .text-run,
+    body.mode-structured .element[data-scriptorium-source="native-ocr"]:focus .text-run {
+      color: inherit !important;
+      -webkit-text-fill-color: currentColor;
+    }
+    body.mode-debug .element {
+      border: 1px solid var(--overlay-border);
+      background: var(--debug-fill);
+      color: transparent;
+    }
+    body.mode-source .element,
+    body.mode-edited .element,
+    body.mode-translated .element,
+    body.mode-bilingual .element {
+      border: 1px solid transparent;
+      background: transparent;
+    }
+    body.mode-source.show-boxes .element,
+    body.mode-edited.show-boxes .element,
+    body.mode-translated.show-boxes .element,
+    body.mode-bilingual.show-boxes .element {
+      border-color: var(--overlay-border);
+      background: var(--overlay-fill);
+    }
+    .element[data-type="table"],
+    .element[data-type="figure"],
+    .element[data-type="formula"],
+    .element[data-type="image"],
+    .element[data-type="shape"] {
+      color: transparent;
+    }
+    .element[data-type="shape"] {
+      z-index: 0;
+      pointer-events: none;
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    .element[data-scriptorium-shape-line="true"] {
+      overflow: visible;
+      background: transparent;
+      border: 0;
+    }
+    .element[data-scriptorium-shape-path="true"] {
+      overflow: visible;
+      background: transparent;
+      border: 0;
+    }
+    .shape-line {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .shape-vector {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .element[data-type="image"] {
+      z-index: 0;
+      pointer-events: none;
+    }
+    .embedded-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+    body.mode-structured .element[data-type="shape"] {
+      background: var(--fill-color, transparent);
+      border: var(--border-width, 0px) solid var(--stroke-color, transparent);
+    }
+    body.mode-structured .element[data-scriptorium-shape-line="true"] {
+      background: transparent;
+      border: 0;
+    }
+    body.mode-structured .element[data-scriptorium-shape-path="true"] {
+      background: transparent;
+      border: 0;
+    }
+    .element-label {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translateY(-100%);
+      padding: 2px 5px;
+      border-radius: 3px 3px 0 0;
+      background: rgba(29, 97, 179, 0.88);
+      color: #fff;
+      font: 10px/1.2 Arial, sans-serif;
+    }
+    body.mode-debug .element-label {
+      display: block;
+    }
+    @media print {
+      html, body { background: #fff; }
+      .document {
+        display: block;
+        padding: 0;
+        font-size: 0;
+        line-height: 0;
+      }
+      .page {
+        display: block;
+        width: var(--page-width-pt) !important;
+        height: var(--page-height-pt) !important;
+        margin: 0;
+        box-shadow: none;
+        break-after: auto;
+        page-break-after: auto;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .page + .page {
+        break-before: page;
+        page-break-before: always;
+      }
+      body.mode-fidelity .element {
+        display: none !important;
+      }
+      body.mode-fidelity .element[data-scriptorium-has-replacement="true"] {
+        display: block !important;
+        overflow: hidden;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        text-align: left;
+        text-align-last: auto;
+        color: var(--text-color, #111) !important;
+        -webkit-text-fill-color: currentColor;
+        background: #fff;
+        padding: var(--replacement-padding-top, 0px) var(--replacement-padding-right, 0px) var(--replacement-padding-bottom, 0px) var(--replacement-padding-left, 0px);
+        font-size: calc(var(--font-size, 12px) * var(--replacement-fit-scale, 1));
+        outline: 0;
+        z-index: 2;
+      }
+      .element.text-fit .editable-text-proxy {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="mode-fidelity" data-document-id="0aa70ee9d7d9403f9275375293b8f7c6">
+  <main class="document">
+    <section
+      class="page"
+      data-page-index="4"
+      style="
+        width: 1191.000px;
+        height: 1684.000px;
+        --page-width-pt: 595.3200073242188pt;
+        --page-height-pt: 841.9199829101562pt;
+      "
+    >
+      <img class="page-bg" src="assets/page_0005/page_0005.png" alt="">
+      <div
+        id="p0005-n0001"
+        class="element editable-node"
+        data-id="p0005-n0001"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0001"
+        data-scriptorium-role="running-header"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-001"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="PUMA Annual Report 2024"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="PUMA Annual Report 2024 translated layout expansion PUMA Annual Report 2024"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding="1.2,1.8,1.2,1.8"
+        data-bbox-pdf="70.63780212402344,30.330204010009766,159.3545379638672,41.107704162597656"
+        data-bbox-px="141.31831837442994,60.666173258304674,318.8054363702967,82.22322217668719"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/0"
+        data-reading-order="1"
+        data-scriptorium-semantic-order="1"
+        data-scriptorium-visual-order="1"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="artifact-header"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="page-artifact"
+        data-scriptorium-reading-order-artifact="header"
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="page-artifact-header"
+        data-scriptorium-reading-order-stream-type="page-artifact-header"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="page-artifact-header"
+        data-scriptorium-translation-stream-type="page-artifact-header"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.84"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,page-edge-artifact,header-margin,external-structure-label,external-structure-header"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.518px;
+          top: 59.466px;
+          width: 181.087px;
+          height: 23.957px;
+          --font-size: 10.0px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 700;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.2px;
+          --replacement-padding-right: 1.8px;
+          --replacement-padding-bottom: 1.2px;
+          --replacement-padding-left: 1.8px;
+        "
+      ><span class="element-label">text #1</span>PUMA Annual Report 2024 translated layout expansion PUMA Annual Report 2024</div>
+      <div
+        id="p0005-n0002"
+        class="element editable-node"
+        data-id="p0005-n0002"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0002"
+        data-scriptorium-role="running-header"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-002"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="To our Shareholders"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="To our Shareholders translated layout expansion To our Shareholders"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding="1.2,1.8,1.2,1.8"
+        data-bbox-pdf="379.2659912109375,30.46520233154297,446.63848876953125,40.95020294189453"
+        data-bbox-px="758.7613215999675,60.93619556217743,893.54705633941,81.90818979706927"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/1"
+        data-reading-order="2"
+        data-scriptorium-semantic-order="2"
+        data-scriptorium-visual-order="2"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="artifact-header"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="page-artifact"
+        data-scriptorium-reading-order-artifact="header"
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="page-artifact-header"
+        data-scriptorium-reading-order-stream-type="page-artifact-header"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="page-artifact-header"
+        data-scriptorium-translation-stream-type="page-artifact-header"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.84"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,page-edge-artifact,header-margin,external-structure-label,external-structure-header"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 756.961px;
+          top: 59.736px;
+          width: 138.386px;
+          height: 23.372px;
+          --font-size: 10.0px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.2px;
+          --replacement-padding-right: 1.8px;
+          --replacement-padding-bottom: 1.2px;
+          --replacement-padding-left: 1.8px;
+        "
+      ><span class="element-label">text #2</span>To our Shareholders translated layout expansion To our Shareholders</div>
+      <div
+        id="p0005-n0003"
+        class="element editable-node"
+        data-id="p0005-n0003"
+        data-type="title"
+        data-scriptorium-element-id="p0005-n0003"
+        data-scriptorium-role="heading"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-003"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="CEO LETTER"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="CEO LETTER translated layout expansion"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding="3.2064,4.8096,3.2064,4.8096"
+        data-bbox-pdf="70.8239974975586,67.4949951171875,189.23995971679688,95.51091766357422"
+        data-bbox-px="141.6908217123861,135.00281984573456,378.5943513569126,191.03999027259428"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/2"
+        data-reading-order="3"
+        data-scriptorium-semantic-order="3"
+        data-scriptorium-visual-order="3"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-doc_title"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 136.881px;
+          top: 131.796px;
+          width: 246.523px;
+          height: 62.450px;
+          --font-size: 26.72px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 3.2064px;
+          --replacement-padding-right: 4.8096px;
+          --replacement-padding-bottom: 3.2064px;
+          --replacement-padding-left: 4.8096px;
+        "
+      ><span class="element-label">title #3</span>CEO LETTER translated layout expansion</div>
+      <div
+        id="p0005-n0004"
+        class="element editable-node"
+        data-id="p0005-n0004"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0004"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-004"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="↗ ARNE FREUNDT"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="↗ ARNE FREUNDT translated layout expansion"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-i0001,p0005-s0001"
+        data-scriptorium-replacement-mask-padding="1.44,2.16,1.44,2.16"
+        data-bbox-pdf="76.8239974975586,334.4119873046875,158.70799255371094,347.344970703125"
+        data-bbox-px="153.69444986545136,668.8875404459775,317.5119545890323,694.7559655755101"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/3"
+        data-reading-order="4"
+        data-scriptorium-semantic-order="4"
+        data-scriptorium-visual-order="4"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-image"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 151.534px;
+          top: 667.447px;
+          width: 168.137px;
+          height: 28.748px;
+          --font-size: 12.0px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 700;
+          --font-style: normal;
+          --text-color: rgb(255, 255, 255);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.44px;
+          --replacement-padding-right: 2.16px;
+          --replacement-padding-bottom: 1.44px;
+          --replacement-padding-left: 2.16px;
+        "
+      ><span class="element-label">text #4</span>↗ ARNE FREUNDT translated layout expansion</div>
+      <div
+        id="p0005-n0005"
+        class="element editable-node"
+        data-id="p0005-n0005"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0005"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-005"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="CHIEF EXECUTIVE OFFICER PUMA"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="CHIEF EXECUTIVE OFFICER PUMA translated layout expansion CHIEF EXECUTIVE OFFICER PUMA"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-i0001,p0005-s0001"
+        data-scriptorium-replacement-mask-padding="1.44,2.16,1.44,2.16"
+        data-bbox-pdf="90.98400115966797,348.97998046875,214.48399353027344,357.97998046875"
+        data-bbox-px="182.02301963311854,698.0262958933573,429.0976838536423,716.0280066350506"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/4"
+        data-reading-order="5"
+        data-scriptorium-semantic-order="5"
+        data-scriptorium-visual-order="5"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-image"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 179.863px;
+          top: 696.586px;
+          width: 251.395px;
+          height: 20.882px;
+          --font-size: 12.0px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(255, 255, 255);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.44px;
+          --replacement-padding-right: 2.16px;
+          --replacement-padding-bottom: 1.44px;
+          --replacement-padding-left: 2.16px;
+        "
+      ><span class="element-label">text #5</span>CHIEF EXECUTIVE OFFICER PUMA translated layout expansion CHIEF EXECUTIVE OFFICER PUMA</div>
+      <div
+        id="p0005-n0006"
+        class="element editable-node"
+        data-id="p0005-n0006"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0006"
+        data-scriptorium-role="heading"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-006"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="DEAR SHAREHOLDERS,"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="DEAR SHAREHOLDERS, translated layout expansion"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.662"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding="1.6896,2.5344,1.6896,2.5344"
+        data-bbox-pdf="70.8239974975586,398.12054443359375,185.43943786621094,412.8834228515625"
+        data-bbox-px="141.6908217123861,796.31676457989,370.9910095099071,825.8453275793412"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/5"
+        data-reading-order="6"
+        data-scriptorium-semantic-order="6"
+        data-scriptorium-visual-order="6"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-paragraph_title"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.156px;
+          top: 794.627px;
+          width: 234.369px;
+          height: 32.908px;
+          --font-size: 14.08px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.662;
+          --replacement-padding-top: 1.6896px;
+          --replacement-padding-right: 2.5344px;
+          --replacement-padding-bottom: 1.6896px;
+          --replacement-padding-left: 2.5344px;
+        "
+      ><span class="element-label">text #6</span>DEAR SHAREHOLDERS, translated layout expansion</div>
+      <div
+        id="p0005-n0007"
+        class="element editable-node"
+        data-id="p0005-n0007"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0007"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="In 2024, PUMA’s sales increased in a dynamic market environment by 4.4% currency-adjusted to € 8,817"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="In 2024, PUMA’s sales increased in a dynamic market environment by 4.4% currency-adjusted to € 8,817 translated layout expansion In 2024, PUMA’s sales increased in a dynamic mar"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7447"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0008"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,418.77447509765625,507.38787841796875,432.02752685546875"
+        data-bbox-px="141.6908217123861,837.6285518569392,1015.0825703169958,864.1371745445871"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/6"
+        data-reading-order="7"
+        data-scriptorium-semantic-order="7"
+        data-scriptorium-visual-order="7"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 836.112px;
+          width: 877.942px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7447;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #7</span>In 2024, PUMA’s sales increased in a dynamic market environment by 4.4% currency-adjusted to € 8,817 translated layout expansion In 2024, PUMA’s sales increased in a dynamic mar</div>
+      <div
+        id="p0005-n0008"
+        class="element editable-node"
+        data-id="p0005-n0008"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0008"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="million. We were able to improve our sales growth from quarter to quarter and grew by 9.8%, currency"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="million. We were able to improve our sales growth from quarter to quarter and grew by 9.8%, currency translated layout expansion million. We were able to improve our sales growt"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7361"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0007,p0005-n0009"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,431.8544616699219,502.86053466796875,445.1075134277344"
+        data-bbox-px="141.6908217123861,863.7910112768457,1006.0251451676452,890.2996339644935"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/7"
+        data-reading-order="8"
+        data-scriptorium-semantic-order="8"
+        data-scriptorium-visual-order="8"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 862.274px;
+          width: 868.885px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7361;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #8</span>million. We were able to improve our sales growth from quarter to quarter and grew by 9.8%, currency translated layout expansion million. We were able to improve our sales growt</div>
+      <div
+        id="p0005-n0009"
+        class="element editable-node"
+        data-id="p0005-n0009"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0009"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="adjusted, in the fourth quarter. For the full year 2024, sales in all regions, product areas and distribution"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="adjusted, in the fourth quarter. For the full year 2024, sales in all regions, product areas and distribution translated layout expansion adjusted, in the fourth quarter. For the full ye"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7322"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0008,p0005-n0010"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,444.814453125,507.5205993652344,458.0675048828125"
+        data-bbox-px="141.6908217123861,889.7134576534161,1015.3480924668456,916.2220803410638"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/8"
+        data-reading-order="9"
+        data-scriptorium-semantic-order="9"
+        data-scriptorium-visual-order="9"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 888.197px;
+          width: 878.208px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7322;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #9</span>adjusted, in the fourth quarter. For the full year 2024, sales in all regions, product areas and distribution translated layout expansion adjusted, in the fourth quarter. For the full ye</div>
+      <div
+        id="p0005-n0010"
+        class="element editable-node"
+        data-id="p0005-n0010"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0010"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="channels improved on a currency-adjusted basis compared to the previous year. This means PUMA has"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="channels improved on a currency-adjusted basis compared to the previous year. This means PUMA has translated layout expansion channels improved on a currency-adjusted basis c"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7371"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0009,p0005-n0011"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,457.77447509765625,503.9057312011719,471.02752685546875"
+        data-bbox-px="141.6908217123861,915.6359650709435,1008.116170256219,942.1445877585913"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/9"
+        data-reading-order="10"
+        data-scriptorium-semantic-order="10"
+        data-scriptorium-visual-order="10"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 914.119px;
+          width: 870.976px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7371;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #10</span>channels improved on a currency-adjusted basis compared to the previous year. This means PUMA has translated layout expansion channels improved on a currency-adjusted basis c</div>
+      <div
+        id="p0005-n0011"
+        class="element editable-node"
+        data-id="p0005-n0011"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0011"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="grown faster than the market, which recorded currency adjusted growth of 1.8% in 2024 according to"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="grown faster than the market, which recorded currency adjusted growth of 1.8% in 2024 according to translated layout expansion grown faster than the market, which recorded cur"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7109"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0010,p0005-n0012"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,470.8544616699219,494.22052001953125,484.1075134277344"
+        data-bbox-px="141.6908217123861,941.7984244908499,988.7398913214984,968.3070471784978"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/10"
+        data-reading-order="11"
+        data-scriptorium-semantic-order="11"
+        data-scriptorium-visual-order="11"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="5"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 940.282px;
+          width: 851.600px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7109;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #11</span>grown faster than the market, which recorded currency adjusted growth of 1.8% in 2024 according to translated layout expansion grown faster than the market, which recorded cur</div>
+      <div
+        id="p0005-n0012"
+        class="element editable-node"
+        data-id="p0005-n0012"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0012"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Euromonitor."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="Euromonitor. translated layout expansion"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0011"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,483.814453125,125.57096099853516,497.0675048828125"
+        data-bbox-px="141.6908217123861,967.7208708674203,251.21785377491238,994.2294935550682"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/11"
+        data-reading-order="12"
+        data-scriptorium-semantic-order="12"
+        data-scriptorium-visual-order="12"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-001"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="6"
+        data-scriptorium-translation-stream-id="external-block-body-005-001"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 966.204px;
+          width: 114.077px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #12</span>Euromonitor. translated layout expansion</div>
+      <div
+        id="p0005-n0013"
+        class="element editable-node"
+        data-id="p0005-n0013"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0013"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="Despite this solid sales growth and the significant progress we made in 2024 in implementing our brand"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="Despite this solid sales growth and the significant progress we made in 2024 in implementing our brand translated layout expansion Despite this solid sales growth and the signific"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7505"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0014"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,509.8544921875,506.96124267578125,523.1075439453125"
+        data-bbox-px="141.6908217123861,1019.8058987458114,1014.2290408493249,1046.3145214334593"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/12"
+        data-reading-order="13"
+        data-scriptorium-semantic-order="13"
+        data-scriptorium-visual-order="13"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="external-block-body-005-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1018.289px;
+          width: 877.089px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7505;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #13</span>Despite this solid sales growth and the significant progress we made in 2024 in implementing our brand translated layout expansion Despite this solid sales growth and the signific</div>
+      <div
+        id="p0005-n0014"
+        class="element editable-node"
+        data-id="p0005-n0014"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0014"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="elevation strategy, we are not satisfied with our profitability. The operating result (EBIT) of € 622 million"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="elevation strategy, we are not satisfied with our profitability. The operating result (EBIT) of € 622 million translated layout expansion elevation strategy, we are not satisfied with ou"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7275"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0013,p0005-n0015"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,522.844482421875,507.4205322265625,536.0975341796875"
+        data-bbox-px="141.6908217123861,1045.7883483832159,1015.1478976796859,1072.2969710708637"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/13"
+        data-reading-order="14"
+        data-scriptorium-semantic-order="14"
+        data-scriptorium-visual-order="14"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="external-block-body-005-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1044.272px;
+          width: 878.008px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7275;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #14</span>elevation strategy, we are not satisfied with our profitability. The operating result (EBIT) of € 622 million translated layout expansion elevation strategy, we are not satisfied with ou</div>
+      <div
+        id="p0005-n0015"
+        class="element editable-node"
+        data-id="p0005-n0015"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0015"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="in 2024 was at the level of the previous year. Although this is in line with our outlook, it is below our own"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="in 2024 was at the level of the previous year. Although this is in line with our outlook, it is below our own translated layout expansion in 2024 was at the level of the previous year. A"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.743"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0014,p0005-n0016"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,535.804443359375,508.74053955078125,549.0574951171875"
+        data-bbox-px="141.6908217123861,1071.710733718829,1017.7887105262266,1098.219356406477"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/14"
+        data-reading-order="15"
+        data-scriptorium-semantic-order="15"
+        data-scriptorium-visual-order="15"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="external-block-body-005-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1070.194px;
+          width: 880.648px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.743;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #15</span>in 2024 was at the level of the previous year. Although this is in line with our outlook, it is below our own translated layout expansion in 2024 was at the level of the previous year. A</div>
+      <div
+        id="p0005-n0016"
+        class="element editable-node"
+        data-id="p0005-n0016"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0016"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="expectations. At € 282 million, the net result was below the previous year's level."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="expectations. At € 282 million, the net result was below the previous year's level. translated layout expansion expectations. At € 282 million, the net result w"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.6651"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0015"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,548.8844604492188,410.7005310058594,562.1375122070312"
+        data-bbox-px="141.6908217123861,1097.8732541796926,821.6494094101298,1124.3818768673405"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/15"
+        data-reading-order="16"
+        data-scriptorium-semantic-order="16"
+        data-scriptorium-visual-order="16"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-002"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="external-block-body-005-002"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1096.357px;
+          width: 684.509px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.6651;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #16</span>expectations. At € 282 million, the net result was below the previous year's level. translated layout expansion expectations. At € 282 million, the net result w</div>
+      <div
+        id="p0005-n0017"
+        class="element editable-node"
+        data-id="p0005-n0017"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0017"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="In 2024, we made good progress in implementing our brand elevation strategy, which is the basis for our"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="In 2024, we made good progress in implementing our brand elevation strategy, which is the basis for our translated layout expansion In 2024, we made good progress in implementing o"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7403"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0018"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,574.804443359375,508.41168212890625,588.0574951171875"
+        data-bbox-px="141.6908217123861,1149.7181469328334,1017.1307968249662,1176.2267696204813"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/16"
+        data-reading-order="17"
+        data-scriptorium-semantic-order="17"
+        data-scriptorium-visual-order="17"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-003"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="external-block-body-005-003"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1148.201px;
+          width: 879.990px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7403;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #17</span>In 2024, we made good progress in implementing our brand elevation strategy, which is the basis for our translated layout expansion In 2024, we made good progress in implementing o</div>
+      <div
+        id="p0005-n0018"
+        class="element editable-node"
+        data-id="p0005-n0018"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0018"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="long-term growth and further market share gains. The strategy consists of three elements: a distinctive"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="long-term growth and further market share gains. The strategy consists of three elements: a distinctive translated layout expansion long-term growth and further market share gains."
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7158"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0017,p0005-n0019"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,587.8844604492188,506.8137512207031,601.1375122070312"
+        data-bbox-px="141.6908217123861,1175.880667393697,1013.9339687522395,1202.3892900813448"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/17"
+        data-reading-order="18"
+        data-scriptorium-semantic-order="18"
+        data-scriptorium-visual-order="18"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-003"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="external-block-body-005-003"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1174.364px;
+          width: 876.793px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7158;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #18</span>long-term growth and further market share gains. The strategy consists of three elements: a distinctive translated layout expansion long-term growth and further market share gains.</div>
+      <div
+        id="p0005-n0019"
+        class="element editable-node"
+        data-id="p0005-n0019"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0019"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="brand DNA, a strong performance business and strengthening our relevance in Sportstyle Prime."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="brand DNA, a strong performance business and strengthening our relevance in Sportstyle Prime. translated layout expansion brand DNA, a strong performance business and str"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7178"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0018"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,600.844482421875,479.7005310058594,614.0975341796875"
+        data-bbox-px="141.6908217123861,1201.8031748112244,959.6911331703801,1228.3117974988722"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/18"
+        data-reading-order="19"
+        data-scriptorium-semantic-order="19"
+        data-scriptorium-visual-order="19"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-003"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="external-block-body-005-003"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1200.286px;
+          width: 822.551px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7178;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #19</span>brand DNA, a strong performance business and strengthening our relevance in Sportstyle Prime. translated layout expansion brand DNA, a strong performance business and str</div>
+      <div
+        id="p0005-n0020"
+        class="element editable-node"
+        data-id="p0005-n0020"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0020"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="We used the Year of Sport 2024 and the many major sports events to launch our first brand campaign in"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="We used the Year of Sport 2024 and the many major sports events to launch our first brand campaign in translated layout expansion We used the Year of Sport 2024 and the many majo"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7293"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0021"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,626.8844604492188,508.0205383300781,640.1375122070312"
+        data-bbox-px="141.6908217123861,1253.8880806077013,1016.3482727057144,1280.396703295349"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/19"
+        data-reading-order="20"
+        data-scriptorium-semantic-order="20"
+        data-scriptorium-visual-order="20"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="external-block-body-005-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1252.371px;
+          width: 879.208px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7293;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #20</span>We used the Year of Sport 2024 and the many major sports events to launch our first brand campaign in translated layout expansion We used the Year of Sport 2024 and the many majo</div>
+      <div
+        id="p0005-n0021"
+        class="element editable-node"
+        data-id="p0005-n0021"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0021"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="10 years’ time. This campaign helped PUMA deepen its emotional connection with consumers and further"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="10 years’ time. This campaign helped PUMA deepen its emotional connection with consumers and further translated layout expansion 10 years’ time. This campaign helped PUMA deepen"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7474"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0020,p0005-n0022"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,639.844482421875,513.294189453125,653.0975341796875"
+        data-bbox-px="141.6908217123861,1279.8105880252288,1026.8987638873894,1306.3192107128766"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/20"
+        data-reading-order="21"
+        data-scriptorium-semantic-order="21"
+        data-scriptorium-visual-order="21"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="2"
+        data-scriptorium-translation-stream-id="external-block-body-005-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1278.294px;
+          width: 889.758px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7474;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #21</span>10 years’ time. This campaign helped PUMA deepen its emotional connection with consumers and further translated layout expansion 10 years’ time. This campaign helped PUMA deepen</div>
+      <div
+        id="p0005-n0022"
+        class="element editable-node"
+        data-id="p0005-n0022"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0022"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="increase its brand equity.  As a next step, we have further refined our brand DNA and will we present the"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="increase its brand equity. As a next step, we have further refined our brand DNA and will we present the translated layout expansion increase its brand equity. As a next step, we ha"
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.7416"
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0021,p0005-n0023"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,652.804443359375,508.9330139160156,666.0574951171875"
+        data-bbox-px="141.6908217123861,1305.732973360842,1018.1737756444385,1332.2415960484898"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/21"
+        data-reading-order="22"
+        data-scriptorium-semantic-order="22"
+        data-scriptorium-visual-order="22"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="3"
+        data-scriptorium-translation-stream-id="external-block-body-005-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1304.216px;
+          width: 881.033px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.7416;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #22</span>increase its brand equity. As a next step, we have further refined our brand DNA and will we present the translated layout expansion increase its brand equity. As a next step, we ha</div>
+      <div
+        id="p0005-n0023"
+        class="element editable-node"
+        data-id="p0005-n0023"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0023"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="next campaign to our consumers in 2025."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text="next campaign to our consumers in 2025. translated layout expansion next campaign to our consumers in 2025."
+        data-scriptorium-active-text-target="translated_text"
+        data-scriptorium-has-replacement="true"
+        data-scriptorium-replacement-policy="fidelity-replacement-fit-v1"
+        data-scriptorium-replacement-fit-scale="0.62"
+        data-scriptorium-replacement-overflow="true"
+        data-scriptorium-replacement-conflict="true"
+        data-scriptorium-replacement-conflict-ids="p0005-n0022"
+        data-scriptorium-replacement-mask-padding="1.5168,2.2752,1.5168,2.2752"
+        data-bbox-pdf="70.8239974975586,665.8844604492188,245.17051696777344,679.1375122070312"
+        data-bbox-px="141.6908217123861,1331.8954938217055,490.4892866293209,1358.4041165093533"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/22"
+        data-reading-order="23"
+        data-scriptorium-semantic-order="23"
+        data-scriptorium-visual-order="23"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="external-block-body-005-004"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="4"
+        data-scriptorium-translation-stream-id="external-block-body-005-004"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-text,external-structure-stream,external-structure-block-stream"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 139.416px;
+          top: 1330.379px;
+          width: 353.349px;
+          height: 29.542px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 0.62;
+          --replacement-padding-top: 1.5168px;
+          --replacement-padding-right: 2.2752px;
+          --replacement-padding-bottom: 1.5168px;
+          --replacement-padding-left: 2.2752px;
+        "
+      ><span class="element-label">text #23</span>next campaign to our consumers in 2025. translated layout expansion next campaign to our consumers in 2025.</div>
+      <div
+        id="p0005-n0024"
+        class="element editable-node"
+        data-id="p0005-n0024"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0024"
+        data-scriptorium-role="paragraph"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="."
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="70.8239974975586,691.824462890625,75.70452117919922,705.0775146484375"
+        data-bbox-px="141.6908217123861,1383.780429442707,151.45482029015997,1410.2890521303548"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/23"
+        data-reading-order="24"
+        data-scriptorium-semantic-order="24"
+        data-scriptorium-visual-order="24"
+        data-scriptorium-column-index="0"
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="single"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="body-main"
+        data-scriptorium-reading-order-stream-type="body"
+        data-scriptorium-reading-order-stream-index="5"
+        data-scriptorium-translation-stream-id="body-main"
+        data-scriptorium-translation-stream-type="body"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 141.691px;
+          top: 1383.780px;
+          width: 9.764px;
+          height: 26.509px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">text #24</span><span
+          class="text-run"
+          data-scriptorium-run-index="0"
+          data-scriptorium-run-style-id="style-007"
+          data-scriptorium-run-script="baseline"
+          data-bbox-pdf="70.8239974975586,691.824462890625,75.70452117919922,705.0775146484375"
+          data-bbox-px="141.6908217123861,1383.780429442707,151.45482029015997,1410.2890521303548"
+          style="
+            font-family: Arial, sans-serif;
+            font-size: 12.64px;
+            font-weight: 400;
+            font-style: normal;
+            color: rgb(0, 0, 0);
+            vertical-align: baseline;
+          "
+        >.</span></div>
+      <div
+        id="p0005-n0025"
+        class="element editable-node"
+        data-id="p0005-n0025"
+        data-type="text"
+        data-scriptorium-element-id="p0005-n0025"
+        data-scriptorium-role="page-number"
+        data-scriptorium-source="native-pdf"
+        data-scriptorium-style-id="style-007"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="true"
+        data-scriptorium-edit-target="edited_text"
+        data-scriptorium-translation-target="translated_text"
+        data-scriptorium-source-text="5"
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="519.5999755859375,787.4644775390625,526.8805541992188,800.717529296875"
+        data-bbox-px="1039.5141492125622,1575.078638224094,1054.07970894806,1601.5872609117419"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/24"
+        data-reading-order="25"
+        data-scriptorium-semantic-order="25"
+        data-scriptorium-visual-order="25"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span="artifact-footer"
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="page-artifact"
+        data-scriptorium-reading-order-artifact="footer"
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id="page-artifact-footer"
+        data-scriptorium-reading-order-stream-type="page-artifact-footer"
+        data-scriptorium-reading-order-stream-index="1"
+        data-scriptorium-translation-stream-id="page-artifact-footer"
+        data-scriptorium-translation-stream-type="page-artifact-footer"
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.74"
+        data-scriptorium-reading-order-evidence="single-column-visual-order,external-structure-label,external-structure-number"
+        contenteditable="true"
+        spellcheck="false"
+        style="
+          left: 1039.514px;
+          top: 1575.079px;
+          width: 14.566px;
+          height: 26.509px;
+          --font-size: 12.64px;
+          --line-height: 1.12;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: rgb(0, 0, 0);
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">text #25</span><span
+          class="text-run"
+          data-scriptorium-run-index="0"
+          data-scriptorium-run-style-id="style-007"
+          data-scriptorium-run-script="baseline"
+          data-bbox-pdf="519.5999755859375,787.4644775390625,526.8805541992188,800.717529296875"
+          data-bbox-px="1039.5141492125622,1575.078638224094,1054.07970894806,1601.5872609117419"
+          style="
+            font-family: Arial, sans-serif;
+            font-size: 12.64px;
+            font-weight: 400;
+            font-style: normal;
+            color: rgb(0, 0, 0);
+            vertical-align: baseline;
+          "
+        >5</span></div>
+      <div
+        id="p0005-i0001"
+        class="element editable-node"
+        data-id="p0005-i0001"
+        data-type="image"
+        data-scriptorium-element-id="p0005-i0001"
+        data-scriptorium-role="image"
+        data-scriptorium-source="native-image"
+        data-scriptorium-style-id="style-008"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="70.8499984741211,107.24996948242188,524.3200073242188,380.7499694824219"
+        data-bbox-px="141.74283938809825,214.52032529755473,1048.9570668553945,761.57231283679"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/25"
+        data-reading-order="26"
+        data-scriptorium-semantic-order="26"
+        data-scriptorium-visual-order="26"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 141.743px;
+          top: 214.520px;
+          width: 907.214px;
+          height: 547.052px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">image #26</span><img class="embedded-image" src="assets/page_0005/crops/image_0001.jpeg" alt="" draggable="false"></div>
+      <div
+        id="p0005-i0002"
+        class="element editable-node"
+        data-id="p0005-i0002"
+        data-type="image"
+        data-scriptorium-element-id="p0005-i0002"
+        data-scriptorium-role="image"
+        data-scriptorium-source="native-image"
+        data-scriptorium-style-id="style-008"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry=""
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="0.0,0.02899169921875,595.2750244140625,9.469970703125"
+        data-bbox-px="0.0,0.057988909249568135,1190.9100069788735,18.941741481107353"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/26"
+        data-reading-order="27"
+        data-scriptorium-semantic-order="27"
+        data-scriptorium-visual-order="27"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 0.000px;
+          top: 0.058px;
+          width: 1190.910px;
+          height: 18.884px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">image #27</span><img class="embedded-image" src="assets/page_0005/crops/image_0002.jpeg" alt="" draggable="false"></div>
+      <div
+        id="p0005-s0001"
+        class="element editable-node"
+        data-id="p0005-s0001"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0001"
+        data-scriptorium-role="figure-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-009"
+        data-scriptorium-layout-group="figure-001"
+        data-scriptorium-layout-kind="figure"
+        data-scriptorium-layout-confidence="0.76"
+        data-scriptorium-shape-geometry="rectangle"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="70.8499984741211,329.9499816894531,245.70001220703125,363.7499694824219"
+        data-bbox-px="141.74283938809825,659.9626810667263,491.54859728946576,727.5690814358138"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/27"
+        data-reading-order="28"
+        data-scriptorium-semantic-order="28"
+        data-scriptorium-visual-order="28"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 141.743px;
+          top: 659.963px;
+          width: 349.806px;
+          height: 67.606px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: rgb(0, 0, 0);
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #28</span><svg class="shape-vector" viewBox="0 0 174.85 33.8" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 0 L 174.85 0 L 174.85 33.8 L 0 33.8 Z" fill="rgb(0, 0, 0)" fill-opacity="1.0" fill-rule="evenodd" stroke="transparent" stroke-width="0.0" stroke-opacity="1" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+      <div
+        id="p0005-s0002"
+        class="element editable-node"
+        data-id="p0005-s0002"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0002"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="path"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="459.8534851074219,32.21007537841797,468.3744812011719,41.80607223510742"
+        data-bbox-px="919.985040020103,64.42627332560197,937.0321847872858,83.62009106919326"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/28"
+        data-reading-order="29"
+        data-scriptorium-semantic-order="29"
+        data-scriptorium-visual-order="29"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 919.985px;
+          top: 64.426px;
+          width: 17.047px;
+          height: 19.194px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: rgb(0, 0, 0);
+          --border-width: 1.823px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #29</span><svg class="shape-vector" viewBox="0 0 8.521 9.596" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 3.753 L 0 9.596 L 8.521 9.596 L 8.521 3.753 L 4.26 0 L 0 3.753" fill="transparent" fill-opacity="1" fill-rule="nonzero" stroke="rgb(0, 0, 0)" stroke-width="0.911" stroke-opacity="1.0" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+      <div
+        id="p0005-s0003"
+        class="element editable-node"
+        data-id="p0005-s0003"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0003"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="path"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="477.02490234375,32.30400085449219,485.07989501953125,40.3280029296875"
+        data-bbox-px="954.3382579144394,64.61414213133129,970.4531140570631,80.66367150337716"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/29"
+        data-reading-order="30"
+        data-scriptorium-semantic-order="30"
+        data-scriptorium-visual-order="30"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 954.338px;
+          top: 64.614px;
+          width: 16.115px;
+          height: 16.050px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: rgb(0, 0, 0);
+          --border-width: 1.823px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #30</span><svg class="shape-vector" viewBox="0 0 8.055 8.024" preserveAspectRatio="none" aria-hidden="true"><path d="M 6.623 6.597 C 8.055 5.17 8.055 2.853 6.623 1.426 C 5.191 0 2.864 0 1.432 1.426 C 0 2.853 0 5.17 1.432 6.597 C 2.864 8.024 5.191 8.024 6.623 6.597 M 9.78 9.741 L 6.358 6.333" fill="transparent" fill-opacity="1" fill-rule="nonzero" stroke="rgb(0, 0, 0)" stroke-width="0.911" stroke-opacity="1.0" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+      <div
+        id="p0005-s0004"
+        class="element editable-node"
+        data-id="p0005-s0004"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0004"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="horizontal-line"
+        data-scriptorium-shape-line="true"
+        data-scriptorium-shape-path="false"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="495.69409716129303,36.55060350894928,506.30309522151947,37.46160352230072"
+        data-bbox-px="991.6879366655926,73.1081546447139,1012.912347964184,74.93032783649517"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/30"
+        data-reading-order="31"
+        data-scriptorium-semantic-order="31"
+        data-scriptorium-visual-order="31"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 991.688px;
+          top: 73.108px;
+          width: 21.224px;
+          height: 1.822px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: rgb(0, 0, 0);
+          --border-width: 1.823px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #31</span><svg class="shape-line" viewBox="0 0 10.609 0.911" preserveAspectRatio="none" aria-hidden="true"><line x1="10.1535" y1="0.4555" x2="0.4555" y2="0.4555" stroke="rgb(0, 0, 0)" stroke-width="0.911" stroke-opacity="1.0" stroke-linecap="butt"></line></svg></div>
+      <div
+        id="p0005-s0005"
+        class="element editable-node"
+        data-id="p0005-s0005"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0005"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="path"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="496.1500244140625,33.62547302246094,499.79901123046875,40.386474609375"
+        data-bbox-px="992.6000668667748,67.25733765588372,999.9002470133711,80.78062597718997"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/31"
+        data-reading-order="32"
+        data-scriptorium-semantic-order="32"
+        data-scriptorium-visual-order="32"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 992.600px;
+          top: 67.257px;
+          width: 7.300px;
+          height: 13.523px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: rgb(0, 0, 0);
+          --border-width: 1.823px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #32</span><svg class="shape-vector" viewBox="0 0 3.649 6.761" preserveAspectRatio="none" aria-hidden="true"><path d="M 3.649 6.761 L 0 3.381 L 3.649 0" fill="transparent" fill-opacity="1" fill-rule="nonzero" stroke="rgb(0, 0, 0)" stroke-width="0.911" stroke-opacity="1.0" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+      <div
+        id="p0005-s0006"
+        class="element editable-node"
+        data-id="p0005-s0006"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0006"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-010"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="path"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="514.2467041015625,34.12506103515625,523.9536743164062,41.0860595703125"
+        data-bbox-px="1028.8043691624214,68.25660864416798,1048.2241793210653,82.1799288778606"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/32"
+        data-reading-order="33"
+        data-scriptorium-semantic-order="33"
+        data-scriptorium-visual-order="33"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 1028.804px;
+          top: 68.257px;
+          width: 19.420px;
+          height: 13.923px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: transparent;
+          --stroke-color: rgb(0, 0, 0);
+          --border-width: 1.823px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #33</span><svg class="shape-vector" viewBox="0 0 9.707 6.961" preserveAspectRatio="none" aria-hidden="true"><path d="M 0 0 L 9.707 0 M 0 3.48 L 9.707 3.48 M 0 6.961 L 9.707 6.961" fill="transparent" fill-opacity="1" fill-rule="nonzero" stroke="rgb(0, 0, 0)" stroke-width="0.911" stroke-opacity="1.0" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+      <div
+        id="p0005-s0007"
+        class="element editable-node"
+        data-id="p0005-s0007"
+        data-type="shape"
+        data-scriptorium-element-id="p0005-s0007"
+        data-scriptorium-role="graphic-shape"
+        data-scriptorium-source="native-drawing"
+        data-scriptorium-style-id="style-009"
+        data-scriptorium-layout-group=""
+        data-scriptorium-layout-kind=""
+        data-scriptorium-layout-confidence=""
+        data-scriptorium-shape-geometry="path"
+        data-scriptorium-shape-line="false"
+        data-scriptorium-shape-path="true"
+        data-scriptorium-text-fit="none"
+        data-scriptorium-editable="false"
+        data-scriptorium-edit-target=""
+        data-scriptorium-translation-target=""
+        data-scriptorium-source-text=""
+        data-scriptorium-edited-text=""
+        data-scriptorium-translated-text=""
+        data-scriptorium-active-text-target="edited_text"
+        data-scriptorium-has-replacement="false"
+        data-scriptorium-replacement-policy=""
+        data-scriptorium-replacement-fit-scale=""
+        data-scriptorium-replacement-overflow="false"
+        data-scriptorium-replacement-conflict="false"
+        data-scriptorium-replacement-conflict-ids=""
+        data-scriptorium-replacement-mask-padding=",,,"
+        data-bbox-pdf="370.8664245605469,34.3280029296875,375.9214172363281,39.38200378417969"
+        data-bbox-px="741.957109146938,68.66253100891495,752.070151213029,78.77149339456375"
+        data-xml-node="element"
+        data-ir-path="/pages/4/elements/33"
+        data-reading-order="34"
+        data-scriptorium-semantic-order="34"
+        data-scriptorium-visual-order="34"
+        data-scriptorium-column-index=""
+        data-scriptorium-column-count="1"
+        data-scriptorium-column-span=""
+        data-scriptorium-flow-segment="1"
+        data-scriptorium-reading-order-strategy="visual-yx"
+        data-scriptorium-reading-order-region=""
+        data-scriptorium-reading-order-scope="body"
+        data-scriptorium-reading-order-artifact=""
+        data-scriptorium-reading-order-sidebar=""
+        data-scriptorium-reading-order-caption=""
+        data-scriptorium-reading-order-stream-id=""
+        data-scriptorium-reading-order-stream-type=""
+        data-scriptorium-reading-order-stream-index=""
+        data-scriptorium-translation-stream-id=""
+        data-scriptorium-translation-stream-type=""
+        data-scriptorium-caption-target-id=""
+        data-scriptorium-caption-target-kind=""
+        data-scriptorium-caption-target-source=""
+        data-scriptorium-caption-target-position=""
+        data-scriptorium-caption-target-distance=""
+        data-scriptorium-caption-target-confidence=""
+        data-scriptorium-reading-order-confidence="0.0"
+        data-scriptorium-reading-order-evidence=""
+        contenteditable="false"
+        spellcheck="false"
+        style="
+          left: 741.957px;
+          top: 68.663px;
+          width: 10.113px;
+          height: 10.109px;
+          --font-size: 1px;
+          --line-height: 1;
+          --font-family: Arial, sans-serif;
+          --font-weight: 400;
+          --font-style: normal;
+          --text-color: #111;
+          --fill-color: rgb(0, 0, 0);
+          --stroke-color: transparent;
+          --border-width: 0px;
+          --replacement-fit-scale: 1;
+          --replacement-padding-top: 0px;
+          --replacement-padding-right: 0px;
+          --replacement-padding-bottom: 0px;
+          --replacement-padding-left: 0px;
+        "
+      ><span class="element-label">shape #34</span><svg class="shape-vector" viewBox="0 0 5.055 5.054" preserveAspectRatio="none" aria-hidden="true"><path d="M 5.055 4.237 L 4.552 4.732 L 4.552 0.869 L 0.375 5.054 L 0 4.679 L 4.185 0.494 L 0.323 0.494 L 0.818 0 L 5.055 0 L 5.055 4.237" fill="rgb(0, 0, 0)" fill-opacity="1.0" fill-rule="nonzero" stroke="transparent" stroke-width="0.0" stroke-opacity="1" stroke-linecap="butt" stroke-linejoin="miter"></path></svg></div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const format = "scriptorium-html-edits/v1";
+      const editableSelector = '[data-scriptorium-editable="true"]';
+      const editableTargets = new Set(["edited_text", "translated_text"]);
+      const originalStates = new Map();
+      const changed = new Map();
+      const documentId = document.body.dataset.documentId || "document";
+      const storageKey = `scriptorium-html-edits:${documentId}`;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\r\n?/g, "\n");
+      }
+
+      function ownerFor(node) {
+        return node instanceof Element ? node.closest(editableSelector) : null;
+      }
+
+      function proxyFor(owner) {
+        return owner.querySelector(":scope > .editable-text-proxy");
+      }
+
+      function readText(owner) {
+        const target = proxyFor(owner) || owner;
+        return normalizeText(target.innerText);
+      }
+
+      function remember(owner) {
+        if (originalStates.has(owner)) {
+          return originalStates.get(owner);
+        }
+        const state = {
+          html: owner.innerHTML,
+          replacement: owner.dataset.scriptoriumHasReplacement || "false",
+          liveReplacement: owner.dataset.scriptoriumLiveReplacement || "false",
+          activeTarget: owner.dataset.scriptoriumActiveTextTarget || "edited_text",
+          editedText: owner.dataset.scriptoriumEditedText || "",
+          translatedText: owner.dataset.scriptoriumTranslatedText || "",
+        };
+        originalStates.set(owner, state);
+        return state;
+      }
+
+      function targetFor(owner) {
+        const target = owner.dataset.scriptoriumActiveTextTarget || owner.dataset.scriptoriumEditTarget;
+        return editableTargets.has(target) ? target : "edited_text";
+      }
+
+      function updateTextMetadata(owner, target, text) {
+        if (target === "translated_text") {
+          owner.dataset.scriptoriumTranslatedText = text;
+        } else {
+          owner.dataset.scriptoriumEditedText = text;
+        }
+      }
+
+      function patchEntry(owner, text, target) {
+        return {
+          element_id: owner.dataset.scriptoriumElementId || owner.id,
+          target,
+          text,
+          source_text: owner.dataset.scriptoriumSourceText || "",
+        };
+      }
+
+      function emitEdit(entry) {
+        const detail = { format, document_id: documentId, edit: entry };
+        window.dispatchEvent(new CustomEvent("scriptorium:edit", { detail }));
+        if (window.parent !== window) {
+          const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
+          window.parent.postMessage({ type: "scriptorium:edit", detail }, targetOrigin);
+        }
+      }
+
+      function collect() {
+        return {
+          format,
+          document_id: documentId,
+          edits: Array.from(changed.values()),
+        };
+      }
+
+      function persist() {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(collect()));
+        } catch (error) {
+          // Static exports remain usable when browser storage is unavailable.
+        }
+      }
+
+      function record(owner, text, { persistEdit = true, emit = true } = {}) {
+        const sourceText = owner.dataset.scriptoriumSourceText || "";
+        const target = targetFor(owner);
+        const id = owner.dataset.scriptoriumElementId || owner.id;
+        if (!id) {
+          return;
+        }
+        const isSourceText = text === sourceText;
+        owner.dataset.scriptoriumHasReplacement = isSourceText ? "false" : "true";
+        owner.dataset.scriptoriumLiveReplacement = isSourceText ? "false" : "true";
+        updateTextMetadata(owner, target, text);
+        if (isSourceText) {
+          changed.delete(id);
+        } else {
+          const entry = patchEntry(owner, text, target);
+          changed.set(id, entry);
+          if (emit) {
+            emitEdit(entry);
+          }
+        }
+        if (persistEdit) {
+          persist();
+        }
+      }
+
+      function setText(owner, text) {
+        const proxy = proxyFor(owner);
+        if (proxy) {
+          proxy.textContent = text;
+          return;
+        }
+        const label = owner.querySelector(":scope > .element-label");
+        const fragment = document.createDocumentFragment();
+        if (label) {
+          fragment.append(label.cloneNode(true));
+        }
+        fragment.append(document.createTextNode(text));
+        owner.replaceChildren(fragment);
+      }
+
+      function apply(patch, { persistEdit = true } = {}) {
+        if (!patch || patch.format !== format || !Array.isArray(patch.edits)) {
+          throw new Error("Expected a Scriptorium HTML edit patch.");
+        }
+        if (patch.document_id && patch.document_id !== documentId) {
+          throw new Error("Edit patch belongs to a different document.");
+        }
+        let applied = 0;
+        for (const entry of patch.edits) {
+          if (!entry || !editableTargets.has(entry.target) || typeof entry.element_id !== "string" || typeof entry.text !== "string") {
+            continue;
+          }
+          const owner = document.getElementById(entry.element_id);
+          if (!owner || owner.dataset.scriptoriumEditable !== "true") {
+            continue;
+          }
+          remember(owner);
+          owner.dataset.scriptoriumActiveTextTarget = entry.target;
+          setText(owner, entry.text);
+          record(owner, entry.text, { persistEdit: false, emit: false });
+          applied += 1;
+        }
+        if (persistEdit) {
+          persist();
+        }
+        return applied;
+      }
+
+      function reset() {
+        for (const owner of document.querySelectorAll(editableSelector)) {
+          const original = originalStates.get(owner);
+          if (!original) {
+            continue;
+          }
+          owner.innerHTML = original.html;
+          owner.dataset.scriptoriumHasReplacement = original.replacement;
+          owner.dataset.scriptoriumLiveReplacement = original.liveReplacement;
+          owner.dataset.scriptoriumActiveTextTarget = original.activeTarget;
+          owner.dataset.scriptoriumEditedText = original.editedText;
+          owner.dataset.scriptoriumTranslatedText = original.translatedText;
+        }
+        changed.clear();
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch (error) {
+          // Storage is optional for standalone static exports.
+        }
+      }
+
+      function download(filename = `${documentId}.scriptorium-edits.json`) {
+        const blob = new Blob([JSON.stringify(collect(), null, 2) + "\n"], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      }
+
+      for (const owner of document.querySelectorAll(editableSelector)) {
+        remember(owner);
+      }
+      document.addEventListener("input", (event) => {
+        const owner = ownerFor(event.target);
+        if (owner) {
+          record(owner, readText(owner));
+        }
+      });
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) {
+          apply(JSON.parse(saved), { persistEdit: false });
+        }
+      } catch (error) {
+        // A malformed or unavailable session cache must not prevent viewing the export.
+      }
+      window.ScriptoriumEdits = Object.freeze({ apply, collect, download, format, reset });
+    })();
+  </script>
+</body>
+</html>
