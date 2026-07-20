@@ -10,20 +10,31 @@ from pathlib import Path
 from typing import Any
 
 from .paragraph_graph_benchmark import (
+    PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
+    PARAGRAPH_GRAPH_FEATURE_VERSION,
     PARAGRAPH_GRAPH_PROPOSAL_SCHEMA,
     _co_membership_pairs,
     _precision_recall_f1,
+)
+from .graph_provenance import (
+    DOCUMENT_OOF_MODE,
+    FROZEN_FIT_MODEL_MODE,
+    validate_benchmark_provenance,
 )
 from .provider_hierarchy_benchmark import (
     PROVIDER_HIERARCHY_CORPUS_SCHEMA,
     PROVIDER_HIERARCHY_LABEL_SCHEMA,
 )
 from .relation_order import merge_relation_edge_path_cover
-from .successor_graph_benchmark import SUCCESSOR_GRAPH_PROPOSAL_SCHEMA
+from .successor_graph_benchmark import (
+    SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+    SUCCESSOR_GRAPH_FEATURE_VERSION,
+    SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
+)
 
 
-JOINT_GRAPH_BENCHMARK_SCHEMA = "scriptorium-joint-graph-benchmark/v1"
-JOINT_GRAPH_PROPOSAL_SCHEMA = "scriptorium-joint-graph-proposal/v1"
+JOINT_GRAPH_BENCHMARK_SCHEMA = "scriptorium-joint-graph-benchmark/v2"
+JOINT_GRAPH_PROPOSAL_SCHEMA = "scriptorium-joint-graph-proposal/v2"
 JOINT_GRAPH_DECODER_VERSION = "successor-package-geometry-chain-or-protected-v4"
 
 
@@ -58,6 +69,10 @@ class _PageProposals:
     successor_threshold: float
     paragraph_proposal_path: Path
     successor_proposal_path: Path
+    paragraph_proposal_sha256: str
+    successor_proposal_sha256: str
+    paragraph_prediction_provenance: dict[str, Any]
+    successor_prediction_provenance: dict[str, Any]
     corpus: Path
     labels_relative: str
     labels_sha256: str
@@ -510,6 +525,14 @@ def propose_joint_graph(
         successor_threshold=float(successor.proposal.get("threshold") or 0.0),
         paragraph_proposal_path=paragraph.proposal_path,
         successor_proposal_path=successor.proposal_path,
+        paragraph_proposal_sha256=_file_sha256(paragraph.proposal_path),
+        successor_proposal_sha256=_file_sha256(successor.proposal_path),
+        paragraph_prediction_provenance=dict(
+            paragraph.proposal.get("prediction_provenance") or {}
+        ),
+        successor_prediction_provenance=dict(
+            successor.proposal.get("prediction_provenance") or {}
+        ),
         corpus=root,
         labels_relative="",
         labels_sha256="",
@@ -553,6 +576,7 @@ def benchmark_joint_graph(
 
     train_corpus = Path(train_corpus_dir).resolve()
     train_manifest_path, train_manifest = _corpus_manifest(train_corpus)
+    train_manifest_sha256 = _file_sha256(train_manifest_path)
     paragraph_root = Path(paragraph_proposals_dir).resolve()
     successor_root = Path(successor_proposals_dir).resolve()
 
@@ -562,6 +586,8 @@ def benchmark_joint_graph(
         paragraph_root=paragraph_root,
         successor_root=successor_root,
         split="fit",
+        train_manifest_sha256=train_manifest_sha256,
+        source_manifest_sha256=train_manifest_sha256,
     )
     calibration_pages = _load_pages(
         train_corpus,
@@ -569,6 +595,8 @@ def benchmark_joint_graph(
         paragraph_root=paragraph_root,
         successor_root=successor_root,
         split="calibration",
+        train_manifest_sha256=train_manifest_sha256,
+        source_manifest_sha256=train_manifest_sha256,
     )
     if not fit_pages or not calibration_pages:
         raise ValueError("training corpus requires fit and calibration pages")
@@ -578,6 +606,7 @@ def benchmark_joint_graph(
     if test_corpus_dir is not None:
         test_corpus = Path(test_corpus_dir).resolve()
         test_manifest_path, test_manifest = _corpus_manifest(test_corpus)
+        test_manifest_sha256 = _file_sha256(test_manifest_path)
         test_pages = _load_pages(
             test_corpus,
             test_manifest,
@@ -585,6 +614,8 @@ def benchmark_joint_graph(
             successor_root=successor_root,
             split="test",
             accept_all_partitions=True,
+            train_manifest_sha256=train_manifest_sha256,
+            source_manifest_sha256=test_manifest_sha256,
         )
         if not test_pages:
             raise ValueError("test corpus contains no pages")
@@ -645,7 +676,7 @@ def benchmark_joint_graph(
         "schema": JOINT_GRAPH_BENCHMARK_SCHEMA,
         "decoder_version": JOINT_GRAPH_DECODER_VERSION,
         "train_corpus_manifest": str(train_manifest_path),
-        "train_corpus_manifest_sha256": _file_sha256(train_manifest_path),
+        "train_corpus_manifest_sha256": train_manifest_sha256,
         "test_corpus_manifest": (
             str(test_manifest_path) if test_manifest_path is not None else None
         ),
@@ -683,6 +714,10 @@ def benchmark_joint_graph(
             "joint_predictions_written_before_evaluation_labels": True,
             "decoder_uses_labels": False,
             "retraining_disabled": True,
+            "fit_proposals_verified_document_oof": True,
+            "evaluation_proposals_verified_frozen_fit_model": True,
+            "proposal_input_hashes_verified": True,
+            "proposal_corpus_provenance_verified": True,
         },
         "runtime_reorder": False,
         "promotion_decision": "benchmark-only-joint-paragraph-successor-decode",
@@ -692,6 +727,11 @@ def benchmark_joint_graph(
             "fit": fit_proposal_paths,
             "calibration": calibration_proposal_paths,
             "test": test_proposal_paths,
+        },
+        "proposal_inputs": {
+            "fit": _proposal_input_records(fit_pages),
+            "calibration": _proposal_input_records(calibration_pages),
+            "test": _proposal_input_records(test_pages),
         },
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -717,6 +757,8 @@ def _load_pages(
     successor_root: Path,
     split: str,
     accept_all_partitions: bool = False,
+    train_manifest_sha256: str,
+    source_manifest_sha256: str,
 ) -> list[_PageProposals]:
     pages: list[_PageProposals] = []
     for raw_sample in manifest["samples"]:
@@ -733,6 +775,9 @@ def _load_pages(
         labels_sha256 = str(raw_sample.get("labels_sha256") or "").strip()
         if not labels_relative or not labels_sha256:
             raise ValueError("joint graph samples require hashed labels")
+        input_sha256 = str(raw_sample.get("input_sha256") or "").strip()
+        input_path = _confined_path(corpus, raw_sample.get("input"), label="sample input")
+        _verify_hash(input_path, input_sha256, label="sample input")
 
         paragraph_path = _proposal_path(paragraph_root, sample_id, "paragraph-graph")
         successor_path = _proposal_path(successor_root, sample_id, "successor-graph")
@@ -755,6 +800,34 @@ def _load_pages(
             raise ValueError("paragraph proposal id does not match sample id")
         if str(successor_payload.get("id") or "") != sample_id:
             raise ValueError("successor proposal id does not match sample id")
+        if str(paragraph_payload.get("partition") or "") != split:
+            raise ValueError("paragraph proposal partition does not match benchmark split")
+        if str(successor_payload.get("partition") or "") != split:
+            raise ValueError("successor proposal partition does not match benchmark split")
+
+        expected_prediction_mode = (
+            DOCUMENT_OOF_MODE if split == "fit" else FROZEN_FIT_MODEL_MODE
+        )
+        paragraph_provenance = validate_benchmark_provenance(
+            paragraph_payload.get("prediction_provenance"),
+            expected_producer_schema=PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
+            expected_head="paragraph-comembership",
+            expected_feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            expected_prediction_mode=expected_prediction_mode,
+            expected_input_sha256=input_sha256,
+            expected_train_corpus_manifest_sha256=train_manifest_sha256,
+            expected_source_corpus_manifest_sha256=source_manifest_sha256,
+        )
+        successor_provenance = validate_benchmark_provenance(
+            successor_payload.get("prediction_provenance"),
+            expected_producer_schema=SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+            expected_head="directed-successor",
+            expected_feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            expected_prediction_mode=expected_prediction_mode,
+            expected_input_sha256=input_sha256,
+            expected_train_corpus_manifest_sha256=train_manifest_sha256,
+            expected_source_corpus_manifest_sha256=source_manifest_sha256,
+        )
 
         membership, element_ids = _membership_from_paragraph_proposal(paragraph_payload)
         base_rank = _base_rank_from_proposals(
@@ -791,6 +864,10 @@ def _load_pages(
                 successor_threshold=float(successor_payload.get("threshold") or 0.0),
                 paragraph_proposal_path=paragraph_path,
                 successor_proposal_path=successor_path,
+                paragraph_proposal_sha256=_file_sha256(paragraph_path),
+                successor_proposal_sha256=_file_sha256(successor_path),
+                paragraph_prediction_provenance=paragraph_provenance,
+                successor_prediction_provenance=successor_provenance,
                 corpus=corpus,
                 labels_relative=labels_relative,
                 labels_sha256=labels_sha256,
@@ -1041,6 +1118,10 @@ def _write_proposals(
             "successor_threshold": round(page.successor_threshold, 8),
             "paragraph_proposal": str(page.paragraph_proposal_path),
             "successor_proposal": str(page.successor_proposal_path),
+            "paragraph_proposal_sha256": page.paragraph_proposal_sha256,
+            "successor_proposal_sha256": page.successor_proposal_sha256,
+            "paragraph_prediction_provenance": page.paragraph_prediction_provenance,
+            "successor_prediction_provenance": page.successor_prediction_provenance,
             "decoder_diagnostics": decoded.diagnostics,
             "paragraph_streams": [
                 {
@@ -1105,6 +1186,29 @@ def _write_proposals(
         _write_json(path, proposal)
         paths.append(str(path))
     return paths
+
+
+def _proposal_input_records(pages: Sequence[_PageProposals]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": page.sample_id,
+            "paragraph": {
+                "path": str(page.paragraph_proposal_path),
+                "sha256": page.paragraph_proposal_sha256,
+                "prediction_mode": page.paragraph_prediction_provenance[
+                    "prediction_mode"
+                ],
+            },
+            "successor": {
+                "path": str(page.successor_proposal_path),
+                "sha256": page.successor_proposal_sha256,
+                "prediction_mode": page.successor_prediction_provenance[
+                    "prediction_mode"
+                ],
+            },
+        }
+        for page in pages
+    ]
 
 
 def _score_pages(

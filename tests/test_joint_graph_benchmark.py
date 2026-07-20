@@ -201,6 +201,10 @@ def test_joint_graph_is_answer_separated_and_scores_independent_test(tmp_path: P
         "joint_predictions_written_before_evaluation_labels": True,
         "decoder_uses_labels": False,
         "retraining_disabled": True,
+        "fit_proposals_verified_document_oof": True,
+        "evaluation_proposals_verified_frozen_fit_model": True,
+        "proposal_input_hashes_verified": True,
+        "proposal_corpus_provenance_verified": True,
     }
     assert set(report["summary"]) == {"fit", "calibration", "test"}
     assert set(report["summary_by_layout_stratum"]["test"]) == {"multicolumn"}
@@ -216,6 +220,8 @@ def test_joint_graph_is_answer_separated_and_scores_independent_test(tmp_path: P
         proposal = json.loads(text)
         assert proposal["schema"] == JOINT_GRAPH_PROPOSAL_SCHEMA
         assert proposal["runtime_reorder"] is False
+        assert len(proposal["paragraph_proposal_sha256"]) == 64
+        assert len(proposal["successor_proposal_sha256"]) == 64
         assert "oracle_region_id" not in text
         assert "oracle_scope" not in text
         edges = [(edge["source"], edge["target"]) for edge in proposal["successor_edges"]]
@@ -280,6 +286,48 @@ def test_joint_graph_rejects_runtime_reorder_proposals(tmp_path: Path) -> None:
     poisoned.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="runtime_reorder=false"):
+        benchmark_joint_graph(
+            train,
+            paragraph_proposals_dir=paragraph.proposals_dir,
+            successor_proposals_dir=successor.proposals_dir,
+            output=tmp_path / "joint-report.json",
+        )
+
+
+def test_joint_graph_rejects_full_fit_predictions_as_fit_oof(tmp_path: Path) -> None:
+    train = _write_corpus(
+        tmp_path / "train",
+        [(f"fit-{index}", "fit") for index in range(4)]
+        + [(f"calibration-{index}", "calibration") for index in range(2)],
+    )
+    paragraph = benchmark_paragraph_graph(
+        train,
+        output=tmp_path / "paragraph-report.json",
+        proposals_dir=tmp_path / "paragraph-proposals",
+        cross_validation_folds=2,
+        minimum_edge_precision=0.5,
+        minimum_selected_edges=1,
+    )
+    successor = benchmark_successor_graph(
+        train,
+        output=tmp_path / "successor-report.json",
+        proposals_dir=tmp_path / "successor-proposals",
+        cross_validation_folds=2,
+        nearest_candidates=3,
+        minimum_edge_precision=0.5,
+        minimum_selected_edges=1,
+    )
+    poisoned = next(
+        path
+        for path in paragraph.proposals_dir.glob("*.paragraph-graph.json")
+        if json.loads(path.read_text(encoding="utf-8"))["partition"] == "fit"
+    )
+    payload = json.loads(poisoned.read_text(encoding="utf-8"))
+    payload["prediction_provenance"]["prediction_mode"] = "serialized-fit-model"
+    payload["prediction_provenance"]["fit_model_training"] = "all-fit-documents"
+    poisoned.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="prediction_mode.*document-oof"):
         benchmark_joint_graph(
             train,
             paragraph_proposals_dir=paragraph.proposals_dir,

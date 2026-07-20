@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scriptorium.hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
+from scriptorium.graph_provenance import DOCUMENT_OOF_MODE, FROZEN_FIT_MODEL_MODE
 from scriptorium.paragraph_graph_benchmark import (
     PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
     PARAGRAPH_GRAPH_PROPOSAL_SCHEMA,
@@ -72,7 +73,17 @@ def test_paragraph_graph_is_answer_separated_and_scores_independent_test(
         proposal = json.loads(proposal_text)
         assert proposal["schema"] == PARAGRAPH_GRAPH_PROPOSAL_SCHEMA
         assert proposal["runtime_reorder"] is False
+        assert proposal["prediction_provenance"]["prediction_mode"] == (
+            DOCUMENT_OOF_MODE if proposal["partition"] == "fit" else FROZEN_FIT_MODEL_MODE
+        )
+        assert len(proposal["prediction_provenance"]["input_sha256"]) == 64
         assert "oracle_region_id" not in proposal_text
+
+    assert all(
+        len(artifact["sha256"]) == 64
+        for artifacts in report["proposal_artifacts"].values()
+        for artifact in artifacts
+    )
 
 
 def test_paragraph_graph_candidates_ignore_provider_regions() -> None:

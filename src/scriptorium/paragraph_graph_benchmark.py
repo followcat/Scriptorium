@@ -17,6 +17,14 @@ from .graph_model import (
     predict_feature_batches,
     save_graph_model,
 )
+from .graph_provenance import (
+    DOCUMENT_OOF_MODE,
+    FROZEN_FIT_MODEL_MODE,
+    benchmark_prediction_provenance,
+    input_payload_sha256,
+    proposal_provenance_for_input,
+    serialized_prediction_provenance,
+)
 from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
 from .models import BBox
 from .provider_hierarchy_benchmark import (
@@ -30,7 +38,7 @@ from .reading_order import (
 
 
 PARAGRAPH_GRAPH_BENCHMARK_SCHEMA = "scriptorium-paragraph-graph-benchmark/v1"
-PARAGRAPH_GRAPH_PROPOSAL_SCHEMA = "scriptorium-paragraph-graph-proposal/v1"
+PARAGRAPH_GRAPH_PROPOSAL_SCHEMA = "scriptorium-paragraph-graph-proposal/v2"
 PARAGRAPH_GRAPH_MODEL_SCHEMA = "scriptorium-paragraph-graph-model/v1"
 PARAGRAPH_GRAPH_FEATURE_VERSION = "fine-line-local-relation-text-v1"
 
@@ -83,6 +91,7 @@ def benchmark_paragraph_graph(
 
     train_corpus = Path(train_corpus_dir).resolve()
     train_manifest_path, train_manifest = _corpus_manifest(train_corpus)
+    train_manifest_sha256 = _file_sha256(train_manifest_path)
     fit_pages = _load_answer_free_pages(
         train_corpus,
         train_manifest,
@@ -164,14 +173,54 @@ def benchmark_paragraph_graph(
         else report_path.parent / f"{report_path.stem}.proposals"
     )
     proposal_root.mkdir(parents=True, exist_ok=True)
-    fit_proposals = _write_proposals(fit_pages, oof_scores, threshold, proposal_root)
+    fit_proposals = _write_proposals(
+        fit_pages,
+        oof_scores,
+        threshold,
+        proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
+            head="paragraph-comembership",
+            feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            prediction_mode=DOCUMENT_OOF_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
+    )
     calibration_proposals = _write_proposals(
         calibration_pages,
         calibration_scores,
         threshold,
         proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
+            head="paragraph-comembership",
+            feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            prediction_mode=FROZEN_FIT_MODEL_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
     )
-    test_proposals = _write_proposals(test_pages, test_scores, threshold, proposal_root)
+    test_source_sha256 = (
+        _file_sha256(test_manifest_path) if test_manifest_path is not None else ""
+    )
+    test_proposals = _write_proposals(
+        test_pages,
+        test_scores,
+        threshold,
+        proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
+            head="paragraph-comembership",
+            feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            prediction_mode=FROZEN_FIT_MODEL_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=test_source_sha256 or train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
+    )
 
     model_path: Path | None = None
     model_manifest_path: Path | None = None
@@ -186,7 +235,7 @@ def benchmark_paragraph_graph(
             estimator=estimator,
             estimator_parameters=estimator_parameters,
             feature_count=feature_count,
-            train_corpus_manifest_sha256=_file_sha256(train_manifest_path),
+            train_corpus_manifest_sha256=train_manifest_sha256,
             fit_document_count=len({page.sample["document_id"] for page in fit_pages}),
             fit_page_count=len(fit_pages),
             fit_candidate_count=fit_candidate_count,
@@ -252,7 +301,7 @@ def benchmark_paragraph_graph(
         "schema": PARAGRAPH_GRAPH_BENCHMARK_SCHEMA,
         "feature_version": PARAGRAPH_GRAPH_FEATURE_VERSION,
         "train_corpus_manifest": str(train_manifest_path),
-        "train_corpus_manifest_sha256": _file_sha256(train_manifest_path),
+        "train_corpus_manifest_sha256": train_manifest_sha256,
         "test_corpus_manifest": (
             str(test_manifest_path) if test_manifest_path is not None else None
         ),
@@ -305,6 +354,11 @@ def benchmark_paragraph_graph(
             "calibration": calibration_proposals,
             "test": test_proposals,
         },
+        "proposal_artifacts": {
+            "fit_oof": _proposal_artifacts(fit_proposals),
+            "calibration": _proposal_artifacts(calibration_proposals),
+            "test": _proposal_artifacts(test_proposals),
+        },
         "model": (
             {
                 "path": str(model_path),
@@ -344,6 +398,7 @@ def predict_paragraph_graph(
 ) -> ParagraphGraphPredictionResult:
     """Score one answer-free hierarchy input with a serialized paragraph model."""
 
+    input_sha256 = input_payload_sha256(hierarchy_input)
     payload = (
         dict(hierarchy_input)
         if isinstance(hierarchy_input, Mapping)
@@ -366,6 +421,7 @@ def predict_paragraph_graph(
         "id": sample_id or str(payload.get("id") or Path(str(output)).stem),
         "document_id": str(payload.get("document_id") or payload.get("id") or "document"),
         "layout_stratum": str(payload.get("layout_stratum") or "unspecified"),
+        "input_sha256": input_sha256,
     }
     page = _Page(
         corpus=Path("."),
@@ -379,7 +435,19 @@ def predict_paragraph_graph(
     proposal_path = Path(output)
     proposal_root = proposal_path.parent
     proposal_root.mkdir(parents=True, exist_ok=True)
-    written = _write_proposals([page], scores, threshold, proposal_root)
+    written = _write_proposals(
+        [page],
+        scores,
+        threshold,
+        proposal_root,
+        prediction_provenance=serialized_prediction_provenance(
+            producer_schema=PARAGRAPH_GRAPH_MODEL_SCHEMA,
+            head="paragraph-comembership",
+            feature_version=PARAGRAPH_GRAPH_FEATURE_VERSION,
+            model_manifest=artifact.manifest,
+            model_manifest_path=artifact.manifest_path,
+        ),
+    )
     if not written:
         raise ValueError("paragraph graph prediction produced no proposal")
     generated = Path(written[0])
@@ -760,7 +828,14 @@ def _score_pages_by_layout_stratum(
     }
 
 
-def _write_proposals(pages: list[_Page], scores: Any, threshold: float, root: Path) -> list[str]:
+def _write_proposals(
+    pages: list[_Page],
+    scores: Any,
+    threshold: float,
+    root: Path,
+    *,
+    prediction_provenance: Mapping[str, Any],
+) -> list[str]:
     expected_score_count = sum(len(page.candidates) for page in pages)
     if len(scores) != expected_score_count:
         raise ValueError("paragraph graph score count does not match candidates")
@@ -785,6 +860,10 @@ def _write_proposals(pages: list[_Page], scores: Any, threshold: float, root: Pa
             "feature_version": PARAGRAPH_GRAPH_FEATURE_VERSION,
             "threshold": round(threshold, 8),
             "runtime_reorder": False,
+            "prediction_provenance": proposal_provenance_for_input(
+                prediction_provenance,
+                input_sha256=page.sample.get("input_sha256"),
+            ),
             "candidate_edges": [
                 {
                     "source": candidate.source,
@@ -811,6 +890,13 @@ def _write_proposals(pages: list[_Page], scores: Any, threshold: float, root: Pa
         _write_json(path, proposal)
         paths.append(str(path))
     return paths
+
+
+def _proposal_artifacts(paths: list[str]) -> list[dict[str, str]]:
+    return [
+        {"path": path, "sha256": _file_sha256(Path(path))}
+        for path in paths
+    ]
 
 
 def _load_labels(page: _Page) -> dict[str, str]:

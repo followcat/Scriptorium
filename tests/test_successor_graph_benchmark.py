@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scriptorium.hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
+from scriptorium.graph_provenance import DOCUMENT_OOF_MODE, FROZEN_FIT_MODEL_MODE
 from scriptorium.provider_hierarchy_benchmark import (
     PROVIDER_HIERARCHY_CORPUS_SCHEMA,
     PROVIDER_HIERARCHY_LABEL_SCHEMA,
@@ -70,6 +71,10 @@ def test_successor_graph_is_answer_separated_and_scores_independent_test(
         proposal = json.loads(proposal_text)
         assert proposal["schema"] == SUCCESSOR_GRAPH_PROPOSAL_SCHEMA
         assert proposal["runtime_reorder"] is False
+        assert proposal["prediction_provenance"]["prediction_mode"] == (
+            DOCUMENT_OOF_MODE if proposal["partition"] == "fit" else FROZEN_FIT_MODEL_MODE
+        )
+        assert len(proposal["prediction_provenance"]["input_sha256"]) == 64
         assert "oracle_scope" not in proposal_text
         assert "oracle_region_id" not in proposal_text
         edges = [
@@ -78,6 +83,12 @@ def test_successor_graph_is_answer_separated_and_scores_independent_test(
         ]
         merged = merge_relation_edge_path_cover(edges)
         assert list(merged.selected_edges) == edges
+
+    assert all(
+        len(artifact["sha256"]) == 64
+        for artifacts in report["proposal_artifacts"].values()
+        for artifact in artifacts
+    )
 
 
 def test_successor_graph_candidates_ignore_provider_regions_and_input_order() -> None:

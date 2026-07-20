@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from scriptorium.graph_model import load_graph_model, save_graph_model
+from scriptorium.graph_provenance import SERIALIZED_FIT_MODEL_MODE
 from scriptorium.hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
 from scriptorium.paragraph_graph_benchmark import (
     PARAGRAPH_GRAPH_FEATURE_VERSION,
@@ -222,6 +223,12 @@ def test_serialized_models_predict_hierarchy_inputs_and_joint_decode(
     assert successor_prediction.proposal["successor_edges"] or successor_prediction.proposal[
         "candidate_edges"
     ]
+    for proposal in (paragraph_prediction.proposal, successor_prediction.proposal):
+        provenance = proposal["prediction_provenance"]
+        assert provenance["prediction_mode"] == SERIALIZED_FIT_MODEL_MODE
+        assert len(provenance["input_sha256"]) == 64
+        assert len(provenance["model_sha256"]) == 64
+        assert len(provenance["model_manifest_sha256"]) == 64
     for path in (
         paragraph_prediction.proposal_path,
         successor_prediction.proposal_path,
@@ -255,12 +262,14 @@ def test_serialized_models_predict_hierarchy_inputs_and_joint_decode(
             paragraph.model_path,
             output=paragraph_predict_dir / f"{sample_id}.paragraph-graph.json",
             sample_id=sample_id,
+            partition=sample["partition"],
         )
         predict_successor_graph(
             input_path,
             successor.model_path,
             output=successor_predict_dir / f"{sample_id}.successor-graph.json",
             sample_id=sample_id,
+            partition=sample["partition"],
         )
     # Joint loader expects hashed proposal filenames from the benchmark writers.
     # Copy/rename predicted proposals into the expected hashed layout by re-running
@@ -282,24 +291,16 @@ def test_serialized_models_predict_hierarchy_inputs_and_joint_decode(
             dst = joint_proposal_path(dst_dir, sample_id, suffix)
             dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
-    joint = benchmark_joint_graph(
-        predict_train,
-        paragraph_proposals_dir=paragraph_joint_dir,
-        successor_proposals_dir=successor_joint_dir,
-        output=tmp_path / "joint-from-predict-report.json",
-        proposals_dir=tmp_path / "joint-from-predict-proposals",
-    )
-    assert joint.report["runtime_reorder"] is False
-    assert set(joint.report["summary"]) == {"fit", "calibration"}
-    for summary in joint.report["summary"].values():
-        assert summary["selected_relation"]["f1"] > 0.0
-        assert summary["segmentation_pairwise"]["f1"] > 0.0
-    joint_proposals = list(joint.proposals_dir.glob("*.joint-graph.json"))
-    assert joint_proposals
-    for path in joint_proposals:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        assert payload["schema"] == JOINT_GRAPH_PROPOSAL_SCHEMA
-        assert payload["runtime_reorder"] is False
+    # A model trained on all fit documents is valid for operator prediction,
+    # but must never be relabelled as document-OOF fit benchmark evidence.
+    with pytest.raises(ValueError, match="producer_schema.*paragraph-graph-benchmark"):
+        benchmark_joint_graph(
+            predict_train,
+            paragraph_proposals_dir=paragraph_joint_dir,
+            successor_proposals_dir=successor_joint_dir,
+            output=tmp_path / "joint-from-predict-report.json",
+            proposals_dir=tmp_path / "joint-from-predict-proposals",
+        )
 
 
 def test_propose_joint_graph_packages_single_page_hierarchy(tmp_path: Path) -> None:

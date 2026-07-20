@@ -16,6 +16,14 @@ from .graph_model import (
     predict_feature_batches,
     save_graph_model,
 )
+from .graph_provenance import (
+    DOCUMENT_OOF_MODE,
+    FROZEN_FIT_MODEL_MODE,
+    benchmark_prediction_provenance,
+    input_payload_sha256,
+    proposal_provenance_for_input,
+    serialized_prediction_provenance,
+)
 from .hierarchical_order_benchmark import HIERARCHY_INPUT_SCHEMA
 from .models import BBox
 from .provider_hierarchy_benchmark import (
@@ -30,7 +38,7 @@ from .relation_order import merge_relation_edge_path_cover
 
 
 SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
-SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v1"
+SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v2"
 SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
 SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-relation-text-v1"
 DEFAULT_NEAREST_CANDIDATES = 20
@@ -119,6 +127,7 @@ def benchmark_successor_graph(
 
     train_corpus = Path(train_corpus_dir).resolve()
     train_manifest_path, train_manifest = _corpus_manifest(train_corpus)
+    train_manifest_sha256 = _file_sha256(train_manifest_path)
     fit_pages = _load_answer_free_pages(
         train_corpus,
         train_manifest,
@@ -213,18 +222,53 @@ def benchmark_successor_graph(
         else report_path.parent / f"{report_path.stem}.proposals"
     )
     proposal_root.mkdir(parents=True, exist_ok=True)
-    fit_proposals = _write_proposals(fit_pages, fit_ranked, threshold, proposal_root)
+    fit_proposals = _write_proposals(
+        fit_pages,
+        fit_ranked,
+        threshold,
+        proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+            head="directed-successor",
+            feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            prediction_mode=DOCUMENT_OOF_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
+    )
     calibration_proposals = _write_proposals(
         calibration_pages,
         calibration_ranked,
         threshold,
         proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+            head="directed-successor",
+            feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            prediction_mode=FROZEN_FIT_MODEL_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
+    )
+    test_source_sha256 = (
+        _file_sha256(test_manifest_path) if test_manifest_path is not None else ""
     )
     test_proposals = _write_proposals(
         test_pages,
         test_ranked,
         threshold,
         proposal_root,
+        prediction_provenance=benchmark_prediction_provenance(
+            producer_schema=SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+            head="directed-successor",
+            feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            prediction_mode=FROZEN_FIT_MODEL_MODE,
+            train_corpus_manifest_sha256=train_manifest_sha256,
+            source_corpus_manifest_sha256=test_source_sha256 or train_manifest_sha256,
+            cross_validation_folds=cross_validation_folds,
+        ),
     )
 
     model_path: Path | None = None
@@ -241,7 +285,7 @@ def benchmark_successor_graph(
             estimator_parameters=estimator_parameters,
             feature_count=feature_count,
             nearest_candidates=nearest_candidates,
-            train_corpus_manifest_sha256=_file_sha256(train_manifest_path),
+            train_corpus_manifest_sha256=train_manifest_sha256,
             fit_document_count=len({page.sample["document_id"] for page in fit_pages}),
             fit_page_count=len(fit_pages),
             fit_candidate_count=fit_candidate_count,
@@ -309,7 +353,7 @@ def benchmark_successor_graph(
         "schema": SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
         "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
         "train_corpus_manifest": str(train_manifest_path),
-        "train_corpus_manifest_sha256": _file_sha256(train_manifest_path),
+        "train_corpus_manifest_sha256": train_manifest_sha256,
         "test_corpus_manifest": (
             str(test_manifest_path) if test_manifest_path is not None else None
         ),
@@ -367,6 +411,11 @@ def benchmark_successor_graph(
             "calibration": calibration_proposals,
             "test": test_proposals,
         },
+        "proposal_artifacts": {
+            "fit_oof": _proposal_artifacts(fit_proposals),
+            "calibration": _proposal_artifacts(calibration_proposals),
+            "test": _proposal_artifacts(test_proposals),
+        },
         "model": (
             {
                 "path": str(model_path),
@@ -406,6 +455,7 @@ def predict_successor_graph(
 ) -> SuccessorGraphPredictionResult:
     """Score one answer-free hierarchy input with a serialized successor model."""
 
+    input_sha256 = input_payload_sha256(hierarchy_input)
     payload = (
         dict(hierarchy_input)
         if isinstance(hierarchy_input, Mapping)
@@ -434,6 +484,7 @@ def predict_successor_graph(
         "id": sample_id or str(payload.get("id") or Path(str(output)).stem),
         "document_id": str(payload.get("document_id") or payload.get("id") or "document"),
         "layout_stratum": str(payload.get("layout_stratum") or "unspecified"),
+        "input_sha256": input_sha256,
     }
     page = _Page(
         corpus=Path("."),
@@ -451,7 +502,19 @@ def predict_successor_graph(
     proposal_root = proposal_path.parent
     proposal_root.mkdir(parents=True, exist_ok=True)
     # Write through the shared proposal helper into a temp root, then move/rename.
-    written = _write_proposals([page], ranked, threshold, proposal_root)
+    written = _write_proposals(
+        [page],
+        ranked,
+        threshold,
+        proposal_root,
+        prediction_provenance=serialized_prediction_provenance(
+            producer_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
+            head="directed-successor",
+            feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+            model_manifest=artifact.manifest,
+            model_manifest_path=artifact.manifest_path,
+        ),
+    )
     if not written:
         raise ValueError("successor graph prediction produced no proposal")
     generated = Path(written[0])
@@ -951,6 +1014,8 @@ def _write_proposals(
     ranked_pages: list[_RankedPage],
     threshold: float,
     root: Path,
+    *,
+    prediction_provenance: Mapping[str, Any],
 ) -> list[str]:
     if len(pages) != len(ranked_pages):
         raise ValueError("successor graph pages and rankings must align")
@@ -968,6 +1033,10 @@ def _write_proposals(
             "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
             "threshold": round(threshold, 8),
             "runtime_reorder": False,
+            "prediction_provenance": proposal_provenance_for_input(
+                prediction_provenance,
+                input_sha256=page.sample.get("input_sha256"),
+            ),
             "decoder_diagnostics": decoded.diagnostics,
             "candidate_edges": [
                 {
@@ -1016,6 +1085,13 @@ def _write_proposals(
         _write_json(path, proposal)
         paths.append(str(path))
     return paths
+
+
+def _proposal_artifacts(paths: list[str]) -> list[dict[str, str]]:
+    return [
+        {"path": path, "sha256": _file_sha256(Path(path))}
+        for path in paths
+    ]
 
 
 def _edge_chains(page: _Page, edges: frozenset[tuple[str, str]]) -> list[list[str]]:
