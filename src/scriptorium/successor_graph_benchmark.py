@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from .graph_model import (
@@ -40,9 +41,71 @@ from .relation_order import merge_relation_edge_path_cover
 SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
 SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v2"
 SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
-SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-relation-text-v2"
+SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-topology-text-v3"
 DEFAULT_NEAREST_CANDIDATES = 20
 PROPOSAL_ALTERNATIVES_PER_SOURCE = 3
+
+SUCCESSOR_GRAPH_FEATURE_NAMES = (
+    "source_x0",
+    "source_y0",
+    "source_x1",
+    "source_y1",
+    "target_x0",
+    "target_y0",
+    "target_x1",
+    "target_y1",
+    "signed_center_dx",
+    "signed_center_dy",
+    "absolute_center_dx",
+    "absolute_center_dy",
+    "source_width",
+    "source_height",
+    "target_width",
+    "target_height",
+    "horizontal_overlap",
+    "vertical_overlap",
+    "target_not_above",
+    "target_not_left",
+    "source_text_length",
+    "target_text_length",
+    "source_terminal_punctuation",
+    "target_starts_lowercase",
+    "target_starts_digit",
+    "base_rank_delta",
+    "base_immediate_successor",
+    "base_immediate_predecessor",
+    "relation_forward_score",
+    "relation_reverse_score",
+    "relation_forward_selected",
+    "relation_reverse_selected",
+    "source_role_text",
+    "source_role_figure",
+    "source_role_table",
+    "target_role_text",
+    "target_role_figure",
+    "target_role_table",
+    "same_role",
+    "source_column_index",
+    "target_column_index",
+    "column_index_delta",
+    "same_column",
+    "same_flow_segment",
+    "flow_segment_delta",
+    "same_xy_region",
+    "source_distance_rank",
+    "target_distance_rank",
+    "mutual_geometry_nearest",
+    "aligned_forward_eligible",
+    "aligned_forward_rank",
+    "aligned_predecessor_eligible",
+    "aligned_predecessor_rank",
+    "mutual_aligned_nearest",
+    "relative_vertical_gap",
+    "relative_left_edge_delta",
+    "vertical_corridor",
+    "vertical_blocker_fraction",
+    "vertical_corridor_unblocked",
+)
 
 
 @dataclass(frozen=True)
@@ -99,6 +162,15 @@ class _DecodedPage:
     selected_edges: frozenset[tuple[str, str]]
     top_threshold_edges: frozenset[tuple[str, str]]
     diagnostics: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _PageTopologyContext:
+    distance_rank_by_source: dict[tuple[str, str], int]
+    distance_rank_by_target: dict[tuple[str, str], int]
+    aligned_rank_by_source: dict[tuple[str, str], int]
+    aligned_rank_by_target: dict[tuple[str, str], int]
+    median_height: float
 
 
 def benchmark_successor_graph(
@@ -204,6 +276,8 @@ def benchmark_successor_graph(
     )
 
     feature_count = int(x_fit.shape[1])
+    if feature_count != len(SUCCESSOR_GRAPH_FEATURE_NAMES):
+        raise ValueError("successor graph feature names do not match generated features")
     fit_candidate_count = int(x_fit.shape[0])
     fit_positive_candidate_count = int(y_fit.sum())
     estimator = estimator_class(**estimator_parameters).fit(x_fit, y_fit)
@@ -296,6 +370,7 @@ def benchmark_successor_graph(
             random_seed=random_seed,
             scikit_learn_version=sklearn_version,
             extra_manifest={
+                "feature_names": list(SUCCESSOR_GRAPH_FEATURE_NAMES),
                 "decoder_policy": (
                     "top-one-per-source then score-ordered degree-one acyclic path cover"
                 ),
@@ -380,6 +455,7 @@ def benchmark_successor_graph(
         "calibration_page_count": len(calibration_pages),
         "test_page_count": len(test_pages),
         "feature_count": feature_count,
+        "feature_names": list(SUCCESSOR_GRAPH_FEATURE_NAMES),
         "fit_candidate_count": fit_candidate_count,
         "fit_positive_candidate_count": fit_positive_candidate_count,
         "prediction_policy": "page-wise feature batches",
@@ -624,6 +700,10 @@ def _page_candidates(
         page_height=height,
         texts=[""] * len(elements),
     )
+    assignment_by_id = {
+        str(elements[assignment.item_index]["id"]): assignment
+        for assignment in assignments
+    }
     base_indices = [
         assignment.item_index
         for assignment in sorted(assignments, key=lambda item: item.semantic_order)
@@ -652,6 +732,7 @@ def _page_candidates(
         (str(elements[edge.source]["id"]), str(elements[edge.target]["id"]))
         for edge in relation.selected_edge_diagnostics
     }
+    topology = _page_topology_context(elements, width=width, height=height)
 
     candidate_pairs = set(base_edges)
     candidate_pairs.update((target, source) for source, target in base_edges)
@@ -705,6 +786,18 @@ def _page_candidates(
             float(target_role == "figure"),
             float(target_role == "table"),
             float(source_role == target_role),
+            *_assignment_pair_features(
+                assignment_by_id[source_id],
+                assignment_by_id[target_id],
+                page_size=page_size,
+            ),
+            *_topology_pair_features(
+                source,
+                target,
+                elements=elements,
+                context=topology,
+                page_size=page_size,
+            ),
         )
         target_box = target["_bbox"]
         source_box = source["_bbox"]
@@ -724,6 +817,177 @@ def _page_candidates(
         )
         candidates.append(_Candidate(source_id, target_id, features, tie_priority))
     return tuple(base_ids), base_rank, base_edges, tuple(candidates)
+
+
+def _assignment_pair_features(
+    source: Any,
+    target: Any,
+    *,
+    page_size: int,
+) -> tuple[float, ...]:
+    column_count = max(int(source.column_count), int(target.column_count), 1)
+    source_column = source.column_index
+    target_column = target.column_index
+    source_column_feature = (
+        float(source_column) / column_count if source_column is not None else -1.0
+    )
+    target_column_feature = (
+        float(target_column) / column_count if target_column is not None else -1.0
+    )
+    comparable_columns = source_column is not None and target_column is not None
+    column_delta = (
+        float(target_column - source_column) / column_count
+        if comparable_columns
+        else 0.0
+    )
+    source_region = str(source.region_path or "")
+    target_region = str(target.region_path or "")
+    return (
+        source_column_feature,
+        target_column_feature,
+        column_delta,
+        float(comparable_columns and source_column == target_column),
+        float(source.flow_segment_index == target.flow_segment_index),
+        (target.flow_segment_index - source.flow_segment_index) / max(page_size, 1),
+        float(bool(source_region) and source_region == target_region),
+    )
+
+
+def _page_topology_context(
+    elements: list[dict[str, Any]],
+    *,
+    width: float,
+    height: float,
+) -> _PageTopologyContext:
+    distance_by_source: dict[str, list[tuple[float, float, float, str]]] = defaultdict(list)
+    distance_by_target: dict[str, list[tuple[float, float, float, str]]] = defaultdict(list)
+    aligned_by_source: dict[str, list[tuple[float, float, float, str]]] = defaultdict(list)
+    aligned_by_target: dict[str, list[tuple[float, float, float, str]]] = defaultdict(list)
+    heights = [element["_bbox"].height for element in elements if element["_bbox"].height > 0]
+    median_height = float(median(heights)) if heights else 1.0
+
+    for source in elements:
+        source_id = str(source["id"])
+        source_box = source["_bbox"]
+        source_center_x = (source_box.x0 + source_box.x1) / 2
+        source_center_y = (source_box.y0 + source_box.y1) / 2
+        for target in elements:
+            target_id = str(target["id"])
+            if source_id == target_id:
+                continue
+            target_box = target["_bbox"]
+            target_center_x = (target_box.x0 + target_box.x1) / 2
+            target_center_y = (target_box.y0 + target_box.y1) / 2
+            distance = (
+                abs(target_center_x - source_center_x) / width
+                + abs(target_center_y - source_center_y) / height
+            )
+            distance_by_source[source_id].append(
+                (distance, target_box.y0, target_box.x0, target_id)
+            )
+            distance_by_target[target_id].append(
+                (distance, source_box.y0, source_box.x0, source_id)
+            )
+            horizontal_overlap = _box_horizontal_overlap(source_box, target_box)
+            if target_center_y > source_center_y and horizontal_overlap >= 0.25:
+                vertical_gap = max(0.0, target_box.y0 - source_box.y1)
+                aligned_by_source[source_id].append(
+                    (vertical_gap, abs(target_center_x - source_center_x), target_box.x0, target_id)
+                )
+                aligned_by_target[target_id].append(
+                    (vertical_gap, abs(target_center_x - source_center_x), source_box.x0, source_id)
+                )
+
+    return _PageTopologyContext(
+        distance_rank_by_source=_rank_pairs(distance_by_source, reverse_pair=False),
+        distance_rank_by_target=_rank_pairs(distance_by_target, reverse_pair=True),
+        aligned_rank_by_source=_rank_pairs(aligned_by_source, reverse_pair=False),
+        aligned_rank_by_target=_rank_pairs(aligned_by_target, reverse_pair=True),
+        median_height=max(median_height, 1.0),
+    )
+
+
+def _rank_pairs(
+    values: Mapping[str, list[tuple[float, float, float, str]]],
+    *,
+    reverse_pair: bool,
+) -> dict[tuple[str, str], int]:
+    ranks: dict[tuple[str, str], int] = {}
+    for anchor, alternatives in values.items():
+        for rank, (*_sort_values, other) in enumerate(sorted(alternatives)):
+            pair = (str(other), str(anchor)) if reverse_pair else (str(anchor), str(other))
+            ranks[pair] = rank
+    return ranks
+
+
+def _topology_pair_features(
+    source: Mapping[str, Any],
+    target: Mapping[str, Any],
+    *,
+    elements: list[dict[str, Any]],
+    context: _PageTopologyContext,
+    page_size: int,
+) -> tuple[float, ...]:
+    source_id = str(source["id"])
+    target_id = str(target["id"])
+    edge = (source_id, target_id)
+    denominator = max(page_size - 2, 1)
+    source_distance_rank = context.distance_rank_by_source[edge]
+    target_distance_rank = context.distance_rank_by_target[edge]
+    aligned_source_rank = context.aligned_rank_by_source.get(edge)
+    aligned_target_rank = context.aligned_rank_by_target.get(edge)
+    source_box = source["_bbox"]
+    target_box = target["_bbox"]
+    vertical_gap = (target_box.y0 - source_box.y1) / context.median_height
+    left_edge_delta = (target_box.x0 - source_box.x0) / context.median_height
+    corridor, blocker_count = _vertical_corridor_blockers(source, target, elements)
+    return (
+        source_distance_rank / denominator,
+        target_distance_rank / denominator,
+        float(source_distance_rank == 0 and target_distance_rank == 0),
+        float(aligned_source_rank is not None),
+        (aligned_source_rank / denominator if aligned_source_rank is not None else 1.0),
+        float(aligned_target_rank is not None),
+        (aligned_target_rank / denominator if aligned_target_rank is not None else 1.0),
+        float(aligned_source_rank == 0 and aligned_target_rank == 0),
+        max(-1.0, min(1.0, vertical_gap / 8.0)),
+        max(-1.0, min(1.0, left_edge_delta / 20.0)),
+        float(corridor),
+        blocker_count / max(page_size, 1),
+        float(corridor and blocker_count == 0),
+    )
+
+
+def _vertical_corridor_blockers(
+    source: Mapping[str, Any],
+    target: Mapping[str, Any],
+    elements: list[dict[str, Any]],
+) -> tuple[bool, int]:
+    source_box = source["_bbox"]
+    target_box = target["_bbox"]
+    source_center_y = (source_box.y0 + source_box.y1) / 2
+    target_center_y = (target_box.y0 + target_box.y1) / 2
+    if target_center_y <= source_center_y or _box_horizontal_overlap(source_box, target_box) < 0.25:
+        return False, 0
+    blockers = 0
+    for other in elements:
+        if other["id"] in {source["id"], target["id"]}:
+            continue
+        other_box = other["_bbox"]
+        other_center_y = (other_box.y0 + other_box.y1) / 2
+        if not source_center_y < other_center_y < target_center_y:
+            continue
+        if (
+            _box_horizontal_overlap(source_box, other_box) >= 0.1
+            and _box_horizontal_overlap(target_box, other_box) >= 0.1
+        ):
+            blockers += 1
+    return True, blockers
+
+
+def _box_horizontal_overlap(source: BBox, target: BBox) -> float:
+    overlap = max(0.0, min(source.x1, target.x1) - max(source.x0, target.x0))
+    return _ratio(overlap, min(max(source.width, 1.0), max(target.width, 1.0)))
 
 
 def _pair_features(

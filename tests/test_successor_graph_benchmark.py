@@ -15,6 +15,7 @@ from scriptorium.provider_hierarchy_benchmark import (
 from scriptorium.relation_order import merge_relation_edge_path_cover
 from scriptorium.successor_graph_benchmark import (
     SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
+    SUCCESSOR_GRAPH_FEATURE_NAMES,
     SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
     _page_candidates,
     benchmark_successor_graph,
@@ -105,6 +106,46 @@ def test_successor_graph_candidates_ignore_provider_regions_and_input_order() ->
     altered["elements"].reverse()
 
     assert _page_candidates(payload) == _page_candidates(altered)
+
+
+def test_successor_graph_candidates_include_local_topology_context() -> None:
+    payload = {
+        "schema": HIERARCHY_INPUT_SCHEMA,
+        "id": "topology",
+        "page_index": 0,
+        "width": 600,
+        "height": 800,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": [
+            {"id": "a", "box": [50, 50, 250, 62], "role": "text", "text": "A"},
+            {"id": "b", "box": [50, 80, 250, 92], "role": "text", "text": "B"},
+            {"id": "c", "box": [50, 120, 250, 132], "role": "text", "text": "C"},
+            {"id": "d", "box": [330, 50, 550, 62], "role": "text", "text": "D"},
+        ],
+        "regions": [],
+    }
+
+    _ids, _rank, _base_edges, candidates = _page_candidates(
+        payload,
+        nearest_candidates=3,
+    )
+    by_edge = {(candidate.source, candidate.target): candidate for candidate in candidates}
+    feature_index = {
+        name: index for index, name in enumerate(SUCCESSOR_GRAPH_FEATURE_NAMES)
+    }
+    nearest = by_edge[("a", "b")].features
+    blocked = by_edge[("a", "c")].features
+
+    assert len(nearest) == len(SUCCESSOR_GRAPH_FEATURE_NAMES)
+    assert nearest[feature_index["source_distance_rank"]] < blocked[
+        feature_index["source_distance_rank"]
+    ]
+    assert nearest[feature_index["mutual_aligned_nearest"]] == 1.0
+    assert nearest[feature_index["vertical_blocker_fraction"]] == 0.0
+    assert nearest[feature_index["vertical_corridor_unblocked"]] == 1.0
+    assert blocked[feature_index["vertical_blocker_fraction"]] > 0.0
+    assert blocked[feature_index["vertical_corridor_unblocked"]] == 0.0
 
 
 def test_successor_graph_rejects_non_degree_one_labels(tmp_path: Path) -> None:
