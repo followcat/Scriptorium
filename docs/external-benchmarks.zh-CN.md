@@ -1909,7 +1909,7 @@ successor 独立 test F1 `0.98585545`，本 64-train 独立 test 达到 `0.98125
 且未用 test label 选阈值。训练量仍只有冻结 train 协议的一半，因此这是强独立
 test 链路证据，但不能替代完整 128/32 freeze。所有输出保持 `runtime_reorder: false`。
 
-### 冻结协议 Graph Hierarchy 重放（128/32）
+### 冻结协议 Graph Hierarchy 重放（128/32，Feature v2）
 
 原始 paragraph 与 successor head 随后在冻结 train 协议下，用 fine-only
 graph-hierarchy 物化重放：
@@ -1938,43 +1938,54 @@ scriptorium benchmark-paragraph-graph outputs/graph-hierarchy-128-smoke \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
   --cross-validation-folds 5 \
   --minimum-edge-precision 0.97 --minimum-selected-edges 100 \
-  --model-output outputs/graph-hierarchy-128-smoke/models/paragraph.joblib \
-  -o outputs/graph-hierarchy-128-smoke/paragraph-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/paragraph-proposals \
+  --model-output outputs/graph-provenance-v2-replay/models/paragraph.joblib \
+  -o outputs/graph-provenance-v2-replay/paragraph-report.json
 scriptorium benchmark-successor-graph outputs/graph-hierarchy-128-smoke \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
   --cross-validation-folds 5 --nearest-candidates 20 \
   --minimum-edge-precision 0.97 --minimum-selected-edges 1000 \
-  --model-output outputs/graph-hierarchy-128-smoke/models/successor.joblib \
-  -o outputs/graph-hierarchy-128-smoke/successor-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/successor-proposals \
+  --model-output outputs/graph-provenance-v2-replay/models/successor.joblib \
+  -o outputs/graph-provenance-v2-replay/successor-report.json
 scriptorium benchmark-joint-graph outputs/graph-hierarchy-128-smoke \
-  --paragraph-proposals-dir outputs/graph-hierarchy-128-smoke/paragraph-proposals \
-  --successor-proposals-dir outputs/graph-hierarchy-128-smoke/successor-proposals \
+  --paragraph-proposals-dir outputs/graph-provenance-v2-replay/paragraph-proposals \
+  --successor-proposals-dir outputs/graph-provenance-v2-replay/successor-proposals \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
-  -o outputs/graph-hierarchy-128-smoke/joint-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/joint-proposals \
+  -o outputs/graph-provenance-v2-replay/joint-report.json
 ```
 
+Proposal schema v2 让这套协议可以被程序校验。Fit proposal 必须是 document-OOF
+预测，calibration 与独立 test proposal 必须来自冻结的 all-fit model。Joint evaluation
+会校验 input、training、source-corpus hash，并保留两个 source proposal 文件的 hash；
+serialized full-fit model prediction 不能进入 fit 评分。旧版本运行产生的 proposal v1
+产物会被有意拒绝，必须通过上述命令重新生成（或写入新的输出目录）。
+
 Train 分区匹配冻结协议（`fit/calibration = 102/26` 页、64 篇文档，跳过 3 篇
-audited unaligned document）。冻结阈值与 fit-OOF 数字复现原始 head：
+audited unaligned document）。当前 feature-v2 重放记录如下：
 
 | Head | Fit OOF | Calibration | 独立 test |
 |---|---:|---:|---:|
-| Paragraph pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
-| Paragraph selected-edge precision | 0.99202393 | 0.99648712 | 0.99504132 |
-| Paragraph frozen threshold | 0.94971959 | — | — |
-| Successor relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
-| Successor multicolumn F1 | 0.99177650 | 0.99482840 | 0.99019964 |
-| Successor graphical-multicolumn F1 | 0.97438163 | 0.97919217 | 0.97350070 |
-| Successor cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
-| Successor frozen threshold | 0.52131309 | — | — |
-| Joint relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
-| Joint segmentation pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
-| Joint within-region recall | 0.99279387 | 0.99509503 | 0.99118943 |
-| Joint cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
+| Paragraph pair F1 | 0.80447743 | 0.81325210 | 0.79045562 |
+| Paragraph selected-edge precision | 0.99359954 | 0.99715794 | 0.99525263 |
+| Paragraph frozen threshold | 0.95705252 | — | — |
+| Successor relation F1 | 0.98531274 | 0.98773806 | 0.98125509 |
+| Successor multicolumn F1 | 0.99347435 | 0.99576869 | 0.98839739 |
+| Successor graphical-multicolumn F1 | 0.97509945 | 0.97794118 | 0.97209302 |
+| Successor cross-region recall | 0.94616639 | 0.95759717 | 0.93658537 |
+| Successor frozen threshold | 0.63195626 | — | — |
+| Joint relation F1 | 0.98531274 | 0.98773806 | 0.98125509 |
+| Joint segmentation pair F1 | 0.80447743 | 0.81325210 | 0.79045562 |
+| Joint within-region recall | 0.99414502 | 0.99448191 | 0.99069995 |
+| Joint cross-region recall | 0.94616639 | 0.95759717 | 0.93658537 |
 
-全部 160 个 joint proposal 使用 `successor-path-cover-package`。Fit-OOF successor
-F1 与两个冻结阈值与原始 directed-successor / paragraph-graph freeze 完全一致。
-独立 test successor F1 `0.98287811` 接近更早报告的 freeze `0.98585545`；paragraph
-独立 test pair F1 `0.77932483` 低于更早的 `0.85162046`，因为本次重放物化的是
+全部 160 个 joint proposal 使用 `successor-path-cover-package`。更早的 v1 freeze
+早于两次共享 geometry / reading-order 行为变更，却仍保留了相同 feature-version 字符串；
+因此当前代码把两套 graph feature 都标记为 v2，并有意拒绝这些 v1 模型。相对归档的
+旧重放，fit successor F1 从 `0.98391591` 上升到 `0.98531274`，独立 test successor
+F1 从 `0.98287811` 降至 `0.98125509`。Paragraph 独立 test pair F1 `0.79045562`
+低于更早的 `0.85162046`，因为本次重放物化的是
 fine-only graph-hierarchy 输入（`regions: []`），而不是 provider-derived coarse
 region。Joint 在不损失 relation 的前提下打包 successor path cover。输出保持
 `runtime_reorder: false`。

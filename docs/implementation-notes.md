@@ -1403,15 +1403,30 @@ Both graph heads optionally serialize a review-only model through shared
 frozen threshold with an adjacent SHA-256 manifest, evaluation scoring uses
 page-wise feature batches so the dense fit matrix can be released first, and
 `predict-paragraph-graph` / `predict-successor-graph` score one hierarchy input
-into a review-only proposal without labels. `export-hierarchy-input` builds that
+into a review-only proposal without labels. Loading checks that the manifest's
+threshold, feature count, estimator type/parameters, nearest-candidate setting,
+and model filename agree with the hash-bound joblib bundle; descriptive metadata
+cannot silently diverge from the configuration used for prediction.
+`export-hierarchy-input` builds that
 hierarchy input from DocumentIR: with `--structure-json` it keeps the existing
 provider coarse-region adapter; without it, `build_fine_hierarchy_input_from_document`
 exports visible non-empty text only and leaves `regions` empty for graph heads.
 `materialize-graph-hierarchy` rewrites an answer-separated hierarchy corpus into
 the provider-hierarchy corpus/label schemas used by the graph heads, still
-without provider sequence or relation fields in the input. Joint decode prefers packaging a valid successor path cover with paragraph
+without provider sequence or relation fields in the input. Paragraph/successor
+proposal schema v2 carries `prediction_provenance`: fit proposals must identify
+document-OOF scoring, evaluation proposals identify the frozen all-fit model,
+and serialized operator predictions use a separate mode with model/manifest
+hashes. Input, source-corpus, and training-corpus hashes are recorded on every
+benchmark proposal. Joint decode rejects partition, producer, mode, feature,
+input, corpus, or cross-validation provenance mismatches before labels open.
+The current paragraph and successor feature identifiers are v2: two later
+shared geometry/reading-order changes altered candidate sets after the original
+v1 freeze, so v1 models are no longer accepted by current predictors.
+
+Joint decode prefers packaging a valid successor path cover with paragraph
 hierarchy labels; when the paragraph head is over-fragmented (singleton rate
->= 0.85) it falls back to successor-chain packaging and, if element boxes are
+`>= 0.85`) it falls back to successor-chain packaging and, if element boxes are
 available, further splits those chains on column wraps and large vertical gaps;
 it falls back to paragraph-protected re-decode only when the loaded successor
 edges are not a path cover; and it scores relations with the same partial-label precision as the
@@ -1423,7 +1438,11 @@ retraining. It loads paragraph and successor proposals, protects
 within-paragraph successor edges inside a degree-one acyclic path cover, accepts
 only score-ordered tail→head cross-paragraph edges, writes joint hierarchical
 proposals, then opens labels. Joint output keeps `runtime_reorder: false` and
-omits oracle membership/scope fields. Synthetic multi-column fixtures cover the
+omits oracle membership/scope fields. Joint proposals bind both source proposal
+hashes. Paragraph components retain `fine-line-paragraph-graph` provenance in
+ordinary mode; successor-chain and geometry-chain fallback components identify
+their actual origin, fallback reason, and source paragraph component ids.
+Synthetic multi-column fixtures cover the
 decoder contract in `tests/test_joint_graph_benchmark.py` and model round-trips
 in `tests/test_graph_model.py`. Full Comp-HRDoc partition metrics are recorded
 only after an end-to-end frozen-corpus rerun.

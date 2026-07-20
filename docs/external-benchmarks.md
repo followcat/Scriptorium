@@ -2154,7 +2154,7 @@ for threshold selection. Training size is still half the frozen train protocol,
 so this is strong independent-test pipeline evidence but not a replacement for
 the full 128/32 freeze. All outputs remain `runtime_reorder: false`.
 
-### Frozen-Protocol Graph Hierarchy Replay (128/32)
+### Frozen-Protocol Graph Hierarchy Replay (128/32, Feature v2)
 
 The original paragraph and successor heads were then replayed under the frozen
 train protocol with fine-only graph-hierarchy materialization:
@@ -2183,45 +2183,58 @@ scriptorium benchmark-paragraph-graph outputs/graph-hierarchy-128-smoke \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
   --cross-validation-folds 5 \
   --minimum-edge-precision 0.97 --minimum-selected-edges 100 \
-  --model-output outputs/graph-hierarchy-128-smoke/models/paragraph.joblib \
-  -o outputs/graph-hierarchy-128-smoke/paragraph-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/paragraph-proposals \
+  --model-output outputs/graph-provenance-v2-replay/models/paragraph.joblib \
+  -o outputs/graph-provenance-v2-replay/paragraph-report.json
 scriptorium benchmark-successor-graph outputs/graph-hierarchy-128-smoke \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
   --cross-validation-folds 5 --nearest-candidates 20 \
   --minimum-edge-precision 0.97 --minimum-selected-edges 1000 \
-  --model-output outputs/graph-hierarchy-128-smoke/models/successor.joblib \
-  -o outputs/graph-hierarchy-128-smoke/successor-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/successor-proposals \
+  --model-output outputs/graph-provenance-v2-replay/models/successor.joblib \
+  -o outputs/graph-provenance-v2-replay/successor-report.json
 scriptorium benchmark-joint-graph outputs/graph-hierarchy-128-smoke \
-  --paragraph-proposals-dir outputs/graph-hierarchy-128-smoke/paragraph-proposals \
-  --successor-proposals-dir outputs/graph-hierarchy-128-smoke/successor-proposals \
+  --paragraph-proposals-dir outputs/graph-provenance-v2-replay/paragraph-proposals \
+  --successor-proposals-dir outputs/graph-provenance-v2-replay/successor-proposals \
   --test-corpus outputs/graph-hierarchy-test-32-smoke \
-  -o outputs/graph-hierarchy-128-smoke/joint-report.json
+  --proposals-dir outputs/graph-provenance-v2-replay/joint-proposals \
+  -o outputs/graph-provenance-v2-replay/joint-report.json
 ```
 
+Proposal schema v2 makes this protocol machine-checkable. Fit proposals must be
+document-OOF predictions, while calibration and independent-test proposals must
+come from the frozen all-fit model. Joint evaluation validates input, training,
+and source-corpus hashes and retains the hashes of both source proposal files;
+serialized full-fit model predictions cannot enter fit scoring. Proposal v1
+artifacts created by earlier runs are intentionally rejected and must be
+regenerated with the commands above (or written to a fresh output directory).
+
 Train partitions match the frozen protocol (`fit/calibration = 102/26` pages
-from 64 documents after three audited unaligned-document skips). Frozen
-thresholds and fit-OOF numbers reproduce the original heads:
+from 64 documents after three audited unaligned-document skips). The current
+feature-v2 replay records:
 
 | Head | Fit OOF | Calibration | Independent test |
 |---|---:|---:|---:|
-| Paragraph pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
-| Paragraph selected-edge precision | 0.99202393 | 0.99648712 | 0.99504132 |
-| Paragraph frozen threshold | 0.94971959 | — | — |
-| Successor relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
-| Successor multicolumn F1 | 0.99177650 | 0.99482840 | 0.99019964 |
-| Successor graphical-multicolumn F1 | 0.97438163 | 0.97919217 | 0.97350070 |
-| Successor cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
-| Successor frozen threshold | 0.52131309 | — | — |
-| Joint relation F1 | 0.98391591 | 0.98774446 | 0.98287811 |
-| Joint segmentation pair F1 | 0.81549627 | 0.82246177 | 0.77932483 |
-| Joint within-region recall | 0.99279387 | 0.99509503 | 0.99118943 |
-| Joint cross-region recall | 0.94290375 | 0.95759717 | 0.94146341 |
+| Paragraph pair F1 | 0.80447743 | 0.81325210 | 0.79045562 |
+| Paragraph selected-edge precision | 0.99359954 | 0.99715794 | 0.99525263 |
+| Paragraph frozen threshold | 0.95705252 | — | — |
+| Successor relation F1 | 0.98531274 | 0.98773806 | 0.98125509 |
+| Successor multicolumn F1 | 0.99347435 | 0.99576869 | 0.98839739 |
+| Successor graphical-multicolumn F1 | 0.97509945 | 0.97794118 | 0.97209302 |
+| Successor cross-region recall | 0.94616639 | 0.95759717 | 0.93658537 |
+| Successor frozen threshold | 0.63195626 | — | — |
+| Joint relation F1 | 0.98531274 | 0.98773806 | 0.98125509 |
+| Joint segmentation pair F1 | 0.80447743 | 0.81325210 | 0.79045562 |
+| Joint within-region recall | 0.99414502 | 0.99448191 | 0.99069995 |
+| Joint cross-region recall | 0.94616639 | 0.95759717 | 0.93658537 |
 
-All 160 joint proposals used `successor-path-cover-package`. Fit-OOF successor
-F1 and both frozen thresholds match the original directed-successor and
-paragraph-graph freezes exactly. The independent-test successor F1
-`0.98287811` is close to the earlier reported freeze `0.98585545`; the
-paragraph independent-test pair F1 `0.77932483` is lower than the earlier
+All 160 joint proposals used `successor-path-cover-package`. The earlier v1
+freeze predated two shared geometry/reading-order changes but retained the same
+feature-version string; current code therefore marks both graph feature sets as
+v2 and intentionally rejects those v1 models. Compared with that archived
+replay, fit successor F1 increases from `0.98391591` to `0.98531274`, while
+independent-test successor F1 decreases from `0.98287811` to `0.98125509`.
+The paragraph independent-test pair F1 `0.79045562` is lower than the earlier
 `0.85162046` because this replay materializes fine-only graph-hierarchy inputs
 (`regions: []`) rather than provider-derived coarse regions. Joint packages the
 successor path cover without relation regression. Outputs remain
