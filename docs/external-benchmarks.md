@@ -2317,3 +2317,50 @@ target from a source with no good alternative. Max-regret decoding is therefore
 the next frozen A/B candidate; it must be evaluated with the existing scores
 and thresholds before any runtime use. Topology v3, its joint outputs, and all
 follow-up decoder experiments remain `runtime_reorder: false`.
+
+### Frozen Max-Regret Decoder A/B
+
+The topology-v3 model was replayed without retraining to test whether the
+remaining errors came from greedy target theft:
+
+```bash
+scriptorium benchmark-successor-decoder-ab \
+  outputs/successor-topology-v3-ab/report.json \
+  --proposals-dir outputs/successor-max-regret-v1/proposals \
+  -o outputs/successor-max-regret-v1/report.json
+```
+
+The command verifies the baseline report, model, train/test corpus hashes,
+feature version, nearest-candidate policy, and frozen threshold
+`0.57646297`. It scores all directed candidates with the already frozen model,
+writes every max-regret calibration/test proposal before opening evaluation
+labels, and refuses the run unless the score-greedy baseline replay exactly
+matches the source report. The candidate decoder dynamically recomputes each
+unresolved source's feasible alternatives and commits the largest
+best-vs-second-best regret first under degree-one and acyclic constraints.
+
+| Split | Score-greedy F1 | Max-regret F1 | Precision delta | Recall delta | F1 delta |
+|---|---:|---:|---:|---:|---:|
+| Calibration | 0.98798956 | 0.98798956 | 0 | 0 | 0 |
+| Independent test | 0.98247759 | 0.98247759 | 0 | 0 | 0 |
+
+This is an exact no-op, not merely a rounded tie. On calibration, 1,938 of
+1,948 decisions have only one feasible candidate and only 10 have positive
+regret. On independent test, 2,483 of 2,491 decisions have one feasible
+candidate, only 8 have positive regret, and the selected edge set is unchanged.
+The fit-frozen high-precision threshold has already made the graph too sparse
+for the edge-theft mechanism to matter. Max-regret remains available as an
+auditable review-only decoder, but is rejected as the next quality lever and
+does not change runtime behavior.
+
+Post-evaluation error decomposition points upstream. Of 2,453 independent-test
+truth edges, 17 are absent from the 20-neighbor candidate graph (10 within
+oracle regions and 7 cross-region); another 25 are present but not selected.
+Increasing the undirected geometry-neighbor budget from 20 to 80 raises test
+candidate recall from `0.99306971` to `1.0`, but expands candidate edges from
+54,764 to 191,720. On the 128-page train corpus it moves recall from
+`0.99642894` to `0.99969391` while expanding 218,861 candidates to 773,786.
+That brute-force expansion is rejected on cost and ambiguity grounds. The next
+experiment should add sparse long-gap aligned and column-handoff candidates,
+freeze them from answer-free topology, and retrain/recalibrate the relation head
+before touching the decoder. All results remain `runtime_reorder: false`.
