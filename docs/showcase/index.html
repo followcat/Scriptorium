@@ -65,7 +65,7 @@
 
     h1 {
       margin-bottom: 8px;
-      font-size: clamp(28px, 4vw, 44px);
+      font-size: 44px;
       line-height: 1.05;
       letter-spacing: 0;
     }
@@ -261,6 +261,7 @@
 
       .comparison { grid-template-columns: 1fr; }
       .sample { margin-bottom: 34px; }
+      h1 { font-size: 32px; }
     }
   </style>
 </head>
@@ -276,8 +277,13 @@
     </div>
     <nav class="header-inner sample-nav" aria-label="Samples">
       <a class="jump-link" href="#paper">Paper PDF</a>
+      <a class="jump-link" href="#attention-paper">Structure-enhanced paper</a>
       <a class="jump-link" href="#financial-report">Financial report</a>
+      <a class="jump-link" href="#puma-report">PUMA report</a>
       <a class="jump-link" href="#image-source">Image source</a>
+      <a class="jump-link" href="#web-print">Web print</a>
+      <a class="jump-link" href="#roor-image">ROOR image</a>
+      <a class="jump-link" href="#comphrdoc">Comp-HRDoc</a>
       <a class="jump-link" href="#magazine">Three-column magazine</a>
       <a class="jump-link" href="#float-paper">Float-dense paper</a>
       <a class="jump-link" href="#equation-paper">Equation-heavy paper</a>
@@ -317,6 +323,38 @@
       </div>
     </section>
 
+    <section class="sample" id="attention-paper">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">PDF / PP-Structure evidence</p>
+          <h2>Attention Is All You Need, page 1</h2>
+          <p class="sample-description">A structure-enhanced replay of the canonical Transformer paper. Native PDF text remains the editable layer while PP-Structure contributes local semantic boundaries; 56 of 59 elements are editable across five runtime streams.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source PDF page</span>
+            <a class="pane-link" href="https://arxiv.org/pdf/1706.03762" rel="noreferrer">Open paper</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/attention-page-1.png" alt="Attention Is All You Need source PDF page"></div>
+          <p class="source-note">Page 1 of arXiv:1706.03762, rendered at the benchmark resolution.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated structured HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/attention/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="attention-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="attention-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="attention-html" title="Attention Is All You Need converted HTML" data-source-width="816" data-source-height="1056" src="converted/attention/index.html"></iframe></div>
+          <p class="html-note">The tracked partial sidecar retains semantic successor accuracy 1.0 after structure fusion.</p>
+        </figure>
+      </div>
+    </section>
+
     <section class="sample" id="financial-report">
       <div class="sample-heading">
         <div>
@@ -349,6 +387,38 @@
       </div>
     </section>
 
+    <section class="sample" id="puma-report">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">PDF / PaddleOCR-VL evidence</p>
+          <h2>PUMA annual report, page 5</h2>
+          <p class="sample-description">A mixed image-and-text corporate report page replayed with real PaddleOCR-VL 1.6 output. The model evidence matches 24 elements and contributes local block streams without replacing native PDF text.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source PDF page</span>
+            <a class="pane-link" href="https://annualreports.com/Click/27465" rel="noreferrer">Open report</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/puma-page-5.png" alt="PUMA annual report page 5 source"></div>
+          <p class="source-note">PUMA 2024 annual report, page 5, sampled at 144 DPI.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/puma-annual-report/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="puma-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="puma-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="puma-html" title="PUMA annual report converted HTML" data-source-width="1191" data-source-height="1684" src="converted/puma-annual-report/index.html"></iframe></div>
+          <p class="html-note">The page exposes 25 editable elements and seven runtime streams at visual similarity 0.9645.</p>
+        </figure>
+      </div>
+    </section>
+
     <section class="sample" id="image-source">
       <div class="sample-heading">
         <div>
@@ -377,6 +447,105 @@
           </figcaption>
           <div class="html-stage"><iframe id="jd-html" title="JD homepage converted fidelity HTML" data-source-width="1440" data-source-height="1635" src="converted/jd-home/index.html"></iframe></div>
           <p class="html-note">The fidelity layer preserves the source visual while the underlying DOM provides transparent editable OCR anchors.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="web-print">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">Website / browser print PDF</p>
+          <h2>Hacker News print, page 1</h2>
+          <p class="sample-description">A real browser-printed portal page with ranked entries, metadata, and repeated link rows. The conversion keeps 92 editable elements in 12 local streams and scores 1.0 on the tracked successor sidecar.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source browser-print page</span>
+            <a class="pane-link" href="https://news.ycombinator.com/" rel="noreferrer">Open website</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/hacker-news-page-1.png" alt="Hacker News browser-print source page"></div>
+          <p class="source-note">A tracked Playwright print capture of the public Hacker News homepage.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/hacker-news/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="hacker-news-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="hacker-news-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="hacker-news-html" title="Hacker News converted HTML" data-source-width="1224" data-source-height="1584" src="converted/hacker-news/index.html"></iframe></div>
+          <p class="html-note">The browser-print visual remains exact while repeated title and metadata rows stay independently editable.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="roor-image">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">Image / relation-order benchmark</p>
+          <h2>ROOR validation image 86263525</h2>
+          <p class="sample-description">A photographed document page with OCR anchors and external structure evidence. It exposes 28 editable elements across nine runtime streams; four uncertain block transitions remain review-only.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source benchmark image</span>
+            <a class="pane-link" href="assets/roor-86263525.png">Open image</a>
+          </figcaption>
+          <div class="source-stage"><img src="assets/roor-86263525.png" alt="ROOR validation source image 86263525"></div>
+          <p class="source-note">Fixed ROOR validation sample 86263525; the image is the first-class source.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated structured HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/roor/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="roor-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="roor-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="roor-html" title="ROOR validation image converted HTML" data-source-width="780" data-source-height="1000" src="converted/roor/index.html"></iframe></div>
+          <p class="html-note">Semantic successor accuracy remains 1.0; ambiguous cross-block handoffs are visible as review evidence rather than forced runtime order.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sample" id="comphrdoc">
+      <div class="sample-heading">
+        <div>
+          <p class="eyebrow">Image / answer-separated hierarchy input</p>
+          <h2>Comp-HRDoc page 1710.06349_4</h2>
+          <p class="sample-description">A graphical multi-column benchmark page converted from its image and answer-free text anchors. The Gallery build does not read paragraph membership or successor labels.</p>
+        </div>
+      </div>
+      <div class="comparison">
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="source-mark"></span>Source benchmark image</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="assets/comphrdoc-1710.06349-4.png">Open image</a>
+              <a class="pane-link" href="sources/comphrdoc-1710.06349-4.ocr.json">Open anchors</a>
+            </span>
+          </figcaption>
+          <div class="source-stage"><img src="assets/comphrdoc-1710.06349-4.png" alt="Comp-HRDoc source page 1710.06349_4"></div>
+          <p class="source-note">The bundled OCR wrapper contains 80 answer-free text boxes and no evaluation labels.</p>
+        </figure>
+        <figure class="pane">
+          <figcaption class="pane-header">
+            <span class="pane-name"><span class="html-mark"></span>Generated fidelity HTML</span>
+            <span class="pane-actions">
+              <a class="pane-link" href="converted/comphrdoc/index.html">Open HTML</a>
+              <button class="pane-action" type="button" data-export-edits="comphrdoc-html" title="Download local edit patch">Export patch</button>
+              <button class="pane-action" type="button" data-reset-edits="comphrdoc-html" title="Discard local edits">Reset</button>
+            </span>
+          </figcaption>
+          <div class="html-stage"><iframe id="comphrdoc-html" title="Comp-HRDoc converted HTML" data-source-width="612" data-source-height="792" src="converted/comphrdoc/index.html"></iframe></div>
+          <p class="html-note">The fidelity page is visually exact and exposes 80 editable text anchors across five local streams.</p>
         </figure>
       </div>
     </section>

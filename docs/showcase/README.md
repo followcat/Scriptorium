@@ -30,6 +30,24 @@ footnotes, and local semantic successor order.
   </tr>
 </table>
 
+## Structure-enhanced paper
+
+Attention Is All You Need page 1 keeps native PDF text editable while
+PP-Structure evidence contributes local semantic boundaries. It exposes 56
+editable elements across five reading streams. Source:
+[arXiv:1706.03762](https://arxiv.org/pdf/1706.03762).
+
+<table>
+  <tr>
+    <th width="50%">Source PDF page</th>
+    <th width="50%">Generated structured HTML</th>
+  </tr>
+  <tr>
+    <td><a href="https://arxiv.org/pdf/1706.03762"><img src="assets/attention-page-1.png" alt="Attention Is All You Need source PDF page" width="100%"></a></td>
+    <td><a href="converted/attention/index.html"><img src="assets/attention-generated.png" alt="Attention Is All You Need generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
 ## Financial report
 
 BYD annual report page 136 tests Chinese type, dense vector rules, table cells,
@@ -47,6 +65,24 @@ and translation-local table streams. The full source report is available from
   </tr>
 </table>
 
+## Mixed-media annual report
+
+PUMA annual report page 5 combines product photography, display type, and
+corporate copy. Real PaddleOCR-VL 1.6 evidence matches 24 elements while native
+PDF text remains the editable layer. Source:
+[PUMA 2024 annual report](https://annualreports.com/Click/27465).
+
+<table>
+  <tr>
+    <th width="50%">Source PDF page</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="https://annualreports.com/Click/27465"><img src="assets/puma-page-5.png" alt="PUMA annual report page 5 source" width="100%"></a></td>
+    <td><a href="converted/puma-annual-report/index.html"><img src="assets/puma-generated.png" alt="PUMA annual report generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
 ## Image source
 
 The JD homepage screenshot enters Scriptorium as a first-class image source.
@@ -61,6 +97,58 @@ four local reading streams for editing and translation experiments.
   <tr>
     <td><a href="converted/jd-home/assets/page_0001/page_0001.png"><img src="converted/jd-home/assets/page_0001/page_0001.png" alt="JD homepage source image" width="100%"></a></td>
     <td><a href="converted/jd-home/index.html"><img src="assets/jd-home-generated.png" alt="JD homepage generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
+## Browser-print portal
+
+A tracked Playwright print of Hacker News tests repeated ranked entries,
+metadata, and dense link rows. The result keeps 92 elements editable in 12
+local streams. Source: [Hacker News](https://news.ycombinator.com/).
+
+<table>
+  <tr>
+    <th width="50%">Source browser-print page</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="https://news.ycombinator.com/"><img src="assets/hacker-news-page-1.png" alt="Hacker News browser-print source page" width="100%"></a></td>
+    <td><a href="converted/hacker-news/index.html"><img src="assets/hacker-news-generated.png" alt="Hacker News generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
+## ROOR image benchmark
+
+ROOR validation image 86263525 enters as an image rather than a PDF. OCR
+anchors and external structure evidence produce 28 editable elements across
+nine reading streams; uncertain block transitions remain review evidence.
+
+<table>
+  <tr>
+    <th width="50%">Source benchmark image</th>
+    <th width="50%">Generated structured HTML</th>
+  </tr>
+  <tr>
+    <td><a href="assets/roor-86263525.png"><img src="assets/roor-86263525.png" alt="ROOR validation source image 86263525" width="100%"></a></td>
+    <td><a href="converted/roor/index.html"><img src="assets/roor-generated.png" alt="ROOR generated HTML" width="100%"></a></td>
+  </tr>
+</table>
+
+## Comp-HRDoc image benchmark
+
+Comp-HRDoc page 1710.06349_4 tests a graphical multi-column image source. Its
+bundled [OCR wrapper](sources/comphrdoc-1710.06349-4.ocr.json) contains 80 text
+boxes without paragraph membership, successor labels, or other evaluation
+answers.
+
+<table>
+  <tr>
+    <th width="50%">Source benchmark image</th>
+    <th width="50%">Generated fidelity HTML</th>
+  </tr>
+  <tr>
+    <td><a href="assets/comphrdoc-1710.06349-4.png"><img src="assets/comphrdoc-1710.06349-4.png" alt="Comp-HRDoc source page 1710.06349_4" width="100%"></a></td>
+    <td><a href="converted/comphrdoc/index.html"><img src="assets/comphrdoc-generated.png" alt="Comp-HRDoc generated HTML" width="100%"></a></td>
   </tr>
 </table>
 
