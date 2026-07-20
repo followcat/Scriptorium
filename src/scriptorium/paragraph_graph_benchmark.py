@@ -40,7 +40,7 @@ from .reading_order import (
 PARAGRAPH_GRAPH_BENCHMARK_SCHEMA = "scriptorium-paragraph-graph-benchmark/v1"
 PARAGRAPH_GRAPH_PROPOSAL_SCHEMA = "scriptorium-paragraph-graph-proposal/v2"
 PARAGRAPH_GRAPH_MODEL_SCHEMA = "scriptorium-paragraph-graph-model/v1"
-PARAGRAPH_GRAPH_FEATURE_VERSION = "fine-line-local-relation-text-v1"
+PARAGRAPH_GRAPH_FEATURE_VERSION = "fine-line-local-relation-text-v2"
 
 
 @dataclass(frozen=True)

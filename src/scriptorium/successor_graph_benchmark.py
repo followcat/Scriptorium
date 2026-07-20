@@ -40,7 +40,7 @@ from .relation_order import merge_relation_edge_path_cover
 SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
 SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v2"
 SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
-SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-relation-text-v1"
+SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-relation-text-v2"
 DEFAULT_NEAREST_CANDIDATES = 20
 PROPOSAL_ALTERNATIVES_PER_SOURCE = 3
 

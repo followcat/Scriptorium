@@ -96,6 +96,51 @@ def test_load_graph_model_rejects_hash_mismatch(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("schema", "head", "frozen_version", "current_version"),
+    [
+        (
+            PARAGRAPH_GRAPH_MODEL_SCHEMA,
+            "paragraph-comembership",
+            "fine-line-local-relation-text-v1",
+            PARAGRAPH_GRAPH_FEATURE_VERSION,
+        ),
+        (
+            SUCCESSOR_GRAPH_MODEL_SCHEMA,
+            "directed-successor",
+            "fine-line-directed-relation-text-v1",
+            SUCCESSOR_GRAPH_FEATURE_VERSION,
+        ),
+    ],
+)
+def test_current_graph_heads_reject_pre_geometry_change_feature_versions(
+    tmp_path: Path,
+    schema: str,
+    head: str,
+    frozen_version: str,
+    current_version: str,
+) -> None:
+    assert current_version != frozen_version
+    artifact = save_graph_model(
+        model_path=tmp_path / f"{head}.joblib",
+        schema=schema,
+        head=head,
+        feature_version=frozen_version,
+        threshold=0.5,
+        estimator=_StubEstimator(),
+        estimator_parameters={},
+        feature_count=1,
+    )
+
+    with pytest.raises(ValueError, match="feature version does not match"):
+        load_graph_model(
+            artifact.model_path,
+            expected_schema=schema,
+            expected_head=head,
+            expected_feature_version=current_version,
+        )
+
+
+@pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("threshold", 0.0, "threshold does not match"),
