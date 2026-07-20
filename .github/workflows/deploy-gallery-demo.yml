@@ -1,11 +1,11 @@
-name: Deploy Showcase
+name: Deploy Gallery Demo
 
 on:
   push:
     branches: [main]
     paths:
       - "docs/showcase/**"
-      - ".github/workflows/deploy-showcase.yml"
+      - ".github/workflows/deploy-gallery-demo.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,24 +14,25 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "gallery-demo-pages"
   cancel-in-progress: false
 
 jobs:
   build:
+    name: Package Gallery Demo
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Upload GitHub-readable showcase
+      - name: Upload standalone Gallery Demo
         uses: actions/upload-artifact@v4
         with:
-          name: scriptorium-showcase
+          name: scriptorium-gallery-demo
           path: docs/showcase
           if-no-files-found: error
       - name: Configure Pages
         uses: actions/configure-pages@v5
-      - name: Upload showcase
+      - name: Upload Gallery Demo for Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/showcase
@@ -39,21 +40,22 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Scriptorium showcase"
+            echo "## Scriptorium Gallery Demo"
             echo
-            echo "The GitHub-rendered comparison is available at:"
+            echo "The GitHub-readable fallback is available at:"
             echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/showcase/README.md"
             echo
-            echo "The complete static bundle is attached as \`scriptorium-showcase\`."
+            echo "The standalone static bundle is attached as \`scriptorium-gallery-demo\`."
           } >> "${GITHUB_STEP_SUMMARY}"
 
   deploy:
+    name: Publish Gallery Demo
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy
+      - name: Deploy Gallery Demo
         id: deployment
         uses: actions/deploy-pages@v4

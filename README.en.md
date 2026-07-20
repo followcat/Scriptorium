@@ -27,7 +27,7 @@
   ·
   <a href="#benchmark">Benchmark</a>
   ·
-  <a href="https://followcat.github.io/Scriptorium/">Live Gallery</a>
+  <a href="https://followcat.github.io/Scriptorium/">Gallery Demo</a>
   ·
   <a href="#documentation">Docs</a>
 </p>
@@ -77,7 +77,7 @@ Standalone HTML also exposes `window.ScriptoriumEdits`: browser changes become v
 </table>
 
 <p align="center">
-  <a href="https://followcat.github.io/Scriptorium/"><strong>Open the interactive source-to-HTML gallery</strong></a>
+  <a href="https://followcat.github.io/Scriptorium/"><strong>Open the standalone Gallery Demo</strong></a>
   ·
   <a href="docs/showcase/README.md">View on GitHub</a>
 </p>

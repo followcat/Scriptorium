@@ -1,17 +1,18 @@
-# Scriptorium Conversion Gallery
+# Scriptorium Gallery Demo
 
 <p align="center">
   <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-%E9%98%85%E8%AF%BB-blue"></a>
   <img alt="English" src="https://img.shields.io/badge/English-Current-2f855a">
 </p>
 
-Open the [interactive gallery](https://followcat.github.io/Scriptorium/) to
-inspect the generated HTML as a live DOM. This page is the GitHub-native
-fallback: the left side is a tracked source page, and the right side is a fresh
-Chromium screenshot of the generated HTML in this repository.
+Open the standalone [Gallery Demo](https://followcat.github.io/Scriptorium/) to
+inspect one source/HTML pair at a time as a live DOM. Samples have stable hash
+links and their large HTML exports load only when selected. This page is the
+GitHub-native fallback: the left side is a tracked source page, and the right
+side is a fresh Chromium screenshot of the generated HTML in this repository.
 
 The standalone interactive bundle remains at [`index.html`](index.html). A
-workflow run also publishes the complete `scriptorium-showcase` artifact and
+workflow run also publishes the complete `scriptorium-gallery-demo` artifact and
 deploys the same bundle to GitHub Pages.
 
 ## Multi-column paper
@@ -210,6 +211,6 @@ reading-order confidence in the current paper set. Source:
 </table>
 
 The HTML links above point to the versioned generated files, so GitHub displays
-their source. Use the [interactive gallery](https://followcat.github.io/Scriptorium/),
+their source. Use the [Gallery Demo](https://followcat.github.io/Scriptorium/),
 download the workflow artifact, or open `docs/showcase/index.html` from a
 checkout to work with the live editable DOM.

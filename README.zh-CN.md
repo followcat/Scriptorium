@@ -27,7 +27,7 @@
   ·
   <a href="#benchmark">Benchmark</a>
   ·
-  <a href="https://followcat.github.io/Scriptorium/">在线展示</a>
+  <a href="https://followcat.github.io/Scriptorium/">Gallery Demo</a>
   ·
   <a href="#文档">文档</a>
 </p>
@@ -77,7 +77,7 @@ Scriptorium 支持两条路径：
 </table>
 
 <p align="center">
-  <a href="https://followcat.github.io/Scriptorium/"><strong>打开真实 source 与生成 HTML 的交互对照</strong></a>
+  <a href="https://followcat.github.io/Scriptorium/"><strong>打开独立 Gallery Demo</strong></a>
   ·
   <a href="docs/showcase/README.zh-CN.md">GitHub 内查看</a>
 </p>
