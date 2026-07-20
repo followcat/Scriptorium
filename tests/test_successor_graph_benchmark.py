@@ -19,6 +19,8 @@ from scriptorium.successor_graph_benchmark import (
     SUCCESSOR_DECODER_AB_SCHEMA,
     SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
     SUCCESSOR_GRAPH_FEATURE_NAMES,
+    SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_NAMES,
+    SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_VERSION,
     SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
     _page_candidates,
     benchmark_successor_decoder_ab,
@@ -177,6 +179,61 @@ def test_successor_graph_candidates_include_local_topology_context() -> None:
     assert nearest[feature_index["vertical_corridor_unblocked"]] == 1.0
     assert blocked[feature_index["vertical_blocker_fraction"]] > 0.0
     assert blocked[feature_index["vertical_corridor_unblocked"]] == 0.0
+
+
+def test_successor_graph_sparse_topology_adds_versioned_handoff_candidates() -> None:
+    elements = []
+    for column, x0 in (("left", 50), ("right", 350)):
+        for line in range(6):
+            elements.append(
+                {
+                    "id": f"{column}-{line}",
+                    "box": [x0, 70 + line * 55, x0 + 200, 84 + line * 55],
+                    "role": "text",
+                    "text": f"{column} line {line}",
+                }
+            )
+    payload = {
+        "schema": HIERARCHY_INPUT_SCHEMA,
+        "id": "sparse-topology",
+        "page_index": 0,
+        "width": 600,
+        "height": 800,
+        "element_granularity": "fine",
+        "region_granularity": "coarse",
+        "elements": elements,
+        "regions": [],
+    }
+
+    *_legacy, legacy_candidates = _page_candidates(
+        payload,
+        nearest_candidates=1,
+        feature_version=SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_VERSION,
+    )
+    *_current, current_candidates = _page_candidates(
+        payload,
+        nearest_candidates=1,
+    )
+    legacy_pairs = {(edge.source, edge.target) for edge in legacy_candidates}
+    added = [
+        edge
+        for edge in current_candidates
+        if (edge.source, edge.target) not in legacy_pairs
+    ]
+    feature_index = {
+        name: index for index, name in enumerate(SUCCESSOR_GRAPH_FEATURE_NAMES)
+    }
+
+    assert len(legacy_candidates[0].features) == len(
+        SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_NAMES
+    )
+    assert len(current_candidates[0].features) == len(SUCCESSOR_GRAPH_FEATURE_NAMES)
+    assert added
+    assert any(
+        edge.features[feature_index["aligned_expansion_candidate"]] == 1.0
+        or edge.features[feature_index["column_handoff_candidate"]] == 1.0
+        for edge in added
+    )
 
 
 def test_successor_graph_rejects_non_degree_one_labels(tmp_path: Path) -> None:

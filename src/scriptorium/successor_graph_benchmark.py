@@ -45,13 +45,14 @@ SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
 SUCCESSOR_DECODER_AB_SCHEMA = "scriptorium-successor-decoder-ab/v1"
 SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v2"
 SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
-SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-topology-text-v3"
+SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_VERSION = "fine-line-directed-topology-text-v3"
+SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-sparse-topology-text-v4"
 SCORE_GREEDY_DECODER = "score-greedy-top-one-v1"
 MAX_REGRET_DECODER = "max-regret-all-candidates-v1"
 DEFAULT_NEAREST_CANDIDATES = 20
 PROPOSAL_ALTERNATIVES_PER_SOURCE = 3
 
-SUCCESSOR_GRAPH_FEATURE_NAMES = (
+SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_NAMES = (
     "source_x0",
     "source_y0",
     "source_x1",
@@ -111,6 +112,12 @@ SUCCESSOR_GRAPH_FEATURE_NAMES = (
     "vertical_corridor",
     "vertical_blocker_fraction",
     "vertical_corridor_unblocked",
+)
+
+SUCCESSOR_GRAPH_FEATURE_NAMES = (
+    *SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_NAMES,
+    "aligned_expansion_candidate",
+    "column_handoff_candidate",
 )
 
 
@@ -632,7 +639,11 @@ def benchmark_successor_decoder_ab(
     baseline = _json_object(baseline_path, label="successor graph baseline report")
     if baseline.get("schema") != SUCCESSOR_GRAPH_BENCHMARK_SCHEMA:
         raise ValueError("successor decoder A/B requires a successor graph report")
-    if baseline.get("feature_version") != SUCCESSOR_GRAPH_FEATURE_VERSION:
+    baseline_feature_version = str(baseline.get("feature_version") or "")
+    if baseline_feature_version not in {
+        SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_VERSION,
+        SUCCESSOR_GRAPH_FEATURE_VERSION,
+    }:
         raise ValueError("successor decoder A/B baseline feature version is stale")
     if baseline.get("runtime_reorder") is not False:
         raise ValueError("successor decoder A/B baseline must keep runtime_reorder=false")
@@ -645,7 +656,7 @@ def benchmark_successor_decoder_ab(
         model_path,
         expected_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
         expected_head="directed-successor",
-        expected_feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+        expected_feature_version=baseline_feature_version,
     )
     recorded_manifest = model_record.get("manifest")
     if not isinstance(recorded_manifest, Mapping) or dict(recorded_manifest) != artifact.manifest:
@@ -675,6 +686,7 @@ def benchmark_successor_decoder_ab(
         train_manifest,
         split="calibration",
         nearest_candidates=nearest_candidates,
+        feature_version=baseline_feature_version,
     )
     if not calibration_pages:
         raise ValueError("successor decoder A/B baseline has no calibration pages")
@@ -701,6 +713,7 @@ def benchmark_successor_decoder_ab(
             split="test",
             nearest_candidates=nearest_candidates,
             accept_all_partitions=True,
+            feature_version=baseline_feature_version,
         )
 
     _require_disjoint_documents([], calibration_pages, test_pages)
@@ -730,7 +743,7 @@ def benchmark_successor_decoder_ab(
     prediction_provenance = serialized_prediction_provenance(
         producer_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
         head="directed-successor",
-        feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+        feature_version=baseline_feature_version,
         model_manifest=artifact.manifest,
         model_manifest_path=artifact.manifest_path,
     )
@@ -747,6 +760,7 @@ def benchmark_successor_decoder_ab(
         proposal_root,
         prediction_provenance=prediction_provenance,
         decoder_policy=MAX_REGRET_DECODER,
+        feature_version=baseline_feature_version,
     )
     test_proposals = _write_proposals(
         test_pages,
@@ -755,6 +769,7 @@ def benchmark_successor_decoder_ab(
         proposal_root,
         prediction_provenance=prediction_provenance,
         decoder_policy=MAX_REGRET_DECODER,
+        feature_version=baseline_feature_version,
     )
 
     # Evaluation labels open only after every max-regret proposal is durable.
@@ -827,7 +842,7 @@ def benchmark_successor_decoder_ab(
 
     report = {
         "schema": SUCCESSOR_DECODER_AB_SCHEMA,
-        "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
+        "feature_version": baseline_feature_version,
         "baseline_report": str(baseline_path),
         "baseline_report_sha256": baseline_sha256,
         "model": str(artifact.model_path),
@@ -930,6 +945,7 @@ def _load_answer_free_pages(
     split: str,
     nearest_candidates: int,
     accept_all_partitions: bool = False,
+    feature_version: str = SUCCESSOR_GRAPH_FEATURE_VERSION,
 ) -> list[_Page]:
     pages: list[_Page] = []
     for raw_sample in manifest["samples"]:
@@ -953,6 +969,7 @@ def _load_answer_free_pages(
         element_ids, base_rank, base_edges, candidates = _page_candidates(
             payload,
             nearest_candidates=nearest_candidates,
+            feature_version=feature_version,
         )
         pages.append(
             _Page(
@@ -972,12 +989,18 @@ def _page_candidates(
     payload: Mapping[str, Any],
     *,
     nearest_candidates: int = DEFAULT_NEAREST_CANDIDATES,
+    feature_version: str = SUCCESSOR_GRAPH_FEATURE_VERSION,
 ) -> tuple[
     tuple[str, ...],
     dict[str, int],
     frozenset[tuple[str, str]],
     tuple[_Candidate, ...],
 ]:
+    if feature_version not in {
+        SUCCESSOR_GRAPH_TOPOLOGY_V3_FEATURE_VERSION,
+        SUCCESSOR_GRAPH_FEATURE_VERSION,
+    }:
+        raise ValueError("unsupported successor graph candidate feature version")
     width = float(payload.get("width") or 0.0)
     height = float(payload.get("height") or 0.0)
     raw_elements = payload.get("elements")
@@ -1037,12 +1060,24 @@ def _page_candidates(
         for edge in relation.selected_edge_diagnostics
     }
     topology = _page_topology_context(elements, width=width, height=height)
+    aligned_expansion_pairs: set[tuple[str, str]] = set()
+    column_handoff_pairs: set[tuple[str, str]] = set()
+    if feature_version == SUCCESSOR_GRAPH_FEATURE_VERSION:
+        aligned_expansion_pairs, column_handoff_pairs = (
+            _sparse_topology_candidate_pairs(
+                elements,
+                assignment_by_id=assignment_by_id,
+                topology=topology,
+            )
+        )
 
     candidate_pairs = set(base_edges)
     candidate_pairs.update((target, source) for source, target in base_edges)
     for source, target in relation_scores:
         candidate_pairs.add((source, target))
         candidate_pairs.add((target, source))
+    candidate_pairs.update(aligned_expansion_pairs)
+    candidate_pairs.update(column_handoff_pairs)
     for source in elements:
         source_box = source["_bbox"]
         source_center_x = (source_box.x0 + source_box.x1) / 2
@@ -1102,6 +1137,14 @@ def _page_candidates(
                 context=topology,
                 page_size=page_size,
             ),
+            *(
+                (
+                    float((source_id, target_id) in aligned_expansion_pairs),
+                    float((source_id, target_id) in column_handoff_pairs),
+                )
+                if feature_version == SUCCESSOR_GRAPH_FEATURE_VERSION
+                else ()
+            ),
         )
         target_box = target["_bbox"]
         source_box = source["_bbox"]
@@ -1155,6 +1198,65 @@ def _assignment_pair_features(
         (target.flow_segment_index - source.flow_segment_index) / max(page_size, 1),
         float(bool(source_region) and source_region == target_region),
     )
+
+
+def _sparse_topology_candidate_pairs(
+    elements: list[dict[str, Any]],
+    *,
+    assignment_by_id: Mapping[str, Any],
+    topology: _PageTopologyContext,
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    page_size = max(len(elements), 1)
+    budget = max(2, min(16, math.ceil(math.sqrt(page_size))))
+    aligned_pairs = {
+        edge
+        for edge, rank in topology.aligned_rank_by_source.items()
+        if rank < budget
+    }
+
+    element_by_id = {str(element["id"]): element for element in elements}
+    column_groups: dict[tuple[int, int], list[str]] = defaultdict(list)
+    for element_id, assignment in assignment_by_id.items():
+        column_index = assignment.column_index
+        if column_index is None or int(assignment.column_count) < 2:
+            continue
+        column_groups[
+            (int(assignment.flow_segment_index), int(column_index))
+        ].append(element_id)
+
+    def center_y(element_id: str) -> float:
+        box = element_by_id[element_id]["_bbox"]
+        return (box.y0 + box.y1) / 2
+
+    handoff_pairs: set[tuple[str, str]] = set()
+    for (segment_index, column_index), source_ids in column_groups.items():
+        target_ids = column_groups.get((segment_index, column_index + 1), [])
+        if not target_ids:
+            continue
+        ordered_sources = sorted(
+            source_ids,
+            key=lambda element_id: (
+                center_y(element_id),
+                element_by_id[element_id]["_bbox"].x0,
+                element_id,
+            ),
+        )
+        ordered_targets = sorted(
+            target_ids,
+            key=lambda element_id: (
+                center_y(element_id),
+                element_by_id[element_id]["_bbox"].x0,
+                element_id,
+            ),
+        )
+        for source_id in ordered_sources[-budget:]:
+            source_center_y = center_y(source_id)
+            handoff_pairs.update(
+                (source_id, target_id)
+                for target_id in ordered_targets
+                if center_y(target_id) < source_center_y
+            )
+    return aligned_pairs, handoff_pairs
 
 
 def _page_topology_context(
@@ -1647,6 +1749,7 @@ def _write_proposals(
     *,
     prediction_provenance: Mapping[str, Any],
     decoder_policy: str = SCORE_GREEDY_DECODER,
+    feature_version: str = SUCCESSOR_GRAPH_FEATURE_VERSION,
 ) -> list[str]:
     if len(pages) != len(ranked_pages):
         raise ValueError("successor graph pages and rankings must align")
@@ -1672,7 +1775,7 @@ def _write_proposals(
             "schema": SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
             "id": page.sample["id"],
             "partition": page.split,
-            "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
+            "feature_version": feature_version,
             "threshold": round(threshold, 8),
             "decoder_policy": decoder_policy,
             "runtime_reorder": False,
