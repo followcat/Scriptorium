@@ -2253,3 +2253,67 @@ English multi-column papers get useful body packaging under OOD singleton
 paragraph heads. The Chinese annual-report cover page remains sparse under
 native PDF text extraction, so labeled Chinese/image-source corpora are still
 required before claiming cross-domain readiness.
+
+### Frozen Successor Topology v3 A/B (128/32)
+
+The directed successor head was extended from 39 pair-local features to 59
+answer-free topology features under feature version
+`fine-line-directed-topology-text-v3`. The added signals describe semantic
+column and flow-segment agreement, recursive XY-region agreement, geometry and
+aligned-neighbor ranks in both directions, mutual-nearest status, median-line
+relative gap and indentation, and vertical-corridor blocker evidence. Stable
+feature names are written into both the report and model manifest. Inference
+still receives no provider region, paragraph membership, successor label, or
+evaluation answer, and reversing the input element array leaves candidates
+unchanged.
+
+The v2 and v3 runs use identical train/test corpus hashes, document folds,
+fit-only operating-point selection, proposal protocol, and frozen independent
+test. The joint decoder consumes the same paragraph proposals in both runs:
+
+| Metric | Feature v2 | Topology v3 |
+|---|---:|---:|
+| Fit OOF successor relation F1 | 0.98531274 | 0.98619554 |
+| Calibration successor relation F1 | 0.98773806 | 0.98798956 |
+| Independent-test successor relation F1 | 0.98125509 | 0.98247759 |
+| Test graphical-multicolumn F1 | 0.97209302 | 0.97488372 |
+| Test graphical-multicolumn cross-region recall | 0.88571429 | 0.90000000 |
+| Test ordinary multicolumn F1 | 0.98839739 | 0.98839739 |
+| Test within-region recall | 0.99069995 | 0.99118943 |
+| Test cross-region recall | 0.93658537 | 0.94146341 |
+| Joint paragraph segmentation pair F1 | 0.79045562 | 0.79045562 |
+
+All provenance checks pass and all 160 joint proposals are written. Joint
+segmentation is intentionally unchanged because this experiment modifies only
+the successor relation head. A sparse BYD cover page is now also a valid
+review artifact when no edge clears the frozen threshold: it emits zero
+successor edges, four singleton streams, and four paragraph components instead
+of failing packaging.
+
+A same-input replay on five real pages gives a mixed global-path result. Direct
+relation evidence improves strongly on Hello World Magazine (precision
+`0.45714286 -> 0.64102564`, coverage `0.48484848 -> 0.75757576`), while its
+tracked anchor-path score changes `0.43478261 -> 0.39130435`. Transformer-XL
+changes from 89 edges / 10 streams to 84 / 15 and its anchor-path score changes
+`0.66666667 -> 0.60000000`; Attention and Segment Anything tracked scores are
+unchanged. This supports v3 as the stronger local relation head, but not as a
+runtime total-order replacement.
+
+Topology context has a measurable CPU cost. On Segment Anything page 5 (101
+elements), `_page_candidates` increases from about `0.0946 s` to `0.1787 s` per
+page and command RSS from roughly `220 MB` to `224 MB`. A fit-only
+paragraph-aware rank-2/3 fallback was also evaluated and rejected: independent
+test relation F1 improved by only `+0.00020753`, which does not justify another
+decoder rule.
+
+The result is consistent with relation-first work such as
+[ROOR](https://aclanthology.org/2024.emnlp-main.540/) and
+[GraphDoc](https://arxiv.org/abs/2502.02501), while the explicit XY-region and
+column evidence follows the complementary geometric direction represented by
+[XY-Cut++](https://arxiv.org/abs/2504.10258). A newer max-regret path-cover
+study ([Hakim et al., 2026](https://arxiv.org/abs/2607.01018)) identifies the
+remaining failure mechanism directly: globally greedy commitments can steal a
+target from a source with no good alternative. Max-regret decoding is therefore
+the next frozen A/B candidate; it must be evaluated with the existing scores
+and thresholds before any runtime use. Topology v3, its joint outputs, and all
+follow-up decoder experiments remain `runtime_reorder: false`.
