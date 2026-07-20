@@ -95,6 +95,49 @@ def test_load_graph_model_rejects_hash_mismatch(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("threshold", 0.0, "threshold does not match"),
+        ("nearest_candidates", 99, "nearest_candidates does not match"),
+        ("estimator_type", "DifferentEstimator", "estimator type does not match"),
+        ("estimator_parameters", {"max_iter": 99}, "estimator parameters do not match"),
+        ("model_file", "different.joblib", "filename does not match"),
+    ],
+)
+def test_load_graph_model_rejects_manifest_bundle_mismatch(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    artifact = save_graph_model(
+        model_path=tmp_path / "graph.joblib",
+        schema="scriptorium-test-graph-model/v1",
+        head="test-head",
+        feature_version="test-features-v1",
+        threshold=0.75,
+        estimator=_StubEstimator(),
+        estimator_parameters={"max_iter": 3},
+        feature_count=4,
+        nearest_candidates=5,
+    )
+    manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
+    manifest[field] = value
+    artifact.manifest_path.write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_graph_model(
+            artifact.model_path,
+            expected_schema="scriptorium-test-graph-model/v1",
+            expected_head="test-head",
+            expected_feature_version="test-features-v1",
+        )
+
+
 def test_successor_and_paragraph_benchmarks_serialize_models(tmp_path: Path) -> None:
     train = _write_corpus(
         tmp_path / "train",

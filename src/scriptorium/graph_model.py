@@ -155,6 +155,33 @@ def load_graph_model(
         raise ValueError("graph model bundle requires estimator and threshold")
     if int(bundle.get("feature_count") or -1) != int(manifest.get("feature_count") or -2):
         raise ValueError("graph model feature_count does not match its manifest")
+    if manifest.get("model_file") != path.name:
+        raise ValueError("graph model filename does not match its manifest")
+    try:
+        bundle_threshold = float(bundle["threshold"])
+        manifest_threshold = float(manifest["threshold"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("graph model threshold metadata is invalid") from exc
+    if bundle_threshold != manifest_threshold:
+        raise ValueError("graph model threshold does not match its manifest")
+    if manifest.get("estimator_type") != type(bundle["estimator"]).__name__:
+        raise ValueError("graph model estimator type does not match its manifest")
+    if _canonical_json(bundle.get("estimator_parameters")) != _canonical_json(
+        manifest.get("estimator_parameters")
+    ):
+        raise ValueError("graph model estimator parameters do not match its manifest")
+    bundle_has_nearest = "nearest_candidates" in bundle
+    manifest_has_nearest = "nearest_candidates" in manifest
+    nearest_matches = not bundle_has_nearest and not manifest_has_nearest
+    if bundle_has_nearest and manifest_has_nearest:
+        try:
+            nearest_matches = int(bundle["nearest_candidates"]) == int(
+                manifest["nearest_candidates"]
+            )
+        except (TypeError, ValueError):
+            nearest_matches = False
+    if not nearest_matches:
+        raise ValueError("graph model nearest_candidates does not match its manifest")
     return GraphModelArtifact(path, manifest_path, manifest, bundle)
 
 
@@ -193,3 +220,10 @@ def _joblib_module() -> Any:
             "graph model serialization requires requirements-relation-ranker.txt"
         ) from exc
     return joblib
+
+
+def _canonical_json(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("graph model manifest metadata must be JSON serializable") from exc
