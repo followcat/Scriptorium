@@ -1057,8 +1057,10 @@ def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_
 
     threshold = float(payload.get("threshold") or 0.0)
     raw_candidates = payload.get("candidate_edges")
-    if not isinstance(raw_candidates, list) or not raw_candidates:
+    if not isinstance(raw_candidates, list):
         raise ValueError("successor proposal requires successor_edges or candidate_edges")
+    if not raw_candidates:
+        return ()
     top_edges: list[_ScoredEdge] = []
     for raw in raw_candidates:
         if not isinstance(raw, Mapping):
@@ -1092,8 +1094,6 @@ def _scored_edges_from_successor_proposal(payload: Mapping[str, Any]) -> tuple[_
         previous = by_source.get(edge.source)
         if previous is None or edge.score > previous.score:
             by_source[edge.source] = edge
-    if not by_source:
-        raise ValueError("successor proposal has no usable directed candidates")
     return tuple(by_source[source] for source in sorted(by_source))
 
 

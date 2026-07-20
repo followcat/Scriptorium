@@ -12,6 +12,7 @@ from scriptorium.joint_graph_benchmark import (
     JOINT_GRAPH_PROPOSAL_SCHEMA,
     _ScoredEdge,
     _paragraph_component_metadata,
+    _scored_edges_from_successor_proposal,
     benchmark_joint_graph,
     joint_decode_page,
 )
@@ -69,6 +70,35 @@ def test_joint_decode_packages_valid_successor_path_cover() -> None:
     assert decoded.cross_selected_edges == frozenset({("b", "c")})
     assert decoded.streams == (("a", "b", "c", "d"),)
     assert decoded.diagnostics["endpoint_cross_candidate_count"] == 0
+
+
+def test_joint_decode_keeps_sparse_page_reviewable_without_successor_edges() -> None:
+    edges = _scored_edges_from_successor_proposal(
+        {
+            "successor_edges": [],
+            "candidate_edges": [
+                {
+                    "source": "a",
+                    "target": "b",
+                    "score": 0.41,
+                    "rank": 1,
+                    "selected": False,
+                }
+            ],
+            "threshold": 0.8,
+        }
+    )
+    decoded = joint_decode_page(
+        element_ids=["a", "b"],
+        paragraph_membership={"a": "p1", "b": "p2"},
+        successor_edges=edges,
+    )
+
+    assert edges == ()
+    assert decoded.decoder_mode == "paragraph-protected-path-cover"
+    assert decoded.selected_edges == frozenset()
+    assert decoded.streams == (("a",), ("b",))
+    assert decoded.diagnostics["successor_candidate_count"] == 0
 
 
 def test_joint_decode_falls_back_to_successor_chains_when_paragraphs_are_singletons() -> None:
