@@ -14,6 +14,17 @@ class RelationEdgeMergeResult:
     rejected_self_loop_count: int
 
 
+@dataclass(frozen=True)
+class MaxRegretRelationEdgeMergeResult:
+    selected_edges: tuple[tuple[Hashable, Hashable], ...]
+    protected_selected_edges: tuple[tuple[Hashable, Hashable], ...]
+    candidate_edge_count: int
+    decision_count: int
+    positive_regret_decision_count: int
+    single_feasible_candidate_decision_count: int
+    exhausted_source_count: int
+
+
 def merge_relation_edge_path_cover(
     candidate_edges: Iterable[tuple[Hashable, Hashable]],
     *,
@@ -66,6 +77,125 @@ def merge_relation_edge_path_cover(
         incoming_rejections,
         cycle_rejections,
         self_loop_rejections,
+    )
+
+
+def merge_scored_relation_edge_path_cover_max_regret(
+    candidate_edges: Iterable[tuple[Hashable, Hashable, float]],
+    *,
+    protected_edges: Iterable[tuple[Hashable, Hashable]] = (),
+) -> MaxRegretRelationEdgeMergeResult:
+    """Select a degree-one acyclic path cover by dynamic source regret.
+
+    Every iteration recomputes each unresolved source's feasible outgoing
+    alternatives. Sources with a large best-vs-second-best score gap commit
+    first, which prevents a flexible source from taking a target needed by a
+    source with no comparable alternative. Input order is the deterministic
+    tie-breaker. A source with fewer than two feasible choices has zero regret.
+    """
+
+    protected = merge_relation_edge_path_cover((), protected_edges=protected_edges)
+    successor = dict(protected.selected_edges)
+    predecessor = {target: source for source, target in protected.selected_edges}
+    selected = list(protected.selected_edges)
+
+    alternatives_by_source: dict[
+        Hashable,
+        list[tuple[float, int, Hashable]],
+    ] = {}
+    seen_edges: set[tuple[Hashable, Hashable]] = set()
+    candidate_count = 0
+    for input_rank, (source, target, raw_score) in enumerate(candidate_edges):
+        edge = (source, target)
+        if edge in seen_edges or source == target:
+            continue
+        seen_edges.add(edge)
+        candidate_count += 1
+        alternatives_by_source.setdefault(source, []).append(
+            (float(raw_score), input_rank, target)
+        )
+    for alternatives in alternatives_by_source.values():
+        alternatives.sort(key=lambda item: (-item[0], item[1]))
+
+    source_rank = {
+        source: rank for rank, source in enumerate(alternatives_by_source)
+    }
+    unresolved = {
+        source for source in alternatives_by_source if source not in successor
+    }
+    decision_count = 0
+    positive_regret_count = 0
+    single_candidate_count = 0
+    exhausted_source_count = 0
+
+    while unresolved:
+        decisions: list[
+            tuple[float, float, int, int, Hashable, Hashable]
+        ] = []
+        exhausted: list[Hashable] = []
+        for source in sorted(unresolved, key=source_rank.__getitem__):
+            feasible = [
+                alternative
+                for alternative in alternatives_by_source[source]
+                if alternative[2] not in predecessor
+                and not _generic_successor_path_reaches(
+                    successor,
+                    start=alternative[2],
+                    target=source,
+                )
+            ]
+            if not feasible:
+                exhausted.append(source)
+                continue
+            best_score, best_rank, best_target = feasible[0]
+            regret = best_score - feasible[1][0] if len(feasible) >= 2 else 0.0
+            decisions.append(
+                (
+                    regret,
+                    best_score,
+                    -source_rank[source],
+                    -best_rank,
+                    source,
+                    best_target,
+                )
+            )
+
+        for source in exhausted:
+            unresolved.remove(source)
+        exhausted_source_count += len(exhausted)
+        if not decisions:
+            break
+
+        regret, _score, _source_priority, _edge_priority, source, target = max(
+            decisions,
+            key=lambda item: item[:4],
+        )
+        feasible_count = sum(
+            1
+            for _score, _rank, alternative_target in alternatives_by_source[source]
+            if alternative_target not in predecessor
+            and not _generic_successor_path_reaches(
+                successor,
+                start=alternative_target,
+                target=source,
+            )
+        )
+        successor[source] = target
+        predecessor[target] = source
+        selected.append((source, target))
+        unresolved.remove(source)
+        decision_count += 1
+        positive_regret_count += regret > 0.0
+        single_candidate_count += feasible_count == 1
+
+    return MaxRegretRelationEdgeMergeResult(
+        selected_edges=tuple(selected),
+        protected_selected_edges=protected.protected_selected_edges,
+        candidate_edge_count=candidate_count,
+        decision_count=decision_count,
+        positive_regret_decision_count=positive_regret_count,
+        single_feasible_candidate_decision_count=single_candidate_count,
+        exhausted_source_count=exhausted_source_count,
     )
 
 

@@ -35,13 +35,19 @@ from .reading_order import (
     infer_relation_graph_order_evidence,
     infer_semantic_reading_order,
 )
-from .relation_order import merge_relation_edge_path_cover
+from .relation_order import (
+    merge_relation_edge_path_cover,
+    merge_scored_relation_edge_path_cover_max_regret,
+)
 
 
 SUCCESSOR_GRAPH_BENCHMARK_SCHEMA = "scriptorium-successor-graph-benchmark/v1"
+SUCCESSOR_DECODER_AB_SCHEMA = "scriptorium-successor-decoder-ab/v1"
 SUCCESSOR_GRAPH_PROPOSAL_SCHEMA = "scriptorium-successor-graph-proposal/v2"
 SUCCESSOR_GRAPH_MODEL_SCHEMA = "scriptorium-successor-graph-model/v1"
 SUCCESSOR_GRAPH_FEATURE_VERSION = "fine-line-directed-topology-text-v3"
+SCORE_GREEDY_DECODER = "score-greedy-top-one-v1"
+MAX_REGRET_DECODER = "max-regret-all-candidates-v1"
 DEFAULT_NEAREST_CANDIDATES = 20
 PROPOSAL_ALTERNATIVES_PER_SOURCE = 3
 
@@ -118,6 +124,13 @@ class SuccessorGraphBenchmarkResult:
 
 
 @dataclass(frozen=True)
+class SuccessorDecoderAbResult:
+    report_path: Path
+    proposals_dir: Path
+    report: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class _Candidate:
     source: str
     target: str
@@ -154,7 +167,7 @@ class _RankedEdge:
 @dataclass(frozen=True)
 class _RankedPage:
     top_edges: tuple[_RankedEdge, ...]
-    proposal_edges: tuple[_RankedEdge, ...]
+    all_edges: tuple[_RankedEdge, ...]
 
 
 @dataclass(frozen=True)
@@ -605,6 +618,297 @@ def predict_successor_graph(
         model_path=artifact.model_path,
         model_manifest_path=artifact.manifest_path,
     )
+
+
+def benchmark_successor_decoder_ab(
+    baseline_report_path: str | Path,
+    *,
+    output: str | Path,
+    proposals_dir: str | Path | None = None,
+) -> SuccessorDecoderAbResult:
+    """Replay a frozen successor model with greedy and max-regret decoders."""
+
+    baseline_path = Path(baseline_report_path).resolve()
+    baseline = _json_object(baseline_path, label="successor graph baseline report")
+    if baseline.get("schema") != SUCCESSOR_GRAPH_BENCHMARK_SCHEMA:
+        raise ValueError("successor decoder A/B requires a successor graph report")
+    if baseline.get("feature_version") != SUCCESSOR_GRAPH_FEATURE_VERSION:
+        raise ValueError("successor decoder A/B baseline feature version is stale")
+    if baseline.get("runtime_reorder") is not False:
+        raise ValueError("successor decoder A/B baseline must keep runtime_reorder=false")
+
+    model_record = baseline.get("model")
+    if not isinstance(model_record, Mapping) or not model_record.get("path"):
+        raise ValueError("successor decoder A/B baseline requires a serialized model")
+    model_path = _resolve_report_path(baseline_path, model_record["path"])
+    artifact = load_graph_model(
+        model_path,
+        expected_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
+        expected_head="directed-successor",
+        expected_feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+    )
+    recorded_manifest = model_record.get("manifest")
+    if not isinstance(recorded_manifest, Mapping) or dict(recorded_manifest) != artifact.manifest:
+        raise ValueError("successor decoder A/B model manifest differs from baseline report")
+    threshold = float(baseline.get("frozen_threshold"))
+    if float(artifact.bundle["threshold"]) != threshold:
+        raise ValueError("successor decoder A/B threshold differs from frozen model")
+    nearest_candidates = int(
+        artifact.bundle.get("nearest_candidates") or DEFAULT_NEAREST_CANDIDATES
+    )
+    if nearest_candidates != int(baseline.get("nearest_candidates") or 0):
+        raise ValueError("successor decoder A/B nearest-candidate policy differs")
+
+    train_manifest_path = _resolve_report_path(
+        baseline_path,
+        baseline.get("train_corpus_manifest"),
+    )
+    train_manifest = _json_object(
+        train_manifest_path,
+        label="successor decoder A/B train manifest",
+    )
+    train_manifest_sha256 = _file_sha256(train_manifest_path)
+    if train_manifest_sha256 != baseline.get("train_corpus_manifest_sha256"):
+        raise ValueError("successor decoder A/B train corpus hash differs from baseline")
+    calibration_pages = _load_answer_free_pages(
+        train_manifest_path.parent,
+        train_manifest,
+        split="calibration",
+        nearest_candidates=nearest_candidates,
+    )
+    if not calibration_pages:
+        raise ValueError("successor decoder A/B baseline has no calibration pages")
+
+    test_pages: list[_Page] = []
+    test_manifest_path: Path | None = None
+    raw_test_manifest_path = baseline.get("test_corpus_manifest")
+    if raw_test_manifest_path:
+        test_manifest_path = _resolve_report_path(
+            baseline_path,
+            raw_test_manifest_path,
+        )
+        test_manifest = _json_object(
+            test_manifest_path,
+            label="successor decoder A/B test manifest",
+        )
+        if _file_sha256(test_manifest_path) != baseline.get(
+            "test_corpus_manifest_sha256"
+        ):
+            raise ValueError("successor decoder A/B test corpus hash differs from baseline")
+        test_pages = _load_answer_free_pages(
+            test_manifest_path.parent,
+            test_manifest,
+            split="test",
+            nearest_candidates=nearest_candidates,
+            accept_all_partitions=True,
+        )
+
+    _require_disjoint_documents([], calibration_pages, test_pages)
+    _require_unique_sample_ids([], calibration_pages, test_pages)
+    _, _, numpy, _ = _training_modules()
+    calibration_scores = _predict_pages(
+        artifact.bundle["estimator"],
+        calibration_pages,
+        numpy=numpy,
+    )
+    test_scores = _predict_pages(
+        artifact.bundle["estimator"],
+        test_pages,
+        numpy=numpy,
+    )
+    calibration_ranked = _rank_pages(calibration_pages, calibration_scores)
+    test_ranked = _rank_pages(test_pages, test_scores)
+
+    report_path = Path(output)
+    proposal_root = (
+        Path(proposals_dir)
+        if proposals_dir is not None
+        else report_path.parent / f"{report_path.stem}.proposals"
+    )
+    proposal_root.mkdir(parents=True, exist_ok=True)
+    baseline_sha256 = _file_sha256(baseline_path)
+    prediction_provenance = serialized_prediction_provenance(
+        producer_schema=SUCCESSOR_GRAPH_MODEL_SCHEMA,
+        head="directed-successor",
+        feature_version=SUCCESSOR_GRAPH_FEATURE_VERSION,
+        model_manifest=artifact.manifest,
+        model_manifest_path=artifact.manifest_path,
+    )
+    prediction_provenance.update(
+        {
+            "decoder_policy": MAX_REGRET_DECODER,
+            "decoder_baseline_report_sha256": baseline_sha256,
+        }
+    )
+    calibration_proposals = _write_proposals(
+        calibration_pages,
+        calibration_ranked,
+        threshold,
+        proposal_root,
+        prediction_provenance=prediction_provenance,
+        decoder_policy=MAX_REGRET_DECODER,
+    )
+    test_proposals = _write_proposals(
+        test_pages,
+        test_ranked,
+        threshold,
+        proposal_root,
+        prediction_provenance=prediction_provenance,
+        decoder_policy=MAX_REGRET_DECODER,
+    )
+
+    # Evaluation labels open only after every max-regret proposal is durable.
+    calibration_labels = [_load_labels(page) for page in calibration_pages]
+    test_labels = [_load_labels(page) for page in test_pages]
+    pages_by_split = {"calibration": calibration_pages}
+    labels_by_split = {"calibration": calibration_labels}
+    ranked_by_split = {"calibration": calibration_ranked}
+    if test_pages:
+        pages_by_split["test"] = test_pages
+        labels_by_split["test"] = test_labels
+        ranked_by_split["test"] = test_ranked
+
+    summaries: dict[str, dict[str, Any]] = {
+        SCORE_GREEDY_DECODER: {},
+        MAX_REGRET_DECODER: {},
+    }
+    summaries_by_layout: dict[str, dict[str, Any]] = {
+        SCORE_GREEDY_DECODER: {},
+        MAX_REGRET_DECODER: {},
+    }
+    deltas: dict[str, dict[str, float | int]] = {}
+    for split in pages_by_split:
+        baseline_summary = _score_pages(
+            pages_by_split[split],
+            labels_by_split[split],
+            ranked_by_split[split],
+            threshold,
+            decoder_policy=SCORE_GREEDY_DECODER,
+        )
+        expected_summary = baseline.get("summary", {}).get(split)
+        if not isinstance(expected_summary, Mapping) or (
+            baseline_summary["selected_relation"]
+            != expected_summary.get("selected_relation")
+        ):
+            raise ValueError(
+                f"successor decoder A/B {split} baseline replay does not match report"
+            )
+        candidate_summary = _score_pages(
+            pages_by_split[split],
+            labels_by_split[split],
+            ranked_by_split[split],
+            threshold,
+            decoder_policy=MAX_REGRET_DECODER,
+        )
+        summaries[SCORE_GREEDY_DECODER][split] = baseline_summary
+        summaries[MAX_REGRET_DECODER][split] = candidate_summary
+        summaries_by_layout[SCORE_GREEDY_DECODER][split] = (
+            _score_pages_by_layout_stratum(
+                pages_by_split[split],
+                labels_by_split[split],
+                ranked_by_split[split],
+                threshold,
+                decoder_policy=SCORE_GREEDY_DECODER,
+            )
+        )
+        summaries_by_layout[MAX_REGRET_DECODER][split] = (
+            _score_pages_by_layout_stratum(
+                pages_by_split[split],
+                labels_by_split[split],
+                ranked_by_split[split],
+                threshold,
+                decoder_policy=MAX_REGRET_DECODER,
+            )
+        )
+        deltas[split] = _relation_summary_delta(
+            baseline_summary["selected_relation"],
+            candidate_summary["selected_relation"],
+        )
+
+    report = {
+        "schema": SUCCESSOR_DECODER_AB_SCHEMA,
+        "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
+        "baseline_report": str(baseline_path),
+        "baseline_report_sha256": baseline_sha256,
+        "model": str(artifact.model_path),
+        "model_sha256": artifact.manifest["model_sha256"],
+        "train_corpus_manifest": str(train_manifest_path),
+        "train_corpus_manifest_sha256": train_manifest_sha256,
+        "test_corpus_manifest": (
+            str(test_manifest_path) if test_manifest_path is not None else None
+        ),
+        "test_corpus_manifest_sha256": (
+            _file_sha256(test_manifest_path)
+            if test_manifest_path is not None
+            else None
+        ),
+        "frozen_threshold": round(threshold, 8),
+        "threshold_source": "baseline fit-document-OOF operating point",
+        "nearest_candidates": nearest_candidates,
+        "baseline_decoder": SCORE_GREEDY_DECODER,
+        "candidate_decoder": MAX_REGRET_DECODER,
+        "candidate_scope": "all model-scored directed edges above frozen threshold",
+        "answer_separation": {
+            "model_and_threshold_frozen_before_decoder_ab": True,
+            "candidate_generation_uses_labels": False,
+            "evaluation_predictions_written_before_evaluation_labels": True,
+            "baseline_replay_matches_source_report": True,
+        },
+        "runtime_reorder": False,
+        "promotion_decision": "benchmark-only-max-regret-successor-decoder",
+        "summary": summaries,
+        "summary_by_layout_stratum": summaries_by_layout,
+        "delta": deltas,
+        "proposals": {
+            "calibration": calibration_proposals,
+            "test": test_proposals,
+        },
+        "proposal_artifacts": {
+            "calibration": _proposal_artifacts(calibration_proposals),
+            "test": _proposal_artifacts(test_proposals),
+        },
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(report_path, report)
+    return SuccessorDecoderAbResult(report_path, proposal_root, report)
+
+
+def _resolve_report_path(report_path: Path, value: object) -> Path:
+    raw_path = Path(str(value or ""))
+    if not str(raw_path):
+        raise ValueError("successor decoder A/B report artifact path is missing")
+    candidates = [raw_path, report_path.parent / raw_path]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    raise ValueError(f"successor decoder A/B report artifact is missing: {raw_path}")
+
+
+def _relation_summary_delta(
+    baseline: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+) -> dict[str, float | int]:
+    return {
+        "correct": int(candidate.get("correct") or 0)
+        - int(baseline.get("correct") or 0),
+        "predicted": int(candidate.get("predicted") or 0)
+        - int(baseline.get("predicted") or 0),
+        "precision": round(
+            float(candidate.get("precision") or 0.0)
+            - float(baseline.get("precision") or 0.0),
+            8,
+        ),
+        "recall": round(
+            float(candidate.get("recall") or 0.0)
+            - float(baseline.get("recall") or 0.0),
+            8,
+        ),
+        "f1": round(
+            float(candidate.get("f1") or 0.0)
+            - float(baseline.get("f1") or 0.0),
+            8,
+        ),
+    }
 
 
 def _corpus_manifest(corpus: Path) -> tuple[Path, dict[str, Any]]:
@@ -1091,7 +1395,7 @@ def _rank_pages(pages: list[_Page], scores: Any) -> list[_RankedPage]:
         for candidate, score in zip(page.candidates, page_scores, strict=True):
             by_source[candidate.source].append((float(score), candidate))
         top_edges: list[_RankedEdge] = []
-        proposal_edges: list[_RankedEdge] = []
+        all_edges: list[_RankedEdge] = []
         for source in sorted(by_source, key=lambda value: (page.base_rank[value], value)):
             alternatives = sorted(
                 by_source[source],
@@ -1099,10 +1403,7 @@ def _rank_pages(pages: list[_Page], scores: Any) -> list[_RankedPage]:
             )
             top_score = alternatives[0][0]
             second_score = alternatives[1][0] if len(alternatives) > 1 else 0.0
-            for rank, (score, candidate) in enumerate(
-                alternatives[:PROPOSAL_ALTERNATIVES_PER_SOURCE],
-                start=1,
-            ):
+            for rank, (score, candidate) in enumerate(alternatives, start=1):
                 edge = _RankedEdge(
                     source=candidate.source,
                     target=candidate.target,
@@ -1110,10 +1411,10 @@ def _rank_pages(pages: list[_Page], scores: Any) -> list[_RankedPage]:
                     rank=rank,
                     top_score_margin=(top_score - second_score if rank == 1 else top_score - score),
                 )
-                proposal_edges.append(edge)
+                all_edges.append(edge)
                 if rank == 1:
                     top_edges.append(edge)
-        ranked_pages.append(_RankedPage(tuple(top_edges), tuple(proposal_edges)))
+        ranked_pages.append(_RankedPage(tuple(top_edges), tuple(all_edges)))
     return ranked_pages
 
 
@@ -1169,6 +1470,8 @@ def _score_pages(
     labels: list[_Labels],
     ranked_pages: list[_RankedPage],
     threshold: float,
+    *,
+    decoder_policy: str = SCORE_GREEDY_DECODER,
 ) -> dict[str, Any]:
     if len(pages) != len(labels) or len(pages) != len(ranked_pages):
         raise ValueError("successor graph pages, labels, and rankings must align")
@@ -1182,7 +1485,12 @@ def _score_pages(
     candidate_page_count = 0
     labelled_page_count = 0
     for page, page_labels, ranked in zip(pages, labels, ranked_pages, strict=True):
-        decoded = _decode_page(page, ranked, threshold)
+        decoded = _decode_page(
+            page,
+            ranked,
+            threshold,
+            decoder_policy=decoder_policy,
+        )
         candidate_pairs = {
             (candidate.source, candidate.target) for candidate in page.candidates
         }
@@ -1223,6 +1531,8 @@ def _score_pages_by_layout_stratum(
     labels: list[_Labels],
     ranked_pages: list[_RankedPage],
     threshold: float,
+    *,
+    decoder_policy: str = SCORE_GREEDY_DECODER,
 ) -> dict[str, dict[str, Any]]:
     grouped_pages: dict[str, list[_Page]] = defaultdict(list)
     grouped_labels: dict[str, list[_Labels]] = defaultdict(list)
@@ -1238,12 +1548,23 @@ def _score_pages_by_layout_stratum(
             grouped_labels[stratum],
             grouped_ranked[stratum],
             threshold,
+            decoder_policy=decoder_policy,
         )
         for stratum in sorted(grouped_pages)
     }
 
 
-def _decode_page(page: _Page, ranked: _RankedPage, threshold: float) -> _DecodedPage:
+def _decode_page(
+    page: _Page,
+    ranked: _RankedPage,
+    threshold: float,
+    *,
+    decoder_policy: str = SCORE_GREEDY_DECODER,
+) -> _DecodedPage:
+    if decoder_policy == MAX_REGRET_DECODER:
+        return _decode_page_max_regret(page, ranked, threshold)
+    if decoder_policy != SCORE_GREEDY_DECODER:
+        raise ValueError(f"unsupported successor decoder policy: {decoder_policy}")
     accepted = [edge for edge in ranked.top_edges if edge.score >= threshold]
     accepted.sort(
         key=lambda edge: (
@@ -1273,6 +1594,51 @@ def _decode_page(page: _Page, ranked: _RankedPage, threshold: float) -> _Decoded
     )
 
 
+def _decode_page_max_regret(
+    page: _Page,
+    ranked: _RankedPage,
+    threshold: float,
+) -> _DecodedPage:
+    accepted = [edge for edge in ranked.all_edges if edge.score >= threshold]
+    accepted.sort(
+        key=lambda edge: (
+            page.base_rank[edge.source],
+            edge.rank,
+            -edge.score,
+            page.base_rank[edge.target],
+            edge.source,
+            edge.target,
+        )
+    )
+    top_threshold_edges = frozenset(
+        (edge.source, edge.target)
+        for edge in ranked.top_edges
+        if edge.score >= threshold
+    )
+    merged = merge_scored_relation_edge_path_cover_max_regret(
+        (edge.source, edge.target, edge.score) for edge in accepted
+    )
+    return _DecodedPage(
+        selected_edges=frozenset(
+            (str(source), str(target)) for source, target in merged.selected_edges
+        ),
+        top_threshold_edges=top_threshold_edges,
+        diagnostics={
+            "top_threshold_edge_count": len(top_threshold_edges),
+            "accepted_candidate_edge_count": len(accepted),
+            "selected_edge_count": len(merged.selected_edges),
+            "max_regret_decision_count": merged.decision_count,
+            "positive_regret_decision_count": (
+                merged.positive_regret_decision_count
+            ),
+            "single_feasible_candidate_decision_count": (
+                merged.single_feasible_candidate_decision_count
+            ),
+            "exhausted_source_count": merged.exhausted_source_count,
+        },
+    )
+
+
 def _write_proposals(
     pages: list[_Page],
     ranked_pages: list[_RankedPage],
@@ -1280,22 +1646,35 @@ def _write_proposals(
     root: Path,
     *,
     prediction_provenance: Mapping[str, Any],
+    decoder_policy: str = SCORE_GREEDY_DECODER,
 ) -> list[str]:
     if len(pages) != len(ranked_pages):
         raise ValueError("successor graph pages and rankings must align")
     paths: list[str] = []
     for page, ranked in zip(pages, ranked_pages, strict=True):
-        decoded = _decode_page(page, ranked, threshold)
+        decoded = _decode_page(
+            page,
+            ranked,
+            threshold,
+            decoder_policy=decoder_policy,
+        )
         selected = decoded.selected_edges
-        top_scores = {
-            (edge.source, edge.target): edge.score for edge in ranked.top_edges
+        edge_scores = {
+            (edge.source, edge.target): edge.score for edge in ranked.all_edges
         }
+        serialized_candidates = [
+            edge
+            for edge in ranked.all_edges
+            if edge.rank <= PROPOSAL_ALTERNATIVES_PER_SOURCE
+            or (edge.source, edge.target) in selected
+        ]
         proposal = {
             "schema": SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
             "id": page.sample["id"],
             "partition": page.split,
             "feature_version": SUCCESSOR_GRAPH_FEATURE_VERSION,
             "threshold": round(threshold, 8),
+            "decoder_policy": decoder_policy,
             "runtime_reorder": False,
             "prediction_provenance": proposal_provenance_for_input(
                 prediction_provenance,
@@ -1311,14 +1690,14 @@ def _write_proposals(
                     "top_score_margin": round(edge.top_score_margin, 8),
                     "selected": (edge.source, edge.target) in selected,
                 }
-                for edge in ranked.proposal_edges
+                for edge in serialized_candidates
             ],
             "successor_edges": [
                 {
                     "source": source,
                     "target": target,
                     "kind": "successor",
-                    "confidence": round(top_scores[(source, target)], 8),
+                    "confidence": round(edge_scores[(source, target)], 8),
                     "review_required": True,
                     "relation_policy": "review-only",
                     "origin": "fine-line-directed-successor-graph",

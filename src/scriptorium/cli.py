@@ -65,6 +65,7 @@ from .paragraph_graph_benchmark import (
     predict_paragraph_graph,
 )
 from .successor_graph_benchmark import (
+    benchmark_successor_decoder_ab,
     benchmark_successor_graph,
     predict_successor_graph,
 )
@@ -1157,6 +1158,46 @@ def benchmark_successor_graph_command(
     if result.model_path is not None:
         typer.echo(f"Model: {result.model_path}")
         typer.echo(f"Model manifest: {result.model_manifest_path}")
+
+
+@app.command("benchmark-successor-decoder-ab")
+def benchmark_successor_decoder_ab_command(
+    baseline_report: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Frozen successor graph report with its serialized model.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/successor-decoder-ab.json"),
+        "--output",
+        "-o",
+    ),
+    proposals_dir: Optional[Path] = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Directory for review-only max-regret successor proposals.",
+    ),
+) -> None:
+    """Replay a frozen successor head with greedy and max-regret decoders."""
+
+    try:
+        result = benchmark_successor_decoder_ab(
+            baseline_report,
+            output=output,
+            proposals_dir=proposals_dir,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="baseline_report") from exc
+    for split, delta in result.report["delta"].items():
+        typer.echo(
+            f"{split} max-regret delta precision / recall / F1: "
+            f"{delta['precision']} / {delta['recall']} / {delta['f1']}"
+        )
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
 
 
 @app.command("predict-successor-graph")

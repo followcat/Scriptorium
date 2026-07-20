@@ -14,10 +14,14 @@ from scriptorium.provider_hierarchy_benchmark import (
 )
 from scriptorium.relation_order import merge_relation_edge_path_cover
 from scriptorium.successor_graph_benchmark import (
+    MAX_REGRET_DECODER,
+    SCORE_GREEDY_DECODER,
+    SUCCESSOR_DECODER_AB_SCHEMA,
     SUCCESSOR_GRAPH_BENCHMARK_SCHEMA,
     SUCCESSOR_GRAPH_FEATURE_NAMES,
     SUCCESSOR_GRAPH_PROPOSAL_SCHEMA,
     _page_candidates,
+    benchmark_successor_decoder_ab,
     benchmark_successor_graph,
 )
 
@@ -44,6 +48,7 @@ def test_successor_graph_is_answer_separated_and_scores_independent_test(
         nearest_candidates=3,
         minimum_edge_precision=0.5,
         minimum_selected_edges=1,
+        model_output=tmp_path / "successor.joblib",
     )
 
     report = result.report
@@ -90,6 +95,32 @@ def test_successor_graph_is_answer_separated_and_scores_independent_test(
         for artifacts in report["proposal_artifacts"].values()
         for artifact in artifacts
     )
+
+    decoder_ab = benchmark_successor_decoder_ab(
+        result.report_path,
+        output=tmp_path / "decoder-ab.json",
+        proposals_dir=tmp_path / "decoder-ab-proposals",
+    )
+    decoder_report = decoder_ab.report
+    assert decoder_report["schema"] == SUCCESSOR_DECODER_AB_SCHEMA
+    assert decoder_report["runtime_reorder"] is False
+    assert decoder_report["baseline_decoder"] == SCORE_GREEDY_DECODER
+    assert decoder_report["candidate_decoder"] == MAX_REGRET_DECODER
+    assert decoder_report["answer_separation"] == {
+        "model_and_threshold_frozen_before_decoder_ab": True,
+        "candidate_generation_uses_labels": False,
+        "evaluation_predictions_written_before_evaluation_labels": True,
+        "baseline_replay_matches_source_report": True,
+    }
+    assert set(decoder_report["summary"]) == {
+        SCORE_GREEDY_DECODER,
+        MAX_REGRET_DECODER,
+    }
+    assert len(list(decoder_ab.proposals_dir.glob("*.successor-graph.json"))) == 4
+    for proposal_path in decoder_ab.proposals_dir.glob("*.successor-graph.json"):
+        proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+        assert proposal["decoder_policy"] == MAX_REGRET_DECODER
+        assert proposal["runtime_reorder"] is False
 
 
 def test_successor_graph_candidates_ignore_provider_regions_and_input_order() -> None:
