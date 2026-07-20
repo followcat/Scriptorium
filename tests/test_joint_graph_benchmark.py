@@ -11,6 +11,7 @@ from scriptorium.joint_graph_benchmark import (
     JOINT_GRAPH_BENCHMARK_SCHEMA,
     JOINT_GRAPH_PROPOSAL_SCHEMA,
     _ScoredEdge,
+    _paragraph_component_metadata,
     benchmark_joint_graph,
     joint_decode_page,
 )
@@ -91,7 +92,19 @@ def test_joint_decode_falls_back_to_successor_chains_when_paragraphs_are_singlet
     assert decoded.cross_selected_edges == frozenset()
     assert decoded.streams == (("a", "b", "c", "d"),)
     assert decoded.diagnostics["paragraph_component_count"] == 1
+    assert decoded.diagnostics["paragraph_input_component_count"] == 4
     assert decoded.diagnostics["paragraph_singleton_rate_x1000"] == 1000
+    metadata = _paragraph_component_metadata(
+        decoded,
+        source_component_ids=["p1", "p2", "p3", "p4"],
+    )
+    assert metadata == {
+        "origin": "fine-line-successor-chain-fallback",
+        "review_required": True,
+        "component_policy": "successor-chain",
+        "source_paragraph_component_ids": ["p1", "p2", "p3", "p4"],
+        "fallback_reason": "paragraph-singleton-rate-at-least-0.85",
+    }
 
 
 def test_joint_decode_splits_singleton_fallback_chains_on_column_wraps() -> None:
@@ -123,6 +136,14 @@ def test_joint_decode_splits_singleton_fallback_chains_on_column_wraps() -> None
     assert decoded.cross_selected_edges == frozenset({("b", "c")})
     assert decoded.diagnostics["geometry_chain_split_count"] == 1
     assert decoded.diagnostics["paragraph_component_count"] == 2
+    metadata = _paragraph_component_metadata(
+        decoded,
+        source_component_ids=["p1", "p2"],
+    )
+    assert metadata["origin"] == "fine-line-successor-chain-geometry-fallback"
+    assert metadata["component_policy"] == (
+        "successor-chain-split-on-column-wrap-or-large-gap"
+    )
 
 
 def test_joint_decode_rejects_cross_edge_that_breaks_degree_one() -> None:

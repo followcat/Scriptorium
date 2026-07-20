@@ -183,6 +183,7 @@ def joint_decode_page(
             decoder_mode=decoder_mode,
             diagnostics={
                 "element_count": len(ids),
+                "paragraph_input_component_count": len(set(membership.values())),
                 "paragraph_component_count": len(set(package_membership.values())),
                 "paragraph_singleton_rate_x1000": int(
                     round(_singleton_rate(membership) * 1000)
@@ -268,6 +269,7 @@ def joint_decode_page(
         decoder_mode="paragraph-protected-path-cover",
         diagnostics={
             "element_count": len(ids),
+            "paragraph_input_component_count": len(set(membership.values())),
             "paragraph_component_count": len(set(membership.values())),
             "successor_candidate_count": len(successor_edges),
             "unknown_successor_count": unknown,
@@ -1132,10 +1134,16 @@ def _write_proposals(
                         for element_id in page.element_ids
                         if decoded.membership[element_id] == stream_id
                     ],
-                    "proposal": {
-                        "origin": "fine-line-paragraph-graph",
-                        "review_required": True,
-                    },
+                    "proposal": _paragraph_component_metadata(
+                        decoded,
+                        source_component_ids=sorted(
+                            {
+                                page.paragraph_membership[element_id]
+                                for element_id in page.element_ids
+                                if decoded.membership[element_id] == stream_id
+                            }
+                        ),
+                    ),
                 }
                 for stream_id in sorted(set(decoded.membership.values()))
             ],
@@ -1186,6 +1194,34 @@ def _write_proposals(
         _write_json(path, proposal)
         paths.append(str(path))
     return paths
+
+
+def _paragraph_component_metadata(
+    decoded: _DecodedPage,
+    *,
+    source_component_ids: Sequence[str],
+) -> dict[str, Any]:
+    if decoded.decoder_mode == "successor-path-cover-package-chain-geometry-fallback":
+        origin = "fine-line-successor-chain-geometry-fallback"
+        component_policy = "successor-chain-split-on-column-wrap-or-large-gap"
+    elif decoded.decoder_mode == "successor-path-cover-package-chain-fallback":
+        origin = "fine-line-successor-chain-fallback"
+        component_policy = "successor-chain"
+    else:
+        origin = "fine-line-paragraph-graph"
+        component_policy = "paragraph-comembership"
+    return {
+        "origin": origin,
+        "review_required": True,
+        "component_policy": component_policy,
+        "source_paragraph_component_ids": list(source_component_ids),
+        "fallback_reason": (
+            "paragraph-singleton-rate-at-least-0.85"
+            if "chain-fallback" in decoded.decoder_mode
+            or "chain-geometry-fallback" in decoded.decoder_mode
+            else None
+        ),
+    }
 
 
 def _proposal_input_records(pages: Sequence[_PageProposals]) -> list[dict[str, Any]]:
