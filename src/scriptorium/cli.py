@@ -69,6 +69,7 @@ from .successor_graph_benchmark import (
     benchmark_successor_graph,
     predict_successor_graph,
 )
+from .successor_transition_benchmark import benchmark_successor_transition_ab
 from .pdf_export import print_html_to_pdf
 from .pdf_render import SourceKind, page_indices_from_ranges, render_pdf, render_source
 from .playwright_capture import CaptureMode, capture_pdf
@@ -1198,6 +1199,69 @@ def benchmark_successor_decoder_ab_command(
     typer.echo(f"Decision: {result.report['promotion_decision']}")
     typer.echo(f"Report: {result.report_path}")
     typer.echo(f"Proposals: {result.proposals_dir}")
+
+
+@app.command("benchmark-successor-transition-ab")
+def benchmark_successor_transition_ab_command(
+    baseline_report: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Frozen successor graph report with document-OOF fit proposals.",
+    ),
+    output: Path = typer.Option(
+        Path("outputs/successor-transition-ab.json"),
+        "--output",
+        "-o",
+    ),
+    proposals_dir: Optional[Path] = typer.Option(
+        None,
+        "--proposals-dir",
+        help="Directory for protected-local transition proposals.",
+    ),
+    model_output: Optional[Path] = typer.Option(
+        None,
+        "--model-output",
+        help="Optional .joblib path for the review-only transition head.",
+    ),
+    minimum_transition_precision: float = typer.Option(
+        0.9,
+        "--minimum-transition-precision",
+        min=0.5,
+        max=1.0,
+    ),
+    minimum_selected_transition_edges: int = typer.Option(
+        100,
+        "--minimum-selected-transition-edges",
+        min=1,
+    ),
+) -> None:
+    """A/B a transition head while preserving inferred local-flow edges."""
+
+    try:
+        result = benchmark_successor_transition_ab(
+            baseline_report,
+            output=output,
+            proposals_dir=proposals_dir,
+            model_output=model_output,
+            minimum_transition_precision=minimum_transition_precision,
+            minimum_selected_transition_edges=minimum_selected_transition_edges,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="baseline_report") from exc
+    for split, delta in result.report["delta"].items():
+        typer.echo(
+            f"{split} transition delta precision / recall / F1: "
+            f"{delta['precision']} / {delta['recall']} / {delta['f1']}"
+        )
+    typer.echo(f"Calibration gate: {result.report['calibration_gate']['passed']}")
+    typer.echo(f"Decision: {result.report['promotion_decision']}")
+    typer.echo(f"Report: {result.report_path}")
+    typer.echo(f"Proposals: {result.proposals_dir}")
+    if result.model_path is not None:
+        typer.echo(f"Model: {result.model_path}")
+        typer.echo(f"Model manifest: {result.model_manifest_path}")
 
 
 @app.command("predict-successor-graph")

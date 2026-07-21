@@ -26,6 +26,11 @@ from scriptorium.successor_graph_benchmark import (
     benchmark_successor_decoder_ab,
     benchmark_successor_graph,
 )
+from scriptorium.successor_transition_benchmark import (
+    SUCCESSOR_TRANSITION_AB_SCHEMA,
+    SUCCESSOR_TRANSITION_PROPOSAL_SCHEMA,
+    benchmark_successor_transition_ab,
+)
 
 
 def test_successor_graph_is_answer_separated_and_scores_independent_test(
@@ -123,6 +128,54 @@ def test_successor_graph_is_answer_separated_and_scores_independent_test(
         proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
         assert proposal["decoder_policy"] == MAX_REGRET_DECODER
         assert proposal["runtime_reorder"] is False
+
+    transition_ab = benchmark_successor_transition_ab(
+        result.report_path,
+        output=tmp_path / "transition-ab.json",
+        proposals_dir=tmp_path / "transition-ab-proposals",
+        model_output=tmp_path / "transition.joblib",
+        minimum_transition_precision=0.5,
+        minimum_selected_transition_edges=1,
+    )
+    transition_report = transition_ab.report
+    assert transition_report["schema"] == SUCCESSOR_TRANSITION_AB_SCHEMA
+    assert transition_report["runtime_reorder"] is False
+    assert transition_report["answer_separation"] == {
+        "all_candidate_graphs_loaded_before_fit_labels": True,
+        "baseline_fit_predictions_are_document_oof": True,
+        "fit_labels_role": "transition-head training and threshold selection",
+        "evaluation_predictions_written_before_evaluation_labels": True,
+        "candidate_generation_uses_labels": False,
+        "paragraph_membership_labels_used_as_features": False,
+    }
+    assert set(transition_report["summary"]) == {
+        "fit_oof",
+        "calibration",
+        "test",
+    }
+    assert transition_report["summary"]["fit_oof"]["protected_local_relation"][
+        "predicted"
+    ] > 0
+    assert transition_report["summary"]["fit_oof"]["transition_relation"][
+        "predicted"
+    ] > 0
+    assert transition_ab.model_path is not None
+    assert transition_ab.model_manifest_path is not None
+
+    transition_proposals = sorted(
+        transition_ab.proposals_dir.glob("*.successor-transition.json")
+    )
+    assert len(transition_proposals) == 8
+    for proposal_path in transition_proposals:
+        proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+        assert proposal["schema"] == SUCCESSOR_TRANSITION_PROPOSAL_SCHEMA
+        assert proposal["runtime_reorder"] is False
+        assert proposal["protected_local_edges"]
+        edges = [
+            (edge["source"], edge["target"])
+            for edge in proposal["successor_edges"]
+        ]
+        assert list(merge_relation_edge_path_cover(edges).selected_edges) == edges
 
 
 def test_successor_graph_candidates_ignore_provider_regions_and_input_order() -> None:
