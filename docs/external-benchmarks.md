@@ -2364,3 +2364,94 @@ That brute-force expansion is rejected on cost and ambiguity grounds. The next
 experiment should add sparse long-gap aligned and column-handoff candidates,
 freeze them from answer-free topology, and retrain/recalibrate the relation head
 before touching the decoder. All results remain `runtime_reorder: false`.
+
+### Sparse Topology v4 and Protected Transition A/B
+
+Feature v4 (`fine-line-directed-sparse-topology-text-v4`) adds two explicit
+answer-free candidate indicators to the 59 topology-v3 features:
+`aligned_expansion_candidate` and `column_handoff_candidate`. Per source, the
+long-gap aligned budget is bounded by `ceil(sqrt(page_size))` with a hard cap of
+16. Column handoff candidates are restricted to the final square-root-sized
+tail of one inferred column and targets above it in the next column. Candidate
+generation remains invariant to input element order and never reads provider
+regions, paragraph membership, or evaluation labels.
+
+The sparse policy raises candidate count by about 19.5%, rather than the roughly
+250% cost of nearest-80. It raises fit/calibration candidate recall from
+`0.99632306/0.99686520` to `0.99898567/0.99947753`, but putting all candidates
+through one head moves the fit-frozen threshold from `0.57646297` to
+`0.86387088` and suppresses transitions:
+
+| Metric | Topology v3 | Sparse topology v4 | Delta |
+|---|---:|---:|---:|
+| Fit OOF F1 | 0.98619554 | 0.98563438 | -0.00056116 |
+| Calibration F1 | 0.98798956 | 0.99004715 | +0.00205759 |
+| Independent-test F1 | 0.98247759 | 0.98284314 | +0.00036555 |
+| Test precision | 0.98207739 | 0.98485469 | +0.00277730 |
+| Test recall | 0.98287811 | 0.98083979 | -0.00203832 |
+| Test graphical-multicolumn F1 | 0.97488372 | 0.97570093 | +0.00081721 |
+| Test cross-region recall | 0.94146341 | 0.93414634 | -0.00731707 |
+| Graphical cross-region recall | 0.90000000 | 0.87857143 | -0.02142857 |
+
+Real-page replay confirms that the small aggregate F1 increase is not a safe
+promotion. V3-to-v4 edge/stream counts change from `49/7 -> 47/9` on Attention,
+`84/15 -> 83/16` on Transformer-XL, `84/17 -> 80/21` on Segment Anything,
+`68/15 -> 58/25` on Hello World Magazine, and `43/5 -> 42/6` on Mamba. The BYD
+sparse cover remains `0/4`. V4 is therefore retained as a candidate source, not
+as a replacement for the v3 head.
+
+The next experiment separated transition candidates from protected local-flow
+edges:
+
+```bash
+scriptorium benchmark-successor-transition-ab \
+  outputs/successor-topology-v3-ab/report.json \
+  --proposals-dir outputs/successor-transition-v1/proposals \
+  --model-output outputs/successor-transition-v1/models/transition.joblib \
+  -o outputs/successor-transition-v1/report.json
+```
+
+The command verifies the v3 report/model/corpus hashes and consumes its OOF fit
+proposals. A baseline edge is protected only when its endpoints share the same
+answer-free inferred flow segment and column. The independent transition head
+trains on all other v4 candidates with five document folds; its threshold
+`0.98822210` is selected from fit OOF only with transition precision at least
+`0.90` and at least 100 selected transition edges. All fit, calibration, and
+test proposals are written before their corresponding evaluation labels are
+scored.
+
+| Split | V3 baseline F1 | Protected + transition F1 | Precision delta | Recall delta | F1 delta |
+|---|---:|---:|---:|---:|---:|
+| Fit OOF | 0.98619554 | 0.97830122 | +0.00277628 | -0.01838469 | -0.00789432 |
+| Calibration | 0.98798956 | 0.98478489 | +0.00146182 | -0.00783699 | -0.00320467 |
+| Independent test | 0.98247759 | 0.97640057 | +0.00098046 | -0.01304525 | -0.00607702 |
+
+Transition precision improves from `0.89230769` to `0.95604396` on fit OOF,
+but replacing the transition set removes 210 baseline edges and selects only
+100. Calibration overall F1 and cross-region recall both fail their acceptance
+gates. Graphical-multicolumn test F1 falls from `0.97488372` to `0.96373057`.
+
+The same report makes the independent expansion-head capacity limit explicit:
+
+| Split | V4-only candidates | Positives | Unresolved-source candidates / positives | Degree-feasible candidates / positives |
+|---|---:|---:|---:|---:|
+| Fit OOF | 34,301 | 21 | 412 / 10 | 8 / 3 |
+| Calibration | 8,201 | 5 | 154 / 2 | 1 / 0 |
+| Independent test | 10,702 | 12 | 186 / 8 | 0 / 0 |
+
+Once the degree-one v3 cover is protected, an expansion-only classifier has no
+feasible independent-test target slot. A fit-only baseline-fallback replay was
+also frozen: high-confidence transition edges receive priority and all other v3
+transitions are reinserted. It finds one correct fit edge (`F1 +0.00006420`),
+but adds two calibration edges with no new correct edge (`F1 -0.00025790`) and
+is an exact test-F1 tie with one extra unscored edge. That policy is rejected as
+well.
+
+These results close the current geometry-only decoder branch. Max-regret,
+nearest expansion, sparse topology replacement, protected expansion, transition
+replacement, and transition fallback all fail to provide a calibration-backed
+quality gain. The next successor improvement must introduce genuinely different
+evidence: provider relation/stream edges, caption/object and table-boundary
+relations, a relation-trained predictor with document-fold abstention, or a
+semantic scorer after OCR-text quality is controlled. The benchmark command and
+artifacts remain review-only and keep `runtime_reorder: false`.
